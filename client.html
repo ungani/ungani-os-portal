@@ -348,8 +348,38 @@
       </div>
 
       <div class="card">
+        <h2>Add Task / Follow-up</h2>
+
+        <label>Task Title</label>
+        <input id="taskTitle" placeholder="Example: Follow up with supplier" />
+
+        <label>Description</label>
+        <textarea id="taskDescription" placeholder="Add task or follow-up details"></textarea>
+
+        <label>Due Date</label>
+        <input id="taskDueDate" type="date" />
+
+        <label>Status</label>
+        <select id="taskStatus">
+          <option value="pending">Pending</option>
+          <option value="in_progress">In Progress</option>
+          <option value="done">Done</option>
+          <option value="overdue">Overdue</option>
+        </select>
+
+        <button onclick="addTask()">Save Task</button>
+
+        <div id="taskFormMessage"></div>
+      </div>
+
+      <div class="card">
         <h2>Items / Assets / Stock Summary</h2>
         <div id="itemsSummary">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>Recent Tasks / Follow-ups</h2>
+        <div id="tasksList">Loading...</div>
       </div>
 
       <div class="card">
@@ -451,6 +481,7 @@
       await loadMoneyCategories();
       await loadMoneySummary();
       await loadItemsSummary();
+      await loadTasks();
       await loadBusinessRecords();
     }
 
@@ -655,6 +686,43 @@
       await loadItemsSummary();
     }
 
+    async function addTask() {
+      const msg = document.getElementById("taskFormMessage");
+
+      const title = document.getElementById("taskTitle").value;
+
+      if (!title) {
+        msg.innerHTML = `<p class="danger">Please enter a task title.</p>`;
+        return;
+      }
+
+      const task = {
+        tenant_id: currentTenantId,
+        title: title,
+        description: document.getElementById("taskDescription").value,
+        due_date: document.getElementById("taskDueDate").value || null,
+        status: document.getElementById("taskStatus").value,
+        created_by: currentUserId
+      };
+
+      const { error } = await supabaseClient
+        .from("tasks")
+        .insert([task]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Task saved successfully.</p>`;
+
+      document.getElementById("taskTitle").value = "";
+      document.getElementById("taskDescription").value = "";
+      document.getElementById("taskDueDate").value = "";
+
+      await loadTasks();
+    }
+
     async function loadMoneySummary() {
       const { data, error } = await supabaseClient
         .from("dashboard_money_summary")
@@ -704,6 +772,36 @@
           <strong>${item.item_type}</strong> — ${item.current_status}: ${item.total}
           <br>
           <span class="small">${item.business_sections?.name || "General"}</span>
+        </div>
+      `).join("");
+    }
+
+    async function loadTasks() {
+      const box = document.getElementById("tasksList");
+
+      const { data, error } = await supabaseClient
+        .from("tasks")
+        .select("title, description, due_date, status, created_at")
+        .eq("tenant_id", currentTenantId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No tasks or follow-ups yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(task => `
+        <div class="row">
+          <h3>${task.title}</h3>
+          <p><strong>Status:</strong> ${task.status}</p>
+          <p><strong>Due Date:</strong> ${task.due_date || "No due date"}</p>
+          <p>${task.description || ""}</p>
         </div>
       `).join("");
     }
