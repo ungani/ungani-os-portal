@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Client Account</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1050px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 15px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .metric p {
+      font-size: 22px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .blocked-box {
+      border-left: 6px solid #b00020;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Client Account</span></h1>
+      <p>View your package, billing status, payment history, and upgrade requests.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="client.html">Client Dashboard</a> |
+      <a href="reports.html">Reports</a> |
+      <a href="index.html">Registration</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Client Login</h2>
+
+      <label>Email</label>
+      <input id="clientEmail" placeholder="client@example.com" />
+
+      <label>Password</label>
+      <input id="clientPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginClient()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <p class="small">Please contact UNGANI support if you believe this is a mistake.</p>
+      <button onclick="logoutClient()">Logout</button>
+    </div>
+
+    <div id="accountArea" class="hidden">
+      <div class="card">
+        <h2 id="companyName">Client Account</h2>
+        <p id="companyInfo"></p>
+
+        <button onclick="refreshAccount()">Refresh Account</button>
+        <button onclick="window.location.href='client.html'">Dashboard</button>
+        <button onclick="window.location.href='reports.html'">Reports</button>
+        <button onclick="logoutClient()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Account Overview</h2>
+
+        <div class="grid">
+          <div class="metric">
+            <h3>Package</h3>
+            <p id="packageName">N/A</p>
+          </div>
+
+          <div class="metric">
+            <h3>Account Status</h3>
+            <p id="accountStatus">N/A</p>
+          </div>
+
+          <div class="metric">
+            <h3>Trial Start</h3>
+            <p id="trialStart">N/A</p>
+          </div>
+
+          <div class="metric">
+            <h3>Trial End</h3>
+            <p id="trialEnd">N/A</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Request Package Upgrade</h2>
+        <p class="small">Use this to request a package upgrade or account change from UNGANI.</p>
+
+        <label>Requested Package</label>
+        <select id="requestedPackageSelect">
+          <option value="">Loading packages...</option>
+        </select>
+
+        <label>Reason / Request Details</label>
+        <textarea id="upgradeReason" placeholder="Example: We want to add more sections, more users, or upgrade our support level."></textarea>
+
+        <button onclick="submitUpgradeRequest()">Submit Upgrade Request</button>
+
+        <div id="upgradeMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>Payment History</h2>
+        <div id="paymentHistory">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>My Upgrade Requests</h2>
+        <div id="upgradeRequestsList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentTenantId = null;
+    let currentUserId = null;
+    let currentPackageId = null;
+
+    function formatMoney(value) {
+      const number = Number(value || 0);
+      return number.toLocaleString("en-KE");
+    }
+
+    function statusBadge(status) {
+      let className = "badge";
+
+      if (status === "trial" || status === "pending" || status === "in_review") {
+        className = "badge badge-gold";
+      }
+
+      if (status === "suspended" || status === "cancelled" || status === "failed" || status === "rejected") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${status || "N/A"}</span>`;
+    }
+
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("accountArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
+    async function loginClient() {
+      const email = document.getElementById("clientEmail").value;
+      const password = document.getElementById("clientPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+
+      await loadClientAccount();
+    }
+
+    async function logoutClient() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("accountArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+    }
+
+    async function loadClientAccount() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentUserId = sessionData?.session?.user?.id;
+
+      const { data: userData, error } = await supabaseClient
+        .from("users")
+        .select(`
+          id,
+          full_name,
+          email,
+          status,
+          tenant_id,
+          roles(name),
+          tenants(
+            id,
+            company_name,
+            account_status,
+            trial_start_date,
+            trial_end_date,
+            service_need,
+            package_id,
+            business_types(name),
+            packages(name)
+          )
+        `)
+        .eq("id", currentUserId)
+        .maybeSingle();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI client profile has not been connected yet.");
+        return;
+      }
+
+      if (userData.status !== "active") {
+        showAccessBlocked("Your user access is currently not active.");
+        return;
+      }
+
+      const tenant = userData.tenants;
+
+      if (!tenant) {
+        showAccessBlocked("Your account is not connected to a business workspace yet.");
+        return;
+      }
+
+      if (tenant.account_status === "suspended") {
+        showAccessBlocked("This business account is currently suspended.");
+        return;
+      }
+
+      if (tenant.account_status === "cancelled") {
+        showAccessBlocked("This business account has been cancelled.");
+        return;
+      }
+
+      currentTenantId = userData.tenant_id;
+      currentPackageId = tenant.package_id || null;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("accountArea").classList.remove("hidden");
+
+      document.getElementById("companyName").innerText = tenant.company_name;
+
+      document.getElementById("companyInfo").innerText =
+        `${tenant.business_types?.name || "Business"} | ${userData.full_name || userData.email}`;
+
+      document.getElementById("packageName").innerHTML = tenant.packages?.name || "N/A";
+      document.getElementById("accountStatus").innerHTML = statusBadge(tenant.account_status);
+      document.getElementById("trialStart").innerText = tenant.trial_start_date || "N/A";
+      document.getElementById("trialEnd").innerText = tenant.trial_end_date || "N/A";
+
+      await refreshAccount();
+    }
+
+    async function refreshAccount() {
+      await loadPackages();
+      await loadPaymentHistory();
+      await loadUpgradeRequests();
+    }
+
+    async function loadPackages() {
+      const select = document.getElementById("requestedPackageSelect");
+
+      const { data, error } = await supabaseClient
+        .from("packages")
+        .select("id, name")
+        .order("name");
+
+      if (error) {
+        select.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      select.innerHTML =
+        '<option value="">Select package</option>' +
+        (data || []).map(pkg =>
+          `<option value="${pkg.id}">${pkg.name}</option>`
+        ).join("");
+    }
+
+    async function loadPaymentHistory() {
+      const box = document.getElementById("paymentHistory");
+
+      const { data, error } = await supabaseClient
+        .from("payments")
+        .select(`
+          amount,
+          currency,
+          payment_date,
+          payment_method,
+          payment_reference,
+          payment_status,
+          billing_period_start,
+          billing_period_end,
+          notes
+        `)
+        .eq("tenant_id", currentTenantId)
+        .order("payment_date", { ascending: false })
+        .limit(20);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No payment records found yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(payment => `
+        <div class="row">
+          <h3>${payment.currency || "KES"} ${formatMoney(payment.amount)}</h3>
+          <p><strong>Status:</strong> ${statusBadge(payment.payment_status)}</p>
+          <p><strong>Date:</strong> ${payment.payment_date || "N/A"}</p>
+          <p><strong>Method:</strong> ${payment.payment_method || "N/A"}</p>
+          <p><strong>Reference:</strong> ${payment.payment_reference || "N/A"}</p>
+          <p><strong>Period:</strong> ${payment.billing_period_start || "N/A"} to ${payment.billing_period_end || "N/A"}</p>
+          <p>${payment.notes || ""}</p>
+        </div>
+      `).join("");
+    }
+
+    async function submitUpgradeRequest() {
+      const msg = document.getElementById("upgradeMessage");
+
+      const requestedPackageId = document.getElementById("requestedPackageSelect").value;
+      const reason = document.getElementById("upgradeReason").value;
+
+      if (!requestedPackageId) {
+        msg.innerHTML = `<p class="danger">Please select a requested package.</p>`;
+        return;
+      }
+
+      if (!reason) {
+        msg.innerHTML = `<p class="danger">Please add a short reason for the request.</p>`;
+        return;
+      }
+
+      const record = {
+        tenant_id: currentTenantId,
+        current_package_id: currentPackageId,
+        requested_package_id: requestedPackageId,
+        request_status: "pending",
+        reason: reason,
+        admin_notes: "",
+        requested_by: currentUserId
+      };
+
+      const { error } = await supabaseClient
+        .from("upgrade_requests")
+        .insert([record]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Upgrade request submitted successfully.</p>`;
+
+      document.getElementById("requestedPackageSelect").value = "";
+      document.getElementById("upgradeReason").value = "";
+
+      await loadUpgradeRequests();
+    }
+
+    async function loadUpgradeRequests() {
+      const box = document.getElementById("upgradeRequestsList");
+
+      const { data, error } = await supabaseClient
+        .from("upgrade_requests")
+        .select(`
+          request_status,
+          reason,
+          admin_notes,
+          created_at,
+          current_package:packages!upgrade_requests_current_package_id_fkey(name),
+          requested_package:packages!upgrade_requests_requested_package_id_fkey(name)
+        `)
+        .eq("tenant_id", currentTenantId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No upgrade requests submitted yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(request => `
+        <div class="row">
+          <h3>${request.current_package?.name || "Current Package"} → ${request.requested_package?.name || "Requested Package"}</h3>
+          <p><strong>Status:</strong> ${statusBadge(request.request_status)}</p>
+          <p><strong>Reason:</strong> ${request.reason || "N/A"}</p>
+          <p><strong>UNGANI Notes:</strong> ${request.admin_notes || "No notes yet"}</p>
+          <p class="small">Requested: ${request.created_at ? new Date(request.created_at).toLocaleString() : "N/A"}</p>
+        </div>
+      `).join("");
+    }
+  </script>
+</body>
+</html>
