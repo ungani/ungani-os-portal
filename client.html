@@ -246,6 +246,44 @@
       </div>
 
       <div class="card">
+        <h2>Add Business Record</h2>
+
+        <label>Business Section</label>
+        <select id="recordSection">
+          <option value="">General</option>
+        </select>
+
+        <label>Record Title</label>
+        <input id="recordTitle" placeholder="Example: Restaurant stock update" />
+
+        <label>Record Type</label>
+        <select id="recordType">
+          <option value="general_update">General Update</option>
+          <option value="restaurant_update">Restaurant Update</option>
+          <option value="stock_note">Stock Note</option>
+          <option value="staff_note">Staff Note</option>
+          <option value="task_note">Task Note</option>
+          <option value="incident_note">Incident Note</option>
+          <option value="trip_update">Trip Update</option>
+          <option value="client_note">Client Note</option>
+        </select>
+
+        <label>Status</label>
+        <select id="recordStatus">
+          <option value="open">Open</option>
+          <option value="in_progress">In Progress</option>
+          <option value="closed">Closed</option>
+        </select>
+
+        <label>Description</label>
+        <textarea id="recordDescription" placeholder="Write the business update here"></textarea>
+
+        <button onclick="addBusinessRecord()">Save Business Record</button>
+
+        <div id="businessRecordMessage"></div>
+      </div>
+
+      <div class="card">
         <h2>Items / Assets / Stock Summary</h2>
         <div id="itemsSummary">Loading...</div>
       </div>
@@ -349,7 +387,8 @@
 
     async function loadSections() {
       const box = document.getElementById("sectionsList");
-      const sectionSelect = document.getElementById("moneySection");
+      const moneySectionSelect = document.getElementById("moneySection");
+      const recordSectionSelect = document.getElementById("recordSection");
 
       const { data, error } = await supabaseClient
         .from("tenant_sections")
@@ -367,11 +406,14 @@
 
       enabledSections = data || [];
 
-      sectionSelect.innerHTML =
+      const sectionOptions =
         '<option value="">General</option>' +
         enabledSections.map(row =>
           `<option value="${row.business_sections?.id}">${row.business_sections?.name}</option>`
         ).join("");
+
+      moneySectionSelect.innerHTML = sectionOptions;
+      recordSectionSelect.innerHTML = sectionOptions;
 
       if (!data || data.length === 0) {
         box.innerHTML = `<p>No specific business sections enabled.</p>`;
@@ -453,6 +495,46 @@
       document.getElementById("moneyReference").value = "";
 
       await loadMoneySummary();
+    }
+
+    async function addBusinessRecord() {
+      const msg = document.getElementById("businessRecordMessage");
+
+      const title = document.getElementById("recordTitle").value;
+      const description = document.getElementById("recordDescription").value;
+
+      if (!title) {
+        msg.innerHTML = `<p class="danger">Please enter a record title.</p>`;
+        return;
+      }
+
+      const record = {
+        tenant_id: currentTenantId,
+        business_section_id: document.getElementById("recordSection").value || null,
+        record_title: title,
+        record_type: document.getElementById("recordType").value,
+        record_status: document.getElementById("recordStatus").value,
+        record_date: new Date().toISOString().split("T")[0],
+        description: description,
+        data_json: {},
+        created_by: currentUserId
+      };
+
+      const { error } = await supabaseClient
+        .from("business_records")
+        .insert([record]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Business record saved successfully.</p>`;
+
+      document.getElementById("recordTitle").value = "";
+      document.getElementById("recordDescription").value = "";
+
+      await loadBusinessRecords();
     }
 
     async function loadMoneySummary() {
