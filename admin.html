@@ -192,13 +192,22 @@
         return;
       }
 
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      const loggedInUserId = sessionData?.session?.user?.id;
+
       const { data: adminUser, error: profileError } = await supabaseClient
         .from("users")
         .select("id, full_name, email, roles(name), status")
-        .single();
+        .eq("id", loggedInUserId)
+        .maybeSingle();
 
       if (profileError) {
         msg.innerHTML = `<p class="danger">${profileError.message}</p>`;
+        return;
+      }
+
+      if (!adminUser) {
+        msg.innerHTML = `<p class="danger">Admin profile was not found.</p>`;
         return;
       }
 
