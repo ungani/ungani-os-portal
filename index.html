@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UNGANI OS Portal</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 25px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    h1, h2 {
+      margin-top: 0;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 12px 18px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .section-box {
+      margin: 8px 0;
+    }
+
+    .notice {
+      padding: 12px;
+      border-radius: 8px;
+      background: #F5F5F3;
+      color: #061C3D;
+      margin-top: 15px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .small {
+      font-size: 14px;
+      opacity: 0.85;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">OS</span></h1>
+      <p>Business operations portal for small and growing businesses.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="card">
+      <h2>Client Registration</h2>
+
+      <label>Business Name</label>
+      <input id="businessName" placeholder="Enter business name" />
+
+      <label>Business Type</label>
+      <select id="businessType">
+        <option value="">Loading business types...</option>
+      </select>
+
+      <div id="sectionArea" class="hidden">
+        <label>Which areas do you want to manage?</label>
+        <div id="businessSections"></div>
+      </div>
+
+      <label>Package</label>
+      <select id="packageSelect">
+        <option value="">Loading packages...</option>
+      </select>
+
+      <label>Service Option</label>
+      <select id="serviceNeed">
+        <option value="self_managed">Self-Managed Account</option>
+        <option value="setup_support">Setup Support</option>
+        <option value="managed_support">Managed Support</option>
+      </select>
+
+      <label>Contact Name</label>
+      <input id="contactName" placeholder="Your name" />
+
+      <label>Email</label>
+      <input id="contactEmail" placeholder="Email address" />
+
+      <label>Phone</label>
+      <input id="contactPhone" placeholder="Phone number" />
+
+      <label>Location</label>
+      <input id="location" placeholder="Mombasa, Kenya" />
+
+      <label>Message / Notes</label>
+      <textarea id="messageNotes" placeholder="Tell us what you want to manage"></textarea>
+
+      <button onclick="submitRegistration()">Submit Registration</button>
+
+      <div id="registrationMessage"></div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "PASTE_SUPABASE_URL_HERE";
+    const SUPABASE_ANON_KEY = "PASTE_SUPABASE_ANON_KEY_HERE";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let businessTypes = [];
+    let businessSections = [];
+
+    async function loadData() {
+      const { data: types } = await supabaseClient
+        .from("business_types")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order");
+
+      const { data: sections } = await supabaseClient
+        .from("business_sections")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order");
+
+      const { data: packages } = await supabaseClient
+        .from("packages")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order");
+
+      businessTypes = types || [];
+      businessSections = sections || [];
+
+      document.getElementById("businessType").innerHTML =
+        '<option value="">Select business type</option>' +
+        businessTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+
+      document.getElementById("packageSelect").innerHTML =
+        '<option value="">Select package</option>' +
+        (packages || []).map(p => `<option value="${p.id}">${p.name} — ${p.user_limit || "10+"} Users</option>`).join("");
+    }
+
+    document.getElementById("businessType").addEventListener("change", function () {
+      const selectedTypeId = this.value;
+      const matchingSections = businessSections.filter(s => s.business_type_id === selectedTypeId);
+
+      const sectionArea = document.getElementById("sectionArea");
+      const businessSectionsDiv = document.getElementById("businessSections");
+
+      if (matchingSections.length === 0) {
+        sectionArea.classList.add("hidden");
+        businessSectionsDiv.innerHTML = "";
+        return;
+      }
+
+      sectionArea.classList.remove("hidden");
+      businessSectionsDiv.innerHTML = matchingSections.map(s => `
+        <div class="section-box">
+          <label>
+            <input type="checkbox" value="${s.slug}" class="sectionCheck" />
+            ${s.name}
+          </label>
+        </div>
+      `).join("");
+    });
+
+    async function submitRegistration() {
+      const selectedSections = Array.from(document.querySelectorAll(".sectionCheck:checked"))
+        .map(cb => cb.value);
+
+      const registration = {
+        business_name: document.getElementById("businessName").value,
+        business_type_id: document.getElementById("businessType").value,
+        selected_sections: selectedSections,
+        package_id: document.getElementById("packageSelect").value,
+        service_need: document.getElementById("serviceNeed").value,
+        contact_name: document.getElementById("contactName").value,
+        contact_email: document.getElementById("contactEmail").value,
+        contact_phone: document.getElementById("contactPhone").value,
+        location: document.getElementById("location").value,
+        message_notes: document.getElementById("messageNotes").value,
+        registration_status: "pending"
+      };
+
+      const { error } = await supabaseClient
+        .from("registrations")
+        .insert([registration]);
+
+      const msg = document.getElementById("registrationMessage");
+
+      if (error) {
+        msg.innerHTML = `<div class="notice">Error: ${error.message}</div>`;
+      } else {
+        msg.innerHTML = `<div class="notice">Registration submitted successfully. UNGANI will review and approve your account.</div>`;
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
