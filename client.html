@@ -284,6 +284,70 @@
       </div>
 
       <div class="card">
+        <h2>Add Item / Asset / Stock</h2>
+
+        <label>Business Section</label>
+        <select id="itemSection">
+          <option value="">General</option>
+        </select>
+
+        <label>Item Type</label>
+        <select id="itemType">
+          <option value="Stock Item">Stock Item</option>
+          <option value="Food Ingredient">Food Ingredient</option>
+          <option value="Menu Item">Menu Item</option>
+          <option value="Product">Product</option>
+          <option value="Equipment">Equipment</option>
+          <option value="Truck">Truck</option>
+          <option value="Trailer">Trailer</option>
+          <option value="Reefer">Reefer</option>
+          <option value="Genset">Genset</option>
+          <option value="Room">Room</option>
+          <option value="Security Equipment">Security Equipment</option>
+          <option value="Other">Other</option>
+        </select>
+
+        <label>Item / Asset Name</label>
+        <input id="itemName" placeholder="Example: Rice Stock, Truck KDA 123A, Room 204" />
+
+        <label>Identity Number</label>
+        <input id="identityNumber" placeholder="Plate number, room number, serial number, SKU, etc." />
+
+        <label>Status</label>
+        <select id="currentStatus">
+          <option value="available">Available</option>
+          <option value="in_use">In Use</option>
+          <option value="on_transit">On Transit</option>
+          <option value="occupied">Occupied</option>
+          <option value="booked">Booked / Reserved</option>
+          <option value="cleaning">Cleaning</option>
+          <option value="low_stock">Low Stock</option>
+          <option value="out_of_stock">Out of Stock</option>
+          <option value="under_maintenance">Under Maintenance</option>
+          <option value="out_of_service">Out of Service</option>
+        </select>
+
+        <label>Quantity Available</label>
+        <input id="quantityOnHand" type="number" placeholder="Leave blank if not stock-based" />
+
+        <label>Reorder Level</label>
+        <input id="reorderLevel" type="number" placeholder="Example: 5" />
+
+        <label>Supplier</label>
+        <input id="supplier" placeholder="Supplier name if any" />
+
+        <label>Next Service Date</label>
+        <input id="nextServiceDate" type="date" />
+
+        <label>Notes</label>
+        <textarea id="itemNotes" placeholder="Add item details or condition notes"></textarea>
+
+        <button onclick="addBusinessItem()">Save Item / Asset</button>
+
+        <div id="itemFormMessage"></div>
+      </div>
+
+      <div class="card">
         <h2>Items / Assets / Stock Summary</h2>
         <div id="itemsSummary">Loading...</div>
       </div>
@@ -308,6 +372,11 @@
     function formatMoney(value) {
       const number = Number(value || 0);
       return number.toLocaleString("en-KE");
+    }
+
+    function numberOrNull(value) {
+      if (value === "" || value === null || value === undefined) return null;
+      return Number(value);
     }
 
     async function loginClient() {
@@ -389,6 +458,7 @@
       const box = document.getElementById("sectionsList");
       const moneySectionSelect = document.getElementById("moneySection");
       const recordSectionSelect = document.getElementById("recordSection");
+      const itemSectionSelect = document.getElementById("itemSection");
 
       const { data, error } = await supabaseClient
         .from("tenant_sections")
@@ -414,6 +484,7 @@
 
       moneySectionSelect.innerHTML = sectionOptions;
       recordSectionSelect.innerHTML = sectionOptions;
+      itemSectionSelect.innerHTML = sectionOptions;
 
       if (!data || data.length === 0) {
         box.innerHTML = `<p>No specific business sections enabled.</p>`;
@@ -535,6 +606,53 @@
       document.getElementById("recordDescription").value = "";
 
       await loadBusinessRecords();
+    }
+
+    async function addBusinessItem() {
+      const msg = document.getElementById("itemFormMessage");
+
+      const itemName = document.getElementById("itemName").value;
+
+      if (!itemName) {
+        msg.innerHTML = `<p class="danger">Please enter item or asset name.</p>`;
+        return;
+      }
+
+      const item = {
+        tenant_id: currentTenantId,
+        business_section_id: document.getElementById("itemSection").value || null,
+        item_type: document.getElementById("itemType").value,
+        item_name: itemName,
+        identity_number: document.getElementById("identityNumber").value,
+        current_status: document.getElementById("currentStatus").value,
+        quantity_on_hand: numberOrNull(document.getElementById("quantityOnHand").value),
+        reorder_level: numberOrNull(document.getElementById("reorderLevel").value),
+        supplier: document.getElementById("supplier").value,
+        next_service_date: document.getElementById("nextServiceDate").value || null,
+        notes: document.getElementById("itemNotes").value,
+        created_by: currentUserId
+      };
+
+      const { error } = await supabaseClient
+        .from("business_items")
+        .insert([item]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Item / asset saved successfully.</p>`;
+
+      document.getElementById("itemName").value = "";
+      document.getElementById("identityNumber").value = "";
+      document.getElementById("quantityOnHand").value = "";
+      document.getElementById("reorderLevel").value = "";
+      document.getElementById("supplier").value = "";
+      document.getElementById("nextServiceDate").value = "";
+      document.getElementById("itemNotes").value = "";
+
+      await loadItemsSummary();
     }
 
     async function loadMoneySummary() {
