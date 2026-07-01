@@ -216,6 +216,7 @@
 
       <div class="card">
         <h2>Pending Registrations</h2>
+        <div id="registrationActionMessage"></div>
         <div id="pendingRegistrations">Loading...</div>
       </div>
 
@@ -263,6 +264,12 @@
     function formatMoney(value) {
       const number = Number(value || 0);
       return number.toLocaleString("en-KE");
+    }
+
+    function addDays(date, days) {
+      const result = new Date(date);
+      result.setDate(result.getDate() + days);
+      return result.toISOString().split("T")[0];
     }
 
     async function loginAdmin() {
@@ -330,6 +337,145 @@
       await loadClientBusinessRecords();
     }
 
+    async function updateRegistrationStatus(registrationId, newStatus) {
+      const msg = document.getElementById("registrationActionMessage");
+
+      const { error } = await supabaseClient
+        .from("registrations")
+        .update({ status: newStatus })
+        .eq("id", registrationId);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Registration marked as ${newStatus}.</p>`;
+      await refreshAdminDashboard();
+    }
+
+    async function approveRegistration(registrationId) {
+      const msg = document.getElementById("registrationActionMessage");
+
+      const { data: reg, error: regError } = await supabaseClient
+        .from("registrations")
+        .select(`
+          id,
+          company_name,
+          contact_person,
+          email,
+          phone,
+          service_need,
+          status,
+          business_type_id,
+          package_id,
+          selected_sections
+        `)
+        .eq("id", registrationId)
+        .maybeSingle();
+
+      if (regError) {
+        msg.innerHTML = `<p class="danger">${regError.message}</p>`;
+        return;
+      }
+
+      if (!reg) {
+        msg.innerHTML = `<p class="danger">Registration not found.</p>`;
+        return;
+      }
+
+      let tenantId = null;
+
+      const { data: existingTenants } = await supabaseClient
+        .from("tenants")
+        .select("id")
+        .eq("company_name", reg.company_name)
+        .limit(1);
+
+      if (existingTenants && existingTenants.length > 0) {
+        tenantId = existingTenants[0].id;
+      } else {
+        const today = new Date().toISOString().split("T")[0];
+
+        const tenantRecord = {
+          company_name: reg.company_name || "Unnamed Business",
+          business_type_id: reg.business_type_id || null,
+          package_id: reg.package_id || null,
+          service_need: reg.service_need || null,
+          account_status: "trial",
+          trial_start_date: today,
+          trial_end_date: addDays(today, 14)
+        };
+
+        const { data: newTenant, error: tenantError } = await supabaseClient
+          .from("tenants")
+          .insert([tenantRecord])
+          .select("id")
+          .single();
+
+        if (tenantError) {
+          msg.innerHTML = `<p class="danger">${tenantError.message}</p>`;
+          return;
+        }
+
+        tenantId = newTenant.id;
+      }
+
+      const sections = Array.isArray(reg.selected_sections) ? reg.selected_sections : [];
+
+      for (const sectionValue of sections) {
+        let sectionId = null;
+
+        const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sectionValue);
+
+        if (looksLikeUuid) {
+          sectionId = sectionValue;
+        } else {
+          const { data: sectionData } = await supabaseClient
+            .from("business_sections")
+            .select("id")
+            .eq("slug", sectionValue)
+            .limit(1);
+
+          if (sectionData && sectionData.length > 0) {
+            sectionId = sectionData[0].id;
+          }
+        }
+
+        if (sectionId) {
+          const { data: existingSection } = await supabaseClient
+            .from("tenant_sections")
+            .select("id")
+            .eq("tenant_id", tenantId)
+            .eq("business_section_id", sectionId)
+            .limit(1);
+
+          if (!existingSection || existingSection.length === 0) {
+            await supabaseClient
+              .from("tenant_sections")
+              .insert([{
+                tenant_id: tenantId,
+                business_section_id: sectionId,
+                is_enabled: true
+              }]);
+          }
+        }
+      }
+
+      const { error: updateError } = await supabaseClient
+        .from("registrations")
+        .update({ status: "approved" })
+        .eq("id", registrationId);
+
+      if (updateError) {
+        msg.innerHTML = `<p class="danger">${updateError.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Registration approved and client workspace prepared.</p>`;
+      await refreshAdminDashboard();
+    }
+
     async function updateSupportIssue(issueId, newStatus) {
       const msg = document.getElementById("supportActionMessage");
 
@@ -390,6 +536,10 @@
           <p><strong>Service Need:</strong> ${reg.service_need || "N/A"}</p>
           <p><strong>Status:</strong> ${reg.status}</p>
           <p class="small">Registered: ${new Date(reg.created_at).toLocaleString()}</p>
+
+          <button class="small-btn" onclick="approveRegistration('${reg.id}')">Approve</button>
+          <button class="small-btn danger-btn" onclick="updateRegistrationStatus('${reg.id}', 'rejected')">Reject</button>
+          <button class="small-btn dark-btn" onclick="updateRegistrationStatus('${reg.id}', 'pending')">Mark Pending</button>
         </div>
       `).join("");
     }
