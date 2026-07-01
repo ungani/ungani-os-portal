@@ -59,6 +59,21 @@
       margin-right: 8px;
     }
 
+    .small-btn {
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .danger-btn {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
     .hidden {
       display: none;
     }
@@ -212,6 +227,7 @@
       <div class="card">
         <h2>Client Support Issues</h2>
         <p class="small">These are support issues submitted from the client dashboard.</p>
+        <div id="supportActionMessage"></div>
         <div id="supportIssues">Loading...</div>
       </div>
 
@@ -312,6 +328,23 @@
       await loadClientTasks();
       await loadClientItems();
       await loadClientBusinessRecords();
+    }
+
+    async function updateSupportIssue(issueId, newStatus) {
+      const msg = document.getElementById("supportActionMessage");
+
+      const { error } = await supabaseClient
+        .from("support_issues")
+        .update({ status: newStatus })
+        .eq("id", issueId);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Support issue updated to ${newStatus}.</p>`;
+      await loadSupportIssues();
     }
 
     async function loadPendingRegistrations() {
@@ -455,6 +488,11 @@
             </p>
             <p>${issue.description || ""}</p>
             <p class="small">Submitted: ${new Date(issue.created_at).toLocaleString()}</p>
+
+            <button class="small-btn" onclick="updateSupportIssue('${issue.id}', 'in_progress')">Mark In Progress</button>
+            <button class="small-btn" onclick="updateSupportIssue('${issue.id}', 'resolved')">Mark Resolved</button>
+            <button class="small-btn danger-btn" onclick="updateSupportIssue('${issue.id}', 'closed')">Mark Closed</button>
+            <button class="small-btn dark-btn" onclick="updateSupportIssue('${issue.id}', 'open')">Reopen</button>
           </div>
         `;
       }).join("");
