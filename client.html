@@ -373,6 +373,37 @@
       </div>
 
       <div class="card">
+        <h2>Add Support Issue</h2>
+
+        <label>Issue Title</label>
+        <input id="issueTitle" placeholder="Example: Dashboard not loading" />
+
+        <label>Issue Type</label>
+        <select id="issueType">
+          <option value="system_issue">System Issue</option>
+          <option value="account_issue">Account Issue</option>
+          <option value="payment_issue">Payment Issue</option>
+          <option value="business_support">Business Support Request</option>
+          <option value="urgent_operations">Urgent Operational Problem</option>
+          <option value="other">Other</option>
+        </select>
+
+        <label>Priority</label>
+        <select id="issuePriority">
+          <option value="normal">Normal</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+
+        <label>Description</label>
+        <textarea id="issueDescription" placeholder="Explain the issue clearly"></textarea>
+
+        <button onclick="addSupportIssue()">Submit Support Issue</button>
+
+        <div id="supportIssueMessage"></div>
+      </div>
+
+      <div class="card">
         <h2>Items / Assets / Stock Summary</h2>
         <div id="itemsSummary">Loading...</div>
       </div>
@@ -380,6 +411,11 @@
       <div class="card">
         <h2>Recent Tasks / Follow-ups</h2>
         <div id="tasksList">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>Recent Support Issues</h2>
+        <div id="supportIssuesList">Loading...</div>
       </div>
 
       <div class="card">
@@ -482,6 +518,7 @@
       await loadMoneySummary();
       await loadItemsSummary();
       await loadTasks();
+      await loadSupportIssues();
       await loadBusinessRecords();
     }
 
@@ -723,6 +760,44 @@
       await loadTasks();
     }
 
+    async function addSupportIssue() {
+      const msg = document.getElementById("supportIssueMessage");
+
+      const title = document.getElementById("issueTitle").value;
+      const description = document.getElementById("issueDescription").value;
+
+      if (!title) {
+        msg.innerHTML = `<p class="danger">Please enter an issue title.</p>`;
+        return;
+      }
+
+      const issue = {
+        tenant_id: currentTenantId,
+        issue_title: title,
+        issue_type: document.getElementById("issueType").value,
+        priority: document.getElementById("issuePriority").value,
+        issue_status: "open",
+        description: description,
+        created_by: currentUserId
+      };
+
+      const { error } = await supabaseClient
+        .from("support_issues")
+        .insert([issue]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Support issue submitted successfully.</p>`;
+
+      document.getElementById("issueTitle").value = "";
+      document.getElementById("issueDescription").value = "";
+
+      await loadSupportIssues();
+    }
+
     async function loadMoneySummary() {
       const { data, error } = await supabaseClient
         .from("dashboard_money_summary")
@@ -802,6 +877,37 @@
           <p><strong>Status:</strong> ${task.status}</p>
           <p><strong>Due Date:</strong> ${task.due_date || "No due date"}</p>
           <p>${task.description || ""}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadSupportIssues() {
+      const box = document.getElementById("supportIssuesList");
+
+      const { data, error } = await supabaseClient
+        .from("support_issues")
+        .select("issue_title, issue_type, priority, issue_status, description, created_at")
+        .eq("tenant_id", currentTenantId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No support issues yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(issue => `
+        <div class="row">
+          <h3>${issue.issue_title}</h3>
+          <p><strong>Type:</strong> ${issue.issue_type}</p>
+          <p><strong>Priority:</strong> ${issue.priority}</p>
+          <p><strong>Status:</strong> ${issue.issue_status}</p>
+          <p>${issue.description || ""}</p>
         </div>
       `).join("");
     }
