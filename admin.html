@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UNGANI OS Admin</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 20px;
+      background: #D4A63A;
+      color: #061C3D;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">OS Admin</span></h1>
+      <p>Admin control center for registrations and clients.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="index.html">Go to Client Registration</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Admin Login</h2>
+
+      <label>Email</label>
+      <input id="adminEmail" placeholder="chris@ungani.com" />
+
+      <label>Password</label>
+      <input id="adminPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginAdmin()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="adminArea" class="hidden">
+      <div class="card">
+        <h2>Admin Dashboard</h2>
+        <p class="small">You are logged in as UNGANI Admin.</p>
+        <button onclick="logoutAdmin()">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Pending Registrations</h2>
+        <div id="registrationsList">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>Approved Clients</h2>
+        <div id="clientsList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function loginAdmin() {
+      const email = document.getElementById("adminEmail").value;
+      const password = document.getElementById("adminPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("adminArea").classList.remove("hidden");
+
+      loadAdminData();
+    }
+
+    async function logoutAdmin() {
+      await supabaseClient.auth.signOut();
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("adminArea").classList.add("hidden");
+    }
+
+    async function loadAdminData() {
+      await loadRegistrations();
+      await loadClients();
+    }
+
+    async function loadRegistrations() {
+      const list = document.getElementById("registrationsList");
+
+      const { data, error } = await supabaseClient
+        .from("registrations")
+        .select(`
+          id,
+          business_name,
+          selected_sections,
+          contact_name,
+          contact_email,
+          contact_phone,
+          location,
+          service_need,
+          registration_status,
+          created_at,
+          business_type_id,
+          package_id,
+          message_notes,
+          business_types(name),
+          packages(name)
+        `)
+        .eq("registration_status", "pending")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        list.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        list.innerHTML = `<p>No pending registrations.</p>`;
+        return;
+      }
+
+      list.innerHTML = data.map(reg => `
+        <div class="row">
+          <h3>${reg.business_name}</h3>
+          <p><strong>Business Type:</strong> ${reg.business_types?.name || "N/A"}</p>
+          <p><strong>Package:</strong> ${reg.packages?.name || "N/A"}</p>
+          <p><strong>Selected Sections:</strong> ${(reg.selected_sections || []).join(", ") || "None"}</p>
+          <p><strong>Contact:</strong> ${reg.contact_name || ""} | ${reg.contact_email || ""} | ${reg.contact_phone || ""}</p>
+          <p><strong>Location:</strong> ${reg.location || ""}</p>
+          <p><strong>Service Need:</strong> ${reg.service_need || ""}</p>
+          <p><strong>Notes:</strong> ${reg.message_notes || ""}</p>
+          <span class="status">${reg.registration_status}</span>
+          <br/>
+          <button onclick="approveRegistration('${reg.id}')">Approve Registration</button>
+        </div>
+      `).join("");
+    }
+
+    async function approveRegistration(registrationId) {
+      const confirmApproval = confirm("Approve this registration and create client account?");
+      if (!confirmApproval) return;
+
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      const adminUserId = sessionData?.session?.user?.id;
+
+      const { data: reg, error: regError } = await supabaseClient
+        .from("registrations")
+        .select("*")
+        .eq("id", registrationId)
+        .single();
+
+      if (regError) {
+        alert(regError.message);
+        return;
+      }
+
+      let tenantId = null;
+
+      const { data: existingTenant } = await supabaseClient
+        .from("tenants")
+        .select("id")
+        .eq("company_name", reg.business_name)
+        .maybeSingle();
+
+      if (existingTenant) {
+        tenantId = existingTenant.id;
+      } else {
+        const today = new Date();
+        const trialEnd = new Date();
+        trialEnd.setDate(today.getDate() + 14);
+
+        const { data: newTenant, error: tenantError } = await supabaseClient
+          .from("tenants")
+          .insert([{
+            company_name: reg.business_name,
+            business_type_id: reg.business_type_id,
+            contact_person: reg.contact_name,
+            phone: reg.contact_phone,
+            whatsapp_number: reg.whatsapp_number,
+            email: reg.contact_email,
+            location: reg.location,
+            package_id: reg.package_id,
+            account_status: "trial",
+            trial_start_date: today.toISOString().split("T")[0],
+            trial_end_date: trialEnd.toISOString().split("T")[0],
+            service_need: reg.service_need,
+            notes: reg.message_notes
+          }])
+          .select()
+          .single();
+
+        if (tenantError) {
+          alert(tenantError.message);
+          return;
+        }
+
+        tenantId = newTenant.id;
+      }
+
+      const selectedSections = reg.selected_sections || [];
+
+      if (selectedSections.length > 0) {
+        const { data: sections, error: sectionsError } = await supabaseClient
+          .from("business_sections")
+          .select("id, slug")
+          .in("slug", selectedSections);
+
+        if (sectionsError) {
+          alert(sectionsError.message);
+          return;
+        }
+
+        const sectionRows = sections.map(section => ({
+          tenant_id: tenantId,
+          business_section_id: section.id,
+          is_enabled: true,
+          notes: "Selected during admin approval"
+        }));
+
+        if (sectionRows.length > 0) {
+          await supabaseClient
+            .from("tenant_sections")
+            .upsert(sectionRows, {
+              onConflict: "tenant_id,business_section_id"
+            });
+        }
+      }
+
+      const { error: updateError } = await supabaseClient
+        .from("registrations")
+        .update({
+          registration_status: "approved",
+          approved_by: adminUserId,
+          approved_at: new Date().toISOString()
+        })
+        .eq("id", registrationId);
+
+      if (updateError) {
+        alert(updateError.message);
+        return;
+      }
+
+      alert("Registration approved successfully.");
+      loadAdminData();
+    }
+
+    async function loadClients() {
+      const list = document.getElementById("clientsList");
+
+      const { data, error } = await supabaseClient
+        .from("tenants")
+        .select(`
+          id,
+          company_name,
+          account_status,
+          trial_start_date,
+          trial_end_date,
+          service_need,
+          created_at,
+          business_types(name),
+          packages(name)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        list.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        list.innerHTML = `<p>No clients yet.</p>`;
+        return;
+      }
+
+      list.innerHTML = data.map(client => `
+        <div class="row">
+          <h3>${client.company_name}</h3>
+          <p><strong>Business Type:</strong> ${client.business_types?.name || "N/A"}</p>
+          <p><strong>Package:</strong> ${client.packages?.name || "N/A"}</p>
+          <p><strong>Status:</strong> ${client.account_status}</p>
+          <p><strong>Trial:</strong> ${client.trial_start_date || "N/A"} to ${client.trial_end_date || "N/A"}</p>
+          <p><strong>Service Need:</strong> ${client.service_need || ""}</p>
+        </div>
+      `).join("");
+    }
+  </script>
+</body>
+</html>
