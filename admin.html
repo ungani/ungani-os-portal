@@ -222,6 +222,7 @@
 
       <div class="card">
         <h2>Approved Clients</h2>
+        <div id="clientActionMessage"></div>
         <div id="approvedClients">Loading...</div>
       </div>
 
@@ -335,6 +336,23 @@
       await loadClientTasks();
       await loadClientItems();
       await loadClientBusinessRecords();
+    }
+
+    async function updateClientStatus(clientId, newStatus) {
+      const msg = document.getElementById("clientActionMessage");
+
+      const { error } = await supabaseClient
+        .from("tenants")
+        .update({ account_status: newStatus })
+        .eq("id", clientId);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Client status updated to ${newStatus}.</p>`;
+      await loadApprovedClients();
     }
 
     async function updateRegistrationStatus(registrationId, newStatus) {
@@ -581,6 +599,11 @@
           <p><strong>Status:</strong> ${client.account_status || "N/A"}</p>
           <p><strong>Trial:</strong> ${client.trial_start_date || "N/A"} to ${client.trial_end_date || "N/A"}</p>
           <p class="small">Created: ${new Date(client.created_at).toLocaleString()}</p>
+
+          <button class="small-btn" onclick="updateClientStatus('${client.id}', 'trial')">Mark Trial</button>
+          <button class="small-btn" onclick="updateClientStatus('${client.id}', 'active')">Mark Active</button>
+          <button class="small-btn dark-btn" onclick="updateClientStatus('${client.id}', 'suspended')">Suspend</button>
+          <button class="small-btn danger-btn" onclick="updateClientStatus('${client.id}', 'cancelled')">Cancel</button>
         </div>
       `).join("");
     }
