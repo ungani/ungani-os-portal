@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Billing</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1150px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .danger-btn {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 15px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .metric p {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Billing</span></h1>
+      <p>Manage client packages, trials, payments, and upgrade requests.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="admin.html">Admin Dashboard</a> |
+      <a href="users.html">Client Users</a> |
+      <a href="sections.html">Client Sections</a> |
+      <a href="client.html">Client Login</a> |
+      <a href="reports.html">Reports</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Admin Login</h2>
+
+      <label>Email</label>
+      <input id="adminEmail" placeholder="chris@ungani.com" />
+
+      <label>Password</label>
+      <input id="adminPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginAdmin()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="billingArea" class="hidden">
+      <div class="card">
+        <h2>Billing Dashboard</h2>
+        <p id="adminInfo">Logged in as UNGANI Admin.</p>
+
+        <button onclick="refreshPage()">Refresh</button>
+        <button onclick="logoutAdmin()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Quick Billing Overview</h2>
+
+        <div class="grid">
+          <div class="metric">
+            <h3>Total Clients</h3>
+            <p id="totalClients">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Active Clients</h3>
+            <p id="activeClients">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Trial Clients</h3>
+            <p id="trialClients">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Payments Recorded</h3>
+            <p id="paymentsCount">0</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Select Client</h2>
+
+        <label>Client</label>
+        <select id="tenantSelect" onchange="loadSelectedClientBilling()">
+          <option value="">Loading clients...</option>
+        </select>
+
+        <div id="selectedClientInfo"></div>
+      </div>
+
+      <div class="card">
+        <h2>Update Client Package / Status</h2>
+
+        <label>Package</label>
+        <select id="packageSelect">
+          <option value="">Select package</option>
+        </select>
+
+        <label>Account Status</label>
+        <select id="accountStatus">
+          <option value="trial">Trial</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+
+        <label>Trial Start Date</label>
+        <input id="trialStartDate" type="date" />
+
+        <label>Trial End Date</label>
+        <input id="trialEndDate" type="date" />
+
+        <button onclick="saveClientBilling()">Save Client Billing Settings</button>
+
+        <div id="billingMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>Record Payment</h2>
+
+        <label>Amount</label>
+        <input id="paymentAmount" type="number" placeholder="Example: 5000" />
+
+        <label>Currency</label>
+        <select id="paymentCurrency">
+          <option value="KES">KES</option>
+          <option value="USD">USD</option>
+        </select>
+
+        <label>Payment Date</label>
+        <input id="paymentDate" type="date" />
+
+        <label>Payment Method</label>
+        <select id="paymentMethod">
+          <option value="mpesa">M-Pesa</option>
+          <option value="bank_transfer">Bank Transfer</option>
+          <option value="cash">Cash</option>
+          <option value="card">Card</option>
+          <option value="other">Other</option>
+        </select>
+
+        <label>Payment Reference</label>
+        <input id="paymentReference" placeholder="M-Pesa code, bank reference, invoice number, etc." />
+
+        <label>Payment Status</label>
+        <select id="paymentStatus">
+          <option value="paid">Paid</option>
+          <option value="pending">Pending</option>
+          <option value="failed">Failed</option>
+          <option value="refunded">Refunded</option>
+        </select>
+
+        <label>Billing Period Start</label>
+        <input id="billingPeriodStart" type="date" />
+
+        <label>Billing Period End</label>
+        <input id="billingPeriodEnd" type="date" />
+
+        <label>Notes</label>
+        <textarea id="paymentNotes" placeholder="Add payment notes"></textarea>
+
+        <button onclick="recordPayment()">Save Payment</button>
+
+        <div id="paymentMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>Create Upgrade / Package Request</h2>
+
+        <label>Requested Package</label>
+        <select id="requestedPackageSelect">
+          <option value="">Select requested package</option>
+        </select>
+
+        <label>Request Status</label>
+        <select id="upgradeRequestStatus">
+          <option value="pending">Pending</option>
+          <option value="in_review">In Review</option>
+          <option value="approved">Approved</option>
+          <option value="completed">Completed</option>
+          <option value="rejected">Rejected</option>
+        </select>
+
+        <label>Reason / Request Details</label>
+        <textarea id="upgradeReason" placeholder="Example: Client wants to upgrade from Basic to Pro package"></textarea>
+
+        <label>Admin Notes</label>
+        <textarea id="upgradeAdminNotes" placeholder="Internal notes"></textarea>
+
+        <button onclick="createUpgradeRequest()">Save Upgrade Request</button>
+
+        <div id="upgradeMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>Payment History</h2>
+        <div id="paymentsList">Select a client first.</div>
+      </div>
+
+      <div class="card">
+        <h2>Upgrade Requests</h2>
+        <div id="upgradeRequestsList">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>All Clients Billing Status</h2>
+        <div id="clientsBillingList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let allClients = [];
+    let allPackages = [];
+    let selectedClient = null;
+    let currentAdminUserId = null;
+
+    function formatMoney(value) {
+      const number = Number(value || 0);
+      return number.toLocaleString("en-KE");
+    }
+
+    function todayDate() {
+      return new Date().toISOString().split("T")[0];
+    }
+
+    function statusBadge(status) {
+      let className = "badge";
+
+      if (status === "trial" || status === "pending" || status === "in_review") {
+        className = "badge badge-gold";
+      }
+
+      if (status === "suspended" || status === "cancelled" || status === "failed" || status === "rejected") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${status || "N/A"}</span>`;
+    }
+
+    async function loginAdmin() {
+      const email = document.getElementById("adminEmail").value;
+      const password = document.getElementById("adminPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentAdminUserId = sessionData?.session?.user?.id;
+
+      const { data: adminUser, error: profileError } = await supabaseClient
+        .from("users")
+        .select("id, full_name, email, roles(name), status")
+        .eq("id", currentAdminUserId)
+        .maybeSingle();
+
+      if (profileError) {
+        msg.innerHTML = `<p class="danger">${profileError.message}</p>`;
+        return;
+      }
+
+      if (!adminUser) {
+        msg.innerHTML = `<p class="danger">Admin profile was not found.</p>`;
+        return;
+      }
+
+      if (adminUser.roles?.name !== "UNGANI Admin") {
+        msg.innerHTML = `<p class="danger">This login is not an UNGANI Admin account.</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Admin login successful.</p>`;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("billingArea").classList.remove("hidden");
+
+      document.getElementById("adminInfo").innerText =
+        `Logged in as ${adminUser.full_name || adminUser.email}`;
+
+      document.getElementById("paymentDate").value = todayDate();
+
+      await refreshPage();
+    }
+
+    async function logoutAdmin() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("billingArea").classList.add("hidden");
+    }
+
+    async function refreshPage() {
+      await loadPackages();
+      await loadClients();
+      await loadBillingOverview();
+      await loadUpgradeRequests();
+    }
+
+    async function loadPackages() {
+      const { data, error } = await supabaseClient
+        .from("packages")
+        .select("id, name")
+        .order("name");
+
+      if (error) {
+        document.getElementById("billingMessage").innerHTML =
+          `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      allPackages = data || [];
+
+      const options =
+        '<option value="">Select package</option>' +
+        allPackages.map(pkg =>
+          `<option value="${pkg.id}">${pkg.name}</option>`
+        ).join("");
+
+      document.getElementById("packageSelect").innerHTML = options;
+      document.getElementById("requestedPackageSelect").innerHTML = options;
+    }
+
+    async function loadClients() {
+      const tenantSelect = document.getElementById("tenantSelect");
+
+      const { data, error } = await supabaseClient
+        .from("tenants")
+        .select(`
+          id,
+          company_name,
+          account_status,
+          trial_start_date,
+          trial_end_date,
+          package_id,
+          created_at,
+          business_types(name),
+          packages(name)
+        `)
+        .order("company_name");
+
+      if (error) {
+        tenantSelect.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      allClients = data || [];
+
+      tenantSelect.innerHTML =
+        '<option value="">Select client</option>' +
+        allClients.map(client =>
+          `<option value="${client.id}">
+            ${client.company_name} — ${client.account_status || "N/A"}
+          </option>`
+        ).join("");
+
+      renderClientsBillingList();
+    }
+
+    async function loadBillingOverview() {
+      const { data: clients } = await supabaseClient
+        .from("tenants")
+        .select("id, account_status");
+
+      const { data: payments } = await supabaseClient
+        .from("payments")
+        .select("id");
+
+      const total = clients ? clients.length : 0;
+      const active = clients ? clients.filter(c => c.account_status === "active").length : 0;
+      const trial = clients ? clients.filter(c => c.account_status === "trial").length : 0;
+      const paymentCount = payments ? payments.length : 0;
+
+      document.getElementById("totalClients").innerText = total;
+      document.getElementById("activeClients").innerText = active;
+      document.getElementById("trialClients").innerText = trial;
+      document.getElementById("paymentsCount").innerText = paymentCount;
+    }
+
+    async function loadSelectedClientBilling() {
+      const tenantId = document.getElementById("tenantSelect").value;
+      const info = document.getElementById("selectedClientInfo");
+
+      document.getElementById("billingMessage").innerHTML = "";
+      document.getElementById("paymentMessage").innerHTML = "";
+      document.getElementById("upgradeMessage").innerHTML = "";
+
+      if (!tenantId) {
+        selectedClient = null;
+        info.innerHTML = "";
+        document.getElementById("paymentsList").innerHTML = "Select a client first.";
+        return;
+      }
+
+      selectedClient = allClients.find(client => client.id === tenantId);
+
+      if (!selectedClient) {
+        info.innerHTML = `<p class="danger">Selected client was not found.</p>`;
+        return;
+      }
+
+      document.getElementById("packageSelect").value = selectedClient.package_id || "";
+      document.getElementById("accountStatus").value = selectedClient.account_status || "trial";
+      document.getElementById("trialStartDate").value = selectedClient.trial_start_date || "";
+      document.getElementById("trialEndDate").value = selectedClient.trial_end_date || "";
+
+      info.innerHTML = `
+        <div class="row">
+          <h3>${selectedClient.company_name}</h3>
+          <p><strong>Business Type:</strong> ${selectedClient.business_types?.name || "N/A"}</p>
+          <p><strong>Current Package:</strong> ${selectedClient.packages?.name || "N/A"}</p>
+          <p><strong>Status:</strong> ${statusBadge(selectedClient.account_status)}</p>
+          <p><strong>Trial:</strong> ${selectedClient.trial_start_date || "N/A"} to ${selectedClient.trial_end_date || "N/A"}</p>
+        </div>
+      `;
+
+      await loadPaymentsForClient();
+    }
+
+    async function saveClientBilling() {
+      const msg = document.getElementById("billingMessage");
+
+      if (!selectedClient) {
+        msg.innerHTML = `<p class="danger">Please select a client first.</p>`;
+        return;
+      }
+
+      const updateRecord = {
+        package_id: document.getElementById("packageSelect").value || null,
+        account_status: document.getElementById("accountStatus").value,
+        trial_start_date: document.getElementById("trialStartDate").value || null,
+        trial_end_date: document.getElementById("trialEndDate").value || null
+      };
+
+      const { error } = await supabaseClient
+        .from("tenants")
+        .update(updateRecord)
+        .eq("id", selectedClient.id);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Client billing settings saved successfully.</p>`;
+
+      await loadClients();
+      document.getElementById("tenantSelect").value = selectedClient.id;
+      await loadSelectedClientBilling();
+      await loadBillingOverview();
+    }
+
+    async function recordPayment() {
+      const msg = document.getElementById("paymentMessage");
+
+      if (!selectedClient) {
+        msg.innerHTML = `<p class="danger">Please select a client first.</p>`;
+        return;
+      }
+
+      const amount = Number(document.getElementById("paymentAmount").value || 0);
+
+      if (!amount || amount <= 0) {
+        msg.innerHTML = `<p class="danger">Please enter a valid payment amount.</p>`;
+        return;
+      }
+
+      const payment = {
+        tenant_id: selectedClient.id,
+        amount: amount,
+        currency: document.getElementById("paymentCurrency").value,
+        payment_date: document.getElementById("paymentDate").value || todayDate(),
+        payment_method: document.getElementById("paymentMethod").value,
+        payment_reference: document.getElementById("paymentReference").value,
+        payment_status: document.getElementById("paymentStatus").value,
+        billing_period_start: document.getElementById("billingPeriodStart").value || null,
+        billing_period_end: document.getElementById("billingPeriodEnd").value || null,
+        notes: document.getElementById("paymentNotes").value,
+        recorded_by: currentAdminUserId
+      };
+
+      const { error } = await supabaseClient
+        .from("payments")
+        .insert([payment]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Payment recorded successfully.</p>`;
+
+      document.getElementById("paymentAmount").value = "";
+      document.getElementById("paymentReference").value = "";
+      document.getElementById("billingPeriodStart").value = "";
+      document.getElementById("billingPeriodEnd").value = "";
+      document.getElementById("paymentNotes").value = "";
+      document.getElementById("paymentDate").value = todayDate();
+
+      await loadPaymentsForClient();
+      await loadBillingOverview();
+    }
+
+    async function loadPaymentsForClient() {
+      const box = document.getElementById("paymentsList");
+
+      if (!selectedClient) {
+        box.innerHTML = "Select a client first.";
+        return;
+      }
+
+      const { data, error } = await supabaseClient
+        .from("payments")
+        .select(`
+          id,
+          amount,
+          currency,
+          payment_date,
+          payment_method,
+          payment_reference,
+          payment_status,
+          billing_period_start,
+          billing_period_end,
+          notes,
+          created_at
+        `)
+        .eq("tenant_id", selectedClient.id)
+        .order("payment_date", { ascending: false });
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No payments recorded for this client yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(payment => `
+        <div class="row">
+          <h3>${payment.currency || "KES"} ${formatMoney(payment.amount)}</h3>
+          <p><strong>Status:</strong> ${statusBadge(payment.payment_status)}</p>
+          <p><strong>Date:</strong> ${payment.payment_date || "N/A"}</p>
+          <p><strong>Method:</strong> ${payment.payment_method || "N/A"}</p>
+          <p><strong>Reference:</strong> ${payment.payment_reference || "N/A"}</p>
+          <p><strong>Period:</strong> ${payment.billing_period_start || "N/A"} to ${payment.billing_period_end || "N/A"}</p>
+          <p>${payment.notes || ""}</p>
+        </div>
+      `).join("");
+    }
+
+    async function createUpgradeRequest() {
+      const msg = document.getElementById("upgradeMessage");
+
+      if (!selectedClient) {
+        msg.innerHTML = `<p class="danger">Please select a client first.</p>`;
+        return;
+      }
+
+      const requestedPackageId = document.getElementById("requestedPackageSelect").value;
+
+      if (!requestedPackageId) {
+        msg.innerHTML = `<p class="danger">Please select a requested package.</p>`;
+        return;
+      }
+
+      const requestRecord = {
+        tenant_id: selectedClient.id,
+        current_package_id: selectedClient.package_id || null,
+        requested_package_id: requestedPackageId,
+        request_status: document.getElementById("upgradeRequestStatus").value,
+        reason: document.getElementById("upgradeReason").value,
+        admin_notes: document.getElementById("upgradeAdminNotes").value,
+        requested_by: currentAdminUserId
+      };
+
+      const { error } = await supabaseClient
+        .from("upgrade_requests")
+        .insert([requestRecord]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Upgrade request saved successfully.</p>`;
+
+      document.getElementById("requestedPackageSelect").value = "";
+      document.getElementById("upgradeReason").value = "";
+      document.getElementById("upgradeAdminNotes").value = "";
+
+      await loadUpgradeRequests();
+    }
+
+    async function updateUpgradeRequestStatus(requestId, newStatus) {
+      const msg = document.getElementById("upgradeMessage");
+
+      const { error } = await supabaseClient
+        .from("upgrade_requests")
+        .update({ request_status: newStatus })
+        .eq("id", requestId);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Upgrade request updated to ${newStatus}.</p>`;
+
+      await loadUpgradeRequests();
+    }
+
+    async function loadUpgradeRequests() {
+      const box = document.getElementById("upgradeRequestsList");
+
+      const { data, error } = await supabaseClient
+        .from("upgrade_requests")
+        .select(`
+          id,
+          request_status,
+          reason,
+          admin_notes,
+          created_at,
+          tenants(company_name),
+          current_package:packages!upgrade_requests_current_package_id_fkey(name),
+          requested_package:packages!upgrade_requests_requested_package_id_fkey(name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(30);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No upgrade requests yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(request => `
+        <div class="row">
+          <h3>${request.tenants?.company_name || "Unknown Client"}</h3>
+          <p><strong>Status:</strong> ${statusBadge(request.request_status)}</p>
+          <p><strong>Current Package:</strong> ${request.current_package?.name || "N/A"}</p>
+          <p><strong>Requested Package:</strong> ${request.requested_package?.name || "N/A"}</p>
+          <p><strong>Reason:</strong> ${request.reason || "N/A"}</p>
+          <p><strong>Admin Notes:</strong> ${request.admin_notes || "N/A"}</p>
+          <p class="small">Created: ${request.created_at ? new Date(request.created_at).toLocaleString() : "N/A"}</p>
+
+          <button onclick="updateUpgradeRequestStatus('${request.id}', 'in_review')">In Review</button>
+          <button onclick="updateUpgradeRequestStatus('${request.id}', 'approved')">Approve</button>
+          <button onclick="updateUpgradeRequestStatus('${request.id}', 'completed')">Complete</button>
+          <button onclick="updateUpgradeRequestStatus('${request.id}', 'rejected')" class="danger-btn">Reject</button>
+        </div>
+      `).join("");
+    }
+
+    function renderClientsBillingList() {
+      const box = document.getElementById("clientsBillingList");
+
+      if (!allClients || allClients.length === 0) {
+        box.innerHTML = `<p>No clients found.</p>`;
+        return;
+      }
+
+      box.innerHTML = allClients.map(client => `
+        <div class="row">
+          <h3>${client.company_name}</h3>
+          <p><strong>Business Type:</strong> ${client.business_types?.name || "N/A"}</p>
+          <p><strong>Package:</strong> ${client.packages?.name || "N/A"}</p>
+          <p><strong>Status:</strong> ${statusBadge(client.account_status)}</p>
+          <p><strong>Trial:</strong> ${client.trial_start_date || "N/A"} to ${client.trial_end_date || "N/A"}</p>
+        </div>
+      `).join("");
+    }
+  </script>
+</body>
+</html>
