@@ -45,6 +45,7 @@
       border-radius: 8px;
       border: 1px solid #E5E7EB;
       font-size: 15px;
+      box-sizing: border-box;
     }
 
     button {
@@ -128,6 +129,10 @@
       margin: 4px;
       font-size: 13px;
     }
+
+    .blocked-box {
+      border-left: 6px solid #b00020;
+    }
   </style>
 </head>
 
@@ -148,7 +153,7 @@
       <h2>Client Login</h2>
 
       <label>Email</label>
-      <input id="clientEmail" placeholder="restaurantowner@ungani.com" />
+      <input id="clientEmail" placeholder="client@example.com" />
 
       <label>Password</label>
       <input id="clientPassword" type="password" placeholder="Enter password" />
@@ -156,6 +161,13 @@
       <button onclick="loginClient()">Login</button>
 
       <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <p class="small">Please contact UNGANI support if you believe this is a mistake.</p>
+      <button onclick="logoutClient()">Logout</button>
     </div>
 
     <div id="clientArea" class="hidden">
@@ -445,6 +457,13 @@
       return Number(value);
     }
 
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("clientArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
     async function loginClient() {
       const email = document.getElementById("clientEmail").value;
       const password = document.getElementById("clientPassword").value;
@@ -461,16 +480,15 @@
       }
 
       msg.innerHTML = `<p class="success">Login successful.</p>`;
-      document.getElementById("loginCard").classList.add("hidden");
-      document.getElementById("clientArea").classList.remove("hidden");
-
-      loadClientDashboard();
+      await loadClientDashboard();
     }
 
     async function logoutClient() {
       await supabaseClient.auth.signOut();
+
       document.getElementById("loginCard").classList.remove("hidden");
       document.getElementById("clientArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
     }
 
     async function loadClientDashboard() {
@@ -483,6 +501,7 @@
           id,
           full_name,
           email,
+          status,
           tenant_id,
           roles(name),
           tenants(
@@ -496,15 +515,46 @@
             packages(name)
           )
         `)
-        .single();
+        .eq("id", currentUserId)
+        .maybeSingle();
 
       if (userError) {
         alert(userError.message);
         return;
       }
 
-      currentTenantId = userData.tenant_id;
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI client profile has not been connected yet.");
+        return;
+      }
+
+      if (userData.status !== "active") {
+        showAccessBlocked("Your user access is currently not active.");
+        return;
+      }
+
       const tenant = userData.tenants;
+
+      if (!tenant) {
+        showAccessBlocked("Your account is not connected to a business workspace yet.");
+        return;
+      }
+
+      if (tenant.account_status === "suspended") {
+        showAccessBlocked("This business account is currently suspended.");
+        return;
+      }
+
+      if (tenant.account_status === "cancelled") {
+        showAccessBlocked("This business account has been cancelled.");
+        return;
+      }
+
+      currentTenantId = userData.tenant_id;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("clientArea").classList.remove("hidden");
 
       document.getElementById("companyName").innerText = tenant.company_name;
       document.getElementById("companyInfo").innerText =
