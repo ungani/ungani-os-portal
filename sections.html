@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Client Sections</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .section-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .section-row input {
+      width: auto;
+      margin: 0;
+      transform: scale(1.2);
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Client Sections</span></h1>
+      <p>Enable or disable business sections for each client.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="admin.html">Admin Dashboard</a> |
+      <a href="users.html">Client Users</a> |
+      <a href="client.html">Client Login</a> |
+      <a href="reports.html">Reports</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Admin Login</h2>
+
+      <label>Email</label>
+      <input id="adminEmail" placeholder="chris@ungani.com" />
+
+      <label>Password</label>
+      <input id="adminPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginAdmin()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="sectionArea" class="hidden">
+      <div class="card">
+        <h2>Section Management</h2>
+        <p id="adminInfo">Logged in as UNGANI Admin.</p>
+        <button onclick="refreshPage()">Refresh</button>
+        <button onclick="logoutAdmin()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Select Client</h2>
+
+        <label>Approved Client</label>
+        <select id="tenantSelect" onchange="loadClientSections()">
+          <option value="">Loading clients...</option>
+        </select>
+
+        <div id="selectedClientInfo"></div>
+      </div>
+
+      <div class="card">
+        <h2>Available Business Sections</h2>
+        <p class="small">Tick the sections this client should be able to use.</p>
+
+        <div id="sectionsList">Select a client first.</div>
+
+        <button onclick="saveSections()">Save Client Sections</button>
+
+        <div id="sectionMessage"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let allSections = [];
+    let currentClientSections = [];
+
+    async function loginAdmin() {
+      const email = document.getElementById("adminEmail").value;
+      const password = document.getElementById("adminPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      const loggedInUserId = sessionData?.session?.user?.id;
+
+      const { data: adminUser, error: profileError } = await supabaseClient
+        .from("users")
+        .select("id, full_name, email, roles(name), status")
+        .eq("id", loggedInUserId)
+        .maybeSingle();
+
+      if (profileError) {
+        msg.innerHTML = `<p class="danger">${profileError.message}</p>`;
+        return;
+      }
+
+      if (!adminUser) {
+        msg.innerHTML = `<p class="danger">Admin profile was not found.</p>`;
+        return;
+      }
+
+      if (adminUser.roles?.name !== "UNGANI Admin") {
+        msg.innerHTML = `<p class="danger">This login is not an UNGANI Admin account.</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Admin login successful.</p>`;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("sectionArea").classList.remove("hidden");
+
+      document.getElementById("adminInfo").innerText =
+        `Logged in as ${adminUser.full_name || adminUser.email}`;
+
+      await refreshPage();
+    }
+
+    async function logoutAdmin() {
+      await supabaseClient.auth.signOut();
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("sectionArea").classList.add("hidden");
+    }
+
+    async function refreshPage() {
+      await loadClients();
+      await loadAllSections();
+    }
+
+    async function loadClients() {
+      const tenantSelect = document.getElementById("tenantSelect");
+
+      const { data, error } = await supabaseClient
+        .from("tenants")
+        .select(`
+          id,
+          company_name,
+          account_status,
+          business_types(name),
+          packages(name)
+        `)
+        .order("company_name");
+
+      if (error) {
+        tenantSelect.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      tenantSelect.innerHTML =
+        '<option value="">Select client</option>' +
+        (data || []).map(client =>
+          `<option value="${client.id}">
+            ${client.company_name} — ${client.account_status || "N/A"}
+          </option>`
+        ).join("");
+    }
+
+    async function loadAllSections() {
+      const { data, error } = await supabaseClient
+        .from("business_sections")
+        .select("id, name, slug")
+        .order("name");
+
+      if (error) {
+        document.getElementById("sectionsList").innerHTML =
+          `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      allSections = data || [];
+    }
+
+    async function loadClientSections() {
+      const tenantId = document.getElementById("tenantSelect").value;
+      const box = document.getElementById("sectionsList");
+      const info = document.getElementById("selectedClientInfo");
+      const msg = document.getElementById("sectionMessage");
+
+      msg.innerHTML = "";
+
+      if (!tenantId) {
+        box.innerHTML = "Select a client first.";
+        info.innerHTML = "";
+        return;
+      }
+
+      const selectedText =
+        document.getElementById("tenantSelect").options[
+          document.getElementById("tenantSelect").selectedIndex
+        ].text;
+
+      info.innerHTML = `<p><strong>Selected:</strong> ${selectedText}</p>`;
+
+      const { data, error } = await supabaseClient
+        .from("tenant_sections")
+        .select("business_section_id, is_enabled")
+        .eq("tenant_id", tenantId);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      currentClientSections = data || [];
+
+      renderSectionCheckboxes();
+    }
+
+    function renderSectionCheckboxes() {
+      const box = document.getElementById("sectionsList");
+
+      if (!allSections || allSections.length === 0) {
+        box.innerHTML = `<p>No business sections found.</p>`;
+        return;
+      }
+
+      box.innerHTML = allSections.map(section => {
+        const existing = currentClientSections.find(row =>
+          row.business_section_id === section.id
+        );
+
+        const checked = existing && existing.is_enabled ? "checked" : "";
+
+        return `
+          <div class="section-row">
+            <input type="checkbox" id="section_${section.id}" ${checked} />
+            <div>
+              <strong>${section.name}</strong>
+              <br>
+              <span class="badge">${section.slug || "section"}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function saveSections() {
+      const tenantId = document.getElementById("tenantSelect").value;
+      const msg = document.getElementById("sectionMessage");
+
+      if (!tenantId) {
+        msg.innerHTML = `<p class="danger">Please select a client first.</p>`;
+        return;
+      }
+
+      if (!allSections || allSections.length === 0) {
+        msg.innerHTML = `<p class="danger">No business sections found.</p>`;
+        return;
+      }
+
+      const records = allSections.map(section => {
+        const checkbox = document.getElementById(`section_${section.id}`);
+
+        return {
+          tenant_id: tenantId,
+          business_section_id: section.id,
+          is_enabled: checkbox ? checkbox.checked : false
+        };
+      });
+
+      const { error } = await supabaseClient
+        .from("tenant_sections")
+        .upsert(records, {
+          onConflict: "tenant_id,business_section_id"
+        });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Client sections saved successfully.</p>`;
+
+      await loadClientSections();
+    }
+  </script>
+</body>
+</html>
