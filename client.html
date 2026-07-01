@@ -198,6 +198,7 @@
 
       <div class="card">
         <h2>Money Overview</h2>
+
         <div class="grid">
           <div class="metric">
             <h3>Sales / Income</h3>
@@ -482,6 +483,14 @@
       document.getElementById("blockedReason").innerText = reason;
     }
 
+    async function checkExistingSession() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (sessionData?.session?.user?.id) {
+        await loadClientDashboard();
+      }
+    }
+
     async function loginClient() {
       const email = document.getElementById("clientEmail").value;
       const password = document.getElementById("clientPassword").value;
@@ -498,6 +507,7 @@
       }
 
       msg.innerHTML = `<p class="success">Login successful.</p>`;
+
       await loadClientDashboard();
     }
 
@@ -512,6 +522,10 @@
     async function loadClientDashboard() {
       const { data: sessionData } = await supabaseClient.auth.getSession();
       currentUserId = sessionData?.session?.user?.id;
+
+      if (!currentUserId) {
+        return;
+      }
 
       const { data: userData, error: userError } = await supabaseClient
         .from("users")
@@ -575,6 +589,7 @@
       document.getElementById("clientArea").classList.remove("hidden");
 
       document.getElementById("companyName").innerText = tenant.company_name;
+
       document.getElementById("companyInfo").innerText =
         `${tenant.business_types?.name || "Business"} | Package: ${tenant.packages?.name || "N/A"} | Status: ${tenant.account_status}`;
 
@@ -1017,6 +1032,8 @@
         </div>
       `).join("");
     }
+
+    checkExistingSession();
   </script>
 </body>
 </html>
