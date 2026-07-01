@@ -202,6 +202,50 @@
       </div>
 
       <div class="card">
+        <h2>Add Money Record</h2>
+
+        <label>Record Type</label>
+        <select id="moneyType" onchange="loadMoneyCategories()">
+          <option value="sale">Sales / Income</option>
+          <option value="expense">Operating Expense</option>
+          <option value="petty_cash_in">Petty Cash In</option>
+          <option value="petty_cash_out">Petty Cash Out</option>
+        </select>
+
+        <label>Business Section</label>
+        <select id="moneySection">
+          <option value="">General</option>
+        </select>
+
+        <label>Category</label>
+        <select id="moneyCategory">
+          <option value="">Loading categories...</option>
+        </select>
+
+        <label>Amount</label>
+        <input id="moneyAmount" type="number" placeholder="Enter amount" />
+
+        <label>Currency</label>
+        <select id="moneyCurrency">
+          <option value="KES">KES</option>
+          <option value="USD">USD</option>
+        </select>
+
+        <label>Paid To / From</label>
+        <input id="paidToOrFrom" placeholder="Customer, supplier, staff, driver, etc." />
+
+        <label>Description / Notes</label>
+        <textarea id="moneyDescription" placeholder="Add short details"></textarea>
+
+        <label>Reference Number</label>
+        <input id="moneyReference" placeholder="Receipt, invoice, transaction reference" />
+
+        <button onclick="addMoneyRecord()">Save Money Record</button>
+
+        <div id="moneyFormMessage"></div>
+      </div>
+
+      <div class="card">
         <h2>Items / Assets / Stock Summary</h2>
         <div id="itemsSummary">Loading...</div>
       </div>
@@ -215,11 +259,13 @@
 
   <script>
     const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentTenantId = null;
+    let currentUserId = null;
+    let enabledSections = [];
 
     function formatMoney(value) {
       const number = Number(value || 0);
@@ -255,6 +301,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
     }
 
     async function loadClientDashboard() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentUserId = sessionData?.session?.user?.id;
+
       const { data: userData, error: userError } = await supabaseClient
         .from("users")
         .select(`
@@ -292,6 +341,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
         `Trial: ${tenant.trial_start_date || "N/A"} to ${tenant.trial_end_date || "N/A"}`;
 
       await loadSections();
+      await loadMoneyCategories();
       await loadMoneySummary();
       await loadItemsSummary();
       await loadBusinessRecords();
@@ -299,12 +349,13 @@ const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
     async function loadSections() {
       const box = document.getElementById("sectionsList");
+      const sectionSelect = document.getElementById("moneySection");
 
       const { data, error } = await supabaseClient
         .from("tenant_sections")
         .select(`
           is_enabled,
-          business_sections(name, slug)
+          business_sections(id, name, slug)
         `)
         .eq("tenant_id", currentTenantId)
         .eq("is_enabled", true);
@@ -314,6 +365,14 @@ const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
         return;
       }
 
+      enabledSections = data || [];
+
+      sectionSelect.innerHTML =
+        '<option value="">General</option>' +
+        enabledSections.map(row =>
+          `<option value="${row.business_sections?.id}">${row.business_sections?.name}</option>`
+        ).join("");
+
       if (!data || data.length === 0) {
         box.innerHTML = `<p>No specific business sections enabled.</p>`;
         return;
@@ -322,6 +381,78 @@ const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
       box.innerHTML = data.map(row =>
         `<span class="section-tag">${row.business_sections?.name || "Section"}</span>`
       ).join("");
+    }
+
+    async function loadMoneyCategories() {
+      const type = document.getElementById("moneyType").value;
+      const categorySelect = document.getElementById("moneyCategory");
+
+      let categoryType = type;
+
+      if (type === "petty_cash_in" || type === "petty_cash_out") {
+        categoryType = "petty_cash";
+      }
+
+      const { data, error } = await supabaseClient
+        .from("categories")
+        .select("id, name")
+        .eq("transaction_type", categoryType)
+        .eq("is_active", true)
+        .order("name");
+
+      if (error) {
+        categorySelect.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      categorySelect.innerHTML =
+        '<option value="">Select category</option>' +
+        (data || []).map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+    }
+
+    async function addMoneyRecord() {
+      const msg = document.getElementById("moneyFormMessage");
+
+      const transactionType = document.getElementById("moneyType").value;
+      const amount = Number(document.getElementById("moneyAmount").value || 0);
+
+      if (!amount || amount <= 0) {
+        msg.innerHTML = `<p class="danger">Please enter a valid amount.</p>`;
+        return;
+      }
+
+      const record = {
+        tenant_id: currentTenantId,
+        business_section_id: document.getElementById("moneySection").value || null,
+        category_id: document.getElementById("moneyCategory").value || null,
+        transaction_type: transactionType,
+        amount: amount,
+        currency: document.getElementById("moneyCurrency").value,
+        paid_to_or_from: document.getElementById("paidToOrFrom").value,
+        description: document.getElementById("moneyDescription").value,
+        reference_no: document.getElementById("moneyReference").value,
+        payment_status: "paid",
+        transaction_date: new Date().toISOString().split("T")[0],
+        recorded_by: currentUserId
+      };
+
+      const { error } = await supabaseClient
+        .from("transactions")
+        .insert([record]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Money record saved successfully.</p>`;
+
+      document.getElementById("moneyAmount").value = "";
+      document.getElementById("paidToOrFrom").value = "";
+      document.getElementById("moneyDescription").value = "";
+      document.getElementById("moneyReference").value = "";
+
+      await loadMoneySummary();
     }
 
     async function loadMoneySummary() {
