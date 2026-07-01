@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Client Users</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .small-btn {
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .danger-btn {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Client Users</span></h1>
+      <p>Create and manage client login profiles.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="admin.html">Admin Dashboard</a> |
+      <a href="client.html">Client Login</a> |
+      <a href="index.html">Registration</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Admin Login</h2>
+
+      <label>Email</label>
+      <input id="adminEmail" placeholder="chris@ungani.com" />
+
+      <label>Password</label>
+      <input id="adminPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginAdmin()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="userArea" class="hidden">
+      <div class="card">
+        <h2>Client User Management</h2>
+        <p id="adminInfo">Logged in as UNGANI Admin.</p>
+        <button onclick="refreshPage()">Refresh</button>
+        <button onclick="logoutAdmin()">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Create / Connect Client Login</h2>
+
+        <p class="small">
+          First create the user in Supabase Auth, then copy the Auth User ID here.
+        </p>
+
+        <label>Approved Client</label>
+        <select id="tenantSelect">
+          <option value="">Loading clients...</option>
+        </select>
+
+        <label>User Role</label>
+        <select id="roleSelect">
+          <option value="">Loading roles...</option>
+        </select>
+
+        <label>Supabase Auth User ID</label>
+        <input id="authUserId" placeholder="Paste Auth User ID / UUID here" />
+
+        <label>Full Name</label>
+        <input id="fullName" placeholder="Example: Restaurant Owner" />
+
+        <label>Email</label>
+        <input id="clientUserEmail" placeholder="client@example.com" />
+
+        <label>Status</label>
+        <select id="userStatus">
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+        </select>
+
+        <button onclick="saveClientUser()">Save Client User</button>
+
+        <div id="userFormMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>Existing Client Users</h2>
+        <div id="clientUsersList">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>Approved Clients</h2>
+        <div id="approvedClientsList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function loginAdmin() {
+      const email = document.getElementById("adminEmail").value;
+      const password = document.getElementById("adminPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      const loggedInUserId = sessionData?.session?.user?.id;
+
+      const { data: adminUser, error: profileError } = await supabaseClient
+        .from("users")
+        .select("id, full_name, email, roles(name), status")
+        .eq("id", loggedInUserId)
+        .maybeSingle();
+
+      if (profileError) {
+        msg.innerHTML = `<p class="danger">${profileError.message}</p>`;
+        return;
+      }
+
+      if (!adminUser) {
+        msg.innerHTML = `<p class="danger">Admin profile was not found.</p>`;
+        return;
+      }
+
+      if (adminUser.roles?.name !== "UNGANI Admin") {
+        msg.innerHTML = `<p class="danger">This login is not an UNGANI Admin account.</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Admin login successful.</p>`;
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("userArea").classList.remove("hidden");
+
+      document.getElementById("adminInfo").innerText =
+        `Logged in as ${adminUser.full_name || adminUser.email}`;
+
+      await refreshPage();
+    }
+
+    async function logoutAdmin() {
+      await supabaseClient.auth.signOut();
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("userArea").classList.add("hidden");
+    }
+
+    async function refreshPage() {
+      await loadApprovedClients();
+      await loadRoles();
+      await loadClientUsers();
+    }
+
+    async function loadApprovedClients() {
+      const tenantSelect = document.getElementById("tenantSelect");
+      const clientsBox = document.getElementById("approvedClientsList");
+
+      const { data, error } = await supabaseClient
+        .from("tenants")
+        .select(`
+          id,
+          company_name,
+          account_status,
+          business_types(name),
+          packages(name)
+        `)
+        .order("company_name");
+
+      if (error) {
+        tenantSelect.innerHTML = `<option value="">${error.message}</option>`;
+        clientsBox.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      tenantSelect.innerHTML =
+        '<option value="">Select approved client</option>' +
+        (data || []).map(client =>
+          `<option value="${client.id}">${client.company_name}</option>`
+        ).join("");
+
+      if (!data || data.length === 0) {
+        clientsBox.innerHTML = `<p>No approved clients yet.</p>`;
+        return;
+      }
+
+      clientsBox.innerHTML = data.map(client => `
+        <div class="row">
+          <h3>${client.company_name}</h3>
+          <p><strong>Business Type:</strong> ${client.business_types?.name || "N/A"}</p>
+          <p><strong>Package:</strong> ${client.packages?.name || "N/A"}</p>
+          <p><strong>Status:</strong> ${client.account_status || "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadRoles() {
+      const roleSelect = document.getElementById("roleSelect");
+
+      const { data, error } = await supabaseClient
+        .from("roles")
+        .select("id, name")
+        .neq("name", "UNGANI Admin")
+        .order("name");
+
+      if (error) {
+        roleSelect.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      roleSelect.innerHTML =
+        '<option value="">Select user role</option>' +
+        (data || []).map(role =>
+          `<option value="${role.id}">${role.name}</option>`
+        ).join("");
+    }
+
+    async function saveClientUser() {
+      const msg = document.getElementById("userFormMessage");
+
+      const authUserId = document.getElementById("authUserId").value.trim();
+      const tenantId = document.getElementById("tenantSelect").value;
+      const roleId = document.getElementById("roleSelect").value;
+      const fullName = document.getElementById("fullName").value.trim();
+      const email = document.getElementById("clientUserEmail").value.trim();
+      const status = document.getElementById("userStatus").value;
+
+      if (!authUserId || !tenantId || !roleId || !email) {
+        msg.innerHTML = `<p class="danger">Please fill Auth User ID, client, role, and email.</p>`;
+        return;
+      }
+
+      const profile = {
+        id: authUserId,
+        tenant_id: tenantId,
+        role_id: roleId,
+        full_name: fullName || email,
+        email: email,
+        status: status
+      };
+
+      const { error } = await supabaseClient
+        .from("users")
+        .upsert([profile], { onConflict: "id" });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Client user profile saved successfully.</p>`;
+
+      document.getElementById("authUserId").value = "";
+      document.getElementById("fullName").value = "";
+      document.getElementById("clientUserEmail").value = "";
+
+      await loadClientUsers();
+    }
+
+    async function updateUserStatus(userId, newStatus) {
+      const msg = document.getElementById("userFormMessage");
+
+      const { error } = await supabaseClient
+        .from("users")
+        .update({ status: newStatus })
+        .eq("id", userId);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">User status updated to ${newStatus}.</p>`;
+      await loadClientUsers();
+    }
+
+    async function loadClientUsers() {
+      const box = document.getElementById("clientUsersList");
+
+      const { data, error } = await supabaseClient
+        .from("users")
+        .select(`
+          id,
+          full_name,
+          email,
+          status,
+          tenants(company_name),
+          roles(name)
+        `)
+        .neq("tenant_id", null)
+        .order("email");
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No client users created yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(user => `
+        <div class="row">
+          <h3>${user.full_name || "Unnamed User"}</h3>
+          <p><strong>Email:</strong> ${user.email}</p>
+          <p><strong>Client:</strong> ${user.tenants?.company_name || "N/A"}</p>
+          <p><strong>Role:</strong> ${user.roles?.name || "N/A"}</p>
+          <p><strong>Status:</strong> <span class="badge">${user.status || "N/A"}</span></p>
+
+          <button class="small-btn" onclick="updateUserStatus('${user.id}', 'active')">Mark Active</button>
+          <button class="small-btn danger-btn" onclick="updateUserStatus('${user.id}', 'suspended')">Suspend</button>
+        </div>
+      `).join("");
+    }
+  </script>
+</body>
+</html>
