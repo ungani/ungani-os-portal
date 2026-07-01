@@ -1,458 +1,266 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>UNGANI OS | Client Login Management</title>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-  <style>
-    :root {
-      --navy: #061C3D;
-      --gold: #D4A63A;
-      --offwhite: #F5F5F3;
-      --white: #FFFFFF;
-      --gray: #E5E7EB;
-      --text: #172033;
-      --muted: #6B7280;
-      --danger: #B91C1C;
-      --success: #047857;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: var(--offwhite);
-      color: var(--text);
-    }
-
-    header {
-      background: var(--navy);
-      color: var(--white);
-      padding: 24px;
-    }
-
-    header h1 {
-      margin: 0;
-      font-size: 24px;
-    }
-
-    header p {
-      margin: 8px 0 0;
-      color: rgba(255, 255, 255, 0.75);
-      font-size: 14px;
-    }
-
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 380px 1fr;
-      gap: 20px;
-    }
-
-    .card {
-      background: var(--white);
-      border-radius: 18px;
-      padding: 22px;
-      border: 1px solid var(--gray);
-      box-shadow: 0 12px 28px rgba(6, 28, 61, 0.06);
-    }
-
-    h2 {
-      margin: 0 0 16px;
-      font-size: 18px;
-      color: var(--navy);
-    }
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--navy);
-      margin-bottom: 7px;
-    }
-
-    input, select {
-      width: 100%;
-      padding: 12px 13px;
-      border-radius: 12px;
-      border: 1px solid var(--gray);
-      font-size: 14px;
-      margin-bottom: 14px;
-      outline: none;
-      background: #fff;
-    }
-
-    input:focus, select:focus {
-      border-color: var(--gold);
-      box-shadow: 0 0 0 4px rgba(212, 166, 58, 0.15);
-    }
-
-    button {
-      border: none;
-      border-radius: 12px;
-      padding: 12px 14px;
-      background: var(--navy);
-      color: var(--white);
-      font-size: 14px;
-      font-weight: 800;
-      cursor: pointer;
-      margin-right: 8px;
-      margin-bottom: 8px;
-    }
-
-    button.gold {
-      background: var(--gold);
-      color: var(--navy);
-    }
-
-    button.light {
-      background: #EEF2FF;
-      color: var(--navy);
-    }
-
-    button.danger {
-      background: #FEE2E2;
-      color: var(--danger);
-    }
-
-    .message {
-      margin-top: 14px;
-      padding: 12px 13px;
-      border-radius: 12px;
-      font-size: 14px;
-      line-height: 1.45;
-      display: none;
-    }
-
-    .message.error {
-      display: block;
-      background: #FEE2E2;
-      color: var(--danger);
-      border: 1px solid #FECACA;
-    }
-
-    .message.success {
-      display: block;
-      background: #D1FAE5;
-      color: var(--success);
-      border: 1px solid #A7F3D0;
-    }
-
-    .access-code-box {
-      margin-top: 14px;
-      padding: 16px;
-      border-radius: 14px;
-      background: #FFFBEB;
-      border: 1px solid #FDE68A;
-      display: none;
-    }
-
-    .access-code-box strong {
-      display: block;
-      margin-bottom: 8px;
-      color: var(--navy);
-    }
-
-    .access-code {
-      font-size: 20px;
-      font-weight: 900;
-      color: var(--navy);
-      letter-spacing: 0.5px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
-    }
-
-    th, td {
-      text-align: left;
-      padding: 12px;
-      border-bottom: 1px solid var(--gray);
-      vertical-align: top;
-    }
-
-    th {
-      color: var(--navy);
-      background: #F9FAFB;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 5px 9px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 800;
-      background: #EEF2FF;
-      color: var(--navy);
-    }
-
-    .badge.active {
-      background: #D1FAE5;
-      color: var(--success);
-    }
-
-    .badge.suspended,
-    .badge.cancelled {
-      background: #FEE2E2;
-      color: var(--danger);
-    }
-
-    .small {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.45;
-    }
-
-    @media (max-width: 900px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
-      table {
-        display: block;
-        overflow-x: auto;
-      }
-    }
-  </style>
-</head>
-
-<body>
-  <header>
-    <h1>UNGANI OS · Client Login Management</h1>
-    <p>Create, reset, activate, suspend, or cancel client portal access.</p>
-  </header>
-
-  <div class="container">
-    <div class="grid">
-      <section class="card">
-        <h2>Create / Reset Client Login</h2>
-
-        <label for="adminCode">Private Admin Portal Code</label>
-        <input id="adminCode" type="password" placeholder="Enter your private admin code" />
-
-        <label for="clientId">Client ID</label>
-        <input id="clientId" type="text" placeholder="Paste approved client ID" />
-
-        <label for="businessName">Business Name</label>
-        <input id="businessName" type="text" placeholder="Example: Ice Cold Logistics" />
-
-        <label for="clientEmail">Client Login Email</label>
-        <input id="clientEmail" type="email" placeholder="client@example.com" />
-
-        <button class="gold" onclick="createOrResetLogin()">Create / Reset Access Code</button>
-        <button class="light" onclick="loadAccounts()">Refresh Accounts</button>
-
-        <div id="message" class="message"></div>
-
-        <div id="accessCodeBox" class="access-code-box">
-          <strong>Give this access code to the client:</strong>
-          <div id="accessCodeText" class="access-code"></div>
-          <p class="small">
-            This code is only shown now. If the client loses it, reset the login again.
-          </p>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>Client Login Accounts</h2>
-        <div id="accountsWrap">
-          <p class="small">Enter your admin code and click Refresh Accounts.</p>
-        </div>
-      </section>
-    </div>
-  </div>
-
-  <script>
-    const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
-    const SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
-
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    const adminCodeInput = document.getElementById("adminCode");
-    const messageBox = document.getElementById("message");
-    const accessCodeBox = document.getElementById("accessCodeBox");
-    const accessCodeText = document.getElementById("accessCodeText");
-    const accountsWrap = document.getElementById("accountsWrap");
-
-    function showMessage(text, type) {
-      messageBox.textContent = text;
-      messageBox.className = "message " + type;
-    }
-
-    function getAdminCode() {
-      return adminCodeInput.value.trim();
-    }
-
-    async function createOrResetLogin() {
-      const adminCode = getAdminCode();
-      const clientId = document.getElementById("clientId").value.trim();
-      const businessName = document.getElementById("businessName").value.trim();
-      const clientEmail = document.getElementById("clientEmail").value.trim();
-
-      accessCodeBox.style.display = "none";
-
-      if (!adminCode || !clientId || !businessName || !clientEmail) {
-        showMessage("Please fill in admin code, client ID, business name, and client email.", "error");
-        return;
-      }
-
-      try {
-        const { data, error } = await supabaseClient.rpc("admin_create_or_reset_client_login", {
-          p_admin_code: adminCode,
-          p_client_id: clientId,
-          p_business_name: businessName,
-          p_client_email: clientEmail
-        });
-
-        if (error) {
-          throw error;
-        }
-
-        if (!data || data.length === 0) {
-          showMessage("No login account was returned.", "error");
-          return;
-        }
-
-        const account = data[0];
-
-        accessCodeText.textContent = account.access_code;
-        accessCodeBox.style.display = "block";
-
-        showMessage("Client login created/reset successfully.", "success");
-        await loadAccounts();
-
-      } catch (err) {
-        console.error(err);
-        showMessage(err.message || "Failed to create/reset client login.", "error");
-      }
-    }
-
-    async function loadAccounts() {
-      const adminCode = getAdminCode();
-
-      if (!adminCode) {
-        showMessage("Enter your private admin portal code first.", "error");
-        return;
-      }
-
-      try {
-        const { data, error } = await supabaseClient.rpc("admin_list_client_login_accounts", {
-          p_admin_code: adminCode
-        });
-
-        if (error) {
-          throw error;
-        }
-
-        if (!data || data.length === 0) {
-          accountsWrap.innerHTML = '<p class="small">No client login accounts found yet.</p>';
-          return;
-        }
-
-        accountsWrap.innerHTML = `
-          <table>
-            <thead>
-              <tr>
-                <th>Business</th>
-                <th>Email</th>
-                <th>Status</th>
-                <th>Login</th>
-                <th>Last Login</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${data.map(account => `
-                <tr>
-                  <td>
-                    <strong>${escapeHtml(account.business_name || "")}</strong>
-                    <div class="small">ID: ${escapeHtml(account.client_id || "")}</div>
-                  </td>
-                  <td>${escapeHtml(account.client_email || "")}</td>
-                  <td>
-                    <span class="badge ${escapeHtml(account.account_status || "")}">
-                      ${escapeHtml(account.account_status || "")}
-                    </span>
-                  </td>
-                  <td>${account.login_enabled ? "Enabled" : "Disabled"}</td>
-                  <td>${account.last_login_at ? new Date(account.last_login_at).toLocaleString() : "Never"}</td>
-                  <td>
-                    <button class="light" onclick="updateStatus('${escapeJs(account.client_id)}', 'trial', true)">Trial</button>
-                    <button class="light" onclick="updateStatus('${escapeJs(account.client_id)}', 'active', true)">Active</button>
-                    <button class="danger" onclick="updateStatus('${escapeJs(account.client_id)}', 'suspended', false)">Suspend</button>
-                    <button class="danger" onclick="updateStatus('${escapeJs(account.client_id)}', 'cancelled', false)">Cancel</button>
-                  </td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        `;
-
-      } catch (err) {
-        console.error(err);
-        showMessage(err.message || "Failed to load client login accounts.", "error");
-      }
-    }
-
-    async function updateStatus(clientId, status, enabled) {
-      const adminCode = getAdminCode();
-
-      if (!adminCode) {
-        showMessage("Enter your private admin portal code first.", "error");
-        return;
-      }
-
-      try {
-        const { error } = await supabaseClient.rpc("admin_update_client_login_status", {
-          p_admin_code: adminCode,
-          p_client_id: clientId,
-          p_account_status: status,
-          p_login_enabled: enabled
-        });
-
-        if (error) {
-          throw error;
-        }
-
-        showMessage("Client login status updated.", "success");
-        await loadAccounts();
-
-      } catch (err) {
-        console.error(err);
-        showMessage(err.message || "Failed to update client login status.", "error");
-      }
-    }
-
-    function escapeHtml(value) {
-      return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    function escapeJs(value) {
-      return String(value)
-        .replaceAll("\\", "\\\\")
-        .replaceAll("'", "\\'");
-    }
-  </script>
-</body>
-</html>
+create extension if not exists pgcrypto;
+
+create table if not exists public.system_settings (
+  setting_key text primary key,
+  setting_value text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.system_settings (setting_key, setting_value)
+values ('admin_portal_code', 'CHANGE-THIS-ADMIN-CODE')
+on conflict (setting_key) do nothing;
+
+create table if not exists public.client_login_accounts (
+  id uuid primary key default gen_random_uuid(),
+  client_id text not null unique,
+  business_name text not null,
+  client_email text not null unique,
+  access_code_hash text not null,
+  login_enabled boolean not null default true,
+  account_status text not null default 'trial',
+  last_login_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint client_login_accounts_status_check
+    check (account_status in ('trial', 'active', 'suspended', 'cancelled'))
+);
+
+alter table public.client_login_accounts enable row level security;
+
+drop function if exists public.admin_create_or_reset_client_login(text, text, text, text);
+drop function if exists public.admin_list_client_login_accounts(text);
+drop function if exists public.admin_update_client_login_status(text, text, boolean, text);
+drop function if exists public.client_login(text, text);
+
+create or replace function public.check_admin_portal_code(p_admin_code text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_saved_code text;
+begin
+  select setting_value
+  into v_saved_code
+  from public.system_settings
+  where setting_key = 'admin_portal_code';
+
+  return coalesce(trim(p_admin_code), '') = coalesce(trim(v_saved_code), '');
+end;
+$$;
+
+create or replace function public.admin_create_or_reset_client_login(
+  p_admin_code text,
+  p_client_id text,
+  p_business_name text,
+  p_client_email text
+)
+returns table (
+  client_id text,
+  business_name text,
+  client_email text,
+  access_code text,
+  account_status text,
+  login_enabled boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_access_code text;
+begin
+  if public.check_admin_portal_code(p_admin_code) is not true then
+    raise exception 'Invalid admin portal code';
+  end if;
+
+  if coalesce(trim(p_client_id), '') = '' then
+    raise exception 'Client ID is required';
+  end if;
+
+  if coalesce(trim(p_business_name), '') = '' then
+    raise exception 'Business name is required';
+  end if;
+
+  if coalesce(trim(p_client_email), '') = '' then
+    raise exception 'Client email is required';
+  end if;
+
+  v_access_code := 'UNGANI-' || upper(substring(encode(gen_random_bytes(4), 'hex') from 1 for 8));
+
+  insert into public.client_login_accounts (
+    client_id,
+    business_name,
+    client_email,
+    access_code_hash,
+    login_enabled,
+    account_status,
+    updated_at
+  )
+  values (
+    trim(p_client_id),
+    trim(p_business_name),
+    lower(trim(p_client_email)),
+    crypt(v_access_code, gen_salt('bf')),
+    true,
+    'trial',
+    now()
+  )
+  on conflict (client_id)
+  do update set
+    business_name = excluded.business_name,
+    client_email = excluded.client_email,
+    access_code_hash = excluded.access_code_hash,
+    login_enabled = true,
+    updated_at = now();
+
+  return query
+  select
+    cla.client_id,
+    cla.business_name,
+    cla.client_email,
+    v_access_code as access_code,
+    cla.account_status,
+    cla.login_enabled
+  from public.client_login_accounts cla
+  where cla.client_id = trim(p_client_id);
+end;
+$$;
+
+create or replace function public.admin_list_client_login_accounts(
+  p_admin_code text
+)
+returns table (
+  id uuid,
+  client_id text,
+  business_name text,
+  client_email text,
+  login_enabled boolean,
+  account_status text,
+  last_login_at timestamptz,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.check_admin_portal_code(p_admin_code) is not true then
+    raise exception 'Invalid admin portal code';
+  end if;
+
+  return query
+  select
+    cla.id,
+    cla.client_id,
+    cla.business_name,
+    cla.client_email,
+    cla.login_enabled,
+    cla.account_status,
+    cla.last_login_at,
+    cla.created_at,
+    cla.updated_at
+  from public.client_login_accounts cla
+  order by cla.created_at desc;
+end;
+$$;
+
+create or replace function public.admin_update_client_login_status(
+  p_admin_code text,
+  p_client_id text,
+  p_account_status text,
+  p_login_enabled boolean
+)
+returns table (
+  client_id text,
+  business_name text,
+  client_email text,
+  login_enabled boolean,
+  account_status text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.check_admin_portal_code(p_admin_code) is not true then
+    raise exception 'Invalid admin portal code';
+  end if;
+
+  if p_account_status not in ('trial', 'active', 'suspended', 'cancelled') then
+    raise exception 'Invalid account status';
+  end if;
+
+  update public.client_login_accounts
+  set
+    account_status = p_account_status,
+    login_enabled = p_login_enabled,
+    updated_at = now()
+  where client_login_accounts.client_id = trim(p_client_id);
+
+  return query
+  select
+    cla.client_id,
+    cla.business_name,
+    cla.client_email,
+    cla.login_enabled,
+    cla.account_status
+  from public.client_login_accounts cla
+  where cla.client_id = trim(p_client_id);
+end;
+$$;
+
+create or replace function public.client_login(
+  p_email text,
+  p_access_code text
+)
+returns table (
+  account_id uuid,
+  client_id text,
+  business_name text,
+  client_email text,
+  account_status text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_account_id uuid;
+begin
+  select cla.id
+  into v_account_id
+  from public.client_login_accounts cla
+  where lower(cla.client_email) = lower(trim(p_email))
+    and cla.login_enabled = true
+    and cla.account_status in ('trial', 'active')
+    and cla.access_code_hash = crypt(trim(p_access_code), cla.access_code_hash)
+  limit 1;
+
+  if v_account_id is null then
+    return;
+  end if;
+
+  update public.client_login_accounts
+  set last_login_at = now(), updated_at = now()
+  where id = v_account_id;
+
+  return query
+  select
+    cla.id as account_id,
+    cla.client_id,
+    cla.business_name,
+    cla.client_email,
+    cla.account_status
+  from public.client_login_accounts cla
+  where cla.id = v_account_id;
+end;
+$$;
+
+grant execute on function public.admin_create_or_reset_client_login(text, text, text, text) to anon;
+grant execute on function public.admin_list_client_login_accounts(text) to anon;
+grant execute on function public.admin_update_client_login_status(text, text, boolean, text) to anon;
+grant execute on function public.client_login(text, text) to anon;
