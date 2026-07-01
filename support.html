@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Support Management</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1150px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    textarea {
+      min-height: 100px;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .danger-btn {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 15px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .metric p {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Support</span></h1>
+      <p>Manage client support issues, replies, and internal notes.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="admin.html">Admin Dashboard</a> |
+      <a href="billing.html">Billing</a> |
+      <a href="users.html">Client Users</a> |
+      <a href="sections.html">Client Sections</a> |
+      <a href="client.html">Client Login</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Admin Login</h2>
+
+      <label>Email</label>
+      <input id="adminEmail" placeholder="chris@ungani.com" />
+
+      <label>Password</label>
+      <input id="adminPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginAdmin()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="supportArea" class="hidden">
+      <div class="card">
+        <h2>Support Dashboard</h2>
+        <p id="adminInfo">Logged in as UNGANI Admin.</p>
+
+        <button onclick="refreshSupport()">Refresh</button>
+        <button onclick="logoutAdmin()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Support Overview</h2>
+
+        <div class="grid">
+          <div class="metric">
+            <h3>Total Issues</h3>
+            <p id="totalIssues">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Open</h3>
+            <p id="openIssues">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>In Progress</h3>
+            <p id="progressIssues">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Resolved / Closed</h3>
+            <p id="resolvedIssues">0</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Select Support Issue</h2>
+
+        <label>Support Issue</label>
+        <select id="issueSelect" onchange="loadSelectedIssue()">
+          <option value="">Loading issues...</option>
+        </select>
+
+        <div id="selectedIssueInfo"></div>
+      </div>
+
+      <div class="card">
+        <h2>Admin Reply / Update</h2>
+
+        <label>Status</label>
+        <select id="issueStatus">
+          <option value="open">Open</option>
+          <option value="in_progress">In Progress</option>
+          <option value="resolved">Resolved</option>
+          <option value="closed">Closed</option>
+        </select>
+
+        <label>Priority</label>
+        <select id="issuePriority">
+          <option value="normal">Normal</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+
+        <label>Reply visible to client</label>
+        <textarea id="adminResponse" placeholder="Write the update the client will see"></textarea>
+
+        <label>Internal notes only for UNGANI</label>
+        <textarea id="internalNotes" placeholder="Internal notes, follow-up reminders, investigation notes"></textarea>
+
+        <button onclick="saveIssueUpdate()">Save Support Update</button>
+
+        <div id="supportMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>All Support Issues</h2>
+        <div id="issuesList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let allIssues = [];
+    let selectedIssue = null;
+    let currentAdminUserId = null;
+
+    function statusBadge(status) {
+      let className = "badge";
+
+      if (status === "in_progress" || status === "high") {
+        className = "badge badge-gold";
+      }
+
+      if (status === "urgent" || status === "closed") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${status || "N/A"}</span>`;
+    }
+
+    async function loginAdmin() {
+      const email = document.getElementById("adminEmail").value;
+      const password = document.getElementById("adminPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentAdminUserId = sessionData?.session?.user?.id;
+
+      const { data: adminUser, error: profileError } = await supabaseClient
+        .from("users")
+        .select("id, full_name, email, roles(name), status")
+        .eq("id", currentAdminUserId)
+        .maybeSingle();
+
+      if (profileError) {
+        msg.innerHTML = `<p class="danger">${profileError.message}</p>`;
+        return;
+      }
+
+      if (!adminUser) {
+        msg.innerHTML = `<p class="danger">Admin profile was not found.</p>`;
+        return;
+      }
+
+      if (adminUser.roles?.name !== "UNGANI Admin") {
+        msg.innerHTML = `<p class="danger">This login is not an UNGANI Admin account.</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Admin login successful.</p>`;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("supportArea").classList.remove("hidden");
+
+      document.getElementById("adminInfo").innerText =
+        `Logged in as ${adminUser.full_name || adminUser.email}`;
+
+      await refreshSupport();
+    }
+
+    async function logoutAdmin() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("supportArea").classList.add("hidden");
+    }
+
+    async function refreshSupport() {
+      await loadIssues();
+    }
+
+    async function loadIssues() {
+      const select = document.getElementById("issueSelect");
+      const listBox = document.getElementById("issuesList");
+
+      const { data, error } = await supabaseClient
+        .from("support_issues")
+        .select(`
+          id,
+          issue_title,
+          issue_type,
+          priority,
+          status,
+          description,
+          admin_response,
+          internal_notes,
+          created_at,
+          updated_at,
+          resolved_at,
+          tenants(company_name)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        select.innerHTML = `<option value="">${error.message}</option>`;
+        listBox.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      allIssues = data || [];
+
+      document.getElementById("totalIssues").innerText = allIssues.length;
+      document.getElementById("openIssues").innerText = allIssues.filter(i => i.status === "open").length;
+      document.getElementById("progressIssues").innerText = allIssues.filter(i => i.status === "in_progress").length;
+      document.getElementById("resolvedIssues").innerText =
+        allIssues.filter(i => i.status === "resolved" || i.status === "closed").length;
+
+      select.innerHTML =
+        '<option value="">Select issue</option>' +
+        allIssues.map(issue =>
+          `<option value="${issue.id}">
+            ${issue.tenants?.company_name || "Client"} — ${issue.issue_title || "Untitled"} — ${issue.status || "open"}
+          </option>`
+        ).join("");
+
+      if (!allIssues || allIssues.length === 0) {
+        listBox.innerHTML = `<p>No support issues found.</p>`;
+        return;
+      }
+
+      listBox.innerHTML = allIssues.map(issue => `
+        <div class="row">
+          <h3>${issue.issue_title || "Untitled Issue"}</h3>
+          <p><strong>Client:</strong> ${issue.tenants?.company_name || "Unknown Client"}</p>
+          <p>
+            ${statusBadge(issue.issue_type || "issue")}
+            ${statusBadge(issue.priority || "normal")}
+            ${statusBadge(issue.status || "open")}
+          </p>
+          <p><strong>Client Description:</strong> ${issue.description || "N/A"}</p>
+          <p><strong>Admin Response:</strong> ${issue.admin_response || "No response yet"}</p>
+          <p class="small">Created: ${issue.created_at ? new Date(issue.created_at).toLocaleString() : "N/A"}</p>
+          <p class="small">Updated: ${issue.updated_at ? new Date(issue.updated_at).toLocaleString() : "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    function loadSelectedIssue() {
+      const issueId = document.getElementById("issueSelect").value;
+      const info = document.getElementById("selectedIssueInfo");
+      const msg = document.getElementById("supportMessage");
+
+      msg.innerHTML = "";
+
+      if (!issueId) {
+        selectedIssue = null;
+        info.innerHTML = "";
+        document.getElementById("issueStatus").value = "open";
+        document.getElementById("issuePriority").value = "normal";
+        document.getElementById("adminResponse").value = "";
+        document.getElementById("internalNotes").value = "";
+        return;
+      }
+
+      selectedIssue = allIssues.find(issue => issue.id === issueId);
+
+      if (!selectedIssue) {
+        info.innerHTML = `<p class="danger">Selected issue was not found.</p>`;
+        return;
+      }
+
+      document.getElementById("issueStatus").value = selectedIssue.status || "open";
+      document.getElementById("issuePriority").value = selectedIssue.priority || "normal";
+      document.getElementById("adminResponse").value = selectedIssue.admin_response || "";
+      document.getElementById("internalNotes").value = selectedIssue.internal_notes || "";
+
+      info.innerHTML = `
+        <div class="row">
+          <h3>${selectedIssue.issue_title || "Untitled Issue"}</h3>
+          <p><strong>Client:</strong> ${selectedIssue.tenants?.company_name || "Unknown Client"}</p>
+          <p><strong>Type:</strong> ${selectedIssue.issue_type || "N/A"}</p>
+          <p><strong>Current Status:</strong> ${statusBadge(selectedIssue.status || "open")}</p>
+          <p><strong>Priority:</strong> ${statusBadge(selectedIssue.priority || "normal")}</p>
+          <p><strong>Client Description:</strong></p>
+          <p>${selectedIssue.description || "N/A"}</p>
+        </div>
+      `;
+    }
+
+    async function saveIssueUpdate() {
+      const msg = document.getElementById("supportMessage");
+
+      if (!selectedIssue) {
+        msg.innerHTML = `<p class="danger">Please select a support issue first.</p>`;
+        return;
+      }
+
+      const newStatus = document.getElementById("issueStatus").value;
+      const resolvedAt =
+        newStatus === "resolved" || newStatus === "closed"
+          ? new Date().toISOString()
+          : null;
+
+      const updateRecord = {
+        status: newStatus,
+        priority: document.getElementById("issuePriority").value,
+        admin_response: document.getElementById("adminResponse").value,
+        internal_notes: document.getElementById("internalNotes").value,
+        updated_at: new Date().toISOString(),
+        resolved_at: resolvedAt,
+        last_updated_by: currentAdminUserId
+      };
+
+      const { error } = await supabaseClient
+        .from("support_issues")
+        .update(updateRecord)
+        .eq("id", selectedIssue.id);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Support issue updated successfully.</p>`;
+
+      await loadIssues();
+
+      document.getElementById("issueSelect").value = selectedIssue.id;
+      loadSelectedIssue();
+    }
+  </script>
+</body>
+</html>
