@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>UNGANI OS Admin</title>
+  <title>UNGANI OS Admin Dashboard</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -16,7 +16,7 @@
     }
 
     .container {
-      max-width: 1100px;
+      max-width: 1150px;
       margin: 0 auto;
       padding: 35px 20px;
     }
@@ -38,7 +38,7 @@
       margin-bottom: 20px;
     }
 
-    input {
+    input, select, textarea {
       width: 100%;
       padding: 12px;
       margin: 8px 0 15px;
@@ -56,10 +56,7 @@
       font-weight: bold;
       cursor: pointer;
       margin-top: 8px;
-    }
-
-    button:hover {
-      opacity: 0.9;
+      margin-right: 8px;
     }
 
     .hidden {
@@ -77,16 +74,6 @@
     .small {
       font-size: 13px;
       opacity: 0.85;
-    }
-
-    .status {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 20px;
-      background: #D4A63A;
-      color: #061C3D;
-      font-size: 12px;
-      font-weight: bold;
     }
 
     .danger {
@@ -108,19 +95,40 @@
       text-decoration: none;
       font-weight: bold;
     }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .urgent {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .high {
+      background: #D4A63A;
+      color: #061C3D;
+    }
   </style>
 </head>
 
 <body>
   <div class="container">
     <div class="top">
-      <h1>UNGANI <span class="gold">OS Admin</span></h1>
-      <p>Admin control center for registrations and clients.</p>
+      <h1>UNGANI <span class="gold">Admin</span></h1>
+      <p>Manage registrations, clients, and support issues.</p>
       <p class="small">ungani.com | info@ungani.com</p>
     </div>
 
     <div class="nav">
-      <a href="index.html">Go to Client Registration</a>
+      <a href="index.html">Client Registration</a> |
+      <a href="client.html">Client Login</a>
     </div>
 
     <div id="loginCard" class="card">
@@ -140,18 +148,25 @@
     <div id="adminArea" class="hidden">
       <div class="card">
         <h2>Admin Dashboard</h2>
-        <p class="small">You are logged in as UNGANI Admin.</p>
+        <p id="adminInfo">Logged in as UNGANI Admin.</p>
+        <button onclick="refreshAdminDashboard()">Refresh Dashboard</button>
         <button onclick="logoutAdmin()">Logout</button>
       </div>
 
       <div class="card">
         <h2>Pending Registrations</h2>
-        <div id="registrationsList">Loading...</div>
+        <div id="pendingRegistrations">Loading...</div>
       </div>
 
       <div class="card">
         <h2>Approved Clients</h2>
-        <div id="clientsList">Loading...</div>
+        <div id="approvedClients">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>Client Support Issues</h2>
+        <p class="small">These are support issues submitted from the client dashboard.</p>
+        <div id="supportIssues">Loading...</div>
       </div>
     </div>
   </div>
@@ -177,11 +192,29 @@
         return;
       }
 
-      msg.innerHTML = `<p class="success">Login successful.</p>`;
+      const { data: adminUser, error: profileError } = await supabaseClient
+        .from("users")
+        .select("id, full_name, email, roles(name), status")
+        .single();
+
+      if (profileError) {
+        msg.innerHTML = `<p class="danger">${profileError.message}</p>`;
+        return;
+      }
+
+      if (adminUser.roles?.name !== "UNGANI Admin") {
+        msg.innerHTML = `<p class="danger">This login is not an UNGANI Admin account.</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Admin login successful.</p>`;
       document.getElementById("loginCard").classList.add("hidden");
       document.getElementById("adminArea").classList.remove("hidden");
 
-      loadAdminData();
+      document.getElementById("adminInfo").innerText =
+        `Logged in as ${adminUser.full_name || adminUser.email}`;
+
+      refreshAdminDashboard();
     }
 
     async function logoutAdmin() {
@@ -190,173 +223,59 @@
       document.getElementById("adminArea").classList.add("hidden");
     }
 
-    async function loadAdminData() {
-      await loadRegistrations();
-      await loadClients();
+    async function refreshAdminDashboard() {
+      await loadPendingRegistrations();
+      await loadApprovedClients();
+      await loadSupportIssues();
     }
 
-    async function loadRegistrations() {
-      const list = document.getElementById("registrationsList");
+    async function loadPendingRegistrations() {
+      const box = document.getElementById("pendingRegistrations");
 
       const { data, error } = await supabaseClient
         .from("registrations")
         .select(`
           id,
-          business_name,
-          selected_sections,
-          contact_name,
-          contact_email,
-          contact_phone,
-          location,
+          company_name,
+          contact_person,
+          email,
+          phone,
           service_need,
-          registration_status,
+          status,
           created_at,
-          business_type_id,
-          package_id,
-          message_notes,
           business_types(name),
           packages(name)
         `)
-        .eq("registration_status", "pending")
+        .eq("status", "pending")
         .order("created_at", { ascending: false });
 
       if (error) {
-        list.innerHTML = `<p class="danger">${error.message}</p>`;
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
         return;
       }
 
       if (!data || data.length === 0) {
-        list.innerHTML = `<p>No pending registrations.</p>`;
+        box.innerHTML = `<p>No pending registrations.</p>`;
         return;
       }
 
-      list.innerHTML = data.map(reg => `
+      box.innerHTML = data.map(reg => `
         <div class="row">
-          <h3>${reg.business_name}</h3>
+          <h3>${reg.company_name}</h3>
+          <p><strong>Contact:</strong> ${reg.contact_person || "N/A"}</p>
+          <p><strong>Email:</strong> ${reg.email || "N/A"}</p>
+          <p><strong>Phone:</strong> ${reg.phone || "N/A"}</p>
           <p><strong>Business Type:</strong> ${reg.business_types?.name || "N/A"}</p>
           <p><strong>Package:</strong> ${reg.packages?.name || "N/A"}</p>
-          <p><strong>Selected Sections:</strong> ${(reg.selected_sections || []).join(", ") || "None"}</p>
-          <p><strong>Contact:</strong> ${reg.contact_name || ""} | ${reg.contact_email || ""} | ${reg.contact_phone || ""}</p>
-          <p><strong>Location:</strong> ${reg.location || ""}</p>
-          <p><strong>Service Need:</strong> ${reg.service_need || ""}</p>
-          <p><strong>Notes:</strong> ${reg.message_notes || ""}</p>
-          <span class="status">${reg.registration_status}</span>
-          <br/>
-          <button onclick="approveRegistration('${reg.id}')">Approve Registration</button>
+          <p><strong>Service Need:</strong> ${reg.service_need || "N/A"}</p>
+          <p><strong>Status:</strong> ${reg.status}</p>
+          <p class="small">Registered: ${new Date(reg.created_at).toLocaleString()}</p>
         </div>
       `).join("");
     }
 
-    async function approveRegistration(registrationId) {
-      const confirmApproval = confirm("Approve this registration and create client account?");
-      if (!confirmApproval) return;
-
-      const { data: sessionData } = await supabaseClient.auth.getSession();
-      const adminUserId = sessionData?.session?.user?.id;
-
-      const { data: reg, error: regError } = await supabaseClient
-        .from("registrations")
-        .select("*")
-        .eq("id", registrationId)
-        .single();
-
-      if (regError) {
-        alert(regError.message);
-        return;
-      }
-
-      let tenantId = null;
-
-      const { data: existingTenant } = await supabaseClient
-        .from("tenants")
-        .select("id")
-        .eq("company_name", reg.business_name)
-        .maybeSingle();
-
-      if (existingTenant) {
-        tenantId = existingTenant.id;
-      } else {
-        const today = new Date();
-        const trialEnd = new Date();
-        trialEnd.setDate(today.getDate() + 14);
-
-        const { data: newTenant, error: tenantError } = await supabaseClient
-          .from("tenants")
-          .insert([{
-            company_name: reg.business_name,
-            business_type_id: reg.business_type_id,
-            contact_person: reg.contact_name,
-            phone: reg.contact_phone,
-            whatsapp_number: reg.whatsapp_number,
-            email: reg.contact_email,
-            location: reg.location,
-            package_id: reg.package_id,
-            account_status: "trial",
-            trial_start_date: today.toISOString().split("T")[0],
-            trial_end_date: trialEnd.toISOString().split("T")[0],
-            service_need: reg.service_need,
-            notes: reg.message_notes
-          }])
-          .select()
-          .single();
-
-        if (tenantError) {
-          alert(tenantError.message);
-          return;
-        }
-
-        tenantId = newTenant.id;
-      }
-
-      const selectedSections = reg.selected_sections || [];
-
-      if (selectedSections.length > 0) {
-        const { data: sections, error: sectionsError } = await supabaseClient
-          .from("business_sections")
-          .select("id, slug")
-          .in("slug", selectedSections);
-
-        if (sectionsError) {
-          alert(sectionsError.message);
-          return;
-        }
-
-        const sectionRows = sections.map(section => ({
-          tenant_id: tenantId,
-          business_section_id: section.id,
-          is_enabled: true,
-          notes: "Selected during admin approval"
-        }));
-
-        if (sectionRows.length > 0) {
-          await supabaseClient
-            .from("tenant_sections")
-            .upsert(sectionRows, {
-              onConflict: "tenant_id,business_section_id"
-            });
-        }
-      }
-
-      const { error: updateError } = await supabaseClient
-        .from("registrations")
-        .update({
-          registration_status: "approved",
-          approved_by: adminUserId,
-          approved_at: new Date().toISOString()
-        })
-        .eq("id", registrationId);
-
-      if (updateError) {
-        alert(updateError.message);
-        return;
-      }
-
-      alert("Registration approved successfully.");
-      loadAdminData();
-    }
-
-    async function loadClients() {
-      const list = document.getElementById("clientsList");
+    async function loadApprovedClients() {
+      const box = document.getElementById("approvedClients");
 
       const { data, error } = await supabaseClient
         .from("tenants")
@@ -366,7 +285,6 @@
           account_status,
           trial_start_date,
           trial_end_date,
-          service_need,
           created_at,
           business_types(name),
           packages(name)
@@ -374,25 +292,81 @@
         .order("created_at", { ascending: false });
 
       if (error) {
-        list.innerHTML = `<p class="danger">${error.message}</p>`;
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
         return;
       }
 
       if (!data || data.length === 0) {
-        list.innerHTML = `<p>No clients yet.</p>`;
+        box.innerHTML = `<p>No approved clients yet.</p>`;
         return;
       }
 
-      list.innerHTML = data.map(client => `
+      box.innerHTML = data.map(client => `
         <div class="row">
           <h3>${client.company_name}</h3>
           <p><strong>Business Type:</strong> ${client.business_types?.name || "N/A"}</p>
           <p><strong>Package:</strong> ${client.packages?.name || "N/A"}</p>
-          <p><strong>Status:</strong> ${client.account_status}</p>
+          <p><strong>Status:</strong> ${client.account_status || "N/A"}</p>
           <p><strong>Trial:</strong> ${client.trial_start_date || "N/A"} to ${client.trial_end_date || "N/A"}</p>
-          <p><strong>Service Need:</strong> ${client.service_need || ""}</p>
+          <p class="small">Created: ${new Date(client.created_at).toLocaleString()}</p>
         </div>
       `).join("");
+    }
+
+    async function loadSupportIssues() {
+      const box = document.getElementById("supportIssues");
+
+      const { data, error } = await supabaseClient
+        .from("support_issues")
+        .select(`
+          id,
+          tenant_id,
+          issue_title,
+          issue_type,
+          priority,
+          status,
+          description,
+          created_at,
+          tenants(company_name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No support issues submitted yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(issue => {
+        let priorityClass = "badge";
+
+        if (issue.priority === "urgent") {
+          priorityClass = "badge urgent";
+        }
+
+        if (issue.priority === "high") {
+          priorityClass = "badge high";
+        }
+
+        return `
+          <div class="row">
+            <h3>${issue.issue_title || "Untitled Issue"}</h3>
+            <p><strong>Client:</strong> ${issue.tenants?.company_name || "Unknown Client"}</p>
+            <p>
+              <span class="badge">${issue.issue_type || "issue"}</span>
+              <span class="${priorityClass}">${issue.priority || "normal"}</span>
+              <span class="badge">${issue.status || "open"}</span>
+            </p>
+            <p>${issue.description || ""}</p>
+            <p class="small">Submitted: ${new Date(issue.created_at).toLocaleString()}</p>
+          </div>
+        `;
+      }).join("");
     }
   </script>
 </body>
