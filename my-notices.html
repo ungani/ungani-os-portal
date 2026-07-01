@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Client Notices</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1050px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 16px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .notice-urgent {
+      border-left: 6px solid #b00020;
+    }
+
+    .notice-high {
+      border-left: 6px solid #D4A63A;
+    }
+
+    .notice-normal {
+      border-left: 6px solid #061C3D;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .blocked-box {
+      border-left: 6px solid #b00020;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Notices</span></h1>
+      <p>View important notices, updates, reminders, and announcements from UNGANI.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="client.html">Client Dashboard</a> |
+      <a href="reports.html">Reports</a> |
+      <a href="account.html">Account</a> |
+      <a href="my-support.html">Support Center</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Client Login</h2>
+
+      <label>Email</label>
+      <input id="clientEmail" placeholder="client@example.com" />
+
+      <label>Password</label>
+      <input id="clientPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginClient()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <p class="small">Please contact UNGANI support if you believe this is a mistake.</p>
+      <button onclick="logoutClient()">Logout</button>
+    </div>
+
+    <div id="noticeArea" class="hidden">
+      <div class="card">
+        <h2 id="companyName">Client Notices</h2>
+        <p id="companyInfo"></p>
+
+        <button onclick="refreshNotices()">Refresh Notices</button>
+        <button onclick="window.location.href='client.html'">Dashboard</button>
+        <button onclick="window.location.href='reports.html'">Reports</button>
+        <button onclick="window.location.href='account.html'">Account</button>
+        <button onclick="window.location.href='my-support.html'">Support Center</button>
+        <button onclick="logoutClient()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Latest Notices</h2>
+        <div id="noticesList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentTenantId = null;
+    let currentUserId = null;
+
+    function badge(value) {
+      let className = "badge";
+
+      if (value === "high" || value === "maintenance" || value === "billing" || value === "trial_reminder") {
+        className = "badge badge-gold";
+      }
+
+      if (value === "urgent") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${value || "N/A"}</span>`;
+    }
+
+    function noticeClass(priority) {
+      if (priority === "urgent") return "row notice-urgent";
+      if (priority === "high") return "row notice-high";
+      return "row notice-normal";
+    }
+
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("noticeArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
+    async function checkExistingSession() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (sessionData?.session?.user?.id) {
+        await loadClientNotices();
+      }
+    }
+
+    async function loginClient() {
+      const email = document.getElementById("clientEmail").value;
+      const password = document.getElementById("clientPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+
+      await loadClientNotices();
+    }
+
+    async function logoutClient() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("noticeArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+    }
+
+    async function loadClientNotices() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentUserId = sessionData?.session?.user?.id;
+
+      if (!currentUserId) {
+        return;
+      }
+
+      const { data: userData, error } = await supabaseClient
+        .from("users")
+        .select(`
+          id,
+          full_name,
+          email,
+          status,
+          tenant_id,
+          tenants(
+            id,
+            company_name,
+            account_status,
+            business_types(name),
+            packages(name)
+          )
+        `)
+        .eq("id", currentUserId)
+        .maybeSingle();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI client profile has not been connected yet.");
+        return;
+      }
+
+      if (userData.status !== "active") {
+        showAccessBlocked("Your user access is currently not active.");
+        return;
+      }
+
+      const tenant = userData.tenants;
+
+      if (!tenant) {
+        showAccessBlocked("Your account is not connected to a business workspace yet.");
+        return;
+      }
+
+      if (tenant.account_status === "suspended") {
+        showAccessBlocked("This business account is currently suspended.");
+        return;
+      }
+
+      if (tenant.account_status === "cancelled") {
+        showAccessBlocked("This business account has been cancelled.");
+        return;
+      }
+
+      currentTenantId = userData.tenant_id;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("noticeArea").classList.remove("hidden");
+
+      document.getElementById("companyName").innerText = tenant.company_name;
+
+      document.getElementById("companyInfo").innerText =
+        `${tenant.business_types?.name || "Business"} | Package: ${tenant.packages?.name || "N/A"} | Status: ${tenant.account_status}`;
+
+      await refreshNotices();
+    }
+
+    async function refreshNotices() {
+      const box = document.getElementById("noticesList");
+
+      const { data, error } = await supabaseClient
+        .from("client_notices")
+        .select(`
+          notice_title,
+          notice_type,
+          priority,
+          message,
+          tenant_id,
+          created_at,
+          updated_at
+        `)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No notices available yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(notice => {
+        const audience = notice.tenant_id ? "Client Notice" : "All Clients";
+
+        return `
+          <div class="${noticeClass(notice.priority)}">
+            <h3>${notice.notice_title}</h3>
+
+            <p>
+              ${badge(audience)}
+              ${badge(notice.notice_type)}
+              ${badge(notice.priority)}
+            </p>
+
+            <p>${notice.message}</p>
+
+            <p class="small">Posted: ${notice.created_at ? new Date(notice.created_at).toLocaleString() : "N/A"}</p>
+            <p class="small">Updated: ${notice.updated_at ? new Date(notice.updated_at).toLocaleString() : "N/A"}</p>
+          </div>
+        `;
+      }).join("");
+    }
+
+    checkExistingSession();
+  </script>
+</body>
+</html>
