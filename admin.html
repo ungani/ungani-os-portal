@@ -63,6 +63,30 @@
       display: none;
     }
 
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 15px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .metric p {
+      font-size: 26px;
+      font-weight: bold;
+      margin: 0;
+    }
+
     .row {
       border: 1px solid #E5E7EB;
       padding: 14px;
@@ -122,7 +146,7 @@
   <div class="container">
     <div class="top">
       <h1>UNGANI <span class="gold">Admin</span></h1>
-      <p>Manage registrations, clients, and support issues.</p>
+      <p>Manage registrations, clients, support, and client activity.</p>
       <p class="small">ungani.com | info@ungani.com</p>
     </div>
 
@@ -154,6 +178,28 @@
       </div>
 
       <div class="card">
+        <h2>Quick Overview</h2>
+        <div class="grid">
+          <div class="metric">
+            <h3>Approved Clients</h3>
+            <p id="clientCount">0</p>
+          </div>
+          <div class="metric">
+            <h3>Pending Registrations</h3>
+            <p id="pendingCount">0</p>
+          </div>
+          <div class="metric">
+            <h3>Support Issues</h3>
+            <p id="supportCount">0</p>
+          </div>
+          <div class="metric">
+            <h3>Recent Money Records</h3>
+            <p id="moneyCount">0</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
         <h2>Pending Registrations</h2>
         <div id="pendingRegistrations">Loading...</div>
       </div>
@@ -168,6 +214,27 @@
         <p class="small">These are support issues submitted from the client dashboard.</p>
         <div id="supportIssues">Loading...</div>
       </div>
+
+      <div class="card">
+        <h2>Client Money Records</h2>
+        <p class="small">Recent sales, expenses, and petty cash entries.</p>
+        <div id="moneyRecords">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>Client Tasks / Follow-ups</h2>
+        <div id="clientTasks">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>Client Items / Assets / Stock</h2>
+        <div id="clientItems">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h2>Client Business Records</h2>
+        <div id="clientBusinessRecords">Loading...</div>
+      </div>
     </div>
   </div>
 
@@ -176,6 +243,11 @@
     const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    function formatMoney(value) {
+      const number = Number(value || 0);
+      return number.toLocaleString("en-KE");
+    }
 
     async function loginAdmin() {
       const email = document.getElementById("adminEmail").value;
@@ -236,6 +308,10 @@
       await loadPendingRegistrations();
       await loadApprovedClients();
       await loadSupportIssues();
+      await loadMoneyRecords();
+      await loadClientTasks();
+      await loadClientItems();
+      await loadClientBusinessRecords();
     }
 
     async function loadPendingRegistrations() {
@@ -263,6 +339,8 @@
         return;
       }
 
+      document.getElementById("pendingCount").innerText = data?.length || 0;
+
       if (!data || data.length === 0) {
         box.innerHTML = `<p>No pending registrations.</p>`;
         return;
@@ -270,7 +348,7 @@
 
       box.innerHTML = data.map(reg => `
         <div class="row">
-          <h3>${reg.company_name}</h3>
+          <h3>${reg.company_name || "Unnamed Business"}</h3>
           <p><strong>Contact:</strong> ${reg.contact_person || "N/A"}</p>
           <p><strong>Email:</strong> ${reg.email || "N/A"}</p>
           <p><strong>Phone:</strong> ${reg.phone || "N/A"}</p>
@@ -304,6 +382,8 @@
         box.innerHTML = `<p class="danger">${error.message}</p>`;
         return;
       }
+
+      document.getElementById("clientCount").innerText = data?.length || 0;
 
       if (!data || data.length === 0) {
         box.innerHTML = `<p>No approved clients yet.</p>`;
@@ -346,6 +426,8 @@
         return;
       }
 
+      document.getElementById("supportCount").innerText = data?.length || 0;
+
       if (!data || data.length === 0) {
         box.innerHTML = `<p>No support issues submitted yet.</p>`;
         return;
@@ -376,6 +458,187 @@
           </div>
         `;
       }).join("");
+    }
+
+    async function loadMoneyRecords() {
+      const box = document.getElementById("moneyRecords");
+
+      const { data, error } = await supabaseClient
+        .from("transactions")
+        .select(`
+          id,
+          transaction_type,
+          amount,
+          currency,
+          paid_to_or_from,
+          description,
+          reference_no,
+          payment_status,
+          transaction_date,
+          created_at,
+          tenants(company_name),
+          categories(name),
+          business_sections(name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      document.getElementById("moneyCount").innerText = data?.length || 0;
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No money records yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(item => `
+        <div class="row">
+          <h3>${item.transaction_type} — ${item.currency || "KES"} ${formatMoney(item.amount)}</h3>
+          <p><strong>Client:</strong> ${item.tenants?.company_name || "Unknown Client"}</p>
+          <p><strong>Section:</strong> ${item.business_sections?.name || "General"}</p>
+          <p><strong>Category:</strong> ${item.categories?.name || "N/A"}</p>
+          <p><strong>Paid To / From:</strong> ${item.paid_to_or_from || "N/A"}</p>
+          <p><strong>Status:</strong> ${item.payment_status || "N/A"}</p>
+          <p><strong>Reference:</strong> ${item.reference_no || "N/A"}</p>
+          <p>${item.description || ""}</p>
+          <p class="small">Date: ${item.transaction_date || "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadClientTasks() {
+      const box = document.getElementById("clientTasks");
+
+      const { data, error } = await supabaseClient
+        .from("tasks")
+        .select(`
+          id,
+          title,
+          description,
+          due_date,
+          status,
+          created_at,
+          tenants(company_name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No client tasks yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(task => `
+        <div class="row">
+          <h3>${task.title}</h3>
+          <p><strong>Client:</strong> ${task.tenants?.company_name || "Unknown Client"}</p>
+          <p><strong>Status:</strong> ${task.status || "N/A"}</p>
+          <p><strong>Due Date:</strong> ${task.due_date || "No due date"}</p>
+          <p>${task.description || ""}</p>
+          <p class="small">Created: ${new Date(task.created_at).toLocaleString()}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadClientItems() {
+      const box = document.getElementById("clientItems");
+
+      const { data, error } = await supabaseClient
+        .from("business_items")
+        .select(`
+          id,
+          item_type,
+          item_name,
+          identity_number,
+          current_status,
+          quantity_on_hand,
+          reorder_level,
+          supplier,
+          next_service_date,
+          notes,
+          created_at,
+          tenants(company_name),
+          business_sections(name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No client items, assets, or stock yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(item => `
+        <div class="row">
+          <h3>${item.item_name}</h3>
+          <p><strong>Client:</strong> ${item.tenants?.company_name || "Unknown Client"}</p>
+          <p><strong>Section:</strong> ${item.business_sections?.name || "General"}</p>
+          <p><strong>Type:</strong> ${item.item_type || "N/A"}</p>
+          <p><strong>Status:</strong> ${item.current_status || "N/A"}</p>
+          <p><strong>Identity:</strong> ${item.identity_number || "N/A"}</p>
+          <p><strong>Quantity:</strong> ${item.quantity_on_hand ?? "N/A"}</p>
+          <p><strong>Reorder Level:</strong> ${item.reorder_level ?? "N/A"}</p>
+          <p><strong>Supplier:</strong> ${item.supplier || "N/A"}</p>
+          <p><strong>Next Service:</strong> ${item.next_service_date || "N/A"}</p>
+          <p>${item.notes || ""}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadClientBusinessRecords() {
+      const box = document.getElementById("clientBusinessRecords");
+
+      const { data, error } = await supabaseClient
+        .from("business_records")
+        .select(`
+          id,
+          record_title,
+          record_type,
+          record_status,
+          record_date,
+          description,
+          created_at,
+          tenants(company_name),
+          business_sections(name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No client business records yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(record => `
+        <div class="row">
+          <h3>${record.record_title}</h3>
+          <p><strong>Client:</strong> ${record.tenants?.company_name || "Unknown Client"}</p>
+          <p><strong>Section:</strong> ${record.business_sections?.name || "General"}</p>
+          <p><strong>Type:</strong> ${record.record_type || "N/A"}</p>
+          <p><strong>Status:</strong> ${record.record_status || "N/A"}</p>
+          <p><strong>Date:</strong> ${record.record_date || "N/A"}</p>
+          <p>${record.description || ""}</p>
+        </div>
+      `).join("");
     }
   </script>
 </body>
