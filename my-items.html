@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Items & Assets</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    textarea {
+      min-height: 90px;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 15px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .metric p {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .blocked-box {
+      border-left: 6px solid #b00020;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Items & Assets</span></h1>
+      <p>Manage stock, assets, equipment, products, rooms, trucks, and inventory status.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="client.html">Client Dashboard</a> |
+      <a href="reports.html">Reports</a> |
+      <a href="my-tasks.html">Task Center</a> |
+      <a href="account.html">Account</a> |
+      <a href="my-support.html">Support Center</a> |
+      <a href="my-notices.html">Notices</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Client Login</h2>
+
+      <label>Email</label>
+      <input id="clientEmail" placeholder="client@example.com" />
+
+      <label>Password</label>
+      <input id="clientPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginClient()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <p class="small">Please contact UNGANI support if you believe this is a mistake.</p>
+      <button onclick="logoutClient()">Logout</button>
+    </div>
+
+    <div id="itemsArea" class="hidden">
+      <div class="card">
+        <h2 id="companyName">Items & Assets</h2>
+        <p id="companyInfo"></p>
+
+        <button onclick="refreshItems()">Refresh Items</button>
+        <button onclick="window.location.href='client.html'">Dashboard</button>
+        <button onclick="window.location.href='reports.html'">Reports</button>
+        <button onclick="window.location.href='my-tasks.html'">Task Center</button>
+        <button onclick="window.location.href='account.html'">Account</button>
+        <button onclick="window.location.href='my-support.html'">Support Center</button>
+        <button onclick="window.location.href='my-notices.html'">Notices</button>
+        <button onclick="logoutClient()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Items Overview</h2>
+
+        <div class="grid">
+          <div class="metric">
+            <h3>Total Items</h3>
+            <p id="totalItems">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Available</h3>
+            <p id="availableItems">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Low Stock</h3>
+            <p id="lowStockItems">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Out of Stock</h3>
+            <p id="outOfStockItems">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Maintenance</h3>
+            <p id="maintenanceItems">0</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Add Item / Asset / Stock</h2>
+
+        <label>Business Section</label>
+        <select id="itemSection">
+          <option value="">General</option>
+        </select>
+
+        <label>Item Type</label>
+        <select id="itemType">
+          <option value="Stock Item">Stock Item</option>
+          <option value="Food Ingredient">Food Ingredient</option>
+          <option value="Menu Item">Menu Item</option>
+          <option value="Product">Product</option>
+          <option value="Equipment">Equipment</option>
+          <option value="Truck">Truck</option>
+          <option value="Trailer">Trailer</option>
+          <option value="Reefer">Reefer</option>
+          <option value="Genset">Genset</option>
+          <option value="Room">Room</option>
+          <option value="Security Equipment">Security Equipment</option>
+          <option value="Other">Other</option>
+        </select>
+
+        <label>Item / Asset Name</label>
+        <input id="itemName" placeholder="Example: Rice Stock, Truck KDA 123A, Room 204" />
+
+        <label>Identity Number</label>
+        <input id="identityNumber" placeholder="Plate number, room number, serial number, SKU, etc." />
+
+        <label>Status</label>
+        <select id="currentStatus">
+          <option value="available">Available</option>
+          <option value="in_use">In Use</option>
+          <option value="on_transit">On Transit</option>
+          <option value="occupied">Occupied</option>
+          <option value="booked">Booked / Reserved</option>
+          <option value="cleaning">Cleaning</option>
+          <option value="low_stock">Low Stock</option>
+          <option value="out_of_stock">Out of Stock</option>
+          <option value="under_maintenance">Under Maintenance</option>
+          <option value="out_of_service">Out of Service</option>
+        </select>
+
+        <div class="two-col">
+          <div>
+            <label>Quantity Available</label>
+            <input id="quantityOnHand" type="number" placeholder="Leave blank if not stock-based" />
+          </div>
+
+          <div>
+            <label>Reorder Level</label>
+            <input id="reorderLevel" type="number" placeholder="Example: 5" />
+          </div>
+        </div>
+
+        <label>Supplier</label>
+        <input id="supplier" placeholder="Supplier name if any" />
+
+        <label>Next Service Date</label>
+        <input id="nextServiceDate" type="date" />
+
+        <label>Notes</label>
+        <textarea id="itemNotes" placeholder="Add item details, condition notes, stock notes, or asset notes"></textarea>
+
+        <button onclick="addBusinessItem()">Save Item / Asset</button>
+
+        <div id="itemFormMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>My Items / Assets / Stock</h2>
+        <div id="itemsList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentTenantId = null;
+    let currentUserId = null;
+
+    function numberOrNull(value) {
+      if (value === "" || value === null || value === undefined) return null;
+      return Number(value);
+    }
+
+    function badge(value) {
+      let className = "badge";
+
+      if (value === "low_stock" || value === "booked" || value === "cleaning") {
+        className = "badge badge-gold";
+      }
+
+      if (value === "out_of_stock" || value === "under_maintenance" || value === "out_of_service") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${value || "N/A"}</span>`;
+    }
+
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("itemsArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
+    async function checkExistingSession() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (sessionData?.session?.user?.id) {
+        await loadClientItems();
+      }
+    }
+
+    async function loginClient() {
+      const email = document.getElementById("clientEmail").value;
+      const password = document.getElementById("clientPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+
+      await loadClientItems();
+    }
+
+    async function logoutClient() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("itemsArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+    }
+
+    async function loadClientItems() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentUserId = sessionData?.session?.user?.id;
+
+      if (!currentUserId) {
+        return;
+      }
+
+      const { data: userData, error } = await supabaseClient
+        .from("users")
+        .select(`
+          id,
+          full_name,
+          email,
+          status,
+          tenant_id,
+          tenants(
+            id,
+            company_name,
+            account_status,
+            business_types(name),
+            packages(name)
+          )
+        `)
+        .eq("id", currentUserId)
+        .maybeSingle();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI client profile has not been connected yet.");
+        return;
+      }
+
+      if (userData.status !== "active") {
+        showAccessBlocked("Your user access is currently not active.");
+        return;
+      }
+
+      const tenant = userData.tenants;
+
+      if (!tenant) {
+        showAccessBlocked("Your account is not connected to a business workspace yet.");
+        return;
+      }
+
+      if (tenant.account_status === "suspended") {
+        showAccessBlocked("This business account is currently suspended.");
+        return;
+      }
+
+      if (tenant.account_status === "cancelled") {
+        showAccessBlocked("This business account has been cancelled.");
+        return;
+      }
+
+      currentTenantId = userData.tenant_id;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("itemsArea").classList.remove("hidden");
+
+      document.getElementById("companyName").innerText = tenant.company_name;
+
+      document.getElementById("companyInfo").innerText =
+        `${tenant.business_types?.name || "Business"} | Package: ${tenant.packages?.name || "N/A"} | Status: ${tenant.account_status}`;
+
+      await loadSections();
+      await refreshItems();
+    }
+
+    async function loadSections() {
+      const sectionSelect = document.getElementById("itemSection");
+
+      const { data, error } = await supabaseClient
+        .from("tenant_sections")
+        .select(`
+          is_enabled,
+          business_sections(id, name, slug)
+        `)
+        .eq("tenant_id", currentTenantId)
+        .eq("is_enabled", true);
+
+      if (error) {
+        sectionSelect.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      sectionSelect.innerHTML =
+        '<option value="">General</option>' +
+        (data || []).map(row =>
+          `<option value="${row.business_sections?.id}">${row.business_sections?.name}</option>`
+        ).join("");
+    }
+
+    async function refreshItems() {
+      await loadItems();
+    }
+
+    async function addBusinessItem() {
+      const msg = document.getElementById("itemFormMessage");
+
+      const itemName = document.getElementById("itemName").value;
+
+      if (!itemName) {
+        msg.innerHTML = `<p class="danger">Please enter item or asset name.</p>`;
+        return;
+      }
+
+      const item = {
+        tenant_id: currentTenantId,
+        business_section_id: document.getElementById("itemSection").value || null,
+        item_type: document.getElementById("itemType").value,
+        item_name: itemName,
+        identity_number: document.getElementById("identityNumber").value,
+        current_status: document.getElementById("currentStatus").value,
+        quantity_on_hand: numberOrNull(document.getElementById("quantityOnHand").value),
+        reorder_level: numberOrNull(document.getElementById("reorderLevel").value),
+        supplier: document.getElementById("supplier").value,
+        next_service_date: document.getElementById("nextServiceDate").value || null,
+        notes: document.getElementById("itemNotes").value,
+        created_by: currentUserId,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from("business_items")
+        .insert([item]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Item / asset saved successfully.</p>`;
+
+      document.getElementById("itemName").value = "";
+      document.getElementById("identityNumber").value = "";
+      document.getElementById("quantityOnHand").value = "";
+      document.getElementById("reorderLevel").value = "";
+      document.getElementById("supplier").value = "";
+      document.getElementById("nextServiceDate").value = "";
+      document.getElementById("itemNotes").value = "";
+      document.getElementById("currentStatus").value = "available";
+
+      await loadItems();
+    }
+
+    async function updateBusinessItem(itemId) {
+      const msg = document.getElementById("itemFormMessage");
+
+      const updateRecord = {
+        current_status: document.getElementById(`status_${itemId}`).value,
+        quantity_on_hand: numberOrNull(document.getElementById(`qty_${itemId}`).value),
+        reorder_level: numberOrNull(document.getElementById(`reorder_${itemId}`).value),
+        supplier: document.getElementById(`supplier_${itemId}`).value,
+        next_service_date: document.getElementById(`service_${itemId}`).value || null,
+        notes: document.getElementById(`notes_${itemId}`).value,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from("business_items")
+        .update(updateRecord)
+        .eq("id", itemId);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Item updated successfully.</p>`;
+
+      await loadItems();
+    }
+
+    async function loadItems() {
+      const box = document.getElementById("itemsList");
+
+      const { data, error } = await supabaseClient
+        .from("business_items")
+        .select(`
+          id,
+          item_type,
+          item_name,
+          identity_number,
+          current_status,
+          quantity_on_hand,
+          reorder_level,
+          supplier,
+          next_service_date,
+          notes,
+          created_at,
+          updated_at,
+          business_sections(name)
+        `)
+        .eq("tenant_id", currentTenantId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const items = data || [];
+
+      document.getElementById("totalItems").innerText = items.length;
+      document.getElementById("availableItems").innerText = items.filter(i => i.current_status === "available").length;
+      document.getElementById("lowStockItems").innerText = items.filter(i => i.current_status === "low_stock").length;
+      document.getElementById("outOfStockItems").innerText = items.filter(i => i.current_status === "out_of_stock").length;
+      document.getElementById("maintenanceItems").innerText =
+        items.filter(i => i.current_status === "under_maintenance" || i.current_status === "out_of_service").length;
+
+      if (!items || items.length === 0) {
+        box.innerHTML = `<p>No items, assets, or stock recorded yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = items.map(item => `
+        <div class="row">
+          <h3>${item.item_name}</h3>
+
+          <p>
+            ${badge(item.item_type)}
+            ${badge(item.current_status)}
+          </p>
+
+          <p><strong>Section:</strong> ${item.business_sections?.name || "General"}</p>
+          <p><strong>Identity Number:</strong> ${item.identity_number || "N/A"}</p>
+
+          <div class="two-col">
+            <div>
+              <label>Update Status</label>
+              <select id="status_${item.id}">
+                <option value="available" ${item.current_status === "available" ? "selected" : ""}>Available</option>
+                <option value="in_use" ${item.current_status === "in_use" ? "selected" : ""}>In Use</option>
+                <option value="on_transit" ${item.current_status === "on_transit" ? "selected" : ""}>On Transit</option>
+                <option value="occupied" ${item.current_status === "occupied" ? "selected" : ""}>Occupied</option>
+                <option value="booked" ${item.current_status === "booked" ? "selected" : ""}>Booked / Reserved</option>
+                <option value="cleaning" ${item.current_status === "cleaning" ? "selected" : ""}>Cleaning</option>
+                <option value="low_stock" ${item.current_status === "low_stock" ? "selected" : ""}>Low Stock</option>
+                <option value="out_of_stock" ${item.current_status === "out_of_stock" ? "selected" : ""}>Out of Stock</option>
+                <option value="under_maintenance" ${item.current_status === "under_maintenance" ? "selected" : ""}>Under Maintenance</option>
+                <option value="out_of_service" ${item.current_status === "out_of_service" ? "selected" : ""}>Out of Service</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Quantity Available</label>
+              <input id="qty_${item.id}" type="number" value="${item.quantity_on_hand ?? ""}" />
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div>
+              <label>Reorder Level</label>
+              <input id="reorder_${item.id}" type="number" value="${item.reorder_level ?? ""}" />
+            </div>
+
+            <div>
+              <label>Next Service Date</label>
+              <input id="service_${item.id}" type="date" value="${item.next_service_date || ""}" />
+            </div>
+          </div>
+
+          <label>Supplier</label>
+          <input id="supplier_${item.id}" value="${item.supplier || ""}" />
+
+          <label>Notes</label>
+          <textarea id="notes_${item.id}">${item.notes || ""}</textarea>
+
+          <button onclick="updateBusinessItem('${item.id}')">Save Item Update</button>
+
+          <p class="small">Created: ${item.created_at ? new Date(item.created_at).toLocaleString() : "N/A"}</p>
+          <p class="small">Updated: ${item.updated_at ? new Date(item.updated_at).toLocaleString() : "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    checkExistingSession();
+  </script>
+</body>
+</html>
