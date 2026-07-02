@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Client Tasks</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1050px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    textarea {
+      min-height: 100px;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 15px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .metric p {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .blocked-box {
+      border-left: 6px solid #b00020;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Task Center</span></h1>
+      <p>Create, track, and update business tasks and follow-ups.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="client.html">Client Dashboard</a> |
+      <a href="reports.html">Reports</a> |
+      <a href="account.html">Account</a> |
+      <a href="my-support.html">Support Center</a> |
+      <a href="my-notices.html">Notices</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Client Login</h2>
+
+      <label>Email</label>
+      <input id="clientEmail" placeholder="client@example.com" />
+
+      <label>Password</label>
+      <input id="clientPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginClient()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <p class="small">Please contact UNGANI support if you believe this is a mistake.</p>
+      <button onclick="logoutClient()">Logout</button>
+    </div>
+
+    <div id="tasksArea" class="hidden">
+      <div class="card">
+        <h2 id="companyName">Client Tasks</h2>
+        <p id="companyInfo"></p>
+
+        <button onclick="refreshTasks()">Refresh Tasks</button>
+        <button onclick="window.location.href='client.html'">Dashboard</button>
+        <button onclick="window.location.href='reports.html'">Reports</button>
+        <button onclick="window.location.href='account.html'">Account</button>
+        <button onclick="window.location.href='my-support.html'">Support Center</button>
+        <button onclick="window.location.href='my-notices.html'">Notices</button>
+        <button onclick="logoutClient()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Task Overview</h2>
+
+        <div class="grid">
+          <div class="metric">
+            <h3>Total Tasks</h3>
+            <p id="totalTasks">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Pending</h3>
+            <p id="pendingTasks">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>In Progress</h3>
+            <p id="progressTasks">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Done</h3>
+            <p id="doneTasks">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Overdue</h3>
+            <p id="overdueTasks">0</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Add New Task / Follow-up</h2>
+
+        <label>Task Title</label>
+        <input id="taskTitle" placeholder="Example: Follow up with supplier" />
+
+        <label>Description</label>
+        <textarea id="taskDescription" placeholder="Add task or follow-up details"></textarea>
+
+        <label>Due Date</label>
+        <input id="taskDueDate" type="date" />
+
+        <label>Status</label>
+        <select id="taskStatus">
+          <option value="pending">Pending</option>
+          <option value="in_progress">In Progress</option>
+          <option value="done">Done</option>
+          <option value="overdue">Overdue</option>
+        </select>
+
+        <button onclick="addTask()">Save Task</button>
+
+        <div id="taskFormMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>My Tasks / Follow-ups</h2>
+        <div id="tasksList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentTenantId = null;
+    let currentUserId = null;
+
+    function statusBadge(status) {
+      let className = "badge";
+
+      if (status === "in_progress") {
+        className = "badge badge-gold";
+      }
+
+      if (status === "overdue") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${status || "N/A"}</span>`;
+    }
+
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("tasksArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
+    async function checkExistingSession() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (sessionData?.session?.user?.id) {
+        await loadClientTasks();
+      }
+    }
+
+    async function loginClient() {
+      const email = document.getElementById("clientEmail").value;
+      const password = document.getElementById("clientPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+
+      await loadClientTasks();
+    }
+
+    async function logoutClient() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("tasksArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+    }
+
+    async function loadClientTasks() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentUserId = sessionData?.session?.user?.id;
+
+      if (!currentUserId) {
+        return;
+      }
+
+      const { data: userData, error } = await supabaseClient
+        .from("users")
+        .select(`
+          id,
+          full_name,
+          email,
+          status,
+          tenant_id,
+          tenants(
+            id,
+            company_name,
+            account_status,
+            business_types(name),
+            packages(name)
+          )
+        `)
+        .eq("id", currentUserId)
+        .maybeSingle();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI client profile has not been connected yet.");
+        return;
+      }
+
+      if (userData.status !== "active") {
+        showAccessBlocked("Your user access is currently not active.");
+        return;
+      }
+
+      const tenant = userData.tenants;
+
+      if (!tenant) {
+        showAccessBlocked("Your account is not connected to a business workspace yet.");
+        return;
+      }
+
+      if (tenant.account_status === "suspended") {
+        showAccessBlocked("This business account is currently suspended.");
+        return;
+      }
+
+      if (tenant.account_status === "cancelled") {
+        showAccessBlocked("This business account has been cancelled.");
+        return;
+      }
+
+      currentTenantId = userData.tenant_id;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("tasksArea").classList.remove("hidden");
+
+      document.getElementById("companyName").innerText = tenant.company_name;
+
+      document.getElementById("companyInfo").innerText =
+        `${tenant.business_types?.name || "Business"} | Package: ${tenant.packages?.name || "N/A"} | Status: ${tenant.account_status}`;
+
+      await refreshTasks();
+    }
+
+    async function refreshTasks() {
+      await loadTasks();
+    }
+
+    async function addTask() {
+      const msg = document.getElementById("taskFormMessage");
+
+      const title = document.getElementById("taskTitle").value;
+
+      if (!title) {
+        msg.innerHTML = `<p class="danger">Please enter a task title.</p>`;
+        return;
+      }
+
+      const task = {
+        tenant_id: currentTenantId,
+        title: title,
+        description: document.getElementById("taskDescription").value,
+        due_date: document.getElementById("taskDueDate").value || null,
+        status: document.getElementById("taskStatus").value,
+        created_by: currentUserId,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from("tasks")
+        .insert([task]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Task saved successfully.</p>`;
+
+      document.getElementById("taskTitle").value = "";
+      document.getElementById("taskDescription").value = "";
+      document.getElementById("taskDueDate").value = "";
+      document.getElementById("taskStatus").value = "pending";
+
+      await loadTasks();
+    }
+
+    async function updateTaskStatus(taskId) {
+      const msg = document.getElementById("taskFormMessage");
+      const newStatus = document.getElementById(`status_${taskId}`).value;
+
+      const { error } = await supabaseClient
+        .from("tasks")
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", taskId);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Task status updated successfully.</p>`;
+
+      await loadTasks();
+    }
+
+    async function loadTasks() {
+      const box = document.getElementById("tasksList");
+
+      const { data, error } = await supabaseClient
+        .from("tasks")
+        .select("id, title, description, due_date, status, created_at, updated_at")
+        .eq("tenant_id", currentTenantId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const tasks = data || [];
+
+      document.getElementById("totalTasks").innerText = tasks.length;
+      document.getElementById("pendingTasks").innerText = tasks.filter(t => t.status === "pending").length;
+      document.getElementById("progressTasks").innerText = tasks.filter(t => t.status === "in_progress").length;
+      document.getElementById("doneTasks").innerText = tasks.filter(t => t.status === "done").length;
+      document.getElementById("overdueTasks").innerText = tasks.filter(t => t.status === "overdue").length;
+
+      if (!tasks || tasks.length === 0) {
+        box.innerHTML = `<p>No tasks or follow-ups yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = tasks.map(task => `
+        <div class="row">
+          <h3>${task.title}</h3>
+
+          <p>${statusBadge(task.status)}</p>
+
+          <p><strong>Description:</strong></p>
+          <p>${task.description || "N/A"}</p>
+
+          <p><strong>Due Date:</strong> ${task.due_date || "No due date"}</p>
+
+          <label>Update Status</label>
+          <select id="status_${task.id}">
+            <option value="pending" ${task.status === "pending" ? "selected" : ""}>Pending</option>
+            <option value="in_progress" ${task.status === "in_progress" ? "selected" : ""}>In Progress</option>
+            <option value="done" ${task.status === "done" ? "selected" : ""}>Done</option>
+            <option value="overdue" ${task.status === "overdue" ? "selected" : ""}>Overdue</option>
+          </select>
+
+          <button onclick="updateTaskStatus('${task.id}')">Save Status</button>
+
+          <p class="small">Created: ${task.created_at ? new Date(task.created_at).toLocaleString() : "N/A"}</p>
+          <p class="small">Updated: ${task.updated_at ? new Date(task.updated_at).toLocaleString() : "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    checkExistingSession();
+  </script>
+</body>
+</html>
