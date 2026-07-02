@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Money Center</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1150px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    textarea {
+      min-height: 90px;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 15px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .metric p {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .blocked-box {
+      border-left: 6px solid #b00020;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Money Center</span></h1>
+      <p>Manage sales, expenses, petty cash, payment status, and business money records.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="client.html">Client Dashboard</a> |
+      <a href="reports.html">Reports</a> |
+      <a href="my-tasks.html">Task Center</a> |
+      <a href="my-items.html">Items & Assets</a> |
+      <a href="account.html">Account</a> |
+      <a href="my-support.html">Support Center</a> |
+      <a href="my-notices.html">Notices</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Client Login</h2>
+
+      <label>Email</label>
+      <input id="clientEmail" placeholder="client@example.com" />
+
+      <label>Password</label>
+      <input id="clientPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginClient()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <p class="small">Please contact UNGANI support if you believe this is a mistake.</p>
+      <button onclick="logoutClient()">Logout</button>
+    </div>
+
+    <div id="moneyArea" class="hidden">
+      <div class="card">
+        <h2 id="companyName">Money Center</h2>
+        <p id="companyInfo"></p>
+
+        <button onclick="refreshMoney()">Refresh Money</button>
+        <button onclick="window.location.href='client.html'">Dashboard</button>
+        <button onclick="window.location.href='reports.html'">Reports</button>
+        <button onclick="window.location.href='my-tasks.html'">Task Center</button>
+        <button onclick="window.location.href='my-items.html'">Items & Assets</button>
+        <button onclick="window.location.href='account.html'">Account</button>
+        <button onclick="window.location.href='my-support.html'">Support Center</button>
+        <button onclick="window.location.href='my-notices.html'">Notices</button>
+        <button onclick="logoutClient()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Money Overview</h2>
+
+        <div class="grid">
+          <div class="metric">
+            <h3>Sales / Income</h3>
+            <p id="salesIncome">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Operating Expenses</h3>
+            <p id="operatingExpenses">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Petty Cash In</h3>
+            <p id="pettyCashIn">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Petty Cash Used</h3>
+            <p id="pettyCashUsed">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Petty Cash Balance</h3>
+            <p id="pettyCashBalance">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Net Balance</h3>
+            <p id="netBalance">0</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Add Money Record</h2>
+
+        <label>Record Type</label>
+        <select id="moneyType" onchange="loadMoneyCategories()">
+          <option value="sale">Sales / Income</option>
+          <option value="expense">Operating Expense</option>
+          <option value="petty_cash_in">Petty Cash In</option>
+          <option value="petty_cash_out">Petty Cash Out</option>
+        </select>
+
+        <label>Business Section</label>
+        <select id="moneySection">
+          <option value="">General</option>
+        </select>
+
+        <label>Category</label>
+        <select id="moneyCategory">
+          <option value="">Loading categories...</option>
+        </select>
+
+        <div class="two-col">
+          <div>
+            <label>Amount</label>
+            <input id="moneyAmount" type="number" placeholder="Enter amount" />
+          </div>
+
+          <div>
+            <label>Currency</label>
+            <select id="moneyCurrency">
+              <option value="KES">KES</option>
+              <option value="USD">USD</option>
+            </select>
+          </div>
+        </div>
+
+        <label>Payment Status</label>
+        <select id="paymentStatus">
+          <option value="paid">Paid</option>
+          <option value="pending">Pending</option>
+          <option value="partial">Partial</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+
+        <label>Transaction Date</label>
+        <input id="transactionDate" type="date" />
+
+        <label>Paid To / From</label>
+        <input id="paidToOrFrom" placeholder="Customer, supplier, staff, driver, etc." />
+
+        <label>Reference Number</label>
+        <input id="moneyReference" placeholder="Receipt, invoice, M-Pesa, transaction reference" />
+
+        <label>Description / Notes</label>
+        <textarea id="moneyDescription" placeholder="Add short details"></textarea>
+
+        <button onclick="addMoneyRecord()">Save Money Record</button>
+
+        <div id="moneyFormMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>Money Records</h2>
+        <div id="moneyRecords">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentTenantId = null;
+    let currentUserId = null;
+
+    function formatMoney(value) {
+      const number = Number(value || 0);
+      return number.toLocaleString("en-KE");
+    }
+
+    function numberOrZero(value) {
+      const number = Number(value || 0);
+      if (isNaN(number)) return 0;
+      return number;
+    }
+
+    function safe(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function safeAttr(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function badge(value) {
+      let className = "badge";
+
+      if (value === "pending" || value === "partial" || value === "expense" || value === "petty_cash_out") {
+        className = "badge badge-gold";
+      }
+
+      if (value === "cancelled") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${safe(value || "N/A")}</span>`;
+    }
+
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("moneyArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
+    function setTodayDate() {
+      const today = new Date().toISOString().split("T")[0];
+      document.getElementById("transactionDate").value = today;
+    }
+
+    async function checkExistingSession() {
+      setTodayDate();
+
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (sessionData?.session?.user?.id) {
+        await loadClientMoney();
+      }
+    }
+
+    async function loginClient() {
+      const email = document.getElementById("clientEmail").value;
+      const password = document.getElementById("clientPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+
+      await loadClientMoney();
+    }
+
+    async function logoutClient() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("moneyArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+    }
+
+    async function loadClientMoney() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentUserId = sessionData?.session?.user?.id;
+
+      if (!currentUserId) {
+        return;
+      }
+
+      const { data: userData, error } = await supabaseClient
+        .from("users")
+        .select(`
+          id,
+          full_name,
+          email,
+          status,
+          tenant_id,
+          tenants(
+            id,
+            company_name,
+            account_status,
+            business_types(name),
+            packages(name)
+          )
+        `)
+        .eq("id", currentUserId)
+        .maybeSingle();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI client profile has not been connected yet.");
+        return;
+      }
+
+      if (userData.status !== "active") {
+        showAccessBlocked("Your user access is currently not active.");
+        return;
+      }
+
+      const tenant = userData.tenants;
+
+      if (!tenant) {
+        showAccessBlocked("Your account is not connected to a business workspace yet.");
+        return;
+      }
+
+      if (tenant.account_status === "suspended") {
+        showAccessBlocked("This business account is currently suspended.");
+        return;
+      }
+
+      if (tenant.account_status === "cancelled") {
+        showAccessBlocked("This business account has been cancelled.");
+        return;
+      }
+
+      currentTenantId = userData.tenant_id;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("moneyArea").classList.remove("hidden");
+
+      document.getElementById("companyName").innerText = tenant.company_name;
+
+      document.getElementById("companyInfo").innerText =
+        `${tenant.business_types?.name || "Business"} | Package: ${tenant.packages?.name || "N/A"} | Status: ${tenant.account_status}`;
+
+      await loadSections();
+      await loadMoneyCategories();
+      await refreshMoney();
+    }
+
+    async function loadSections() {
+      const sectionSelect = document.getElementById("moneySection");
+
+      const { data, error } = await supabaseClient
+        .from("tenant_sections")
+        .select(`
+          is_enabled,
+          business_sections(id, name, slug)
+        `)
+        .eq("tenant_id", currentTenantId)
+        .eq("is_enabled", true);
+
+      if (error) {
+        sectionSelect.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      sectionSelect.innerHTML =
+        '<option value="">General</option>' +
+        (data || []).map(row =>
+          `<option value="${row.business_sections?.id}">${safe(row.business_sections?.name)}</option>`
+        ).join("");
+    }
+
+    async function loadMoneyCategories() {
+      const type = document.getElementById("moneyType").value;
+      const categorySelect = document.getElementById("moneyCategory");
+
+      let categoryType = type;
+
+      if (type === "petty_cash_in" || type === "petty_cash_out") {
+        categoryType = "petty_cash";
+      }
+
+      const { data, error } = await supabaseClient
+        .from("categories")
+        .select("id, name")
+        .eq("transaction_type", categoryType)
+        .eq("is_active", true)
+        .order("name");
+
+      if (error) {
+        categorySelect.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      categorySelect.innerHTML =
+        '<option value="">Select category</option>' +
+        (data || []).map(c => `<option value="${c.id}">${safe(c.name)}</option>`).join("");
+    }
+
+    async function refreshMoney() {
+      await loadMoneySummary();
+      await loadMoneyRecords();
+    }
+
+    async function addMoneyRecord() {
+      const msg = document.getElementById("moneyFormMessage");
+
+      const amount = Number(document.getElementById("moneyAmount").value || 0);
+
+      if (!amount || amount <= 0) {
+        msg.innerHTML = `<p class="danger">Please enter a valid amount.</p>`;
+        return;
+      }
+
+      const record = {
+        tenant_id: currentTenantId,
+        business_section_id: document.getElementById("moneySection").value || null,
+        category_id: document.getElementById("moneyCategory").value || null,
+        transaction_type: document.getElementById("moneyType").value,
+        amount: amount,
+        currency: document.getElementById("moneyCurrency").value,
+        paid_to_or_from: document.getElementById("paidToOrFrom").value,
+        description: document.getElementById("moneyDescription").value,
+        reference_no: document.getElementById("moneyReference").value,
+        payment_status: document.getElementById("paymentStatus").value,
+        transaction_date: document.getElementById("transactionDate").value || new Date().toISOString().split("T")[0],
+        recorded_by: currentUserId,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from("transactions")
+        .insert([record]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Money record saved successfully.</p>`;
+
+      document.getElementById("moneyAmount").value = "";
+      document.getElementById("paidToOrFrom").value = "";
+      document.getElementById("moneyDescription").value = "";
+      document.getElementById("moneyReference").value = "";
+      document.getElementById("paymentStatus").value = "paid";
+      setTodayDate();
+
+      await refreshMoney();
+    }
+
+    async function updateMoneyRecord(recordId) {
+      const msg = document.getElementById("moneyFormMessage");
+
+      const amount = Number(document.getElementById(`amount_${recordId}`).value || 0);
+
+      if (!amount || amount <= 0) {
+        msg.innerHTML = `<p class="danger">Please enter a valid amount before saving.</p>`;
+        return;
+      }
+
+      const updateRecord = {
+        amount: amount,
+        currency: document.getElementById(`currency_${recordId}`).value,
+        payment_status: document.getElementById(`status_${recordId}`).value,
+        transaction_date: document.getElementById(`date_${recordId}`).value || null,
+        paid_to_or_from: document.getElementById(`paid_${recordId}`).value,
+        reference_no: document.getElementById(`reference_${recordId}`).value,
+        description: document.getElementById(`description_${recordId}`).value,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from("transactions")
+        .update(updateRecord)
+        .eq("id", recordId);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Money record updated successfully.</p>`;
+
+      await refreshMoney();
+    }
+
+    async function loadMoneySummary() {
+      const { data, error } = await supabaseClient
+        .from("transactions")
+        .select("transaction_type, amount")
+        .eq("tenant_id", currentTenantId);
+
+      if (error) {
+        console.log(error.message);
+        return;
+      }
+
+      const rows = data || [];
+
+      const salesIncome = rows
+        .filter(r => r.transaction_type === "sale")
+        .reduce((sum, r) => sum + numberOrZero(r.amount), 0);
+
+      const operatingExpenses = rows
+        .filter(r => r.transaction_type === "expense")
+        .reduce((sum, r) => sum + numberOrZero(r.amount), 0);
+
+      const pettyCashIn = rows
+        .filter(r => r.transaction_type === "petty_cash_in")
+        .reduce((sum, r) => sum + numberOrZero(r.amount), 0);
+
+      const pettyCashUsed = rows
+        .filter(r => r.transaction_type === "petty_cash_out")
+        .reduce((sum, r) => sum + numberOrZero(r.amount), 0);
+
+      const pettyCashBalance = pettyCashIn - pettyCashUsed;
+      const netBalance = salesIncome - operatingExpenses + pettyCashBalance;
+
+      document.getElementById("salesIncome").innerText = formatMoney(salesIncome);
+      document.getElementById("operatingExpenses").innerText = formatMoney(operatingExpenses);
+      document.getElementById("pettyCashIn").innerText = formatMoney(pettyCashIn);
+      document.getElementById("pettyCashUsed").innerText = formatMoney(pettyCashUsed);
+      document.getElementById("pettyCashBalance").innerText = formatMoney(pettyCashBalance);
+      document.getElementById("netBalance").innerText = formatMoney(netBalance);
+    }
+
+    async function loadMoneyRecords() {
+      const box = document.getElementById("moneyRecords");
+
+      const { data, error } = await supabaseClient
+        .from("transactions")
+        .select(`
+          id,
+          transaction_type,
+          amount,
+          currency,
+          paid_to_or_from,
+          description,
+          reference_no,
+          payment_status,
+          transaction_date,
+          created_at,
+          updated_at,
+          categories(name),
+          business_sections(name)
+        `)
+        .eq("tenant_id", currentTenantId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const records = data || [];
+
+      if (!records || records.length === 0) {
+        box.innerHTML = `<p>No money records yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = records.map(record => `
+        <div class="row">
+          <h3>${safe(record.transaction_type)} — ${safe(record.currency || "KES")} ${formatMoney(record.amount)}</h3>
+
+          <p>
+            ${badge(record.transaction_type)}
+            ${badge(record.payment_status)}
+          </p>
+
+          <p><strong>Section:</strong> ${safe(record.business_sections?.name || "General")}</p>
+          <p><strong>Category:</strong> ${safe(record.categories?.name || "N/A")}</p>
+
+          <div class="two-col">
+            <div>
+              <label>Amount</label>
+              <input id="amount_${record.id}" type="number" value="${safeAttr(record.amount)}" />
+            </div>
+
+            <div>
+              <label>Currency</label>
+              <select id="currency_${record.id}">
+                <option value="KES" ${record.currency === "KES" ? "selected" : ""}>KES</option>
+                <option value="USD" ${record.currency === "USD" ? "selected" : ""}>USD</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div>
+              <label>Payment Status</label>
+              <select id="status_${record.id}">
+                <option value="paid" ${record.payment_status === "paid" ? "selected" : ""}>Paid</option>
+                <option value="pending" ${record.payment_status === "pending" ? "selected" : ""}>Pending</option>
+                <option value="partial" ${record.payment_status === "partial" ? "selected" : ""}>Partial</option>
+                <option value="cancelled" ${record.payment_status === "cancelled" ? "selected" : ""}>Cancelled</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Transaction Date</label>
+              <input id="date_${record.id}" type="date" value="${safeAttr(record.transaction_date || "")}" />
+            </div>
+          </div>
+
+          <label>Paid To / From</label>
+          <input id="paid_${record.id}" value="${safeAttr(record.paid_to_or_from || "")}" />
+
+          <label>Reference Number</label>
+          <input id="reference_${record.id}" value="${safeAttr(record.reference_no || "")}" />
+
+          <label>Description / Notes</label>
+          <textarea id="description_${record.id}">${safe(record.description || "")}</textarea>
+
+          <button onclick="updateMoneyRecord('${record.id}')">Save Money Update</button>
+
+          <p class="small">Created: ${record.created_at ? new Date(record.created_at).toLocaleString() : "N/A"}</p>
+          <p class="small">Updated: ${record.updated_at ? new Date(record.updated_at).toLocaleString() : "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    checkExistingSession();
+  </script>
+</body>
+</html>
