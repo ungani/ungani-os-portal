@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Admin Reports</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 15px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .metric p {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .blocked-box {
+      border-left: 6px solid #b00020;
+    }
+
+    @media print {
+      body {
+        background: #FFFFFF;
+        color: #000000;
+      }
+
+      .container {
+        max-width: 100%;
+        padding: 0;
+      }
+
+      .nav,
+      #loginCard,
+      .no-print,
+      button {
+        display: none !important;
+      }
+
+      .card {
+        border: 1px solid #999;
+        box-shadow: none;
+        page-break-inside: avoid;
+      }
+
+      .top {
+        color: #000000;
+      }
+
+      .gold {
+        color: #000000;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Admin Reports</span></h1>
+      <p>Admin client report center for reviewing client activity, money, records, tasks, items, and support.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav no-print">
+      <a href="portal.html">Portal</a> |
+      <a href="admin.html">Admin Dashboard</a> |
+      <a href="users.html">Client Users</a> |
+      <a href="sections.html">Client Sections</a> |
+      <a href="billing.html">Billing</a> |
+      <a href="support.html">Support Management</a> |
+      <a href="notices.html">Notice Board</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Admin Login</h2>
+
+      <label>Email</label>
+      <input id="adminEmail" placeholder="admin@example.com" />
+
+      <label>Password</label>
+      <input id="adminPassword" type="password" placeholder="Enter admin password" />
+
+      <button onclick="loginAdmin()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <button onclick="logoutAdmin()">Logout</button>
+    </div>
+
+    <div id="adminArea" class="hidden">
+      <div class="card no-print">
+        <h2>Report Filters</h2>
+
+        <label>Select Client</label>
+        <select id="clientSelect" onchange="refreshAdminReport()">
+          <option value="">Loading clients...</option>
+        </select>
+
+        <div class="two-col">
+          <div>
+            <label>Start Date</label>
+            <input id="startDate" type="date" />
+          </div>
+
+          <div>
+            <label>End Date</label>
+            <input id="endDate" type="date" />
+          </div>
+        </div>
+
+        <button onclick="refreshAdminReport()">Apply Filter</button>
+        <button onclick="setThisMonth()">This Month</button>
+        <button onclick="clearFilters()">Clear Filters</button>
+        <button onclick="window.print()" class="dark-btn">Print / Save PDF</button>
+        <button onclick="logoutAdmin()" class="dark-btn">Logout</button>
+
+        <div id="filterMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2 id="reportClientName">Client Report</h2>
+        <p id="reportClientInfo"></p>
+        <p id="reportPeriod"></p>
+      </div>
+
+      <div class="card">
+        <h2>Admin Summary</h2>
+
+        <div class="grid">
+          <div class="metric">
+            <h3>Sales / Income</h3>
+            <p id="salesIncome">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Expenses</h3>
+            <p id="operatingExpenses">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Net Balance</h3>
+            <p id="netBalance">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Tasks</h3>
+            <p id="taskCount">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Items / Assets</h3>
+            <p id="itemCount">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Support Issues</h3>
+            <p id="supportCount">0</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Money Records</h2>
+        <div id="moneyRecords">Choose a client to load report.</div>
+      </div>
+
+      <div class="card">
+        <h2>Business Records</h2>
+        <div id="businessRecords">Choose a client to load report.</div>
+      </div>
+
+      <div class="card">
+        <h2>Tasks / Follow-ups</h2>
+        <div id="tasksList">Choose a client to load report.</div>
+      </div>
+
+      <div class="card">
+        <h2>Items / Assets / Stock</h2>
+        <div id="itemsList">Choose a client to load report.</div>
+      </div>
+
+      <div class="card">
+        <h2>Support Issues</h2>
+        <div id="supportIssues">Choose a client to load report.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let clients = [];
+
+    function formatMoney(value) {
+      const number = Number(value || 0);
+      return number.toLocaleString("en-KE");
+    }
+
+    function numberOrZero(value) {
+      const number = Number(value || 0);
+      if (isNaN(number)) return 0;
+      return number;
+    }
+
+    function safe(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function badge(value) {
+      let className = "badge";
+
+      if (value === "pending" || value === "partial" || value === "in_progress" || value === "low_stock") {
+        className = "badge badge-gold";
+      }
+
+      if (value === "cancelled" || value === "urgent" || value === "out_of_stock" || value === "under_maintenance") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${safe(value || "N/A")}</span>`;
+    }
+
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("adminArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
+    function getSelectedTenantId() {
+      return document.getElementById("clientSelect").value;
+    }
+
+    function getStartDate() {
+      return document.getElementById("startDate").value;
+    }
+
+    function getEndDate() {
+      return document.getElementById("endDate").value;
+    }
+
+    function updateReportPeriod() {
+      const start = getStartDate();
+      const end = getEndDate();
+
+      let text = "Report Period: All available records";
+
+      if (start && end) {
+        text = `Report Period: ${start} to ${end}`;
+      } else if (start) {
+        text = `Report Period: From ${start}`;
+      } else if (end) {
+        text = `Report Period: Up to ${end}`;
+      }
+
+      document.getElementById("reportPeriod").innerText = text;
+    }
+
+    function setThisMonth() {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+      const today = new Date().toISOString().split("T")[0];
+
+      document.getElementById("startDate").value = firstDay;
+      document.getElementById("endDate").value = today;
+
+      refreshAdminReport();
+    }
+
+    function clearFilters() {
+      document.getElementById("startDate").value = "";
+      document.getElementById("endDate").value = "";
+
+      refreshAdminReport();
+    }
+
+    function applyDateFilter(query, dateColumn, isTimestamp = false) {
+      const start = getStartDate();
+      const end = getEndDate();
+
+      if (start) {
+        query = query.gte(dateColumn, isTimestamp ? `${start}T00:00:00` : start);
+      }
+
+      if (end) {
+        query = query.lte(dateColumn, isTimestamp ? `${end}T23:59:59` : end);
+      }
+
+      return query;
+    }
+
+    async function checkExistingSession() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (sessionData?.session?.user?.id) {
+        await openAdminArea();
+      }
+    }
+
+    async function loginAdmin() {
+      const email = document.getElementById("adminEmail").value;
+      const password = document.getElementById("adminPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+
+      await openAdminArea();
+    }
+
+    async function logoutAdmin() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("adminArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+    }
+
+    async function openAdminArea() {
+      const { data: isAdmin, error } = await supabaseClient.rpc("is_ungani_admin");
+
+      if (error) {
+        showAccessBlocked(error.message);
+        return;
+      }
+
+      if (!isAdmin) {
+        showAccessBlocked("This page is only for UNGANI Admin users.");
+        return;
+      }
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("adminArea").classList.remove("hidden");
+
+      await loadClients();
+    }
+
+    async function loadClients() {
+      const select = document.getElementById("clientSelect");
+
+      const { data, error } = await supabaseClient
+        .from("tenants")
+        .select(`
+          id,
+          company_name,
+          account_status,
+          trial_start_date,
+          trial_end_date,
+          business_types(name),
+          packages(name)
+        `)
+        .order("company_name", { ascending: true });
+
+      if (error) {
+        select.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      clients = data || [];
+
+      if (clients.length === 0) {
+        select.innerHTML = `<option value="">No clients found</option>`;
+        return;
+      }
+
+      select.innerHTML = clients.map(client =>
+        `<option value="${client.id}">${safe(client.company_name)} — ${safe(client.account_status || "N/A")}</option>`
+      ).join("");
+
+      await refreshAdminReport();
+    }
+
+    function selectedClient() {
+      const tenantId = getSelectedTenantId();
+      return clients.find(client => client.id === tenantId);
+    }
+
+    async function refreshAdminReport() {
+      const tenantId = getSelectedTenantId();
+
+      if (!tenantId) {
+        document.getElementById("filterMessage").innerHTML = `<p class="danger">Please select a client.</p>`;
+        return;
+      }
+
+      const client = selectedClient();
+
+      if (client) {
+        document.getElementById("reportClientName").innerText = client.company_name;
+        document.getElementById("reportClientInfo").innerText =
+          `${client.business_types?.name || "Business"} | Package: ${client.packages?.name || "N/A"} | Status: ${client.account_status || "N/A"}`;
+      }
+
+      updateReportPeriod();
+
+      await loadMoneyRecords();
+      await loadBusinessRecords();
+      await loadTasks();
+      await loadItems();
+      await loadSupportIssues();
+    }
+
+    async function loadMoneyRecords() {
+      const box = document.getElementById("moneyRecords");
+      const tenantId = getSelectedTenantId();
+
+      let query = supabaseClient
+        .from("transactions")
+        .select(`
+          transaction_type,
+          amount,
+          currency,
+          paid_to_or_from,
+          description,
+          reference_no,
+          payment_status,
+          transaction_date,
+          categories(name),
+          business_sections(name)
+        `)
+        .eq("tenant_id", tenantId)
+        .order("transaction_date", { ascending: false })
+        .limit(200);
+
+      query = applyDateFilter(query, "transaction_date");
+
+      const { data, error } = await query;
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const rows = data || [];
+
+      const salesIncome = rows
+        .filter(r => r.transaction_type === "sale")
+        .reduce((sum, r) => sum + numberOrZero(r.amount), 0);
+
+      const operatingExpenses = rows
+        .filter(r => r.transaction_type === "expense")
+        .reduce((sum, r) => sum + numberOrZero(r.amount), 0);
+
+      const pettyCashIn = rows
+        .filter(r => r.transaction_type === "petty_cash_in")
+        .reduce((sum, r) => sum + numberOrZero(r.amount), 0);
+
+      const pettyCashUsed = rows
+        .filter(r => r.transaction_type === "petty_cash_out")
+        .reduce((sum, r) => sum + numberOrZero(r.amount), 0);
+
+      const netBalance = salesIncome - operatingExpenses + (pettyCashIn - pettyCashUsed);
+
+      document.getElementById("salesIncome").innerText = formatMoney(salesIncome);
+      document.getElementById("operatingExpenses").innerText = formatMoney(operatingExpenses);
+      document.getElementById("netBalance").innerText = formatMoney(netBalance);
+
+      if (rows.length === 0) {
+        box.innerHTML = `<p>No money records found for this period.</p>`;
+        return;
+      }
+
+      box.innerHTML = rows.map(item => `
+        <div class="row">
+          <h3>${safe(item.transaction_type)} — ${safe(item.currency || "KES")} ${formatMoney(item.amount)}</h3>
+          <p>
+            ${badge(item.payment_status)}
+            ${badge(item.business_sections?.name || "General")}
+            ${badge(item.categories?.name || "N/A")}
+          </p>
+          <p><strong>Paid To / From:</strong> ${safe(item.paid_to_or_from || "N/A")}</p>
+          <p><strong>Reference:</strong> ${safe(item.reference_no || "N/A")}</p>
+          <p>${safe(item.description || "")}</p>
+          <p class="small">Date: ${safe(item.transaction_date || "N/A")}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadBusinessRecords() {
+      const box = document.getElementById("businessRecords");
+      const tenantId = getSelectedTenantId();
+
+      let query = supabaseClient
+        .from("business_records")
+        .select(`
+          record_title,
+          record_type,
+          record_status,
+          record_date,
+          description,
+          business_sections(name)
+        `)
+        .eq("tenant_id", tenantId)
+        .order("record_date", { ascending: false })
+        .limit(200);
+
+      query = applyDateFilter(query, "record_date");
+
+      const { data, error } = await query;
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        box.innerHTML = `<p>No business records found for this period.</p>`;
+        return;
+      }
+
+      box.innerHTML = data.map(record => `
+        <div class="row">
+          <h3>${safe(record.record_title)}</h3>
+          <p>
+            ${badge(record.record_type)}
+            ${badge(record.record_status)}
+            ${badge(record.business_sections?.name || "General")}
+          </p>
+          <p>${safe(record.description || "")}</p>
+          <p class="small">Date: ${safe(record.record_date || "N/A")}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadTasks() {
+      const box = document.getElementById("tasksList");
+      const tenantId = getSelectedTenantId();
+
+      let query = supabaseClient
+        .from("tasks")
+        .select("title, description, due_date, status, created_at")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      query = applyDateFilter(query, "created_at", true);
+
+      const { data, error } = await query;
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const rows = data || [];
+      document.getElementById("taskCount").innerText = rows.length;
+
+      if (rows.length === 0) {
+        box.innerHTML = `<p>No tasks found for this period.</p>`;
+        return;
+      }
+
+      box.innerHTML = rows.map(task => `
+        <div class="row">
+          <h3>${safe(task.title)}</h3>
+          <p>
+            ${badge(task.status)}
+            ${badge(task.due_date || "No due date")}
+          </p>
+          <p>${safe(task.description || "")}</p>
+          <p class="small">Created: ${task.created_at ? new Date(task.created_at).toLocaleString() : "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadItems() {
+      const box = document.getElementById("itemsList");
+      const tenantId = getSelectedTenantId();
+
+      let query = supabaseClient
+        .from("business_items")
+        .select(`
+          item_type,
+          item_name,
+          identity_number,
+          current_status,
+          quantity_on_hand,
+          reorder_level,
+          supplier,
+          next_service_date,
+          notes,
+          created_at,
+          business_sections(name)
+        `)
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      query = applyDateFilter(query, "created_at", true);
+
+      const { data, error } = await query;
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const rows = data || [];
+      document.getElementById("itemCount").innerText = rows.length;
+
+      if (rows.length === 0) {
+        box.innerHTML = `<p>No items or assets found for this period.</p>`;
+        return;
+      }
+
+      box.innerHTML = rows.map(item => `
+        <div class="row">
+          <h3>${safe(item.item_name)}</h3>
+          <p>
+            ${badge(item.item_type)}
+            ${badge(item.current_status)}
+            ${badge(item.business_sections?.name || "General")}
+          </p>
+          <p><strong>Identity:</strong> ${safe(item.identity_number || "N/A")}</p>
+          <p><strong>Quantity:</strong> ${safe(item.quantity_on_hand ?? "N/A")}</p>
+          <p><strong>Reorder Level:</strong> ${safe(item.reorder_level ?? "N/A")}</p>
+          <p><strong>Supplier:</strong> ${safe(item.supplier || "N/A")}</p>
+          <p><strong>Next Service:</strong> ${safe(item.next_service_date || "N/A")}</p>
+          <p>${safe(item.notes || "")}</p>
+          <p class="small">Created: ${item.created_at ? new Date(item.created_at).toLocaleString() : "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadSupportIssues() {
+      const box = document.getElementById("supportIssues");
+      const tenantId = getSelectedTenantId();
+
+      let query = supabaseClient
+        .from("support_issues")
+        .select("issue_title, subject, issue_type, priority, status, description, admin_response, created_at")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      query = applyDateFilter(query, "created_at", true);
+
+      const { data, error } = await query;
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const rows = data || [];
+      document.getElementById("supportCount").innerText = rows.length;
+
+      if (rows.length === 0) {
+        box.innerHTML = `<p>No support issues found for this period.</p>`;
+        return;
+      }
+
+      box.innerHTML = rows.map(issue => `
+        <div class="row">
+          <h3>${safe(issue.issue_title || issue.subject || "Support Issue")}</h3>
+          <p>
+            ${badge(issue.issue_type)}
+            ${badge(issue.priority)}
+            ${badge(issue.status)}
+          </p>
+          <p><strong>Issue:</strong> ${safe(issue.description || "")}</p>
+          <p><strong>UNGANI Reply:</strong> ${safe(issue.admin_response || "No reply yet")}</p>
+          <p class="small">Submitted: ${issue.created_at ? new Date(issue.created_at).toLocaleString() : "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    checkExistingSession();
+  </script>
+</body>
+</html>
