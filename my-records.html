@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Business Records</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1150px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    textarea {
+      min-height: 100px;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 15px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .metric p {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    .blocked-box {
+      border-left: 6px solid #b00020;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Business Records</span></h1>
+      <p>Track daily updates, business notes, incidents, staff notes, client notes, and operational records.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav">
+      <a href="client.html">Client Dashboard</a> |
+      <a href="my-money.html">Money Center</a> |
+      <a href="reports.html">Reports</a> |
+      <a href="my-tasks.html">Task Center</a> |
+      <a href="my-items.html">Items & Assets</a> |
+      <a href="account.html">Account</a> |
+      <a href="my-support.html">Support Center</a> |
+      <a href="my-notices.html">Notices</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Client Login</h2>
+
+      <label>Email</label>
+      <input id="clientEmail" placeholder="client@example.com" />
+
+      <label>Password</label>
+      <input id="clientPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginClient()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <p class="small">Please contact UNGANI support if you believe this is a mistake.</p>
+      <button onclick="logoutClient()">Logout</button>
+    </div>
+
+    <div id="recordsArea" class="hidden">
+      <div class="card">
+        <h2 id="companyName">Business Records</h2>
+        <p id="companyInfo"></p>
+
+        <button onclick="refreshRecords()">Refresh Records</button>
+        <button onclick="window.location.href='client.html'">Dashboard</button>
+        <button onclick="window.location.href='my-money.html'">Money Center</button>
+        <button onclick="window.location.href='reports.html'">Reports</button>
+        <button onclick="window.location.href='my-tasks.html'">Task Center</button>
+        <button onclick="window.location.href='my-items.html'">Items & Assets</button>
+        <button onclick="window.location.href='account.html'">Account</button>
+        <button onclick="window.location.href='my-support.html'">Support Center</button>
+        <button onclick="window.location.href='my-notices.html'">Notices</button>
+        <button onclick="logoutClient()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Records Overview</h2>
+
+        <div class="grid">
+          <div class="metric">
+            <h3>Total Records</h3>
+            <p id="totalRecords">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Open</h3>
+            <p id="openRecords">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>In Progress</h3>
+            <p id="progressRecords">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Closed</h3>
+            <p id="closedRecords">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Today</h3>
+            <p id="todayRecords">0</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Add Business Record</h2>
+
+        <label>Business Section</label>
+        <select id="recordSection">
+          <option value="">General</option>
+        </select>
+
+        <label>Record Title</label>
+        <input id="recordTitle" placeholder="Example: Daily restaurant update, supplier issue, stock note" />
+
+        <label>Record Type</label>
+        <select id="recordType">
+          <option value="general_update">General Update</option>
+          <option value="restaurant_update">Restaurant Update</option>
+          <option value="stock_note">Stock Note</option>
+          <option value="staff_note">Staff Note</option>
+          <option value="task_note">Task Note</option>
+          <option value="incident_note">Incident Note</option>
+          <option value="trip_update">Trip Update</option>
+          <option value="client_note">Client Note</option>
+          <option value="maintenance_note">Maintenance Note</option>
+          <option value="payment_note">Payment Note</option>
+        </select>
+
+        <div class="two-col">
+          <div>
+            <label>Status</label>
+            <select id="recordStatus">
+              <option value="open">Open</option>
+              <option value="in_progress">In Progress</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Record Date</label>
+            <input id="recordDate" type="date" />
+          </div>
+        </div>
+
+        <label>Description</label>
+        <textarea id="recordDescription" placeholder="Write the business update here"></textarea>
+
+        <button onclick="addBusinessRecord()">Save Business Record</button>
+
+        <div id="recordFormMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>My Business Records</h2>
+        <div id="recordsList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentTenantId = null;
+    let currentUserId = null;
+
+    function safe(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function safeAttr(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function badge(value) {
+      let className = "badge";
+
+      if (value === "in_progress" || value === "stock_note" || value === "payment_note") {
+        className = "badge badge-gold";
+      }
+
+      if (value === "incident_note") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${safe(value || "N/A")}</span>`;
+    }
+
+    function setTodayDate() {
+      const today = new Date().toISOString().split("T")[0];
+      document.getElementById("recordDate").value = today;
+    }
+
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("recordsArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
+    async function checkExistingSession() {
+      setTodayDate();
+
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (sessionData?.session?.user?.id) {
+        await loadClientRecords();
+      }
+    }
+
+    async function loginClient() {
+      const email = document.getElementById("clientEmail").value;
+      const password = document.getElementById("clientPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+
+      await loadClientRecords();
+    }
+
+    async function logoutClient() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("recordsArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+    }
+
+    async function loadClientRecords() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentUserId = sessionData?.session?.user?.id;
+
+      if (!currentUserId) {
+        return;
+      }
+
+      const { data: userData, error } = await supabaseClient
+        .from("users")
+        .select(`
+          id,
+          full_name,
+          email,
+          status,
+          tenant_id,
+          tenants(
+            id,
+            company_name,
+            account_status,
+            business_types(name),
+            packages(name)
+          )
+        `)
+        .eq("id", currentUserId)
+        .maybeSingle();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI client profile has not been connected yet.");
+        return;
+      }
+
+      if (userData.status !== "active") {
+        showAccessBlocked("Your user access is currently not active.");
+        return;
+      }
+
+      const tenant = userData.tenants;
+
+      if (!tenant) {
+        showAccessBlocked("Your account is not connected to a business workspace yet.");
+        return;
+      }
+
+      if (tenant.account_status === "suspended") {
+        showAccessBlocked("This business account is currently suspended.");
+        return;
+      }
+
+      if (tenant.account_status === "cancelled") {
+        showAccessBlocked("This business account has been cancelled.");
+        return;
+      }
+
+      currentTenantId = userData.tenant_id;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("recordsArea").classList.remove("hidden");
+
+      document.getElementById("companyName").innerText = tenant.company_name;
+
+      document.getElementById("companyInfo").innerText =
+        `${tenant.business_types?.name || "Business"} | Package: ${tenant.packages?.name || "N/A"} | Status: ${tenant.account_status}`;
+
+      await loadSections();
+      await refreshRecords();
+    }
+
+    async function loadSections() {
+      const sectionSelect = document.getElementById("recordSection");
+
+      const { data, error } = await supabaseClient
+        .from("tenant_sections")
+        .select(`
+          is_enabled,
+          business_sections(id, name, slug)
+        `)
+        .eq("tenant_id", currentTenantId)
+        .eq("is_enabled", true);
+
+      if (error) {
+        sectionSelect.innerHTML = `<option value="">${error.message}</option>`;
+        return;
+      }
+
+      sectionSelect.innerHTML =
+        '<option value="">General</option>' +
+        (data || []).map(row =>
+          `<option value="${row.business_sections?.id}">${safe(row.business_sections?.name)}</option>`
+        ).join("");
+    }
+
+    async function refreshRecords() {
+      await loadRecords();
+    }
+
+    async function addBusinessRecord() {
+      const msg = document.getElementById("recordFormMessage");
+
+      const title = document.getElementById("recordTitle").value;
+      const description = document.getElementById("recordDescription").value;
+
+      if (!title) {
+        msg.innerHTML = `<p class="danger">Please enter a record title.</p>`;
+        return;
+      }
+
+      if (!description) {
+        msg.innerHTML = `<p class="danger">Please add a short description.</p>`;
+        return;
+      }
+
+      const record = {
+        tenant_id: currentTenantId,
+        business_section_id: document.getElementById("recordSection").value || null,
+        record_title: title,
+        record_type: document.getElementById("recordType").value,
+        record_status: document.getElementById("recordStatus").value,
+        record_date: document.getElementById("recordDate").value || new Date().toISOString().split("T")[0],
+        description: description,
+        data_json: {},
+        created_by: currentUserId,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from("business_records")
+        .insert([record]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Business record saved successfully.</p>`;
+
+      document.getElementById("recordTitle").value = "";
+      document.getElementById("recordDescription").value = "";
+      document.getElementById("recordType").value = "general_update";
+      document.getElementById("recordStatus").value = "open";
+      setTodayDate();
+
+      await loadRecords();
+    }
+
+    async function updateBusinessRecord(recordId) {
+      const msg = document.getElementById("recordFormMessage");
+
+      const title = document.getElementById(`title_${recordId}`).value;
+      const description = document.getElementById(`description_${recordId}`).value;
+
+      if (!title) {
+        msg.innerHTML = `<p class="danger">Please keep a record title before saving.</p>`;
+        return;
+      }
+
+      const updateRecord = {
+        record_title: title,
+        record_type: document.getElementById(`type_${recordId}`).value,
+        record_status: document.getElementById(`status_${recordId}`).value,
+        record_date: document.getElementById(`date_${recordId}`).value || null,
+        description: description,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from("business_records")
+        .update(updateRecord)
+        .eq("id", recordId);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Business record updated successfully.</p>`;
+
+      await loadRecords();
+    }
+
+    async function loadRecords() {
+      const box = document.getElementById("recordsList");
+
+      const { data, error } = await supabaseClient
+        .from("business_records")
+        .select(`
+          id,
+          record_title,
+          record_type,
+          record_status,
+          record_date,
+          description,
+          created_at,
+          updated_at,
+          business_sections(name)
+        `)
+        .eq("tenant_id", currentTenantId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const records = data || [];
+      const today = new Date().toISOString().split("T")[0];
+
+      document.getElementById("totalRecords").innerText = records.length;
+      document.getElementById("openRecords").innerText = records.filter(r => r.record_status === "open").length;
+      document.getElementById("progressRecords").innerText = records.filter(r => r.record_status === "in_progress").length;
+      document.getElementById("closedRecords").innerText = records.filter(r => r.record_status === "closed").length;
+      document.getElementById("todayRecords").innerText = records.filter(r => r.record_date === today).length;
+
+      if (!records || records.length === 0) {
+        box.innerHTML = `<p>No business records yet.</p>`;
+        return;
+      }
+
+      box.innerHTML = records.map(record => `
+        <div class="row">
+          <h3>${safe(record.record_title)}</h3>
+
+          <p>
+            ${badge(record.record_type)}
+            ${badge(record.record_status)}
+          </p>
+
+          <p><strong>Section:</strong> ${safe(record.business_sections?.name || "General")}</p>
+
+          <label>Record Title</label>
+          <input id="title_${record.id}" value="${safeAttr(record.record_title)}" />
+
+          <div class="two-col">
+            <div>
+              <label>Record Type</label>
+              <select id="type_${record.id}">
+                <option value="general_update" ${record.record_type === "general_update" ? "selected" : ""}>General Update</option>
+                <option value="restaurant_update" ${record.record_type === "restaurant_update" ? "selected" : ""}>Restaurant Update</option>
+                <option value="stock_note" ${record.record_type === "stock_note" ? "selected" : ""}>Stock Note</option>
+                <option value="staff_note" ${record.record_type === "staff_note" ? "selected" : ""}>Staff Note</option>
+                <option value="task_note" ${record.record_type === "task_note" ? "selected" : ""}>Task Note</option>
+                <option value="incident_note" ${record.record_type === "incident_note" ? "selected" : ""}>Incident Note</option>
+                <option value="trip_update" ${record.record_type === "trip_update" ? "selected" : ""}>Trip Update</option>
+                <option value="client_note" ${record.record_type === "client_note" ? "selected" : ""}>Client Note</option>
+                <option value="maintenance_note" ${record.record_type === "maintenance_note" ? "selected" : ""}>Maintenance Note</option>
+                <option value="payment_note" ${record.record_type === "payment_note" ? "selected" : ""}>Payment Note</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Status</label>
+              <select id="status_${record.id}">
+                <option value="open" ${record.record_status === "open" ? "selected" : ""}>Open</option>
+                <option value="in_progress" ${record.record_status === "in_progress" ? "selected" : ""}>In Progress</option>
+                <option value="closed" ${record.record_status === "closed" ? "selected" : ""}>Closed</option>
+              </select>
+            </div>
+          </div>
+
+          <label>Record Date</label>
+          <input id="date_${record.id}" type="date" value="${safeAttr(record.record_date || "")}" />
+
+          <label>Description</label>
+          <textarea id="description_${record.id}">${safe(record.description || "")}</textarea>
+
+          <button onclick="updateBusinessRecord('${record.id}')">Save Record Update</button>
+
+          <p class="small">Created: ${record.created_at ? new Date(record.created_at).toLocaleString() : "N/A"}</p>
+          <p class="small">Updated: ${record.updated_at ? new Date(record.updated_at).toLocaleString() : "N/A"}</p>
+        </div>
+      `).join("");
+    }
+
+    checkExistingSession();
+  </script>
+</body>
+</html>
