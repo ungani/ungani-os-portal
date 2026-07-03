@@ -163,7 +163,7 @@
 
     .week-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 12px;
     }
 
@@ -172,7 +172,7 @@
       border: 1px solid #E5E7EB;
       border-radius: 12px;
       padding: 14px;
-      min-height: 140px;
+      min-height: 120px;
     }
 
     .day-card h3 {
@@ -347,8 +347,8 @@
       </div>
 
       <div class="card">
-        <h2>This Week Schedule</h2>
-        <p class="small">Shows Monday to Sunday for the current week.</p>
+        <h2>This Week / Upcoming Schedule</h2>
+        <p class="small">Shows current Monday to Sunday. If no event is found this week, it shows your next upcoming events automatically.</p>
         <div id="weekSchedule" class="week-grid">Loading...</div>
       </div>
 
@@ -532,6 +532,10 @@
         .replaceAll(">", "&gt;");
     }
 
+    function cleanText(value) {
+      return safe(value || "N/A").replaceAll("_", " ");
+    }
+
     function localDate(date = new Date()) {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -553,9 +557,15 @@
       return localDate(current);
     }
 
+    function normalizeDate(value) {
+      if (!value) return "";
+      return String(value).slice(0, 10);
+    }
+
     function formatDate(value) {
-      if (!value) return "N/A";
-      return new Date(value + "T00:00:00").toLocaleDateString("en-KE");
+      const cleanDate = normalizeDate(value);
+      if (!cleanDate) return "N/A";
+      return new Date(cleanDate + "T00:00:00").toLocaleDateString("en-KE");
     }
 
     function formatTime(value) {
@@ -578,7 +588,7 @@
         className = "badge badge-danger";
       }
 
-      return `<span class="${className}">${safe(value || "N/A").replaceAll("_", " ")}</span>`;
+      return `<span class="${className}">${cleanText(value)}</span>`;
     }
 
     function showAccessBlocked(reason) {
@@ -589,7 +599,9 @@
     }
 
     function googleDateTime(dateValue, timeValue, durationMinutes) {
-      const start = new Date(`${dateValue}T${String(timeValue || "09:00").slice(0,5)}:00`);
+      const cleanDate = normalizeDate(dateValue);
+      const cleanTime = String(timeValue || "09:00").slice(0, 5);
+      const start = new Date(`${cleanDate}T${cleanTime}:00`);
       const end = new Date(start.getTime() + Number(durationMinutes || 30) * 60000);
 
       function format(date) {
@@ -598,8 +610,7 @@
         const day = String(date.getDate()).padStart(2, "0");
         const hours = String(date.getHours()).padStart(2, "0");
         const minutes = String(date.getMinutes()).padStart(2, "0");
-        const seconds = "00";
-        return `${year}${month}${day}T${hours}${minutes}${seconds}`;
+        return `${year}${month}${day}T${hours}${minutes}00`;
       }
 
       return `${format(start)}/${format(end)}`;
@@ -752,7 +763,7 @@
     async function createEvent() {
       const msg = document.getElementById("eventFormMessage");
 
-      const title = document.getElementById("eventTitle").value;
+      const title = document.getElementById("eventTitle").value.trim();
       const date = document.getElementById("eventDate").value;
       const time = document.getElementById("eventTime").value;
 
@@ -803,7 +814,7 @@
         return;
       }
 
-      msg.innerHTML = `<p class="success">Business event saved successfully.</p>`;
+      msg.innerHTML = `<p class="success">Business event saved successfully. It should now appear below.</p>`;
 
       document.getElementById("eventTitle").value = "";
       document.getElementById("eventDate").value = "";
@@ -819,6 +830,10 @@
       document.getElementById("recurrenceRule").value = "no_repeat";
       document.getElementById("eventChannel").value = "in_person";
       document.getElementById("relatedPerson").value = "";
+
+      document.getElementById("filterType").value = "";
+      document.getElementById("filterStatus").value = "";
+      document.getElementById("filterDate").value = "";
 
       await loadCalendar();
     }
@@ -845,7 +860,7 @@
       const weekStart = getWeekStart();
       const weekEnd = addDays(weekStart, 6);
 
-      const allResponse = await supabaseClient
+      const { data: allRowsRaw, error: allError } = await supabaseClient
         .from("business_events")
         .select(`
           id,
@@ -871,121 +886,115 @@
         .order("event_date", { ascending: true })
         .order("event_time", { ascending: true });
 
-      if (allResponse.error) {
-        document.getElementById("eventsList").innerHTML = `<p class="danger">${allResponse.error.message}</p>`;
+      if (allError) {
+        document.getElementById("eventsList").innerHTML = `<p class="danger">${allError.message}</p>`;
+        document.getElementById("weekSchedule").innerHTML = `<p class="danger">${allError.message}</p>`;
         return;
       }
 
-      const allRows = allResponse.data || [];
+      const allRows = (allRowsRaw || []).map(row => ({
+        ...row,
+        event_date: normalizeDate(row.event_date)
+      }));
 
       document.getElementById("totalEvents").innerText = allRows.length;
-      document.getElementById("upcomingEvents").innerText = allRows.filter(e => e.event_date >= today && e.event_status === "scheduled").length;
-      document.getElementById("todayEvents").innerText = allRows.filter(e => e.event_date === today && e.event_status === "scheduled").length;
-      document.getElementById("weekEvents").innerText = allRows.filter(e => e.event_date >= weekStart && e.event_date <= weekEnd && e.event_status === "scheduled").length;
+      document.getElementById("upcomingEvents").innerText = allRows.filter(e => e.event_date >= today && e.event_status !== "cancelled").length;
+      document.getElementById("todayEvents").innerText = allRows.filter(e => e.event_date === today && e.event_status !== "cancelled").length;
+      document.getElementById("weekEvents").innerText = allRows.filter(e => e.event_date >= weekStart && e.event_date <= weekEnd && e.event_status !== "cancelled").length;
       document.getElementById("completedEvents").innerText = allRows.filter(e => e.event_status === "completed").length;
       document.getElementById("cancelledEvents").innerText = allRows.filter(e => e.event_status === "cancelled").length;
 
       renderWeekSchedule(allRows);
 
-      let query = supabaseClient
-        .from("business_events")
-        .select(`
-          id,
-          event_title,
-          event_type,
-          event_scope,
-          event_status,
-          event_date,
-          event_time,
-          duration_minutes,
-          recurrence_rule,
-          event_channel,
-          meeting_link,
-          location,
-          attendees_text,
-          agenda,
-          notes,
-          related_person_id,
-          created_at,
-          updated_at
-        `)
-        .eq("tenant_id", currentTenantId)
-        .order("event_date", { ascending: true })
-        .order("event_time", { ascending: true });
+      let filteredRows = [...allRows];
 
       const filterType = document.getElementById("filterType").value;
       const filterStatus = document.getElementById("filterStatus").value;
       const filterDate = document.getElementById("filterDate").value;
 
       if (filterType) {
-        query = query.eq("event_type", filterType);
+        filteredRows = filteredRows.filter(row => row.event_type === filterType);
       }
 
       if (filterStatus) {
-        query = query.eq("event_status", filterStatus);
+        filteredRows = filteredRows.filter(row => row.event_status === filterStatus);
       }
 
       if (filterDate) {
-        query = query.eq("event_date", filterDate);
+        filteredRows = filteredRows.filter(row => row.event_date === filterDate);
       }
-
-      const { data, error } = await query;
 
       const box = document.getElementById("eventsList");
 
-      if (error) {
-        box.innerHTML = `<p class="danger">${error.message}</p>`;
-        return;
-      }
-
-      const rows = data || [];
-
-      if (rows.length === 0) {
+      if (filteredRows.length === 0) {
         box.innerHTML = `<p>No calendar events found.</p>`;
         return;
       }
 
-      box.innerHTML = rows.map(row => renderEventRow(row)).join("");
+      box.innerHTML = filteredRows.map(row => renderEventRow(row)).join("");
     }
 
     function renderWeekSchedule(rows) {
+      const today = localDate();
       const weekStart = getWeekStart();
+      const weekEnd = addDays(weekStart, 6);
       const weekBox = document.getElementById("weekSchedule");
 
-      let html = "";
+      const currentWeekRows = rows.filter(row =>
+        row.event_date >= weekStart &&
+        row.event_date <= weekEnd &&
+        row.event_status !== "cancelled"
+      );
 
-      for (let i = 0; i < 7; i++) {
-        const dateValue = addDays(weekStart, i);
+      let displayRows = currentWeekRows;
+      let titlePrefix = "This week";
 
-        const dayRows = rows.filter(row =>
-          row.event_date === dateValue &&
-          row.event_status !== "cancelled"
-        );
+      if (displayRows.length === 0) {
+        displayRows = rows
+          .filter(row => row.event_date >= today && row.event_status !== "cancelled")
+          .slice(0, 12);
 
-        const dayName = new Date(dateValue + "T00:00:00").toLocaleDateString("en-KE", {
+        titlePrefix = "Upcoming";
+      }
+
+      if (displayRows.length === 0) {
+        weekBox.innerHTML = `<p>No scheduled or upcoming events found. Add a business event below and click Save Event.</p>`;
+        return;
+      }
+
+      const grouped = {};
+
+      displayRows.forEach(row => {
+        const dateKey = normalizeDate(row.event_date);
+
+        if (!grouped[dateKey]) {
+          grouped[dateKey] = [];
+        }
+
+        grouped[dateKey].push(row);
+      });
+
+      const dateKeys = Object.keys(grouped).sort();
+
+      weekBox.innerHTML = dateKeys.map(dateKey => {
+        const dayName = new Date(dateKey + "T00:00:00").toLocaleDateString("en-KE", {
           weekday: "long"
         });
 
-        html += `
+        return `
           <div class="day-card">
-            <h3>${dayName}</h3>
-            <p class="small">${dateValue}</p>
-            ${
-              dayRows.length === 0
-                ? `<p class="small">No scheduled event.</p>`
-                : dayRows.map(row => `
-                    <div class="event-pill">
-                      <strong>${formatTime(row.event_time)}</strong><br>
-                      ${safe(row.event_title)}<br>
-                      <span class="small">${safe(row.event_status)} | ${safe(row.event_type).replaceAll("_", " ")}</span>
-                    </div>
-                  `).join("")
-            }
+            <h3>${titlePrefix}: ${dayName}</h3>
+            <p class="small">${dateKey}</p>
+            ${grouped[dateKey].map(row => `
+              <div class="event-pill">
+                <strong>${formatTime(row.event_time)}</strong><br>
+                ${safe(row.event_title)}<br>
+                <span class="small">${cleanText(row.event_status)} | ${cleanText(row.event_type)}</span>
+              </div>
+            `).join("")}
           </div>
         `;
-      }
-
-      weekBox.innerHTML = html;
+      }).join("");
     }
 
     function renderEventRow(row) {
