@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Business Calendar</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 35px 20px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .gold {
+      color: #D4A63A;
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .card {
+      background: #FFFFFF;
+      color: #061C3D;
+      padding: 22px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+      border: 1px solid #E5E7EB;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+    }
+
+    .status-card {
+      background: #F5F5F3;
+      border-left: 6px solid #D4A63A;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 15px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+
+    textarea {
+      min-height: 95px;
+    }
+
+    button {
+      background: #D4A63A;
+      color: #061C3D;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .danger {
+      color: #b00020;
+    }
+
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+
+    .blocked-box {
+      border-left: 6px solid #b00020;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 20px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: #D4A63A;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 15px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      background: #F5F5F3;
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid #E5E7EB;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+
+    .metric p {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .row {
+      border: 1px solid #E5E7EB;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #F5F5F3;
+    }
+
+    .row-warning {
+      border-left: 6px solid #D4A63A;
+    }
+
+    .row-good {
+      border-left: 6px solid green;
+    }
+
+    .row-danger {
+      border-left: 6px solid #b00020;
+    }
+
+    .week-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+      gap: 12px;
+    }
+
+    .day-card {
+      background: #F5F5F3;
+      border: 1px solid #E5E7EB;
+      border-radius: 12px;
+      padding: 14px;
+      min-height: 140px;
+    }
+
+    .day-card h3 {
+      margin-top: 0;
+      font-size: 15px;
+    }
+
+    .event-pill {
+      background: #FFFFFF;
+      border-left: 4px solid #D4A63A;
+      padding: 8px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #061C3D;
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .badge-gold {
+      background: #D4A63A;
+      color: #061C3D;
+    }
+
+    .badge-green {
+      background: green;
+      color: #FFFFFF;
+    }
+
+    .badge-danger {
+      background: #b00020;
+      color: #FFFFFF;
+    }
+
+    a.link {
+      color: #061C3D;
+      font-weight: bold;
+    }
+
+    @media print {
+      body {
+        background: #FFFFFF;
+        color: #000000;
+      }
+
+      .container {
+        max-width: 100%;
+        padding: 0;
+      }
+
+      .nav,
+      #loginCard,
+      .no-print,
+      button {
+        display: none !important;
+      }
+
+      .card {
+        border: 1px solid #999;
+        box-shadow: none;
+        page-break-inside: avoid;
+      }
+
+      .top {
+        color: #000000;
+      }
+
+      .gold {
+        color: #000000;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <h1>UNGANI <span class="gold">Business Calendar</span></h1>
+      <p>Schedule team meetings, supplier follow-ups, buyer meetings, daily updates, weekly reviews, and business reminders.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+    </div>
+
+    <div class="nav no-print">
+      <a href="portal.html">Portal</a> |
+      <a href="client.html">Dashboard</a> |
+      <a href="my-charts.html">Live Charts</a> |
+      <a href="my-profile.html">Profile</a> |
+      <a href="my-people.html">People</a> |
+      <a href="my-overview.html">Overview</a> |
+      <a href="my-money.html">Money</a> |
+      <a href="my-records.html">Records</a> |
+      <a href="my-documents.html">Documents</a> |
+      <a href="my-tasks.html">Tasks</a> |
+      <a href="my-items.html">Items</a> |
+      <a href="reports.html">Reports</a> |
+      <a href="my-support.html">Support</a> |
+      <a href="my-notices.html">Notices</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Client Login</h2>
+
+      <label>Email</label>
+      <input id="clientEmail" placeholder="client@example.com" />
+
+      <label>Password</label>
+      <input id="clientPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginClient()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <button onclick="logoutClient()">Logout</button>
+    </div>
+
+    <div id="calendarArea" class="hidden">
+      <div class="card status-card">
+        <h2 id="companyName">Business Calendar</h2>
+        <p id="companyInfo"></p>
+
+        <button onclick="loadCalendar()">Refresh Calendar</button>
+        <button onclick="window.print()" class="dark-btn">Print Schedule</button>
+        <button onclick="logoutClient()" class="dark-btn">Logout</button>
+      </div>
+
+      <div class="card">
+        <h2>Schedule Summary</h2>
+
+        <div class="grid">
+          <div class="metric">
+            <h3>Total Events</h3>
+            <p id="totalEvents">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Upcoming</h3>
+            <p id="upcomingEvents">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Today</h3>
+            <p id="todayEvents">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>This Week</h3>
+            <p id="weekEvents">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Completed</h3>
+            <p id="completedEvents">0</p>
+          </div>
+
+          <div class="metric">
+            <h3>Cancelled</h3>
+            <p id="cancelledEvents">0</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>This Week Schedule</h2>
+        <div id="weekSchedule" class="week-grid">Loading...</div>
+      </div>
+
+      <div class="card no-print">
+        <h2>Add Business Event</h2>
+
+        <label>Event Title</label>
+        <input id="eventTitle" placeholder="Example: Supplier delivery follow-up" />
+
+        <div class="two-col">
+          <div>
+            <label>Event Type</label>
+            <select id="eventType">
+              <option value="internal_team_meeting">Internal Team Meeting</option>
+              <option value="supplier_meeting">Supplier Meeting</option>
+              <option value="buyer_client_meeting">Buyer / Client Meeting</option>
+              <option value="owner_manager_update">Owner / Manager Update</option>
+              <option value="operations_follow_up">Operations Follow-up</option>
+              <option value="delivery_follow_up">Delivery Follow-up</option>
+              <option value="stock_review">Stock Review</option>
+              <option value="daily_update">Daily Update</option>
+              <option value="weekly_review">Weekly Review</option>
+              <option value="reminder">Reminder</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Event Scope</label>
+            <select id="eventScope">
+              <option value="internal">Internal</option>
+              <option value="external">External</option>
+              <option value="mixed">Internal + External</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div>
+            <label>Date</label>
+            <input id="eventDate" type="date" />
+          </div>
+
+          <div>
+            <label>Time</label>
+            <input id="eventTime" type="time" />
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div>
+            <label>Duration</label>
+            <select id="durationMinutes">
+              <option value="15">15 minutes</option>
+              <option value="30" selected>30 minutes</option>
+              <option value="45">45 minutes</option>
+              <option value="60">60 minutes</option>
+              <option value="90">90 minutes</option>
+              <option value="120">120 minutes</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Repeat</label>
+            <select id="recurrenceRule">
+              <option value="no_repeat">No Repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div>
+            <label>Channel</label>
+            <select id="eventChannel">
+              <option value="in_person">In Person</option>
+              <option value="google_meet">Google Meet</option>
+              <option value="phone_call">Phone Call</option>
+              <option value="whatsapp_call">WhatsApp Call</option>
+              <option value="zoom">Zoom</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Related Person / Contact</label>
+            <select id="relatedPerson">
+              <option value="">None</option>
+            </select>
+          </div>
+        </div>
+
+        <label>Location</label>
+        <input id="location" placeholder="Example: Office, warehouse, supplier site, online" />
+
+        <label>Meeting Link</label>
+        <input id="meetingLink" placeholder="Paste Google Meet / Zoom / other link if available" />
+
+        <label>Attendees</label>
+        <input id="attendeesText" placeholder="Example: Owner, manager, supplier, buyer, operations team" />
+
+        <label>Agenda</label>
+        <textarea id="agenda" placeholder="What should be discussed or followed up?"></textarea>
+
+        <label>Notes</label>
+        <textarea id="notes" placeholder="Any extra notes or preparation needed?"></textarea>
+
+        <button onclick="createEvent()">Save Event</button>
+
+        <div id="eventFormMessage"></div>
+      </div>
+
+      <div class="card">
+        <h2>Calendar Events</h2>
+
+        <div class="no-print">
+          <div class="two-col">
+            <div>
+              <label>Filter Type</label>
+              <select id="filterType" onchange="loadCalendar()">
+                <option value="">All Types</option>
+                <option value="internal_team_meeting">Internal Team Meeting</option>
+                <option value="supplier_meeting">Supplier Meeting</option>
+                <option value="buyer_client_meeting">Buyer / Client Meeting</option>
+                <option value="owner_manager_update">Owner / Manager Update</option>
+                <option value="operations_follow_up">Operations Follow-up</option>
+                <option value="delivery_follow_up">Delivery Follow-up</option>
+                <option value="stock_review">Stock Review</option>
+                <option value="daily_update">Daily Update</option>
+                <option value="weekly_review">Weekly Review</option>
+                <option value="reminder">Reminder</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Filter Status</label>
+              <select id="filterStatus" onchange="loadCalendar()">
+                <option value="">All Statuses</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="completed">Completed</option>
+                <option value="postponed">Postponed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+
+          <label>Filter Date</label>
+          <input id="filterDate" type="date" onchange="loadCalendar()" />
+        </div>
+
+        <div id="eventsList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentTenantId = null;
+    let currentUserId = null;
+    let peopleRows = [];
+
+    function safe(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function safeAttr(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function localDate(date = new Date()) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function addDays(dateString, days) {
+      const date = new Date(dateString + "T00:00:00");
+      date.setDate(date.getDate() + days);
+      return localDate(date);
+    }
+
+    function formatDate(value) {
+      if (!value) return "N/A";
+      return new Date(value + "T00:00:00").toLocaleDateString();
+    }
+
+    function formatTime(value) {
+      if (!value) return "N/A";
+      return String(value).slice(0, 5);
+    }
+
+    function badge(value) {
+      let className = "badge";
+
+      if (value === "scheduled" || value === "postponed" || value === "external" || value === "mixed") {
+        className = "badge badge-gold";
+      }
+
+      if (value === "completed") {
+        className = "badge badge-green";
+      }
+
+      if (value === "cancelled") {
+        className = "badge badge-danger";
+      }
+
+      return `<span class="${className}">${safe(value || "N/A").replaceAll("_", " ")}</span>`;
+    }
+
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("calendarArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
+    function googleDateTime(dateValue, timeValue, durationMinutes) {
+      const start = new Date(`${dateValue}T${String(timeValue || "09:00").slice(0,5)}:00`);
+      const end = new Date(start.getTime() + Number(durationMinutes || 30) * 60000);
+
+      function format(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        const hours = String(date.getHours()).padStart(2, "0");
+        const minutes = String(date.getMinutes()).padStart(2, "0");
+        const seconds = "00";
+        return `${year}${month}${day}T${hours}${minutes}${seconds}`;
+      }
+
+      return `${format(start)}/${format(end)}`;
+    }
+
+    function googleCalendarUrl(event) {
+      const title = encodeURIComponent(event.event_title || "Business Event");
+      const dates = googleDateTime(event.event_date, event.event_time, event.duration_minutes);
+      const details = encodeURIComponent(
+        `Agenda: ${event.agenda || ""}\n\nNotes: ${event.notes || ""}\n\nAttendees: ${event.attendees_text || ""}\n\nCreated in UNGANI OS`
+      );
+      const location = encodeURIComponent(event.location || event.meeting_link || "");
+
+      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`;
+    }
+
+    async function checkExistingSession() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (sessionData?.session?.user?.id) {
+        await loadClientProfile();
+      }
+    }
+
+    async function loginClient() {
+      const email = document.getElementById("clientEmail").value;
+      const password = document.getElementById("clientPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+
+      await loadClientProfile();
+    }
+
+    async function logoutClient() {
+      await supabaseClient.auth.signOut();
+
+      document.getElementById("loginCard").classList.remove("hidden");
+      document.getElementById("calendarArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+    }
+
+    async function loadClientProfile() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentUserId = sessionData?.session?.user?.id;
+
+      if (!currentUserId) {
+        return;
+      }
+
+      const { data: userData, error } = await supabaseClient
+        .from("users")
+        .select(`
+          id,
+          full_name,
+          email,
+          status,
+          tenant_id,
+          tenants(
+            id,
+            company_name,
+            account_status,
+            business_types(name),
+            packages(name)
+          )
+        `)
+        .eq("id", currentUserId)
+        .maybeSingle();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI client profile has not been connected yet.");
+        return;
+      }
+
+      if (userData.status !== "active") {
+        showAccessBlocked("Your user access is currently not active.");
+        return;
+      }
+
+      const tenant = userData.tenants;
+
+      if (!tenant) {
+        showAccessBlocked("Your account is not connected to a business workspace yet.");
+        return;
+      }
+
+      if (tenant.account_status === "suspended") {
+        showAccessBlocked("This business account is currently suspended.");
+        return;
+      }
+
+      if (tenant.account_status === "cancelled") {
+        showAccessBlocked("This business account has been cancelled.");
+        return;
+      }
+
+      currentTenantId = userData.tenant_id;
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("calendarArea").classList.remove("hidden");
+
+      document.getElementById("companyName").innerText = tenant.company_name;
+
+      document.getElementById("companyInfo").innerText =
+        `${tenant.business_types?.name || "Business"} | Package: ${tenant.packages?.name || "N/A"} | Status: ${tenant.account_status}`;
+
+      await loadPeople();
+      await loadCalendar();
+    }
+
+    async function loadPeople() {
+      const { data, error } = await supabaseClient
+        .from("client_people")
+        .select("id, full_name, person_type, role_title")
+        .eq("tenant_id", currentTenantId)
+        .order("full_name", { ascending: true });
+
+      const select = document.getElementById("relatedPerson");
+
+      if (error) {
+        select.innerHTML = `<option value="">None</option>`;
+        return;
+      }
+
+      peopleRows = data || [];
+
+      select.innerHTML =
+        `<option value="">None</option>` +
+        peopleRows.map(person =>
+          `<option value="${person.id}">${safe(person.full_name)} — ${safe(person.person_type || "contact")}</option>`
+        ).join("");
+    }
+
+    async function createEvent() {
+      const msg = document.getElementById("eventFormMessage");
+
+      const title = document.getElementById("eventTitle").value;
+      const date = document.getElementById("eventDate").value;
+      const time = document.getElementById("eventTime").value;
+
+      if (!title) {
+        msg.innerHTML = `<p class="danger">Please enter event title.</p>`;
+        return;
+      }
+
+      if (!date) {
+        msg.innerHTML = `<p class="danger">Please select event date.</p>`;
+        return;
+      }
+
+      if (!time) {
+        msg.innerHTML = `<p class="danger">Please select event time.</p>`;
+        return;
+      }
+
+      const relatedPersonValue = document.getElementById("relatedPerson").value;
+
+      const record = {
+        tenant_id: currentTenantId,
+        created_by: currentUserId,
+        related_person_id: relatedPersonValue || null,
+        event_title: title,
+        event_type: document.getElementById("eventType").value,
+        event_scope: document.getElementById("eventScope").value,
+        event_status: "scheduled",
+        event_date: date,
+        event_time: time,
+        duration_minutes: Number(document.getElementById("durationMinutes").value || 30),
+        recurrence_rule: document.getElementById("recurrenceRule").value,
+        event_channel: document.getElementById("eventChannel").value,
+        meeting_link: document.getElementById("meetingLink").value,
+        location: document.getElementById("location").value,
+        attendees_text: document.getElementById("attendeesText").value,
+        agenda: document.getElementById("agenda").value,
+        notes: document.getElementById("notes").value,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from("business_events")
+        .insert([record]);
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Business event saved successfully.</p>`;
+
+      document.getElementById("eventTitle").value = "";
+      document.getElementById("eventDate").value = "";
+      document.getElementById("eventTime").value = "";
+      document.getElementById("meetingLink").value = "";
+      document.getElementById("location").value = "";
+      document.getElementById("attendeesText").value = "";
+      document.getElementById("agenda").value = "";
+      document.getElementById("notes").value = "";
+      document.getElementById("eventType").value = "internal_team_meeting";
+      document.getElementById("eventScope").value = "internal";
+      document.getElementById("durationMinutes").value = "30";
+      document.getElementById("recurrenceRule").value = "no_repeat";
+      document.getElementById("eventChannel").value = "in_person";
+      document.getElementById("relatedPerson").value = "";
+
+      await loadCalendar();
+    }
+
+    async function updateEventStatus(eventId, status) {
+      const { error } = await supabaseClient
+        .from("business_events")
+        .update({
+          event_status: status,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", eventId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadCalendar();
+    }
+
+    async function loadCalendar() {
+      const today = localDate();
+
+      const allResponse = await supabaseClient
+        .from("business_events")
+        .select(`
+          id,
+          event_title,
+          event_type,
+          event_scope,
+          event_status,
+          event_date,
+          event_time,
+          duration_minutes,
+          recurrence_rule,
+          event_channel,
+          meeting_link,
+          location,
+          attendees_text,
+          agenda,
+          notes,
+          related_person_id,
+          created_at,
+          updated_at
+        `)
+        .eq("tenant_id", currentTenantId)
+        .order("event_date", { ascending: true })
+        .order("event_time", { ascending: true });
+
+      if (allResponse.error) {
+        document.getElementById("eventsList").innerHTML = `<p class="danger">${allResponse.error.message}</p>`;
+        return;
+      }
+
+      const allRows = allResponse.data || [];
+
+      const weekEnd = addDays(today, 6);
+
+      document.getElementById("totalEvents").innerText = allRows.length;
+      document.getElementById("upcomingEvents").innerText = allRows.filter(e => e.event_date >= today && e.event_status === "scheduled").length;
+      document.getElementById("todayEvents").innerText = allRows.filter(e => e.event_date === today && e.event_status === "scheduled").length;
+      document.getElementById("weekEvents").innerText = allRows.filter(e => e.event_date >= today && e.event_date <= weekEnd && e.event_status === "scheduled").length;
+      document.getElementById("completedEvents").innerText = allRows.filter(e => e.event_status === "completed").length;
+      document.getElementById("cancelledEvents").innerText = allRows.filter(e => e.event_status === "cancelled").length;
+
+      renderWeekSchedule(allRows);
+
+      let query = supabaseClient
+        .from("business_events")
+        .select(`
+          id,
+          event_title,
+          event_type,
+          event_scope,
+          event_status,
+          event_date,
+          event_time,
+          duration_minutes,
+          recurrence_rule,
+          event_channel,
+          meeting_link,
+          location,
+          attendees_text,
+          agenda,
+          notes,
+          related_person_id,
+          created_at,
+          updated_at
+        `)
+        .eq("tenant_id", currentTenantId)
+        .order("event_date", { ascending: true })
+        .order("event_time", { ascending: true });
+
+      const filterType = document.getElementById("filterType").value;
+      const filterStatus = document.getElementById("filterStatus").value;
+      const filterDate = document.getElementById("filterDate").value;
+
+      if (filterType) {
+        query = query.eq("event_type", filterType);
+      }
+
+      if (filterStatus) {
+        query = query.eq("event_status", filterStatus);
+      }
+
+      if (filterDate) {
+        query = query.eq("event_date", filterDate);
+      }
+
+      const { data, error } = await query;
+
+      const box = document.getElementById("eventsList");
+
+      if (error) {
+        box.innerHTML = `<p class="danger">${error.message}</p>`;
+        return;
+      }
+
+      const rows = data || [];
+
+      if (rows.length === 0) {
+        box.innerHTML = `<p>No calendar events found.</p>`;
+        return;
+      }
+
+      box.innerHTML = rows.map(row => renderEventRow(row)).join("");
+    }
+
+    function renderWeekSchedule(rows) {
+      const today = localDate();
+      const weekBox = document.getElementById("weekSchedule");
+
+      let html = "";
+
+      for (let i = 0; i < 7; i++) {
+        const dateValue = addDays(today, i);
+        const dayRows = rows.filter(row => row.event_date === dateValue && row.event_status === "scheduled");
+
+        html += `
+          <div class="day-card">
+            <h3>${i === 0 ? "Today" : formatDate(dateValue)}</h3>
+            <p class="small">${dateValue}</p>
+            ${
+              dayRows.length === 0
+                ? `<p class="small">No scheduled event.</p>`
+                : dayRows.map(row => `
+                    <div class="event-pill">
+                      <strong>${formatTime(row.event_time)}</strong><br>
+                      ${safe(row.event_title)}
+                    </div>
+                  `).join("")
+            }
+          </div>
+        `;
+      }
+
+      weekBox.innerHTML = html;
+    }
+
+    function renderEventRow(row) {
+      let rowClass = "row row-warning";
+
+      if (row.event_status === "completed") {
+        rowClass = "row row-good";
+      }
+
+      if (row.event_status === "cancelled") {
+        rowClass = "row row-danger";
+      }
+
+      const relatedPerson = peopleRows.find(person => person.id === row.related_person_id);
+      const googleUrl = googleCalendarUrl(row);
+
+      return `
+        <div class="${rowClass}">
+          <h3>${safe(row.event_title)}</h3>
+
+          <p>
+            ${badge(row.event_status)}
+            ${badge(row.event_type)}
+            ${badge(row.event_scope)}
+            ${badge(row.event_channel)}
+            ${badge(row.recurrence_rule)}
+          </p>
+
+          <p><strong>Date:</strong> ${formatDate(row.event_date)}</p>
+          <p><strong>Time:</strong> ${formatTime(row.event_time)} | <strong>Duration:</strong> ${safe(row.duration_minutes || 30)} minutes</p>
+
+          ${relatedPerson ? `<p><strong>Related Person:</strong> ${safe(relatedPerson.full_name)} — ${safe(relatedPerson.person_type || "contact")}</p>` : ""}
+          ${row.location ? `<p><strong>Location:</strong> ${safe(row.location)}</p>` : ""}
+          ${row.meeting_link ? `<p><strong>Meeting Link:</strong> <a class="link" href="${safeAttr(row.meeting_link)}" target="_blank">Open Link</a></p>` : ""}
+          ${row.attendees_text ? `<p><strong>Attendees:</strong> ${safe(row.attendees_text)}</p>` : ""}
+          ${row.agenda ? `<p><strong>Agenda:</strong><br>${safe(row.agenda)}</p>` : ""}
+          ${row.notes ? `<p><strong>Notes:</strong><br>${safe(row.notes)}</p>` : ""}
+
+          <p class="small">Created: ${row.created_at ? new Date(row.created_at).toLocaleString() : "N/A"}</p>
+          <p class="small">Updated: ${row.updated_at ? new Date(row.updated_at).toLocaleString() : "N/A"}</p>
+
+          <button onclick="window.open('${googleUrl}', '_blank')">Add to Google Calendar</button>
+
+          ${
+            row.event_status !== "completed"
+              ? `<button onclick="updateEventStatus('${row.id}', 'completed')">Mark Completed</button>`
+              : ""
+          }
+
+          ${
+            row.event_status !== "scheduled"
+              ? `<button onclick="updateEventStatus('${row.id}', 'scheduled')">Mark Scheduled</button>`
+              : ""
+          }
+
+          ${
+            row.event_status !== "postponed"
+              ? `<button onclick="updateEventStatus('${row.id}', 'postponed')">Postpone</button>`
+              : ""
+          }
+
+          ${
+            row.event_status !== "cancelled"
+              ? `<button onclick="updateEventStatus('${row.id}', 'cancelled')" class="dark-btn">Cancel</button>`
+              : ""
+          }
+        </div>
+      `;
+    }
+
+    checkExistingSession();
+  </script>
+</body>
+</html>
