@@ -17,7 +17,7 @@
     }
 
     .container {
-      max-width: 1200px;
+      max-width: 1150px;
       margin: 0 auto;
       padding: 35px 20px;
     }
@@ -51,6 +51,11 @@
       border-left: 6px solid #D4A63A;
     }
 
+    .debug-card {
+      background: #F5F5F3;
+      border-left: 6px solid #061C3D;
+    }
+
     input, select, textarea {
       width: 100%;
       padding: 12px;
@@ -62,7 +67,7 @@
     }
 
     textarea {
-      min-height: 95px;
+      min-height: 90px;
     }
 
     button {
@@ -88,6 +93,7 @@
 
     .danger {
       color: #b00020;
+      font-weight: bold;
     }
 
     .success {
@@ -113,7 +119,7 @@
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
       gap: 15px;
     }
 
@@ -147,23 +153,20 @@
       border-radius: 10px;
       margin-bottom: 12px;
       background: #F5F5F3;
-    }
-
-    .row-warning {
       border-left: 6px solid #D4A63A;
     }
 
     .row-good {
-      border-left: 6px solid green;
+      border-left-color: green;
     }
 
     .row-danger {
-      border-left: 6px solid #b00020;
+      border-left-color: #b00020;
     }
 
     .week-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
       gap: 12px;
     }
 
@@ -172,18 +175,12 @@
       border: 1px solid #E5E7EB;
       border-radius: 12px;
       padding: 14px;
-      min-height: 120px;
-    }
-
-    .day-card h3 {
-      margin-top: 0;
-      font-size: 15px;
     }
 
     .event-pill {
       background: #FFFFFF;
       border-left: 4px solid #D4A63A;
-      padding: 8px;
+      padding: 9px;
       border-radius: 8px;
       margin-bottom: 8px;
       font-size: 13px;
@@ -261,6 +258,7 @@
       <h1>UNGANI <span class="gold">Business Calendar</span></h1>
       <p>Schedule team meetings, supplier follow-ups, buyer meetings, daily updates, weekly reviews, and business reminders.</p>
       <p class="small">ungani.com | info@ungani.com</p>
+      <p class="small">Calendar Version: 167E Repair</p>
     </div>
 
     <div class="nav no-print">
@@ -310,6 +308,12 @@
         <button onclick="logoutClient()" class="dark-btn">Logout</button>
       </div>
 
+      <div class="card debug-card">
+        <h2>Calendar Status</h2>
+        <p id="calendarStatus">Waiting...</p>
+        <p class="small" id="calendarDebug">No debug information yet.</p>
+      </div>
+
       <div class="card">
         <h2>Schedule Summary</h2>
 
@@ -348,7 +352,7 @@
 
       <div class="card">
         <h2>This Week / Upcoming Schedule</h2>
-        <p class="small">Shows current Monday to Sunday. If no event is found this week, it shows your next upcoming events automatically.</p>
+        <p class="small">If the event is saved in the database, it will appear here or under Calendar Events below.</p>
         <div id="weekSchedule" class="week-grid">Loading...</div>
       </div>
 
@@ -465,43 +469,6 @@
 
       <div class="card">
         <h2>Calendar Events</h2>
-
-        <div class="no-print">
-          <div class="two-col">
-            <div>
-              <label>Filter Type</label>
-              <select id="filterType" onchange="loadCalendar()">
-                <option value="">All Types</option>
-                <option value="internal_team_meeting">Internal Team Meeting</option>
-                <option value="supplier_meeting">Supplier Meeting</option>
-                <option value="buyer_client_meeting">Buyer / Client Meeting</option>
-                <option value="owner_manager_update">Owner / Manager Update</option>
-                <option value="operations_follow_up">Operations Follow-up</option>
-                <option value="delivery_follow_up">Delivery Follow-up</option>
-                <option value="stock_review">Stock Review</option>
-                <option value="daily_update">Daily Update</option>
-                <option value="weekly_review">Weekly Review</option>
-                <option value="reminder">Reminder</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label>Filter Status</label>
-              <select id="filterStatus" onchange="loadCalendar()">
-                <option value="">All Statuses</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="completed">Completed</option>
-                <option value="postponed">Postponed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-          </div>
-
-          <label>Filter Date</label>
-          <input id="filterDate" type="date" onchange="loadCalendar()" />
-        </div>
-
         <div id="eventsList">Loading...</div>
       </div>
     </div>
@@ -589,6 +556,17 @@
       }
 
       return `<span class="${className}">${cleanText(value)}</span>`;
+    }
+
+    function setStatus(message, isError = false) {
+      const status = document.getElementById("calendarStatus");
+      status.innerHTML = isError
+        ? `<span class="danger">${safe(message)}</span>`
+        : `<span class="success">${safe(message)}</span>`;
+    }
+
+    function setDebug(message) {
+      document.getElementById("calendarDebug").innerText = message;
     }
 
     function showAccessBlocked(reason) {
@@ -733,6 +711,9 @@
       document.getElementById("companyInfo").innerText =
         `${tenant.business_types?.name || "Business"} | Package: ${tenant.packages?.name || "N/A"} | Status: ${tenant.account_status}`;
 
+      setStatus("Client profile loaded. Loading calendar...");
+      setDebug(`User ID: ${currentUserId} | Tenant ID: ${currentTenantId}`);
+
       await loadPeople();
       await loadCalendar();
     }
@@ -763,6 +744,11 @@
     async function createEvent() {
       const msg = document.getElementById("eventFormMessage");
 
+      if (!currentTenantId || !currentUserId) {
+        msg.innerHTML = `<p class="danger">Your client profile is not loaded. Please refresh and log in again.</p>`;
+        return;
+      }
+
       const title = document.getElementById("eventTitle").value.trim();
       const date = document.getElementById("eventDate").value;
       const time = document.getElementById("eventTime").value;
@@ -782,12 +768,10 @@
         return;
       }
 
-      const relatedPersonValue = document.getElementById("relatedPerson").value;
-
       const record = {
         tenant_id: currentTenantId,
         created_by: currentUserId,
-        related_person_id: relatedPersonValue || null,
+        related_person_id: document.getElementById("relatedPerson").value || null,
         event_title: title,
         event_type: document.getElementById("eventType").value,
         event_scope: document.getElementById("eventScope").value,
@@ -805,16 +789,19 @@
         updated_at: new Date().toISOString()
       };
 
+      setStatus("Saving event...");
+
       const { error } = await supabaseClient
         .from("business_events")
         .insert([record]);
 
       if (error) {
         msg.innerHTML = `<p class="danger">${error.message}</p>`;
+        setStatus(error.message, true);
         return;
       }
 
-      msg.innerHTML = `<p class="success">Business event saved successfully. It should now appear below.</p>`;
+      msg.innerHTML = `<p class="success">Business event saved successfully.</p>`;
 
       document.getElementById("eventTitle").value = "";
       document.getElementById("eventDate").value = "";
@@ -831,14 +818,12 @@
       document.getElementById("eventChannel").value = "in_person";
       document.getElementById("relatedPerson").value = "";
 
-      document.getElementById("filterType").value = "";
-      document.getElementById("filterStatus").value = "";
-      document.getElementById("filterDate").value = "";
-
       await loadCalendar();
     }
 
     async function updateEventStatus(eventId, status) {
+      setStatus("Updating event...");
+
       const { error } = await supabaseClient
         .from("business_events")
         .update({
@@ -848,6 +833,7 @@
         .eq("id", eventId);
 
       if (error) {
+        setStatus(error.message, true);
         alert(error.message);
         return;
       }
@@ -856,116 +842,87 @@
     }
 
     async function loadCalendar() {
+      if (!currentTenantId) {
+        setStatus("Tenant ID missing. Please log in again.", true);
+        return;
+      }
+
+      setStatus("Refreshing calendar...");
+
       const today = localDate();
       const weekStart = getWeekStart();
       const weekEnd = addDays(weekStart, 6);
 
-      const { data: allRowsRaw, error: allError } = await supabaseClient
+      const { data, error } = await supabaseClient
         .from("business_events")
-        .select(`
-          id,
-          event_title,
-          event_type,
-          event_scope,
-          event_status,
-          event_date,
-          event_time,
-          duration_minutes,
-          recurrence_rule,
-          event_channel,
-          meeting_link,
-          location,
-          attendees_text,
-          agenda,
-          notes,
-          related_person_id,
-          created_at,
-          updated_at
-        `)
+        .select("*")
         .eq("tenant_id", currentTenantId)
         .order("event_date", { ascending: true })
         .order("event_time", { ascending: true });
 
-      if (allError) {
-        document.getElementById("eventsList").innerHTML = `<p class="danger">${allError.message}</p>`;
-        document.getElementById("weekSchedule").innerHTML = `<p class="danger">${allError.message}</p>`;
+      if (error) {
+        setStatus(error.message, true);
+        setDebug(`Error loading business_events: ${error.message}`);
+        document.getElementById("weekSchedule").innerHTML = `<p class="danger">${safe(error.message)}</p>`;
+        document.getElementById("eventsList").innerHTML = `<p class="danger">${safe(error.message)}</p>`;
         return;
       }
 
-      const allRows = (allRowsRaw || []).map(row => ({
+      const rows = (data || []).map(row => ({
         ...row,
         event_date: normalizeDate(row.event_date)
       }));
 
-      document.getElementById("totalEvents").innerText = allRows.length;
-      document.getElementById("upcomingEvents").innerText = allRows.filter(e => e.event_date >= today && e.event_status !== "cancelled").length;
-      document.getElementById("todayEvents").innerText = allRows.filter(e => e.event_date === today && e.event_status !== "cancelled").length;
-      document.getElementById("weekEvents").innerText = allRows.filter(e => e.event_date >= weekStart && e.event_date <= weekEnd && e.event_status !== "cancelled").length;
-      document.getElementById("completedEvents").innerText = allRows.filter(e => e.event_status === "completed").length;
-      document.getElementById("cancelledEvents").innerText = allRows.filter(e => e.event_status === "cancelled").length;
+      document.getElementById("totalEvents").innerText = rows.length;
+      document.getElementById("upcomingEvents").innerText = rows.filter(e => e.event_date >= today && e.event_status !== "cancelled").length;
+      document.getElementById("todayEvents").innerText = rows.filter(e => e.event_date === today && e.event_status !== "cancelled").length;
+      document.getElementById("weekEvents").innerText = rows.filter(e => e.event_date >= weekStart && e.event_date <= weekEnd && e.event_status !== "cancelled").length;
+      document.getElementById("completedEvents").innerText = rows.filter(e => e.event_status === "completed").length;
+      document.getElementById("cancelledEvents").innerText = rows.filter(e => e.event_status === "cancelled").length;
 
-      renderWeekSchedule(allRows);
+      setStatus(`Calendar refreshed. ${rows.length} event(s) loaded.`);
+      setDebug(`Last refresh: ${new Date().toLocaleString()} | Today: ${today} | Week: ${weekStart} to ${weekEnd} | Tenant ID: ${currentTenantId}`);
 
-      let filteredRows = [...allRows];
-
-      const filterType = document.getElementById("filterType").value;
-      const filterStatus = document.getElementById("filterStatus").value;
-      const filterDate = document.getElementById("filterDate").value;
-
-      if (filterType) {
-        filteredRows = filteredRows.filter(row => row.event_type === filterType);
-      }
-
-      if (filterStatus) {
-        filteredRows = filteredRows.filter(row => row.event_status === filterStatus);
-      }
-
-      if (filterDate) {
-        filteredRows = filteredRows.filter(row => row.event_date === filterDate);
-      }
-
-      const box = document.getElementById("eventsList");
-
-      if (filteredRows.length === 0) {
-        box.innerHTML = `<p>No calendar events found.</p>`;
-        return;
-      }
-
-      box.innerHTML = filteredRows.map(row => renderEventRow(row)).join("");
+      renderSchedule(rows);
+      renderEventsList(rows);
     }
 
-    function renderWeekSchedule(rows) {
+    function renderSchedule(rows) {
       const today = localDate();
       const weekStart = getWeekStart();
       const weekEnd = addDays(weekStart, 6);
-      const weekBox = document.getElementById("weekSchedule");
 
-      const currentWeekRows = rows.filter(row =>
+      const weekRows = rows.filter(row =>
         row.event_date >= weekStart &&
         row.event_date <= weekEnd &&
         row.event_status !== "cancelled"
       );
 
-      let displayRows = currentWeekRows;
-      let titlePrefix = "This week";
+      let displayRows = weekRows;
 
       if (displayRows.length === 0) {
         displayRows = rows
           .filter(row => row.event_date >= today && row.event_status !== "cancelled")
           .slice(0, 12);
-
-        titlePrefix = "Upcoming";
       }
 
       if (displayRows.length === 0) {
-        weekBox.innerHTML = `<p>No scheduled or upcoming events found. Add a business event below and click Save Event.</p>`;
+        displayRows = rows
+          .filter(row => row.event_status !== "cancelled")
+          .slice(0, 12);
+      }
+
+      const box = document.getElementById("weekSchedule");
+
+      if (displayRows.length === 0) {
+        box.innerHTML = `<p>No events found. Add a business event below and click Save Event.</p>`;
         return;
       }
 
       const grouped = {};
 
       displayRows.forEach(row => {
-        const dateKey = normalizeDate(row.event_date);
+        const dateKey = normalizeDate(row.event_date) || "No Date";
 
         if (!grouped[dateKey]) {
           grouped[dateKey] = [];
@@ -976,15 +933,15 @@
 
       const dateKeys = Object.keys(grouped).sort();
 
-      weekBox.innerHTML = dateKeys.map(dateKey => {
-        const dayName = new Date(dateKey + "T00:00:00").toLocaleDateString("en-KE", {
-          weekday: "long"
-        });
+      box.innerHTML = dateKeys.map(dateKey => {
+        const dayName = dateKey === "No Date"
+          ? "No Date"
+          : new Date(dateKey + "T00:00:00").toLocaleDateString("en-KE", { weekday: "long" });
 
         return `
           <div class="day-card">
-            <h3>${titlePrefix}: ${dayName}</h3>
-            <p class="small">${dateKey}</p>
+            <h3>${safe(dayName)}</h3>
+            <p class="small">${safe(dateKey)}</p>
             ${grouped[dateKey].map(row => `
               <div class="event-pill">
                 <strong>${formatTime(row.event_time)}</strong><br>
@@ -997,8 +954,19 @@
       }).join("");
     }
 
+    function renderEventsList(rows) {
+      const box = document.getElementById("eventsList");
+
+      if (rows.length === 0) {
+        box.innerHTML = `<p>No calendar events found in the database for this client.</p>`;
+        return;
+      }
+
+      box.innerHTML = rows.map(row => renderEventRow(row)).join("");
+    }
+
     function renderEventRow(row) {
-      let rowClass = "row row-warning";
+      let rowClass = "row";
 
       if (row.event_status === "completed") {
         rowClass = "row row-good";
@@ -1036,31 +1004,14 @@
           <p class="small">Created: ${row.created_at ? new Date(row.created_at).toLocaleString() : "N/A"}</p>
           <p class="small">Updated: ${row.updated_at ? new Date(row.updated_at).toLocaleString() : "N/A"}</p>
 
-          <button onclick="window.open('${googleUrl}', '_blank')">Add to Google Calendar</button>
+          <a href="${safeAttr(googleUrl)}" target="_blank">
+            <button>Add to Google Calendar</button>
+          </a>
 
-          ${
-            row.event_status !== "completed"
-              ? `<button onclick="updateEventStatus('${row.id}', 'completed')">Mark Completed</button>`
-              : ""
-          }
-
-          ${
-            row.event_status !== "scheduled"
-              ? `<button onclick="updateEventStatus('${row.id}', 'scheduled')">Mark Scheduled</button>`
-              : ""
-          }
-
-          ${
-            row.event_status !== "postponed"
-              ? `<button onclick="updateEventStatus('${row.id}', 'postponed')">Postpone</button>`
-              : ""
-          }
-
-          ${
-            row.event_status !== "cancelled"
-              ? `<button onclick="updateEventStatus('${row.id}', 'cancelled')" class="dark-btn">Cancel</button>`
-              : ""
-          }
+          ${row.event_status !== "completed" ? `<button onclick="updateEventStatus('${row.id}', 'completed')">Mark Completed</button>` : ""}
+          ${row.event_status !== "scheduled" ? `<button onclick="updateEventStatus('${row.id}', 'scheduled')">Mark Scheduled</button>` : ""}
+          ${row.event_status !== "postponed" ? `<button onclick="updateEventStatus('${row.id}', 'postponed')">Postpone</button>` : ""}
+          ${row.event_status !== "cancelled" ? `<button onclick="updateEventStatus('${row.id}', 'cancelled')" class="dark-btn">Cancel</button>` : ""}
         </div>
       `;
     }
