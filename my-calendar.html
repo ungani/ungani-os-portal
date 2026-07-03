@@ -51,11 +51,6 @@
       border-left: 6px solid #D4A63A;
     }
 
-    .debug-card {
-      background: #F5F5F3;
-      border-left: 6px solid #061C3D;
-    }
-
     input, select, textarea {
       width: 100%;
       padding: 12px;
@@ -216,39 +211,6 @@
       color: #061C3D;
       font-weight: bold;
     }
-
-    @media print {
-      body {
-        background: #FFFFFF;
-        color: #000000;
-      }
-
-      .container {
-        max-width: 100%;
-        padding: 0;
-      }
-
-      .nav,
-      #loginCard,
-      .no-print,
-      button {
-        display: none !important;
-      }
-
-      .card {
-        border: 1px solid #999;
-        box-shadow: none;
-        page-break-inside: avoid;
-      }
-
-      .top {
-        color: #000000;
-      }
-
-      .gold {
-        color: #000000;
-      }
-    }
   </style>
 </head>
 
@@ -258,10 +220,10 @@
       <h1>UNGANI <span class="gold">Business Calendar</span></h1>
       <p>Schedule team meetings, supplier follow-ups, buyer meetings, daily updates, weekly reviews, and business reminders.</p>
       <p class="small">ungani.com | info@ungani.com</p>
-      <p class="small">Calendar Version: 167E Repair</p>
+      <p class="small">Calendar Version: 167F RPC Save Fix</p>
     </div>
 
-    <div class="nav no-print">
+    <div class="nav">
       <a href="portal.html">Portal</a> |
       <a href="client.html">Dashboard</a> |
       <a href="my-charts.html">Live Charts</a> |
@@ -308,7 +270,7 @@
         <button onclick="logoutClient()" class="dark-btn">Logout</button>
       </div>
 
-      <div class="card debug-card">
+      <div class="card">
         <h2>Calendar Status</h2>
         <p id="calendarStatus">Waiting...</p>
         <p class="small" id="calendarDebug">No debug information yet.</p>
@@ -352,11 +314,10 @@
 
       <div class="card">
         <h2>This Week / Upcoming Schedule</h2>
-        <p class="small">If the event is saved in the database, it will appear here or under Calendar Events below.</p>
         <div id="weekSchedule" class="week-grid">Loading...</div>
       </div>
 
-      <div class="card no-print">
+      <div class="card">
         <h2>Add Business Event</h2>
 
         <label>Event Title</label>
@@ -559,8 +520,7 @@
     }
 
     function setStatus(message, isError = false) {
-      const status = document.getElementById("calendarStatus");
-      status.innerHTML = isError
+      document.getElementById("calendarStatus").innerHTML = isError
         ? `<span class="danger">${safe(message)}</span>`
         : `<span class="success">${safe(message)}</span>`;
     }
@@ -645,9 +605,7 @@
       const { data: sessionData } = await supabaseClient.auth.getSession();
       currentUserId = sessionData?.session?.user?.id;
 
-      if (!currentUserId) {
-        return;
-      }
+      if (!currentUserId) return;
 
       const { data: userData, error } = await supabaseClient
         .from("users")
@@ -744,11 +702,6 @@
     async function createEvent() {
       const msg = document.getElementById("eventFormMessage");
 
-      if (!currentTenantId || !currentUserId) {
-        msg.innerHTML = `<p class="danger">Your client profile is not loaded. Please refresh and log in again.</p>`;
-        return;
-      }
-
       const title = document.getElementById("eventTitle").value.trim();
       const date = document.getElementById("eventDate").value;
       const time = document.getElementById("eventTime").value;
@@ -768,32 +721,26 @@
         return;
       }
 
-      const record = {
-        tenant_id: currentTenantId,
-        created_by: currentUserId,
-        related_person_id: document.getElementById("relatedPerson").value || null,
-        event_title: title,
-        event_type: document.getElementById("eventType").value,
-        event_scope: document.getElementById("eventScope").value,
-        event_status: "scheduled",
-        event_date: date,
-        event_time: time,
-        duration_minutes: Number(document.getElementById("durationMinutes").value || 30),
-        recurrence_rule: document.getElementById("recurrenceRule").value,
-        event_channel: document.getElementById("eventChannel").value,
-        meeting_link: document.getElementById("meetingLink").value,
-        location: document.getElementById("location").value,
-        attendees_text: document.getElementById("attendeesText").value,
-        agenda: document.getElementById("agenda").value,
-        notes: document.getElementById("notes").value,
-        updated_at: new Date().toISOString()
-      };
+      setStatus("Saving event through secure calendar function...");
 
-      setStatus("Saving event...");
+      const relatedPersonValue = document.getElementById("relatedPerson").value;
 
-      const { error } = await supabaseClient
-        .from("business_events")
-        .insert([record]);
+      const { data, error } = await supabaseClient.rpc("create_my_business_event", {
+        p_event_title: title,
+        p_event_type: document.getElementById("eventType").value,
+        p_event_scope: document.getElementById("eventScope").value,
+        p_event_date: date,
+        p_event_time: time,
+        p_duration_minutes: Number(document.getElementById("durationMinutes").value || 30),
+        p_recurrence_rule: document.getElementById("recurrenceRule").value,
+        p_event_channel: document.getElementById("eventChannel").value,
+        p_related_person_id: relatedPersonValue || null,
+        p_location: document.getElementById("location").value,
+        p_meeting_link: document.getElementById("meetingLink").value,
+        p_attendees_text: document.getElementById("attendeesText").value,
+        p_agenda: document.getElementById("agenda").value,
+        p_notes: document.getElementById("notes").value
+      });
 
       if (error) {
         msg.innerHTML = `<p class="danger">${error.message}</p>`;
@@ -801,7 +748,8 @@
         return;
       }
 
-      msg.innerHTML = `<p class="success">Business event saved successfully.</p>`;
+      msg.innerHTML = `<p class="success">Business event saved successfully. Event ID: ${safe(data)}</p>`;
+      setStatus("Event saved. Refreshing calendar...");
 
       document.getElementById("eventTitle").value = "";
       document.getElementById("eventDate").value = "";
@@ -824,13 +772,10 @@
     async function updateEventStatus(eventId, status) {
       setStatus("Updating event...");
 
-      const { error } = await supabaseClient
-        .from("business_events")
-        .update({
-          event_status: status,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", eventId);
+      const { error } = await supabaseClient.rpc("update_my_business_event_status", {
+        p_event_id: eventId,
+        p_event_status: status
+      });
 
       if (error) {
         setStatus(error.message, true);
@@ -842,27 +787,17 @@
     }
 
     async function loadCalendar() {
-      if (!currentTenantId) {
-        setStatus("Tenant ID missing. Please log in again.", true);
-        return;
-      }
-
       setStatus("Refreshing calendar...");
 
       const today = localDate();
       const weekStart = getWeekStart();
       const weekEnd = addDays(weekStart, 6);
 
-      const { data, error } = await supabaseClient
-        .from("business_events")
-        .select("*")
-        .eq("tenant_id", currentTenantId)
-        .order("event_date", { ascending: true })
-        .order("event_time", { ascending: true });
+      const { data, error } = await supabaseClient.rpc("get_my_business_events");
 
       if (error) {
         setStatus(error.message, true);
-        setDebug(`Error loading business_events: ${error.message}`);
+        setDebug(`RPC load error: ${error.message}`);
         document.getElementById("weekSchedule").innerHTML = `<p class="danger">${safe(error.message)}</p>`;
         document.getElementById("eventsList").innerHTML = `<p class="danger">${safe(error.message)}</p>`;
         return;
@@ -881,7 +816,7 @@
       document.getElementById("cancelledEvents").innerText = rows.filter(e => e.event_status === "cancelled").length;
 
       setStatus(`Calendar refreshed. ${rows.length} event(s) loaded.`);
-      setDebug(`Last refresh: ${new Date().toLocaleString()} | Today: ${today} | Week: ${weekStart} to ${weekEnd} | Tenant ID: ${currentTenantId}`);
+      setDebug(`Last refresh: ${new Date().toLocaleString()} | Today: ${today} | Week: ${weekStart} to ${weekEnd}`);
 
       renderSchedule(rows);
       renderEventsList(rows);
@@ -892,24 +827,23 @@
       const weekStart = getWeekStart();
       const weekEnd = addDays(weekStart, 6);
 
-      const weekRows = rows.filter(row =>
+      let displayRows = rows.filter(row =>
         row.event_date >= weekStart &&
         row.event_date <= weekEnd &&
         row.event_status !== "cancelled"
       );
 
-      let displayRows = weekRows;
-
       if (displayRows.length === 0) {
-        displayRows = rows
-          .filter(row => row.event_date >= today && row.event_status !== "cancelled")
-          .slice(0, 12);
+        displayRows = rows.filter(row =>
+          row.event_date >= today &&
+          row.event_status !== "cancelled"
+        ).slice(0, 12);
       }
 
       if (displayRows.length === 0) {
-        displayRows = rows
-          .filter(row => row.event_status !== "cancelled")
-          .slice(0, 12);
+        displayRows = rows.filter(row =>
+          row.event_status !== "cancelled"
+        ).slice(0, 12);
       }
 
       const box = document.getElementById("weekSchedule");
@@ -924,16 +858,12 @@
       displayRows.forEach(row => {
         const dateKey = normalizeDate(row.event_date) || "No Date";
 
-        if (!grouped[dateKey]) {
-          grouped[dateKey] = [];
-        }
+        if (!grouped[dateKey]) grouped[dateKey] = [];
 
         grouped[dateKey].push(row);
       });
 
-      const dateKeys = Object.keys(grouped).sort();
-
-      box.innerHTML = dateKeys.map(dateKey => {
+      box.innerHTML = Object.keys(grouped).sort().map(dateKey => {
         const dayName = dateKey === "No Date"
           ? "No Date"
           : new Date(dateKey + "T00:00:00").toLocaleDateString("en-KE", { weekday: "long" });
@@ -968,13 +898,8 @@
     function renderEventRow(row) {
       let rowClass = "row";
 
-      if (row.event_status === "completed") {
-        rowClass = "row row-good";
-      }
-
-      if (row.event_status === "cancelled") {
-        rowClass = "row row-danger";
-      }
+      if (row.event_status === "completed") rowClass = "row row-good";
+      if (row.event_status === "cancelled") rowClass = "row row-danger";
 
       const relatedPerson = peopleRows.find(person => person.id === row.related_person_id);
       const googleUrl = googleCalendarUrl(row);
@@ -1002,7 +927,6 @@
           ${row.notes ? `<p><strong>Notes:</strong><br>${safe(row.notes)}</p>` : ""}
 
           <p class="small">Created: ${row.created_at ? new Date(row.created_at).toLocaleString() : "N/A"}</p>
-          <p class="small">Updated: ${row.updated_at ? new Date(row.updated_at).toLocaleString() : "N/A"}</p>
 
           <a href="${safeAttr(googleUrl)}" target="_blank">
             <button>Add to Google Calendar</button>
