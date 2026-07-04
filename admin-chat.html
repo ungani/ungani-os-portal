@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Admin Chat</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --gray: #E5E7EB;
+      --green: #15803D;
+      --red: #B00020;
+      --orange: #EA580C;
+      --blue: #2563EB;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--navy);
+      color: var(--white);
+    }
+
+    .container {
+      max-width: 1250px;
+      margin: 0 auto;
+      padding: 32px 18px;
+    }
+
+    .top {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .logo-wrap {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .logo {
+      width: 145px;
+      max-width: 60%;
+      height: auto;
+      display: block;
+      object-fit: contain;
+      filter: drop-shadow(0 10px 20px rgba(0,0,0,0.22));
+    }
+
+    .gold {
+      color: var(--gold);
+    }
+
+    .small {
+      font-size: 13px;
+      opacity: 0.82;
+    }
+
+    .nav {
+      text-align: center;
+      margin-bottom: 22px;
+      line-height: 2;
+    }
+
+    .nav a {
+      color: var(--gold);
+      text-decoration: none;
+      font-weight: bold;
+      padding: 5px 7px;
+      border-radius: 999px;
+    }
+
+    .nav a:hover {
+      background: rgba(212,166,58,0.16);
+    }
+
+    .card {
+      background: var(--white);
+      color: var(--navy);
+      padding: 22px;
+      border-radius: 18px;
+      margin-bottom: 18px;
+      border: 1px solid var(--gray);
+      box-shadow: 0 10px 24px rgba(0,0,0,0.13);
+    }
+
+    .status-card {
+      background: var(--offwhite);
+      border-left: 6px solid var(--gold);
+    }
+
+    .chat-highlight {
+      background: linear-gradient(135deg, #ffffff, #fff8e5);
+      border-left: 7px solid var(--gold);
+    }
+
+    .status-inner {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .status-logo-box {
+      background: var(--white);
+      border: 1px solid var(--gray);
+      border-radius: 16px;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 90px;
+    }
+
+    .status-logo {
+      width: 72px;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin-top: 8px;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 14px;
+      border-radius: 10px;
+      border: 1px solid var(--gray);
+      font-size: 15px;
+      font-family: Arial, sans-serif;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    button {
+      background: var(--gold);
+      color: var(--navy);
+      border: none;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 8px;
+    }
+
+    .dark-btn {
+      background: var(--navy);
+      color: var(--white);
+    }
+
+    .green-btn {
+      background: var(--green);
+      color: var(--white);
+    }
+
+    .danger-btn {
+      background: var(--red);
+      color: var(--white);
+    }
+
+    .orange-btn {
+      background: var(--orange);
+      color: var(--white);
+    }
+
+    .blue-btn {
+      background: var(--blue);
+      color: var(--white);
+    }
+
+    .danger {
+      color: var(--red);
+      font-weight: bold;
+    }
+
+    .success {
+      color: var(--green);
+      font-weight: bold;
+    }
+
+    .blocked-box {
+      border-left: 6px solid var(--red);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+      gap: 14px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .metric {
+      background: var(--offwhite);
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid var(--gray);
+      min-height: 105px;
+    }
+
+    .metric h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      opacity: 0.86;
+    }
+
+    .metric p {
+      font-size: 23px;
+      font-weight: bold;
+      margin: 0;
+      word-break: break-word;
+    }
+
+    .metric .note {
+      font-size: 12px;
+      margin-top: 8px;
+      opacity: 0.75;
+    }
+
+    .metric.good {
+      border-left: 6px solid var(--green);
+    }
+
+    .metric.alert {
+      border-left: 6px solid var(--red);
+    }
+
+    .metric.warning {
+      border-left: 6px solid var(--orange);
+    }
+
+    .metric.gold-left {
+      border-left: 6px solid var(--gold);
+    }
+
+    .metric.blue-left {
+      border-left: 6px solid var(--blue);
+    }
+
+    .quick-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .quick-link {
+      display: inline-block;
+      background: var(--navy);
+      color: var(--white);
+      padding: 10px 14px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .quick-link.gold-link {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .quick-link.green-link {
+      background: var(--green);
+      color: var(--white);
+    }
+
+    .conversation-list {
+      background: var(--offwhite);
+      border: 1px solid var(--gray);
+      border-radius: 18px;
+      padding: 14px;
+      max-height: 720px;
+      overflow-y: auto;
+    }
+
+    .conversation-item {
+      background: var(--white);
+      border: 1px solid var(--gray);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+
+    .conversation-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(6,28,61,0.12);
+      border-color: var(--gold);
+    }
+
+    .conversation-item.active {
+      border: 2px solid var(--gold);
+      background: #fff8e5;
+    }
+
+    .conversation-title {
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    .conversation-preview {
+      font-size: 13px;
+      opacity: 0.78;
+      line-height: 1.45;
+    }
+
+    .chat-shell {
+      background: var(--offwhite);
+      border: 1px solid var(--gray);
+      border-radius: 18px;
+      padding: 18px;
+    }
+
+    .chat-head {
+      background: var(--white);
+      border: 1px solid var(--gray);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .chat-box {
+      height: 520px;
+      overflow-y: auto;
+      background: #ffffff;
+      border: 1px solid var(--gray);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .message-row {
+      display: flex;
+      margin-bottom: 14px;
+    }
+
+    .message-row.admin {
+      justify-content: flex-end;
+    }
+
+    .message-row.client,
+    .message-row.system {
+      justify-content: flex-start;
+    }
+
+    .message-bubble {
+      max-width: 76%;
+      padding: 13px 15px;
+      border-radius: 18px;
+      line-height: 1.45;
+      word-break: break-word;
+      box-shadow: 0 8px 16px rgba(6,28,61,0.08);
+    }
+
+    .message-row.admin .message-bubble {
+      background: var(--navy);
+      color: var(--white);
+      border-bottom-right-radius: 5px;
+    }
+
+    .message-row.client .message-bubble {
+      background: var(--gold);
+      color: var(--navy);
+      border-bottom-left-radius: 5px;
+    }
+
+    .message-row.system .message-bubble {
+      background: var(--gray);
+      color: var(--navy);
+      border-bottom-left-radius: 5px;
+    }
+
+    .message-meta {
+      font-size: 11px;
+      opacity: 0.75;
+      margin-top: 8px;
+    }
+
+    .message-label {
+      font-size: 12px;
+      font-weight: bold;
+      margin-bottom: 5px;
+      opacity: 0.9;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 28px;
+      background: var(--offwhite);
+      border: 1px dashed var(--gray);
+      border-radius: 16px;
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--navy);
+      color: var(--white);
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      margin: 3px 4px 3px 0;
+      text-transform: capitalize;
+    }
+
+    .badge-gold {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .badge-green {
+      background: var(--green);
+      color: var(--white);
+    }
+
+    .badge-red {
+      background: var(--red);
+      color: var(--white);
+    }
+
+    .badge-orange {
+      background: var(--orange);
+      color: var(--white);
+    }
+
+    .badge-blue {
+      background: var(--blue);
+      color: var(--white);
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      background: var(--navy);
+      color: var(--white);
+      border: 1px solid var(--gold);
+      padding: 14px 16px;
+      border-radius: 14px;
+      box-shadow: 0 12px 24px rgba(0,0,0,0.25);
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: 0.25s ease;
+      z-index: 9999;
+      max-width: 330px;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 900px) {
+      .two-col {
+        grid-template-columns: 1fr;
+      }
+
+      .conversation-list {
+        max-height: 380px;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .status-inner {
+        grid-template-columns: 1fr;
+        text-align: center;
+      }
+
+      .status-logo-box {
+        max-width: 120px;
+        margin: 0 auto;
+      }
+
+      .quick-row {
+        justify-content: center;
+      }
+
+      .chat-box {
+        height: 470px;
+      }
+
+      .message-bubble {
+        max-width: 92%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="top">
+      <div class="logo-wrap">
+        <img src="ungani-logo.png" alt="UNGANI Logo" class="logo" />
+      </div>
+
+      <h1>UNGANI <span class="gold">Admin Chat</span></h1>
+      <p>View client messages and reply directly from the UNGANI admin workspace.</p>
+      <p class="small">ungani.com | info@ungani.com</p>
+      <p class="small">Admin Chat Version: Step 228 Admin Client Chat Added</p>
+    </div>
+
+    <div class="nav">
+      <a href="portal.html">Portal</a> |
+      <a href="admin-home.html">Admin Home</a> |
+      <a href="admin.html">Main Admin</a> |
+      <a href="admin-calendar.html">Admin Calendar</a> |
+      <a href="admin-chat.html">Admin Chat</a> |
+      <a href="admin-health.html">Admin Health</a> |
+      <a href="admin-charts.html">Live Charts</a> |
+      <a href="admin-reports.html">Reports</a> |
+      <a href="support.html">Support</a>
+    </div>
+
+    <div id="loginCard" class="card">
+      <h2>Admin Login</h2>
+
+      <label>Email</label>
+      <input id="adminEmail" placeholder="admin@example.com" />
+
+      <label>Password</label>
+      <input id="adminPassword" type="password" placeholder="Enter password" />
+
+      <button onclick="loginAdmin()">Login</button>
+
+      <div id="loginMessage"></div>
+    </div>
+
+    <div id="blockedCard" class="card blocked-box hidden">
+      <h2 class="danger">Admin Access Blocked</h2>
+      <p id="blockedReason"></p>
+      <button onclick="logoutAdmin()">Logout</button>
+    </div>
+
+    <div id="adminArea" class="hidden">
+      <div class="card status-card">
+        <div class="status-inner">
+          <div class="status-logo-box">
+            <img src="ungani-logo.png" alt="UNGANI Logo" class="status-logo" />
+          </div>
+
+          <div>
+            <h2 id="adminName">Admin Chat</h2>
+            <p id="adminInfo"></p>
+
+            <div class="quick-row">
+              <a class="quick-link gold-link" href="admin-home.html">🏠 Admin Home</a>
+              <a class="quick-link green-link" href="admin-chat.html">💬 Admin Chat</a>
+              <a class="quick-link" href="admin-calendar.html">📅 Admin Calendar</a>
+              <a class="quick-link" href="support.html">🛟 Support</a>
+              <a class="quick-link" href="admin-health.html">✅ Health</a>
+            </div>
+
+            <br />
+
+            <button onclick="loadChatData()">Refresh Chat</button>
+            <button onclick="logoutAdmin()" class="dark-btn">Logout</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card chat-highlight">
+        <h2>Client ↔ UNGANI Admin Chat</h2>
+        <p>
+          Select a client conversation, read their messages, and reply from UNGANI admin. New client messages appear live when realtime is active.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Chat Summary</h2>
+
+        <div class="grid">
+          <div class="metric gold-left">
+            <h3>Total Messages</h3>
+            <p id="totalMessages">0</p>
+            <div class="note">All client-admin messages</div>
+          </div>
+
+          <div class="metric alert">
+            <h3>Unread Client Messages</h3>
+            <p id="unreadClientMessages">0</p>
+            <div class="note">Client messages not yet read by admin</div>
+          </div>
+
+          <div class="metric good">
+            <h3>Clients With Chat</h3>
+            <p id="clientsWithChat">0</p>
+            <div class="note">Businesses with messages</div>
+          </div>
+
+          <div class="metric blue-left">
+            <h3>Admin Replies</h3>
+            <p id="adminReplies">0</p>
+            <div class="note">Messages sent by UNGANI admin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <h2>Client Conversations</h2>
+
+          <label>Search Client / Message</label>
+          <input id="searchBox" placeholder="Search business name or message..." oninput="renderConversations()" />
+
+          <div id="conversationList" class="conversation-list"></div>
+        </div>
+
+        <div class="card">
+          <h2>Selected Conversation</h2>
+
+          <div class="chat-shell">
+            <div id="selectedClientBox" class="chat-head">
+              <strong>No client selected</strong>
+              <p class="small">Choose a client conversation on the left to reply.</p>
+            </div>
+
+            <div id="chatBox" class="chat-box">
+              <div class="empty">
+                <h3>No conversation selected</h3>
+                <p>Select a client conversation to view messages.</p>
+              </div>
+            </div>
+
+            <label>Reply Message</label>
+            <textarea id="replyInput" placeholder="Type your reply to the selected client..."></textarea>
+
+            <div>
+              <button onclick="sendReply()" class="green-btn">Send Reply</button>
+              <button onclick="sendInternalNote()" class="orange-btn">Save Internal Note</button>
+              <button onclick="clearReply()" class="dark-btn">Clear</button>
+            </div>
+
+            <div id="replyResult"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Updated</div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentAdminId = null;
+    let tenantsRows = [];
+    let messagesRows = [];
+    let selectedTenantId = null;
+    let subscriptionStarted = false;
+
+    function safe(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function cleanText(value) {
+      return String(value || "N/A").replaceAll("_", " ");
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "N/A";
+
+      const dateObj = new Date(value);
+
+      if (isNaN(dateObj.getTime())) return "N/A";
+
+      return dateObj.toLocaleString("en-KE", {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function getTenantName(tenantId) {
+      const tenant = tenantsRows.find(row => String(row.id) === String(tenantId));
+
+      if (!tenant) return "Unknown Client";
+
+      return tenant.company_name || tenant.business_name || tenant.name || "Client Business";
+    }
+
+    function getTenantDetails(tenantId) {
+      const tenant = tenantsRows.find(row => String(row.id) === String(tenantId));
+
+      if (!tenant) {
+        return {
+          name: "Unknown Client",
+          email: "N/A",
+          phone: "N/A",
+          status: "unknown"
+        };
+      }
+
+      return {
+        name: tenant.company_name || tenant.business_name || tenant.name || "Client Business",
+        email: tenant.business_email || tenant.email || "N/A",
+        phone: tenant.business_phone || tenant.phone || "N/A",
+        status: tenant.account_status || tenant.status || "active"
+      };
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.innerText = message;
+      toast.classList.add("show");
+
+      setTimeout(() => {
+        toast.classList.remove("show");
+      }, 2500);
+    }
+
+    function showAccessBlocked(reason) {
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("adminArea").classList.add("hidden");
+      document.getElementById("blockedCard").classList.remove("hidden");
+      document.getElementById("blockedReason").innerText = reason;
+    }
+
+    async function checkExistingSession() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (sessionData?.session?.user?.id) {
+        await loadAdminProfile();
+      }
+    }
+
+    async function loginAdmin() {
+      const email = document.getElementById("adminEmail").value;
+      const password = document.getElementById("adminPassword").value;
+      const msg = document.getElementById("loginMessage");
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        msg.innerHTML = `<p class="danger">${safe(error.message)}</p>`;
+        return;
+      }
+
+      msg.innerHTML = `<p class="success">Login successful.</p>`;
+
+      await loadAdminProfile();
+    }
+
+    async function logoutAdmin() {
+      await supabaseClient.auth.signOut();
+      window.location.reload();
+    }
+
+    async function isAdminByRpc() {
+      try {
+        const { data, error } = await supabaseClient.rpc("is_ungani_admin");
+
+        if (error) return false;
+
+        return data === true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    async function loadAdminProfile() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentAdminId = sessionData?.session?.user?.id;
+
+      if (!currentAdminId) return;
+
+      const rpcAdmin = await isAdminByRpc();
+
+      const { data: userData, error } = await supabaseClient
+        .from("users")
+        .select("id, full_name, email, role, status")
+        .eq("id", currentAdminId)
+        .maybeSingle();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI admin profile was not found.");
+        return;
+      }
+
+      const role = String(userData.role || "").toLowerCase();
+      const isAdminRole = ["admin", "super_admin", "owner"].includes(role);
+
+      if (!rpcAdmin && !isAdminRole) {
+        showAccessBlocked("This login is not allowed to access Admin Chat.");
+        return;
+      }
+
+      if (userData.status && userData.status !== "active") {
+        showAccessBlocked("Your admin user access is not active.");
+        return;
+      }
+
+      document.getElementById("loginCard").classList.add("hidden");
+      document.getElementById("blockedCard").classList.add("hidden");
+      document.getElementById("adminArea").classList.remove("hidden");
+
+      document.getElementById("adminName").innerText = userData.full_name || "UNGANI Admin";
+      document.getElementById("adminInfo").innerText = `${userData.email || "Admin"} | Role: ${cleanText(userData.role || "admin")}`;
+
+      await loadChatData();
+
+      if (!subscriptionStarted) {
+        subscribeToMessages();
+        subscriptionStarted = true;
+      }
+    }
+
+    async function loadTenants() {
+      const { data, error } = await supabaseClient
+        .from("tenants")
+        .select("*")
+        .order("company_name", { ascending: true });
+
+      if (error) {
+        showToast(error.message);
+        tenantsRows = [];
+        return;
+      }
+
+      tenantsRows = data || [];
+    }
+
+    async function loadMessages() {
+      const { data, error } = await supabaseClient
+        .from("admin_client_messages")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        showToast(error.message);
+        messagesRows = [];
+        return;
+      }
+
+      messagesRows = data || [];
+    }
+
+    async function loadChatData() {
+      showToast("Refreshing admin chat...");
+
+      await loadTenants();
+      await loadMessages();
+
+      updateSummary();
+      renderConversations();
+      renderSelectedConversation();
+
+      showToast("Admin chat updated ✓");
+    }
+
+    function updateSummary() {
+      const total = messagesRows.filter(row => row.is_internal !== true).length;
+      const unreadClient = messagesRows.filter(row =>
+        row.sender_role === "client" &&
+        !row.read_by_admin_at &&
+        row.is_internal !== true
+      ).length;
+
+      const clients = new Set(
+        messagesRows
+          .filter(row => row.is_internal !== true)
+          .map(row => row.tenant_id)
+          .filter(Boolean)
+      );
+
+      const adminReplies = messagesRows.filter(row =>
+        row.sender_role === "admin" &&
+        row.is_internal !== true
+      ).length;
+
+      document.getElementById("totalMessages").innerText = total;
+      document.getElementById("unreadClientMessages").innerText = unreadClient;
+      document.getElementById("clientsWithChat").innerText = clients.size;
+      document.getElementById("adminReplies").innerText = adminReplies;
+    }
+
+    function getConversationRows() {
+      const byTenant = {};
+
+      messagesRows
+        .filter(row => row.is_internal !== true)
+        .forEach(row => {
+          if (!row.tenant_id) return;
+
+          if (!byTenant[row.tenant_id]) {
+            byTenant[row.tenant_id] = {
+              tenant_id: row.tenant_id,
+              tenant_name: getTenantName(row.tenant_id),
+              messages: [],
+              last_message: null,
+              unread_count: 0
+            };
+          }
+
+          byTenant[row.tenant_id].messages.push(row);
+
+          if (
+            !byTenant[row.tenant_id].last_message ||
+            new Date(row.created_at || 0) > new Date(byTenant[row.tenant_id].last_message.created_at || 0)
+          ) {
+            byTenant[row.tenant_id].last_message = row;
+          }
+
+          if (row.sender_role === "client" && !row.read_by_admin_at) {
+            byTenant[row.tenant_id].unread_count += 1;
+          }
+        });
+
+      return Object.values(byTenant).sort((a, b) => {
+        return new Date(b.last_message?.created_at || 0) - new Date(a.last_message?.created_at || 0);
+      });
+    }
+
+    function renderConversations() {
+      const box = document.getElementById("conversationList");
+      const search = document.getElementById("searchBox").value.toLowerCase().trim();
+
+      let rows = getConversationRows();
+
+      if (search) {
+        rows = rows.filter(row => {
+          const messagesText = row.messages.map(msg => msg.message_body).join(" ");
+          const combined = `${row.tenant_name} ${messagesText}`.toLowerCase();
+          return combined.includes(search);
+        });
+      }
+
+      if (rows.length === 0) {
+        box.innerHTML = `
+          <div class="empty">
+            <h3>No client conversations yet</h3>
+            <p>Client messages from my-chat.html will appear here.</p>
+          </div>
+        `;
+        return;
+      }
+
+      box.innerHTML = rows.map(row => {
+        const last = row.last_message || {};
+        const activeClass = String(row.tenant_id) === String(selectedTenantId) ? "active" : "";
+        const unreadBadge = row.unread_count > 0
+          ? `<span class="badge badge-red">${row.unread_count} unread</span>`
+          : `<span class="badge badge-green">read</span>`;
+
+        return `
+          <div class="conversation-item ${activeClass}" onclick="selectTenant('${safe(row.tenant_id)}')">
+            <div class="conversation-title">${safe(row.tenant_name)}</div>
+            <div class="conversation-preview">
+              ${safe(last.sender_role === "admin" ? "Admin: " : "Client: ")}
+              ${safe(last.message_body || "No message")}
+            </div>
+            <div class="small">${safe(formatDateTime(last.created_at))}</div>
+            ${unreadBadge}
+            <span class="badge badge-blue">${row.messages.length} messages</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function selectTenant(tenantId) {
+      selectedTenantId = tenantId;
+
+      renderConversations();
+      renderSelectedConversation();
+
+      await markClientMessagesRead();
+    }
+
+    function renderSelectedConversation() {
+      const clientBox = document.getElementById("selectedClientBox");
+      const chatBox = document.getElementById("chatBox");
+
+      if (!selectedTenantId) {
+        clientBox.innerHTML = `
+          <strong>No client selected</strong>
+          <p class="small">Choose a client conversation on the left to reply.</p>
+        `;
+
+        chatBox.innerHTML = `
+          <div class="empty">
+            <h3>No conversation selected</h3>
+            <p>Select a client conversation to view messages.</p>
+          </div>
+        `;
+
+        return;
+      }
+
+      const details = getTenantDetails(selectedTenantId);
+      const rows = messagesRows
+        .filter(row => String(row.tenant_id) === String(selectedTenantId))
+        .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+
+      clientBox.innerHTML = `
+        <strong>${safe(details.name)}</strong>
+        <p class="small">
+          Email: ${safe(details.email)} | Phone: ${safe(details.phone)} | Status: ${safe(cleanText(details.status))}
+        </p>
+        <a class="quick-link" href="admin-profiles.html">Open Profiles</a>
+        <a class="quick-link" href="support.html">Open Support</a>
+      `;
+
+      if (rows.length === 0) {
+        chatBox.innerHTML = `
+          <div class="empty">
+            <h3>No messages for this client yet</h3>
+            <p>Send a reply to start the conversation.</p>
+          </div>
+        `;
+        return;
+      }
+
+      chatBox.innerHTML = rows.map(row => {
+        const role = row.sender_role || "client";
+        const label = row.is_internal
+          ? "Internal Note"
+          : role === "admin"
+            ? "UNGANI Admin"
+            : role === "system"
+              ? "System"
+              : details.name;
+
+        const bubbleRole = row.is_internal ? "system" : role;
+
+        const readStatus = role === "client"
+          ? row.read_by_admin_at ? "Read by admin" : "New for admin"
+          : row.read_by_client_at ? "Read by client" : "Sent";
+
+        return `
+          <div class="message-row ${safe(bubbleRole)}">
+            <div class="message-bubble">
+              <div class="message-label">${safe(label)}</div>
+              <div>${safe(row.message_body)}</div>
+              <div class="message-meta">
+                ${safe(formatDateTime(row.created_at))} · ${safe(cleanText(row.message_type || "text"))} · ${safe(readStatus)}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function sendReply() {
+      await sendAdminMessage(false);
+    }
+
+    async function sendInternalNote() {
+      await sendAdminMessage(true);
+    }
+
+    async function sendAdminMessage(isInternal) {
+      const input = document.getElementById("replyInput");
+      const result = document.getElementById("replyResult");
+      const message = input.value.trim();
+
+      result.innerHTML = "";
+
+      if (!selectedTenantId) {
+        result.innerHTML = `<p class="danger">Please select a client conversation first.</p>`;
+        return;
+      }
+
+      if (!message) {
+        result.innerHTML = `<p class="danger">Please type a message first.</p>`;
+        return;
+      }
+
+      const { error } = await supabaseClient
+        .from("admin_client_messages")
+        .insert({
+          tenant_id: selectedTenantId,
+          sender_id: currentAdminId,
+          sender_role: "admin",
+          message_body: message,
+          message_type: isInternal ? "note" : "text",
+          is_internal: isInternal,
+          read_by_admin_at: new Date().toISOString()
+        });
+
+      if (error) {
+        result.innerHTML = `<p class="danger">${safe(error.message)}</p>`;
+        showToast("Message failed");
+        return;
+      }
+
+      input.value = "";
+
+      result.innerHTML = isInternal
+        ? `<p class="success">Internal note saved.</p>`
+        : `<p class="success">Reply sent successfully.</p>`;
+
+      showToast(isInternal ? "Internal note saved ✓" : "Reply sent ✓");
+
+      await loadChatData();
+      selectedTenantId = selectedTenantId;
+      renderSelectedConversation();
+    }
+
+    function clearReply() {
+      document.getElementById("replyInput").value = "";
+      document.getElementById("replyResult").innerHTML = "";
+    }
+
+    async function markClientMessagesRead() {
+      if (!selectedTenantId) return;
+
+      const unreadClientMessages = messagesRows.filter(row =>
+        String(row.tenant_id) === String(selectedTenantId) &&
+        row.sender_role === "client" &&
+        !row.read_by_admin_at
+      );
+
+      if (unreadClientMessages.length === 0) return;
+
+      const ids = unreadClientMessages.map(row => row.id);
+
+      const { error } = await supabaseClient
+        .from("admin_client_messages")
+        .update({
+          read_by_admin_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .in("id", ids);
+
+      if (error) {
+        console.log(error.message);
+        return;
+      }
+
+      messagesRows = messagesRows.map(row => {
+        if (ids.includes(row.id)) {
+          return {
+            ...row,
+            read_by_admin_at: new Date().toISOString()
+          };
+        }
+
+        return row;
+      });
+
+      updateSummary();
+      renderConversations();
+      renderSelectedConversation();
+    }
+
+    function subscribeToMessages() {
+      supabaseClient
+        .channel("admin-client-chat-all")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "admin_client_messages"
+          },
+          () => {
+            showToast("Chat updated live ✓");
+            loadChatData();
+          }
+        )
+        .subscribe();
+    }
+
+    checkExistingSession();
+  </script>
+</body>
+</html>
