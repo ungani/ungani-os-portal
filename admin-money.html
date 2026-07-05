@@ -7,742 +7,455 @@
   <title>UNGANI OS Admin Money</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="admin-shared.js"></script>
 
   <style>
-    :root {
-      --navy: #061C3D;
-      --gold: #D4A63A;
-      --offwhite: #F5F5F3;
-      --white: #FFFFFF;
-      --gray: #E5E7EB;
-      --green: #15803D;
-      --red: #B00020;
-      --orange: #EA580C;
-      --blue: #2563EB;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: var(--navy);
-      color: var(--white);
-    }
-
-    .container {
-      max-width: 1250px;
-      margin: 0 auto;
-      padding: 32px 18px;
-    }
-
-    .top {
-      text-align: center;
-      margin-bottom: 24px;
-      animation: fadeUp 0.5s ease;
-    }
-
-    .logo-wrap {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 16px;
-    }
-
-    .logo {
-      width: 145px;
-      max-width: 60%;
-      height: auto;
-      display: block;
-      object-fit: contain;
-      filter: drop-shadow(0 10px 20px rgba(0,0,0,0.20));
-    }
-
-    .gold {
-      color: var(--gold);
-    }
-
-    .small {
-      font-size: 13px;
-      opacity: 0.82;
-    }
-
-    .nav {
-      text-align: center;
-      margin-bottom: 22px;
-      line-height: 2;
-    }
-
-    .nav a {
-      color: var(--gold);
-      text-decoration: none;
-      font-weight: bold;
-      padding: 5px 7px;
-      border-radius: 999px;
-      transition: 0.2s ease;
-    }
-
-    .nav a:hover {
-      background: rgba(212, 166, 58, 0.16);
-    }
-
-    .card {
-      background: var(--white);
-      color: var(--navy);
-      padding: 22px;
-      border-radius: 18px;
-      margin-bottom: 18px;
-      border: 1px solid var(--gray);
-      box-shadow: 0 10px 24px rgba(0,0,0,0.13);
-      animation: fadeUp 0.6s ease;
-    }
-
-    .status-card {
-      background: var(--offwhite);
-      border-left: 6px solid var(--gold);
-    }
-
-    .status-inner {
+    .page-grid {
       display: grid;
-      grid-template-columns: 92px 1fr;
-      gap: 18px;
-      align-items: center;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
     }
 
-    .status-logo-box {
-      background: var(--white);
-      border: 1px solid var(--gray);
-      border-radius: 16px;
-      padding: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 90px;
+    .metric-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 6px solid var(--gold);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 10px 24px var(--shadow);
     }
 
-    .status-logo {
-      width: 72px;
-      height: auto;
-      display: block;
-      object-fit: contain;
+    .metric-card h3 {
+      margin: 0 0 8px;
+      color: var(--soft-text);
+      font-size: 14px;
     }
 
-    .hidden {
-      display: none;
+    .metric-card p {
+      margin: 0;
+      font-size: 26px;
+      font-weight: bold;
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .metric-card .note {
+      margin-top: 8px;
+      color: var(--soft-text);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .metric-card.green { border-left-color: var(--green); }
+    .metric-card.red { border-left-color: var(--red); }
+    .metric-card.orange { border-left-color: var(--orange); }
+    .metric-card.blue { border-left-color: var(--blue); }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
     }
 
     label {
       display: block;
       font-weight: bold;
-      margin-top: 8px;
+      margin: 8px 0 6px;
+      font-size: 14px;
+      color: var(--text);
     }
 
-    input, select, textarea {
+    input, select {
       width: 100%;
       padding: 12px;
-      margin: 8px 0 14px;
-      border-radius: 10px;
-      border: 1px solid var(--gray);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--input-bg);
+      color: var(--text);
       font-size: 15px;
       font-family: Arial, sans-serif;
     }
 
-    textarea {
-      min-height: 95px;
-      resize: vertical;
-    }
-
-    button {
-      background: var(--gold);
-      color: var(--navy);
-      border: none;
-      padding: 10px 16px;
-      border-radius: 10px;
-      font-weight: bold;
-      cursor: pointer;
-      margin-top: 8px;
-      margin-right: 8px;
-      transition: 0.2s ease;
-    }
-
-    button:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 16px rgba(6, 28, 61, 0.18);
-    }
-
-    .dark-btn {
-      background: var(--navy);
-      color: var(--white);
-    }
-
-    .green-btn {
-      background: var(--green);
-      color: var(--white);
-    }
-
-    .danger-btn {
-      background: var(--red);
-      color: var(--white);
-    }
-
-    .orange-btn {
-      background: var(--orange);
-      color: var(--white);
-    }
-
-    .blue-btn {
-      background: var(--blue);
-      color: var(--white);
-    }
-
-    .danger {
-      color: var(--red);
-      font-weight: bold;
-    }
-
-    .success {
-      color: var(--green);
-      font-weight: bold;
-    }
-
-    .blocked-box {
-      border-left: 6px solid var(--red);
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
-      gap: 14px;
-    }
-
-    .two-col {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 14px;
-    }
-
-    .metric {
-      background: var(--offwhite);
-      padding: 16px;
-      border-radius: 16px;
-      border: 1px solid var(--gray);
-      min-height: 105px;
-      transition: 0.2s ease;
-    }
-
-    .metric:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 10px 18px rgba(6, 28, 61, 0.12);
-    }
-
-    .metric h3 {
-      margin: 0 0 8px;
-      font-size: 14px;
-      opacity: 0.86;
-    }
-
-    .metric p {
-      font-size: 23px;
-      font-weight: bold;
-      margin: 0;
-      word-break: break-word;
-    }
-
-    .metric .note {
-      font-size: 12px;
-      margin-top: 8px;
-      opacity: 0.75;
-    }
-
-    .metric.good {
-      border-left: 6px solid var(--green);
-    }
-
-    .metric.alert {
-      border-left: 6px solid var(--red);
-    }
-
-    .metric.gold-left {
-      border-left: 6px solid var(--gold);
-    }
-
-    .quick-row {
+    .button-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
       margin-top: 14px;
     }
 
-    .quick-link {
-      display: inline-block;
-      background: var(--navy);
-      color: var(--white);
+    .btn {
+      border: none;
+      border-radius: 12px;
       padding: 10px 14px;
-      border-radius: 999px;
-      text-decoration: none;
       font-weight: bold;
-    }
-
-    .quick-link.gold-link {
+      cursor: pointer;
       background: var(--gold);
-      color: var(--navy);
+      color: #061C3D;
+      text-decoration: none;
+      display: inline-block;
     }
 
-    .money-row {
+    .btn.dark {
+      background: #061C3D;
+      color: #FFFFFF;
+    }
+
+    body.dark .btn.dark {
+      background: #F5F5F3;
+      color: #061C3D;
+    }
+
+    .btn.green { background: var(--green); color: #FFFFFF; }
+    .btn.red { background: var(--red); color: #FFFFFF; }
+    .btn.orange { background: var(--orange); color: #FFFFFF; }
+    .btn.blue { background: var(--blue); color: #FFFFFF; }
+
+    .two-col {
       display: grid;
-      grid-template-columns: 48px 1fr;
-      gap: 13px;
-      background: var(--offwhite);
-      border: 1px solid var(--gray);
-      border-radius: 16px;
-      padding: 15px;
-      margin-bottom: 12px;
-      transition: 0.2s ease;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
     }
 
-    .money-row:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 18px rgba(6, 28, 61, 0.10);
-      border-color: var(--gold);
-    }
-
-    .money-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 15px;
-      background: var(--navy);
-      color: var(--white);
+    .section-title-row {
       display: flex;
+      justify-content: space-between;
+      gap: 12px;
       align-items: center;
-      justify-content: center;
-      font-size: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
     }
 
-    .money-title {
+    .section-title-row h2 {
+      margin: 0;
+    }
+
+    .row-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-left: 6px solid var(--gold);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .row-card.income-card { border-left-color: var(--green); }
+    .row-card.expense-card { border-left-color: var(--red); }
+    .row-card.petty-card { border-left-color: var(--orange); }
+    .row-card.other-card { border-left-color: var(--blue); }
+
+    .row-title {
       font-weight: bold;
       font-size: 17px;
       margin-bottom: 6px;
+      color: var(--text);
     }
 
-    .money-detail {
-      margin: 4px 0;
+    .row-detail {
+      color: var(--soft-text);
+      margin: 5px 0;
       line-height: 1.45;
+      word-break: break-word;
     }
 
     .badge {
       display: inline-block;
-      background: var(--navy);
-      color: var(--white);
+      background: #061C3D;
+      color: #FFFFFF;
       padding: 5px 10px;
       border-radius: 999px;
       font-size: 12px;
-      margin: 3px 4px 3px 0;
+      margin: 4px 4px 4px 0;
       text-transform: capitalize;
     }
 
-    .badge-gold {
-      background: var(--gold);
-      color: var(--navy);
-    }
-
-    .badge-green {
-      background: var(--green);
-      color: var(--white);
-    }
-
-    .badge-red {
-      background: var(--red);
-      color: var(--white);
-    }
-
-    .badge-orange {
-      background: var(--orange);
-      color: var(--white);
-    }
-
-    .badge-blue {
-      background: var(--blue);
-      color: var(--white);
-    }
+    .badge.green { background: var(--green); }
+    .badge.red { background: var(--red); }
+    .badge.orange { background: var(--orange); }
+    .badge.blue { background: var(--blue); }
+    .badge.gold { background: var(--gold); color: #061C3D; }
 
     .empty {
       text-align: center;
       padding: 28px;
-      background: var(--offwhite);
-      border: 1px dashed var(--gray);
-      border-radius: 16px;
+      background: var(--bg);
+      border: 1px dashed var(--border);
+      border-radius: 18px;
     }
 
-    .skeleton {
-      background: linear-gradient(90deg, #eeeeee 25%, #f7f7f7 50%, #eeeeee 75%);
-      background-size: 200% 100%;
-      animation: shimmer 1.2s infinite;
-      border-radius: 14px;
-      min-height: 95px;
-      margin-bottom: 12px;
+    .empty h3 {
+      margin: 0 0 8px;
+      color: var(--text);
     }
 
-    .toast {
-      position: fixed;
-      right: 18px;
-      bottom: 18px;
-      background: var(--navy);
-      color: var(--white);
-      border: 1px solid var(--gold);
-      padding: 14px 16px;
-      border-radius: 14px;
-      box-shadow: 0 12px 24px rgba(0,0,0,0.25);
-      opacity: 0;
-      transform: translateY(12px);
-      pointer-events: none;
-      transition: 0.25s ease;
-      z-index: 9999;
-      max-width: 330px;
+    .empty p {
+      margin: 0;
+      color: var(--soft-text);
     }
 
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
+    .table-wrap {
+      overflow-x: auto;
     }
 
-    @keyframes fadeUp {
-      from {
-        opacity: 0;
-        transform: translateY(12px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
     }
 
-    @keyframes shimmer {
-      0% {
-        background-position: 200% 0;
-      }
-
-      100% {
-        background-position: -200% 0;
-      }
+    th, td {
+      border-bottom: 1px solid var(--border);
+      padding: 11px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
     }
 
-    @media (max-width: 700px) {
-      .status-inner {
-        grid-template-columns: 1fr;
-        text-align: center;
-      }
+    th {
+      background: var(--bg);
+      color: var(--text);
+      font-weight: bold;
+    }
 
-      .status-logo-box {
-        max-width: 120px;
-        margin: 0 auto;
-      }
+    td {
+      color: var(--soft-text);
+    }
 
-      .quick-row {
-        justify-content: center;
-      }
+    .small-text {
+      color: var(--soft-text);
+      font-size: 13px;
+      line-height: 1.45;
+    }
 
-      .money-row {
-        grid-template-columns: 1fr;
-      }
+    .print-header {
+      display: none;
     }
 
     @media print {
       body {
-        background: var(--white);
-        color: #000000;
+        background: #FFFFFF !important;
+        color: #000000 !important;
       }
 
-      .nav,
-      #loginCard,
-      button,
-      .toast,
-      .no-print {
+      .ungani-admin-sidebar,
+      .ungani-topbar,
+      .no-print,
+      .button-row {
         display: none !important;
       }
 
-      .container {
-        max-width: 100%;
-        padding: 0;
+      .ungani-admin-app {
+        display: block !important;
       }
 
-      .card {
-        box-shadow: none;
-        border: 1px solid #999;
+      .ungani-admin-main {
+        padding: 0 !important;
+      }
+
+      .ungani-card,
+      .metric-card,
+      .row-card {
+        box-shadow: none !important;
+        border: 1px solid #DDDDDD !important;
         page-break-inside: avoid;
       }
 
-      .top {
-        color: #000000;
+      .print-header {
+        display: block;
+        margin-bottom: 18px;
+        border-bottom: 2px solid #061C3D;
+        padding-bottom: 12px;
       }
 
-      .gold {
-        color: #000000;
+      .print-header h1 {
+        margin: 0;
+        color: #061C3D;
+      }
+
+      .print-header p {
+        margin: 4px 0;
+        color: #333333;
+      }
+    }
+
+    @media (max-width: 950px) {
+      .two-col {
+        grid-template-columns: 1fr;
       }
     }
   </style>
 </head>
 
 <body>
-  <div class="container">
-    <div class="top">
-      <div class="logo-wrap">
-        <img src="ungani-logo.png" alt="UNGANI Logo" class="logo" />
-      </div>
-
-      <h1>UNGANI <span class="gold">Admin Money</span></h1>
-      <p>View and manage client income, expenses, petty cash, sales, and business money records.</p>
-      <p class="small">ungani.com | info@ungani.com</p>
-      <p class="small">Admin Money Version: Step 196 Logo Added</p>
-    </div>
-
-    <div class="nav no-print">
-      <a href="portal.html">Portal</a> |
-      <a href="admin-home.html">Admin Home</a> |
-      <a href="admin.html">Main Admin</a> |
-      <a href="admin-charts.html">Live Charts</a> |
-      <a href="admin-profiles.html">Profiles</a> |
-      <a href="admin-people.html">People</a> |
-      <a href="admin-reports.html">Reports</a> |
-      <a href="admin-records.html">Records</a> |
-      <a href="admin-documents.html">Documents</a> |
-      <a href="admin-tasks.html">Tasks</a> |
-      <a href="admin-items.html">Items</a> |
-      <a href="users.html">Users</a> |
-      <a href="sections.html">Sections</a> |
-      <a href="billing.html">Billing</a> |
-      <a href="support.html">Support</a> |
-      <a href="notices.html">Notices</a>
-    </div>
-
-    <div id="loginCard" class="card">
-      <h2>Admin Login</h2>
-
-      <label>Email</label>
-      <input id="adminEmail" placeholder="admin@example.com" />
-
-      <label>Password</label>
-      <input id="adminPassword" type="password" placeholder="Enter password" />
-
-      <button onclick="loginAdmin()">Login</button>
-
-      <div id="loginMessage"></div>
-    </div>
-
-    <div id="blockedCard" class="card blocked-box hidden">
-      <h2 class="danger">Admin Access Blocked</h2>
-      <p id="blockedReason"></p>
-      <button onclick="logoutAdmin()">Logout</button>
-    </div>
-
-    <div id="adminArea" class="hidden">
-      <div class="card status-card">
-        <div class="status-inner">
-          <div class="status-logo-box">
-            <img src="ungani-logo.png" alt="UNGANI Logo" class="status-logo" />
-          </div>
-
-          <div>
-            <h2 id="adminName">Admin Money</h2>
-            <p id="adminInfo"></p>
-
-            <div class="quick-row no-print">
-              <a class="quick-link gold-link" href="admin-home.html">🏠 Admin Home</a>
-              <a class="quick-link gold-link" href="admin-charts.html">📊 Live Charts</a>
-              <a class="quick-link" href="admin-reports.html">📄 Reports</a>
-              <a class="quick-link" href="billing.html">💳 Billing</a>
-            </div>
-
-            <br />
-
-            <button onclick="loadMoney()">Refresh Money</button>
-            <button onclick="window.print()" class="dark-btn">Print Money</button>
-            <button onclick="logoutAdmin()" class="dark-btn">Logout</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>Money Summary</h2>
-
-        <div class="grid">
-          <div class="metric good">
-            <h3>Total Income</h3>
-            <p id="totalIncome">KES 0</p>
-            <div class="note">Income, sales, and cash in</div>
-          </div>
-
-          <div class="metric alert">
-            <h3>Total Expenses</h3>
-            <p id="totalExpenses">KES 0</p>
-            <div class="note">Expenses and cash out</div>
-          </div>
-
-          <div class="metric gold-left">
-            <h3>Net Balance</h3>
-            <p id="netBalance">KES 0</p>
-            <div class="note">Income minus expenses</div>
-          </div>
-
-          <div class="metric">
-            <h3>Total Records</h3>
-            <p id="totalRecords">0</p>
-            <div class="note">All money records</div>
-          </div>
-
-          <div class="metric">
-            <h3>Clients With Records</h3>
-            <p id="clientsWithRecords">0</p>
-            <div class="note">Businesses with money entries</div>
-          </div>
-
-          <div class="metric">
-            <h3>This Month Records</h3>
-            <p id="monthRecords">0</p>
-            <div class="note">Records added this month</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card no-print">
-        <h2 id="formTitle">Add / Edit Client Money Record</h2>
-
-        <input id="editMoneyId" type="hidden" />
-
-        <label>Client Business</label>
-        <select id="tenantIdInput">
-          <option value="">Select client business</option>
-        </select>
-
-        <div class="two-col">
-          <div>
-            <label>Money Type</label>
-            <select id="transactionTypeInput">
-              <option value="income">Income</option>
-              <option value="sales">Sales</option>
-              <option value="expense">Expense</option>
-              <option value="petty_cash">Petty Cash</option>
-              <option value="cash_in">Cash In</option>
-              <option value="cash_out">Cash Out</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label>Amount</label>
-            <input id="amountInput" type="number" step="0.01" placeholder="Amount in KES" />
-          </div>
-        </div>
-
-        <div class="two-col">
-          <div>
-            <label>Transaction Date</label>
-            <input id="transactionDateInput" type="date" />
-          </div>
-
-          <div>
-            <label>Reference</label>
-            <input id="referenceInput" placeholder="Receipt, invoice, payment reference..." />
-          </div>
-        </div>
-
-        <label>Description</label>
-        <textarea id="descriptionInput" placeholder="Describe this money record..."></textarea>
-
-        <button onclick="saveMoney()" class="green-btn">Save Money Record</button>
-        <button onclick="clearForm()" class="dark-btn">Clear Form</button>
-
-        <div id="saveMessage"></div>
-      </div>
-
-      <div class="card no-print">
-        <h2>Search / Filter Money</h2>
-
-        <div class="two-col">
-          <div>
-            <label>Search</label>
-            <input id="searchBox" placeholder="Search client, type, amount, description, reference..." oninput="renderMoney()" />
-          </div>
-
-          <div>
-            <label>Filter Client Business</label>
-            <select id="tenantFilter" onchange="renderMoney()">
-              <option value="">All Client Businesses</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="two-col">
-          <div>
-            <label>Filter Type</label>
-            <select id="typeFilter" onchange="renderMoney()">
-              <option value="">All Types</option>
-              <option value="income">Income</option>
-              <option value="sales">Sales</option>
-              <option value="expense">Expense</option>
-              <option value="petty_cash">Petty Cash</option>
-              <option value="cash_in">Cash In</option>
-              <option value="cash_out">Cash Out</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label>Start Date</label>
-            <input id="startDateFilter" type="date" onchange="renderMoney()" />
-          </div>
-        </div>
-
-        <label>End Date</label>
-        <input id="endDateFilter" type="date" onchange="renderMoney()" />
-      </div>
-
-      <div class="card">
-        <h2>Client Money Records</h2>
-        <div id="moneyList">
-          <div class="skeleton"></div>
-          <div class="skeleton"></div>
-          <div class="skeleton"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="toast" class="toast">Updated</div>
+  <div id="adminRoot"></div>
 
   <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    let supabaseClient = null;
+    let currentAdmin = null;
 
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let tenants = [];
+    let moneyRecords = [];
 
-    let currentAdminId = null;
-    let moneyRows = [];
-    let tenantsRows = [];
+    const pageMainHtml = `
+      <section class="ungani-card ungani-hero-card">
+        <div style="position: relative; z-index: 1;">
+          <h2>Admin Money Center</h2>
+          <p>
+            Review all client income, sales, expenses, petty cash, and business money records in one admin view.
+          </p>
+          <div style="margin-top: 16px;">
+            <a class="btn" href="admin-home.html">Admin Home</a>
+            <a class="btn green" href="admin.html">Main Admin</a>
+            <a class="btn blue" href="admin-reports.html">Reports</a>
+            <a class="btn dark" href="admin-settings.html">Admin Settings</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-grid" id="metricsGrid">
+        <div class="metric-card"><h3>Loading</h3><p>...</p><div class="note">Please wait</div></div>
+      </section>
+
+      <section class="ungani-card no-print">
+        <div class="section-title-row">
+          <h2>Money Filters</h2>
+          <button class="btn green" onclick="loadPageData()">Refresh</button>
+        </div>
+
+        <div class="form-grid">
+          <div>
+            <label for="clientFilter">Client</label>
+            <select id="clientFilter" onchange="renderMoneyPage()">
+              <option value="">All Clients</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="typeFilter">Record Type</label>
+            <select id="typeFilter" onchange="renderMoneyPage()">
+              <option value="">All Types</option>
+              <option value="income">Income / Revenue</option>
+              <option value="sales">Sales</option>
+              <option value="expense">Expense / Cost</option>
+              <option value="petty_cash">Petty Cash</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="dateFrom">Date From</label>
+            <input id="dateFrom" type="date" onchange="renderMoneyPage()" />
+          </div>
+
+          <div>
+            <label for="dateTo">Date To</label>
+            <input id="dateTo" type="date" onchange="renderMoneyPage()" />
+          </div>
+
+          <div>
+            <label for="searchBox">Search</label>
+            <input id="searchBox" placeholder="Search money records..." oninput="renderMoneyPage()" />
+          </div>
+        </div>
+
+        <div class="button-row">
+          <button class="btn blue" onclick="printMoneyReport()">Print / Save PDF</button>
+          <button class="btn dark" onclick="resetFilters()">Reset Filters</button>
+        </div>
+      </section>
+
+      <section class="two-col">
+        <div class="ungani-card">
+          <div class="section-title-row">
+            <h2>Client Money Summary</h2>
+          </div>
+          <div id="clientSummaryBox">
+            <div class="empty">
+              <h3>Loading client summary...</h3>
+              <p>Please wait.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="ungani-card">
+          <div class="section-title-row">
+            <h2>Latest Money Records</h2>
+          </div>
+          <div id="latestMoneyBox">
+            <div class="empty">
+              <h3>Loading latest records...</h3>
+              <p>Please wait.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="ungani-card">
+        <div class="print-header">
+          <h1>UNGANI OS Admin Money Report</h1>
+          <p><strong>Generated:</strong> <span id="printGeneratedDate"></span></p>
+          <p>ungani.com | info@ungani.com</p>
+        </div>
+
+        <div class="section-title-row">
+          <h2>All Money Records</h2>
+          <p class="small-text" id="recordsCountText">Loading...</p>
+        </div>
+
+        <div id="moneyRecordsBox">
+          <div class="empty">
+            <h3>Loading money records...</h3>
+            <p>Please wait.</p>
+          </div>
+        </div>
+      </section>
+    `;
+
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "admin-money",
+        pageTitle: "Admin Money",
+        pageSubtitle: "View all client income, expenses, sales, and petty cash.",
+        footerTitle: "Admin Money",
+        footerVersion: "Admin Money Version: Step 286 Shared Session Added",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "admin-money",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Admin Money",
+            footerVersion: "Admin Money Version: Step 286 Shared Session Added"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadPageData();
+        }
+      });
+    });
 
     function safe(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
+      return UnganiAdminShared.safe(value);
     }
 
     function cleanText(value) {
-      return String(value || "N/A").replaceAll("_", " ");
-    }
-
-    function valueOrNA(value) {
-      return value && String(value).trim() !== "" ? value : "N/A";
-    }
-
-    function todayDate() {
-      return new Date().toISOString().slice(0, 10);
-    }
-
-    function monthStart() {
-      const date = new Date();
-      return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().slice(0, 10);
+      return UnganiAdminShared.cleanText(value);
     }
 
     function getField(row, names, fallback = "") {
@@ -751,487 +464,412 @@
           return row[name];
         }
       }
-
       return fallback;
     }
 
-    function getTenantName(tenantId) {
-      const found = tenantsRows.find(row => String(row.id) === String(tenantId));
-      return found ? found.company_name || "Client Business" : "Client Business";
+    function getTenantName(row) {
+      return getField(row, ["company_name", "business_name", "name"], "Client Business");
     }
 
-    function getAmount(row) {
-      return Number(getField(row, ["amount", "value", "total_amount", "transaction_amount"], 0) || 0);
+    function getTenantNameById(tenantId) {
+      const tenant = tenants.find(row => String(row.id) === String(tenantId));
+      return tenant ? getTenantName(tenant) : "Unknown Client";
     }
 
-    function getType(row) {
-      return String(getField(row, ["transaction_type", "type", "money_type", "record_type"], "other") || "other").toLowerCase();
+    function getMoneyDate(row) {
+      return getField(row, ["transaction_date", "record_date", "money_date", "created_at", "updated_at"], "");
     }
 
-    function getDescription(row) {
-      return getField(row, ["description", "notes", "details", "message"], "");
+    function getMoneyDescription(row) {
+      return getField(row, ["description", "notes", "title", "record_title", "reference", "category"], "Money record");
     }
 
-    function getReference(row) {
-      return getField(row, ["reference", "payment_reference", "receipt_number", "invoice_number"], "");
+    function getMoneyCategory(row) {
+      return getField(row, ["category", "category_name", "record_category"], "N/A");
     }
 
-    function getDate(row) {
-      return String(getField(row, ["transaction_date", "record_date", "date", "created_at"], "") || "").slice(0, 10);
+    function getMoneyReference(row) {
+      return getField(row, ["reference", "payment_reference", "mpesa_reference", "receipt_number", "invoice_number"], "N/A");
     }
 
-    function isIncome(row) {
-      const type = getType(row);
-      return type.includes("income") || type.includes("sale") || type.includes("sales") || type.includes("cash_in") || type === "credit";
+    function amountValue(row) {
+      const raw = getField(row, ["amount", "total_amount", "value", "paid_amount"], 0);
+      const num = Number(raw);
+      return isNaN(num) ? 0 : num;
     }
 
-    function isExpense(row) {
-      const type = getType(row);
-      return type.includes("expense") || type.includes("cash_out") || type.includes("cost") || type.includes("petty") || type === "debit";
+    function moneyType(row) {
+      const raw = String(getField(row, ["record_type", "transaction_type", "type", "money_type"], "other")).toLowerCase();
+
+      if (["income", "sale", "sales", "revenue", "received", "payment_received"].includes(raw)) return "income";
+      if (["expense", "expenses", "cost", "paid", "payment", "purchase"].includes(raw)) return "expense";
+      if (["petty_cash", "petty cash", "cash"].includes(raw)) return "petty_cash";
+
+      return raw || "other";
     }
 
-    function formatKES(value) {
+    function typeLabel(type) {
+      if (type === "income") return "Income / Sales";
+      if (type === "expense") return "Expense";
+      if (type === "petty_cash") return "Petty Cash";
+      return cleanText(type || "Other");
+    }
+
+    function typeBadge(type) {
+      if (type === "income") return `<span class="badge green">${safe(typeLabel(type))}</span>`;
+      if (type === "expense") return `<span class="badge red">${safe(typeLabel(type))}</span>`;
+      if (type === "petty_cash") return `<span class="badge orange">${safe(typeLabel(type))}</span>`;
+      return `<span class="badge blue">${safe(typeLabel(type))}</span>`;
+    }
+
+    function cardClassByType(type) {
+      if (type === "income") return "income-card";
+      if (type === "expense") return "expense-card";
+      if (type === "petty_cash") return "petty-card";
+      return "other-card";
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "N/A";
+      const dateObj = new Date(value);
+      if (isNaN(dateObj.getTime())) return "N/A";
+
+      return dateObj.toLocaleString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function moneyFormat(value) {
       const number = Number(value || 0);
       return "KES " + number.toLocaleString("en-KE", {
-        maximumFractionDigits: 0
+        maximumFractionDigits: 2
       });
     }
 
-    function moneyIcon(row) {
-      if (isIncome(row)) return "↗️";
-      if (isExpense(row)) return "↘️";
-      return "💰";
-    }
-
-    function typeBadgeClass(row) {
-      if (isIncome(row)) return "badge badge-green";
-      if (isExpense(row)) return "badge badge-red";
-      return "badge badge-gold";
-    }
-
-    function showToast(message) {
-      const toast = document.getElementById("toast");
-      toast.innerText = message;
-      toast.classList.add("show");
-
-      setTimeout(() => {
-        toast.classList.remove("show");
-      }, 2500);
-    }
-
-    function showAccessBlocked(reason) {
-      document.getElementById("loginCard").classList.add("hidden");
-      document.getElementById("adminArea").classList.add("hidden");
-      document.getElementById("blockedCard").classList.remove("hidden");
-      document.getElementById("blockedReason").innerText = reason;
-    }
-
-    async function checkExistingSession() {
-      const { data: sessionData } = await supabaseClient.auth.getSession();
-
-      if (sessionData?.session?.user?.id) {
-        await loadAdminProfile();
-      }
-    }
-
-    async function loginAdmin() {
-      const email = document.getElementById("adminEmail").value;
-      const password = document.getElementById("adminPassword").value;
-      const msg = document.getElementById("loginMessage");
-
-      const { error } = await supabaseClient.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) {
-        msg.innerHTML = `<p class="danger">${safe(error.message)}</p>`;
-        return;
-      }
-
-      msg.innerHTML = `<p class="success">Login successful.</p>`;
-
-      await loadAdminProfile();
-    }
-
-    async function logoutAdmin() {
-      await supabaseClient.auth.signOut();
-      window.location.reload();
-    }
-
-    async function isAdminByRpc() {
+    async function safeSelect(tableName) {
       try {
-        const { data, error } = await supabaseClient.rpc("is_ungani_admin");
+        const { data, error } = await supabaseClient
+          .from(tableName)
+          .select("*")
+          .limit(10000);
 
-        if (error) return false;
+        if (error) {
+          console.log(tableName, error.message);
+          return [];
+        }
 
-        return data === true;
+        return data || [];
       } catch (error) {
-        return false;
+        console.log(tableName, error.message);
+        return [];
       }
     }
 
-    async function loadAdminProfile() {
-      const { data: sessionData } = await supabaseClient.auth.getSession();
-      currentAdminId = sessionData?.session?.user?.id;
+    async function loadPageData() {
+      UnganiAdminShared.showToast("Loading money records...");
 
-      if (!currentAdminId) return;
+      const [tenantRows, transactionRows] = await Promise.all([
+        safeSelect("tenants"),
+        safeSelect("transactions")
+      ]);
 
-      const rpcAdmin = await isAdminByRpc();
+      tenants = tenantRows;
+      moneyRecords = transactionRows.sort((a, b) => new Date(getMoneyDate(b) || 0) - new Date(getMoneyDate(a) || 0));
 
-      const { data: userData, error } = await supabaseClient
-        .from("users")
-        .select("id, full_name, email, role, status")
-        .eq("id", currentAdminId)
-        .maybeSingle();
+      fillClientFilter();
+      renderMoneyPage();
 
-      if (error) {
-        alert(error.message);
-        return;
-      }
-
-      if (!userData) {
-        showAccessBlocked("Your login exists, but your UNGANI admin profile was not found.");
-        return;
-      }
-
-      const role = String(userData.role || "").toLowerCase();
-      const isAdminRole = ["admin", "super_admin", "owner"].includes(role);
-
-      if (!rpcAdmin && !isAdminRole) {
-        showAccessBlocked("This login is not allowed to access admin money.");
-        return;
-      }
-
-      if (userData.status && userData.status !== "active") {
-        showAccessBlocked("Your admin user access is not active.");
-        return;
-      }
-
-      document.getElementById("loginCard").classList.add("hidden");
-      document.getElementById("blockedCard").classList.add("hidden");
-      document.getElementById("adminArea").classList.remove("hidden");
-
-      document.getElementById("adminName").innerText = userData.full_name || "UNGANI Admin";
-      document.getElementById("adminInfo").innerText = `${userData.email || "Admin"} | Role: ${cleanText(userData.role || "admin")}`;
-
-      document.getElementById("transactionDateInput").value = todayDate();
-
-      await loadMoney();
-      subscribeToRealtime();
+      UnganiAdminShared.showToast("Money records updated ✓");
     }
 
-    async function loadTenants() {
-      const { data, error } = await supabaseClient
-        .from("tenants")
-        .select("id, company_name, account_status")
-        .order("company_name", { ascending: true });
+    function fillClientFilter() {
+      const selected = document.getElementById("clientFilter").value;
 
-      if (error) {
-        console.log(error.message);
-        tenantsRows = [];
-        return;
+      const options = tenants
+        .map(row => `<option value="${safe(row.id)}">${safe(getTenantName(row))}</option>`)
+        .join("");
+
+      document.getElementById("clientFilter").innerHTML = `<option value="">All Clients</option>${options}`;
+
+      if (selected) {
+        document.getElementById("clientFilter").value = selected;
       }
-
-      tenantsRows = data || [];
-
-      const options = tenantsRows.map(row => `
-        <option value="${safe(row.id)}">${safe(row.company_name || "Client Business")} (${safe(cleanText(row.account_status || "active"))})</option>
-      `).join("");
-
-      document.getElementById("tenantIdInput").innerHTML =
-        `<option value="">Select client business</option>${options}`;
-
-      document.getElementById("tenantFilter").innerHTML =
-        `<option value="">All Client Businesses</option>${options}`;
     }
 
-    async function loadMoney() {
-      showToast("Refreshing money records...");
+    function withinDateRange(row) {
+      const from = document.getElementById("dateFrom").value;
+      const to = document.getElementById("dateTo").value;
 
-      document.getElementById("moneyList").innerHTML = `
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-      `;
+      if (!from && !to) return true;
 
-      await loadTenants();
+      const value = getMoneyDate(row);
+      if (!value) return true;
 
-      const { data, error } = await supabaseClient
-        .from("transactions")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const recordDate = String(value).slice(0, 10);
 
-      if (error) {
-        document.getElementById("moneyList").innerHTML = `<p class="danger">${safe(error.message)}</p>`;
-        return;
-      }
+      if (from && recordDate < from) return false;
+      if (to && recordDate > to) return false;
 
-      moneyRows = data || [];
-
-      updateSummary();
-      renderMoney();
-
-      showToast("Money records updated ✓");
+      return true;
     }
 
-    function updateSummary() {
-      const income = moneyRows.filter(isIncome).reduce((sum, row) => sum + getAmount(row), 0);
-      const expenses = moneyRows.filter(isExpense).reduce((sum, row) => sum + getAmount(row), 0);
-      const balance = income - expenses;
-
-      const uniqueClients = new Set(moneyRows.map(row => row.tenant_id).filter(Boolean)).size;
-      const monthRecords = moneyRows.filter(row => getDate(row) >= monthStart()).length;
-
-      document.getElementById("totalIncome").innerText = formatKES(income);
-      document.getElementById("totalExpenses").innerText = formatKES(expenses);
-      document.getElementById("netBalance").innerText = formatKES(balance);
-      document.getElementById("totalRecords").innerText = moneyRows.length;
-      document.getElementById("clientsWithRecords").innerText = uniqueClients;
-      document.getElementById("monthRecords").innerText = monthRecords;
-    }
-
-    function clearForm() {
-      document.getElementById("editMoneyId").value = "";
-      document.getElementById("formTitle").innerText = "Add / Edit Client Money Record";
-      document.getElementById("tenantIdInput").value = "";
-      document.getElementById("transactionTypeInput").value = "income";
-      document.getElementById("amountInput").value = "";
-      document.getElementById("transactionDateInput").value = todayDate();
-      document.getElementById("referenceInput").value = "";
-      document.getElementById("descriptionInput").value = "";
-      document.getElementById("saveMessage").innerHTML = "";
-    }
-
-    function editMoney(id) {
-      const row = moneyRows.find(item => String(item.id) === String(id));
-
-      if (!row) {
-        showToast("Money record not found");
-        return;
-      }
-
-      document.getElementById("editMoneyId").value = row.id;
-      document.getElementById("formTitle").innerText = "Edit Client Money Record";
-      document.getElementById("tenantIdInput").value = row.tenant_id || "";
-      document.getElementById("transactionTypeInput").value = getType(row);
-      document.getElementById("amountInput").value = getAmount(row);
-      document.getElementById("transactionDateInput").value = getDate(row) || todayDate();
-      document.getElementById("referenceInput").value = getReference(row);
-      document.getElementById("descriptionInput").value = getDescription(row);
-      document.getElementById("saveMessage").innerHTML = "";
-
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth"
-      });
-
-      showToast("Edit mode opened");
-    }
-
-    function buildPayloads() {
-      const tenantId = document.getElementById("tenantIdInput").value;
-      const transactionType = document.getElementById("transactionTypeInput").value;
-      const amount = Number(document.getElementById("amountInput").value || 0);
-      const transactionDate = document.getElementById("transactionDateInput").value || todayDate();
-      const reference = document.getElementById("referenceInput").value.trim();
-      const description = document.getElementById("descriptionInput").value.trim();
-
-      return [
-        {
-          tenant_id: tenantId,
-          transaction_type: transactionType,
-          amount: amount,
-          transaction_date: transactionDate,
-          reference: reference,
-          description: description,
-          created_by: currentAdminId,
-          updated_at: new Date().toISOString()
-        },
-        {
-          tenant_id: tenantId,
-          type: transactionType,
-          amount: amount,
-          transaction_date: transactionDate,
-          reference: reference,
-          description: description,
-          created_by: currentAdminId,
-          updated_at: new Date().toISOString()
-        },
-        {
-          tenant_id: tenantId,
-          money_type: transactionType,
-          amount: amount,
-          date: transactionDate,
-          notes: description,
-          created_by: currentAdminId
-        },
-        {
-          tenant_id: tenantId,
-          transaction_type: transactionType,
-          amount: amount,
-          description: description
-        }
-      ];
-    }
-
-    async function saveMoney() {
-      const msg = document.getElementById("saveMessage");
-      msg.innerHTML = "";
-
-      const id = document.getElementById("editMoneyId").value;
-      const tenantId = document.getElementById("tenantIdInput").value;
-      const amount = Number(document.getElementById("amountInput").value || 0);
-
-      if (!tenantId) {
-        msg.innerHTML = `<p class="danger">Please select a client business.</p>`;
-        return;
-      }
-
-      if (!amount || amount <= 0) {
-        msg.innerHTML = `<p class="danger">Amount must be greater than 0.</p>`;
-        return;
-      }
-
-      const payloads = buildPayloads();
-      let lastError = null;
-
-      for (const payload of payloads) {
-        let result;
-
-        if (id) {
-          const cleanPayload = { ...payload };
-          delete cleanPayload.tenant_id;
-          delete cleanPayload.created_by;
-
-          result = await supabaseClient
-            .from("transactions")
-            .update(cleanPayload)
-            .eq("id", id);
-        } else {
-          result = await supabaseClient
-            .from("transactions")
-            .insert(payload);
-        }
-
-        if (!result.error) {
-          msg.innerHTML = `<p class="success">Money record saved successfully.</p>`;
-          showToast("Money record saved ✓");
-          clearForm();
-          await loadMoney();
-          return;
-        }
-
-        lastError = result.error;
-      }
-
-      msg.innerHTML = `<p class="danger">${safe(lastError ? lastError.message : "Could not save money record.")}</p>`;
-    }
-
-    function renderMoney() {
-      const search = document.getElementById("searchBox").value.toLowerCase().trim();
-      const tenantFilter = document.getElementById("tenantFilter").value;
+    function filteredMoneyRecords() {
+      const clientFilter = document.getElementById("clientFilter").value;
       const typeFilter = document.getElementById("typeFilter").value;
-      const startDate = document.getElementById("startDateFilter").value;
-      const endDate = document.getElementById("endDateFilter").value;
+      const query = document.getElementById("searchBox").value.toLowerCase().trim();
 
-      const box = document.getElementById("moneyList");
+      let rows = [...moneyRecords];
 
-      let rows = [...moneyRows];
-
-      if (tenantFilter) {
-        rows = rows.filter(row => String(row.tenant_id) === String(tenantFilter));
+      if (clientFilter) {
+        rows = rows.filter(row => String(row.tenant_id) === String(clientFilter));
       }
 
       if (typeFilter) {
-        rows = rows.filter(row => getType(row) === typeFilter);
+        if (typeFilter === "sales") {
+          rows = rows.filter(row => ["income", "sales", "sale", "revenue"].includes(moneyType(row)) || String(JSON.stringify(row)).toLowerCase().includes("sales"));
+        } else {
+          rows = rows.filter(row => moneyType(row) === typeFilter);
+        }
       }
 
-      if (startDate) {
-        rows = rows.filter(row => getDate(row) >= startDate);
-      }
+      rows = rows.filter(withinDateRange);
 
-      if (endDate) {
-        rows = rows.filter(row => getDate(row) <= endDate);
-      }
-
-      if (search) {
+      if (query) {
         rows = rows.filter(row => {
-          const combined = `
-            ${getTenantName(row.tenant_id)}
-            ${getType(row)}
-            ${getAmount(row)}
-            ${getDescription(row)}
-            ${getReference(row)}
-            ${getDate(row)}
-          `.toLowerCase();
+          const haystack = [
+            getTenantNameById(row.tenant_id),
+            getMoneyDescription(row),
+            getMoneyCategory(row),
+            getMoneyReference(row),
+            moneyType(row),
+            amountValue(row),
+            JSON.stringify(row)
+          ].join(" ").toLowerCase();
 
-          return combined.includes(search);
+          return haystack.includes(query);
         });
       }
 
-      if (rows.length === 0) {
-        box.innerHTML = `
+      return rows;
+    }
+
+    function renderMoneyPage() {
+      renderMetrics();
+      renderClientSummary();
+      renderLatestMoney();
+      renderMoneyRecords();
+    }
+
+    function calculateSummary(rows) {
+      let income = 0;
+      let expenses = 0;
+      let pettyCash = 0;
+      let other = 0;
+
+      rows.forEach(row => {
+        const type = moneyType(row);
+        const amount = amountValue(row);
+
+        if (type === "income") income += amount;
+        else if (type === "expense") expenses += amount;
+        else if (type === "petty_cash") pettyCash += amount;
+        else other += amount;
+      });
+
+      return {
+        totalRecords: rows.length,
+        income,
+        expenses,
+        pettyCash,
+        other,
+        net: income - expenses - pettyCash
+      };
+    }
+
+    function renderMetrics() {
+      const rows = filteredMoneyRecords();
+      const summary = calculateSummary(rows);
+
+      const metrics = [
+        { title: "Total Records", value: summary.totalRecords, note: "Money records in current view", cls: "blue" },
+        { title: "Income / Sales", value: moneyFormat(summary.income), note: "Recorded income and sales", cls: "green" },
+        { title: "Expenses", value: moneyFormat(summary.expenses), note: "Recorded expenses and costs", cls: summary.expenses > 0 ? "red" : "green" },
+        { title: "Petty Cash", value: moneyFormat(summary.pettyCash), note: "Petty cash records", cls: summary.pettyCash > 0 ? "orange" : "green" },
+        { title: "Other Records", value: moneyFormat(summary.other), note: "Other money records", cls: "blue" },
+        { title: "Estimated Balance", value: moneyFormat(summary.net), note: "Income minus expenses and petty cash", cls: summary.net >= 0 ? "green" : "red" }
+      ];
+
+      document.getElementById("metricsGrid").innerHTML = metrics.map(item => `
+        <div class="metric-card ${safe(item.cls)}">
+          <h3>${safe(item.title)}</h3>
+          <p>${safe(item.value)}</p>
+          <div class="note">${safe(item.note)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderClientSummary() {
+      const rows = filteredMoneyRecords();
+      const clientMap = {};
+
+      tenants.forEach(tenant => {
+        clientMap[tenant.id] = {
+          id: tenant.id,
+          name: getTenantName(tenant),
+          records: 0,
+          income: 0,
+          expenses: 0,
+          pettyCash: 0,
+          other: 0
+        };
+      });
+
+      rows.forEach(row => {
+        const tenantId = row.tenant_id;
+
+        if (!tenantId || !clientMap[tenantId]) return;
+
+        const type = moneyType(row);
+        const amount = amountValue(row);
+
+        clientMap[tenantId].records += 1;
+
+        if (type === "income") clientMap[tenantId].income += amount;
+        else if (type === "expense") clientMap[tenantId].expenses += amount;
+        else if (type === "petty_cash") clientMap[tenantId].pettyCash += amount;
+        else clientMap[tenantId].other += amount;
+      });
+
+      const summaryRows = Object.values(clientMap)
+        .filter(row => row.records > 0)
+        .map(row => {
+          row.net = row.income - row.expenses - row.pettyCash;
+          return row;
+        })
+        .sort((a, b) => b.records - a.records)
+        .slice(0, 10);
+
+      if (summaryRows.length === 0) {
+        document.getElementById("clientSummaryBox").innerHTML = `
           <div class="empty">
-            <h3>No money records found</h3>
-            <p>Client income, expenses, sales, and petty cash records will appear here.</p>
+            <h3>No client money summary yet</h3>
+            <p>Client summaries will appear after money records are added.</p>
           </div>
         `;
         return;
       }
 
-      box.innerHTML = rows.map(row => `
-        <div class="money-row">
-          <div class="money-icon">${moneyIcon(row)}</div>
-
-          <div>
-            <div class="money-title">${safe(getTenantName(row.tenant_id))}</div>
-
-            <p class="money-detail">
-              <strong>Amount:</strong> ${safe(formatKES(getAmount(row)))} |
-              <strong>Date:</strong> ${safe(valueOrNA(getDate(row)))}
-            </p>
-
-            <p class="money-detail">
-              <strong>Description:</strong> ${safe(valueOrNA(getDescription(row)))}
-            </p>
-
-            <p class="money-detail">
-              <strong>Reference:</strong> ${safe(valueOrNA(getReference(row)))}
-            </p>
-
-            <span class="${typeBadgeClass(row)}">${safe(cleanText(getType(row)))}</span>
-            <span class="badge badge-gold">${safe(getTenantName(row.tenant_id))}</span>
-
-            <p class="small">${row.created_at ? "Added: " + new Date(row.created_at).toLocaleString() : ""}</p>
-
-            <button onclick="editMoney('${row.id}')">Edit</button>
-          </div>
+      document.getElementById("clientSummaryBox").innerHTML = summaryRows.map(row => `
+        <div class="row-card ${row.net >= 0 ? "income-card" : "expense-card"}">
+          <div class="row-title">${safe(row.name)}</div>
+          <p class="row-detail"><strong>Records:</strong> ${safe(row.records)}</p>
+          <p class="row-detail"><strong>Income:</strong> ${safe(moneyFormat(row.income))}</p>
+          <p class="row-detail"><strong>Expenses:</strong> ${safe(moneyFormat(row.expenses))}</p>
+          <p class="row-detail"><strong>Petty Cash:</strong> ${safe(moneyFormat(row.pettyCash))}</p>
+          <p class="row-detail"><strong>Estimated Balance:</strong> ${safe(moneyFormat(row.net))}</p>
+          <span class="badge ${row.net >= 0 ? "green" : "red"}">${safe(row.net >= 0 ? "Positive" : "Negative")}</span>
         </div>
       `).join("");
     }
 
-    function subscribeToRealtime() {
-      ["transactions", "tenants"].forEach(tableName => {
-        supabaseClient
-          .channel("admin-money-" + tableName)
-          .on(
-            "postgres_changes",
-            {
-              event: "*",
-              schema: "public",
-              table: tableName
-            },
-            () => {
-              showToast("Money updated live ✓");
-              loadMoney();
-            }
-          )
-          .subscribe();
-      });
+    function renderLatestMoney() {
+      const rows = filteredMoneyRecords().slice(0, 8);
+
+      if (rows.length === 0) {
+        document.getElementById("latestMoneyBox").innerHTML = `
+          <div class="empty">
+            <h3>No money records found</h3>
+            <p>Money records will appear here once clients add income, expenses, or petty cash.</p>
+          </div>
+        `;
+        return;
+      }
+
+      document.getElementById("latestMoneyBox").innerHTML = rows.map(row => {
+        const type = moneyType(row);
+
+        return `
+          <div class="row-card ${safe(cardClassByType(type))}">
+            <div class="row-title">${safe(getMoneyDescription(row))}</div>
+            <p class="row-detail"><strong>Client:</strong> ${safe(getTenantNameById(row.tenant_id))}</p>
+            <p class="row-detail"><strong>Amount:</strong> ${safe(moneyFormat(amountValue(row)))}</p>
+            <p class="row-detail"><strong>Date:</strong> ${safe(formatDateTime(getMoneyDate(row)))}</p>
+            ${typeBadge(type)}
+          </div>
+        `;
+      }).join("");
     }
 
-    checkExistingSession();
+    function renderMoneyRecords() {
+      const rows = filteredMoneyRecords();
+
+      document.getElementById("recordsCountText").innerText = `${rows.length} record(s) shown`;
+
+      if (rows.length === 0) {
+        document.getElementById("moneyRecordsBox").innerHTML = `
+          <div class="empty">
+            <h3>No money records found</h3>
+            <p>Try changing the filters or wait for clients to add records.</p>
+          </div>
+        `;
+        return;
+      }
+
+      document.getElementById("moneyRecordsBox").innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Reference</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => {
+                const type = moneyType(row);
+
+                return `
+                  <tr>
+                    <td>${safe(getTenantNameById(row.tenant_id))}</td>
+                    <td>${safe(typeLabel(type))}</td>
+                    <td>${safe(moneyFormat(amountValue(row)))}</td>
+                    <td>${safe(getMoneyCategory(row))}</td>
+                    <td>${safe(getMoneyDescription(row))}</td>
+                    <td>${safe(getMoneyReference(row))}</td>
+                    <td>${safe(formatDateTime(getMoneyDate(row)))}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function resetFilters() {
+      document.getElementById("clientFilter").value = "";
+      document.getElementById("typeFilter").value = "";
+      document.getElementById("dateFrom").value = "";
+      document.getElementById("dateTo").value = "";
+      document.getElementById("searchBox").value = "";
+
+      renderMoneyPage();
+      UnganiAdminShared.showToast("Money filters reset ✓");
+    }
+
+    function printMoneyReport() {
+      document.getElementById("printGeneratedDate").innerText = formatDateTime(new Date().toISOString());
+      window.print();
+    }
   </script>
 </body>
 </html>
