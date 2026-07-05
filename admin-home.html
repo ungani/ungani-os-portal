@@ -880,11 +880,10 @@
       <div class="sidebar-section-title" data-i18n="reports">Reports</div>
       <a class="side-link" href="admin-charts.html">📊 <span data-i18n="charts">Charts</span></a>
       <a class="side-link" href="admin-reports.html">📄 <span data-i18n="reports">Reports</span></a>
-      <a class="side-link" href="account.html">⚙️ <span data-i18n="account">Account</span></a>
 
       <div class="sidebar-footer">
         <strong data-i18n="adminDashboard">Admin Dashboard</strong><br />
-        Sidebar Version: Step 275 Admin Session Fixed<br />
+        Sidebar Version: Step 276A Admin Account Link Removed<br />
         ungani.com
       </div>
     </aside>
@@ -910,7 +909,6 @@
           </div>
 
           <button onclick="loadAdminDashboard()" data-i18n="refresh">Refresh</button>
-          <button onclick="window.location.href='account.html'" class="dark-btn" data-i18n="settings">Settings</button>
           <button onclick="logoutAdmin()" class="dark-btn" data-i18n="logout">Logout</button>
         </div>
       </div>
@@ -1078,11 +1076,9 @@
         notices: "Notices",
         reports: "Reports",
         charts: "Charts",
-        account: "Account",
         adminDashboard: "Admin Dashboard",
         menu: "Menu",
         refresh: "Refresh",
-        settings: "Settings",
         logout: "Logout",
         adminAccessBlocked: "Admin Access Blocked",
         adminWorkspaceActive: "Admin Workspace Active",
@@ -1138,7 +1134,6 @@
         noAdminActivityYet: "No admin activity yet",
         noAdminActivityText: "Registrations, support, messages, and documents will appear here.",
         allClear: "All clear",
-        noUrgentAdminNotifications: "No urgent admin notifications right now.",
         noResults: "No results",
         searchHelp: "Try searching clients, documents, support, users, chat, reports, or calendar.",
         activeTrialClients: "Active / Trial Clients",
@@ -1179,11 +1174,9 @@
         notices: "Matangazo",
         reports: "Ripoti",
         charts: "Chati",
-        account: "Akaunti",
         adminDashboard: "Dashibodi ya Admin",
         menu: "Menyu",
         refresh: "Sasisha",
-        settings: "Mipangilio",
         logout: "Toka",
         adminAccessBlocked: "Ufikiaji wa Admin Umezuiwa",
         adminWorkspaceActive: "Eneo la Admin Lipo Hai",
@@ -1239,7 +1232,6 @@
         noAdminActivityYet: "Hakuna shughuli za admin bado",
         noAdminActivityText: "Usajili, msaada, ujumbe, na nyaraka zitaonekana hapa.",
         allClear: "Kila kitu kiko sawa",
-        noUrgentAdminNotifications: "Hakuna taarifa muhimu za admin kwa sasa.",
         noResults: "Hakuna matokeo",
         searchHelp: "Jaribu kutafuta wateja, nyaraka, msaada, watumiaji, gumzo, ripoti, au kalenda.",
         activeTrialClients: "Wateja Active / Trial",
@@ -1280,20 +1272,6 @@
       return dateObj.toISOString().slice(0, 10);
     }
 
-    function formatDateTime(value) {
-      if (!value) return "N/A";
-      const dateObj = new Date(value);
-      if (isNaN(dateObj.getTime())) return "N/A";
-      return dateObj.toLocaleString("en-KE", {
-        weekday: "short",
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-    }
-
     function getField(row, names, fallback = "") {
       for (const name of names) {
         if (row && row[name] !== undefined && row[name] !== null && row[name] !== "") {
@@ -1310,6 +1288,20 @@
     function getTenantNameById(tenantId) {
       const tenant = (dashboardData.tenants || []).find(row => String(row.id) === String(tenantId));
       return tenant ? getTenantName(tenant) : "Unknown Client";
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "N/A";
+      const dateObj = new Date(value);
+      if (isNaN(dateObj.getTime())) return "N/A";
+      return dateObj.toLocaleString("en-KE", {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
     }
 
     function applyTheme(theme) {
@@ -1383,32 +1375,27 @@
     }
 
     async function checkExistingSession() {
-      try {
-        const savedTheme = localStorage.getItem("ungani_theme");
-        if (savedTheme) applyTheme(savedTheme);
-        applyLanguage();
+      const savedTheme = localStorage.getItem("ungani_theme");
+      if (savedTheme) applyTheme(savedTheme);
+      applyLanguage();
 
-        const { data, error } = await supabaseClient.auth.getSession();
+      const { data, error } = await supabaseClient.auth.getSession();
 
-        if (error) {
-          console.log("Session error:", error.message);
-          showOnly("loginShell");
-          return;
-        }
-
-        const session = data?.session;
-
-        if (!session || !session.user) {
-          showOnly("loginShell");
-          return;
-        }
-
-        currentAdminId = session.user.id;
-        await loadAdminProfile();
-      } catch (err) {
-        console.log("Session check failed:", err.message);
+      if (error) {
+        console.log("Session error:", error.message);
         showOnly("loginShell");
+        return;
       }
+
+      const session = data?.session;
+
+      if (!session || !session.user) {
+        showOnly("loginShell");
+        return;
+      }
+
+      currentAdminId = session.user.id;
+      await loadAdminProfile();
     }
 
     async function loginAdmin() {
@@ -1449,70 +1436,65 @@
     }
 
     async function loadAdminProfile() {
-      try {
-        if (!currentAdminId) {
-          const { data } = await supabaseClient.auth.getSession();
-          currentAdminId = data?.session?.user?.id || null;
-        }
+      if (!currentAdminId) {
+        const { data } = await supabaseClient.auth.getSession();
+        currentAdminId = data?.session?.user?.id || null;
+      }
 
-        if (!currentAdminId) {
-          showOnly("loginShell");
-          return;
-        }
-
-        const rpcAdmin = await isAdminByRpc();
-
-        const { data: userData, error } = await supabaseClient
-          .from("users")
-          .select("id, full_name, email, role, status, preferred_theme, preferred_language")
-          .eq("id", currentAdminId)
-          .maybeSingle();
-
-        if (error) {
-          showAccessBlocked(error.message);
-          return;
-        }
-
-        if (!userData) {
-          showAccessBlocked("Your login exists, but your UNGANI admin profile was not found.");
-          return;
-        }
-
-        const role = String(userData.role || "").toLowerCase();
-        const isAdminRole = ["admin", "super_admin", "owner"].includes(role);
-
-        if (!rpcAdmin && !isAdminRole) {
-          showAccessBlocked("This login is not allowed to access the Admin Dashboard.");
-          return;
-        }
-
-        if (userData.status && userData.status !== "active") {
-          showAccessBlocked("Your admin user access is not active.");
-          return;
-        }
-
-        currentAdmin = userData;
-        currentTheme = userData.preferred_theme || localStorage.getItem("ungani_theme") || "light";
-        currentLanguage = userData.preferred_language || "en";
-
-        applyTheme(currentTheme);
-        applyLanguage();
-
-        showOnly("appShell");
-
-        document.getElementById("sidebarAdmin").innerText = userData.full_name || "Admin Workspace";
-        document.getElementById("heroAdmin").innerText = `${userData.full_name || "Admin"} | ${userData.email || ""} | Role: ${cleanText(userData.role || "admin")}`;
-        document.getElementById("heroTheme").innerText = currentTheme === "dark" ? t("darkMode") : t("lightMode");
-
-        await loadAdminDashboard();
-
-        if (!subscriptionStarted) {
-          subscribeToRealtime();
-          subscriptionStarted = true;
-        }
-      } catch (err) {
-        console.log("Admin profile error:", err.message);
+      if (!currentAdminId) {
         showOnly("loginShell");
+        return;
+      }
+
+      const rpcAdmin = await isAdminByRpc();
+
+      const { data: userData, error } = await supabaseClient
+        .from("users")
+        .select("id, full_name, email, role, status, preferred_theme, preferred_language")
+        .eq("id", currentAdminId)
+        .maybeSingle();
+
+      if (error) {
+        showAccessBlocked(error.message);
+        return;
+      }
+
+      if (!userData) {
+        showAccessBlocked("Your login exists, but your UNGANI admin profile was not found.");
+        return;
+      }
+
+      const role = String(userData.role || "").toLowerCase();
+      const isAdminRole = ["admin", "super_admin", "owner"].includes(role);
+
+      if (!rpcAdmin && !isAdminRole) {
+        showAccessBlocked("This login is not allowed to access the Admin Dashboard.");
+        return;
+      }
+
+      if (userData.status && userData.status !== "active") {
+        showAccessBlocked("Your admin user access is not active.");
+        return;
+      }
+
+      currentAdmin = userData;
+      currentTheme = userData.preferred_theme || localStorage.getItem("ungani_theme") || "light";
+      currentLanguage = userData.preferred_language || "en";
+
+      applyTheme(currentTheme);
+      applyLanguage();
+
+      showOnly("appShell");
+
+      document.getElementById("sidebarAdmin").innerText = userData.full_name || "Admin Workspace";
+      document.getElementById("heroAdmin").innerText = `${userData.full_name || "Admin"} | ${userData.email || ""} | Role: ${cleanText(userData.role || "admin")}`;
+      document.getElementById("heroTheme").innerText = currentTheme === "dark" ? t("darkMode") : t("lightMode");
+
+      await loadAdminDashboard();
+
+      if (!subscriptionStarted) {
+        subscribeToRealtime();
+        subscriptionStarted = true;
       }
     }
 
@@ -1766,25 +1748,25 @@
 
       let status = t("strong");
       let badge = "badge-green";
-      let message = t("adminSystemHealthy");
+      let message = currentLanguage === "sw" ? "Mfumo wa admin unaonekana vizuri." : "Admin system looks healthy.";
 
       if (score < 80) {
         status = t("needsAttention");
         badge = "badge-orange";
-        message = t("adminNeedsFollowUp");
+        message = currentLanguage === "sw" ? "Baadhi ya vitu vya wateja vinahitaji ufuatiliaji wa admin." : "Some client items need admin follow-up.";
       }
 
       if (score < 60) {
         status = t("urgentReview");
         badge = "badge-red";
-        message = t("adminUrgentReview");
+        message = currentLanguage === "sw" ? "Kuna vipengele kadhaa muhimu vinavyohitaji ukaguzi wa admin." : "There are several urgent admin items to review.";
       }
 
       document.getElementById("heroStatus").innerText = `${status} — ${score}/100`;
 
       document.getElementById("healthBox").innerHTML = `
         <div class="metric ${score >= 80 ? "good" : score >= 60 ? "warning" : "alert"}">
-          <h3>${safe(t("adminHealthScore"))}</h3>
+          <h3>${safe(currentLanguage === "sw" ? "Alama ya Afya ya Admin" : "Admin Health Score")}</h3>
           <p>${safe(score)}/100</p>
           <div class="note">${safe(message)}</div>
           <br />
@@ -1794,12 +1776,12 @@
         <br />
 
         <div class="row-card">
-          <div class="row-title">${safe(t("whatAffectsScore"))}</div>
+          <div class="row-title">${safe(currentLanguage === "sw" ? "Nini kinaathiri alama hii?" : "What affects this score?")}</div>
           <p class="row-detail">${safe(t("pendingRegistrations"))}: ${safe(pendingRegistrations)}</p>
-          <p class="row-detail">${safe(t("openSupportIssues"))}: ${safe(openSupport)}</p>
-          <p class="row-detail">${safe(t("unreadClientMessages"))}: ${safe(unreadClientMessages)}</p>
-          <p class="row-detail">${safe(t("expiringDocuments"))}: ${safe(expiringDocs)}</p>
-          <p class="row-detail">${safe(t("expiredDocuments"))}: ${safe(expiredDocs)}</p>
+          <p class="row-detail">${safe(currentLanguage === "sw" ? "Masuala ya msaada yaliyo wazi" : "Open support issues")}: ${safe(openSupport)}</p>
+          <p class="row-detail">${safe(currentLanguage === "sw" ? "Ujumbe wa wateja ambao haujasomwa" : "Unread client messages")}: ${safe(unreadClientMessages)}</p>
+          <p class="row-detail">${safe(currentLanguage === "sw" ? "Nyaraka zinazokaribia kuisha" : "Expiring documents")}: ${safe(expiringDocs)}</p>
+          <p class="row-detail">${safe(currentLanguage === "sw" ? "Nyaraka zilizokwisha muda" : "Expired documents")}: ${safe(expiredDocs)}</p>
         </div>
       `;
     }
@@ -1856,8 +1838,8 @@
       if (rows.length === 0) {
         document.getElementById("latestActivity").innerHTML = `
           <div class="empty">
-            <h3>${safe(t("noAdminActivityYet"))}</h3>
-            <p>${safe(t("noAdminActivityText"))}</p>
+            <h3>${safe(currentLanguage === "sw" ? "Hakuna shughuli za admin bado" : "No admin activity yet")}</h3>
+            <p>${safe(currentLanguage === "sw" ? "Usajili, msaada, ujumbe, na nyaraka zitaonekana hapa." : "Registrations, support, messages, and documents will appear here.")}</p>
           </div>
         `;
         return;
@@ -1870,7 +1852,7 @@
           <p class="row-detail">${safe(formatDateTime(row.date))}</p>
           <span class="badge badge-blue">${safe(row.badge)}</span>
           <br />
-          <a class="quick-link" href="${safe(row.link)}">${safe(t("open"))}</a>
+          <a class="quick-link" href="${safe(row.link)}">${safe(currentLanguage === "sw" ? "Fungua" : "Open")}</a>
         </div>
       `).join("");
     }
@@ -1928,7 +1910,7 @@
       if (notifications.length === 0) {
         document.getElementById("notificationsBox").innerHTML = `
           <div class="empty">
-            <h3>${safe(t("allClear"))}</h3>
+            <h3>${safe(currentLanguage === "sw" ? "Kila kitu kiko sawa" : "All clear")}</h3>
             <p>${safe(currentLanguage === "sw" ? "Hakuna taarifa muhimu za admin kwa sasa." : "No urgent admin notifications right now.")}</p>
           </div>
         `;
@@ -1939,9 +1921,9 @@
         <div class="row-card">
           <div class="row-title">${safe(row.title)}</div>
           <p class="row-detail">${safe(row.detail)}</p>
-          <span class="badge ${safe(row.cls)}">${safe(t("needsAttention"))}</span>
+          <span class="badge ${safe(row.cls)}">${safe(currentLanguage === "sw" ? "Inahitaji uangalizi" : "Needs attention")}</span>
           <br />
-          <a class="quick-link" href="${safe(row.link)}">${safe(t("open"))}</a>
+          <a class="quick-link" href="${safe(row.link)}">${safe(currentLanguage === "sw" ? "Fungua" : "Open")}</a>
         </div>
       `).join("");
     }
@@ -1974,7 +1956,6 @@
         { title: t("charts"), detail: currentLanguage === "sw" ? "Chati za moja kwa moja za admin" : "Admin live charts", link: "admin-charts.html" },
         { title: t("reports"), detail: currentLanguage === "sw" ? "Ripoti za admin" : "Admin reports", link: "admin-reports.html" },
         { title: t("healthCheck"), detail: currentLanguage === "sw" ? "Ukaguzi wa afya ya mfumo" : "System health checks", link: "admin-health.html" },
-        { title: t("account"), detail: currentLanguage === "sw" ? "Muonekano na lugha" : "Theme and language settings", link: "account.html" },
         ...((dashboardData.tenants || []).map(row => ({
           title: getTenantName(row),
           detail: currentLanguage === "sw" ? "Biashara ya mteja" : "Client business",
@@ -1994,8 +1975,8 @@
       if (results.length === 0) {
         box.innerHTML = `
           <div class="search-result">
-            <strong>${safe(t("noResults"))}</strong>
-            <p class="row-detail">${safe(t("searchHelp"))}</p>
+            <strong>${safe(currentLanguage === "sw" ? "Hakuna matokeo" : "No results")}</strong>
+            <p class="row-detail">${safe(currentLanguage === "sw" ? "Jaribu kutafuta wateja, nyaraka, msaada, watumiaji, gumzo, ripoti, au kalenda." : "Try searching clients, documents, support, users, chat, reports, or calendar.")}</p>
           </div>
         `;
         box.classList.remove("hidden");
@@ -2032,7 +2013,7 @@
         "upgrade_requests"
       ].forEach(tableName => {
         supabaseClient
-          .channel("admin-session-fixed-" + tableName)
+          .channel("admin-hotfix-276a-" + tableName)
           .on(
             "postgres_changes",
             {
