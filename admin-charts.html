@@ -142,10 +142,6 @@
       width: 100%;
     }
 
-    .wide-card {
-      grid-column: 1 / -1;
-    }
-
     .row-card {
       background: var(--bg);
       border: 1px solid var(--border);
@@ -209,7 +205,6 @@
   <script>
     let supabaseClient = null;
     let currentAdmin = null;
-
     let charts = {};
 
     let dataStore = {
@@ -315,7 +310,7 @@
         pageTitle: "Admin Charts",
         pageSubtitle: "Visual dashboard across all client activity.",
         footerTitle: "Admin Charts",
-        footerVersion: "Admin Charts Version: Step 284 Shared Session Added",
+        footerVersion: "Admin Charts Version: Step 284B Dark Mode Chart Colors Fixed",
         mainHtml: pageMainHtml
       });
 
@@ -337,7 +332,7 @@
             activeKey: "admin-charts",
             adminName: admin.full_name || "Admin Workspace",
             footerTitle: "Admin Charts",
-            footerVersion: "Admin Charts Version: Step 284 Shared Session Added"
+            footerVersion: "Admin Charts Version: Step 284B Dark Mode Chart Colors Fixed"
           });
 
           document.getElementById("unganiLoadingShell").classList.add("hidden");
@@ -354,6 +349,56 @@
 
     function cleanText(value) {
       return UnganiAdminShared.cleanText(value);
+    }
+
+    function getCssVar(name) {
+      return getComputedStyle(document.body).getPropertyValue(name).trim();
+    }
+
+    function isDarkMode() {
+      return document.body.classList.contains("dark");
+    }
+
+    function chartTextColor() {
+      return getCssVar("--text") || (isDarkMode() ? "#F5F5F3" : "#061C3D");
+    }
+
+    function chartSoftTextColor() {
+      return getCssVar("--soft-text") || (isDarkMode() ? "#AAB2C0" : "#6B7280");
+    }
+
+    function chartGridColor() {
+      return isDarkMode() ? "rgba(245,245,243,0.10)" : "rgba(6,28,61,0.10)";
+    }
+
+    function chartColors() {
+      if (isDarkMode()) {
+        return [
+          "#D4A63A",
+          "#F5F5F3",
+          "#38BDF8",
+          "#22C55E",
+          "#FB923C",
+          "#F87171",
+          "#A78BFA",
+          "#2DD4BF",
+          "#CBD5E1",
+          "#60A5FA"
+        ];
+      }
+
+      return [
+        "#061C3D",
+        "#D4A63A",
+        "#15803D",
+        "#2563EB",
+        "#EA580C",
+        "#B00020",
+        "#64748B",
+        "#0F766E",
+        "#7C3AED",
+        "#334155"
+      ];
     }
 
     function getField(row, names, fallback = "") {
@@ -525,11 +570,10 @@
       return true;
     }
 
-    function matchesClient(row, keyName = "tenant_id") {
+    function matchesClient(row) {
       const clientId = document.getElementById("clientFilter").value;
       if (!clientId) return true;
-
-      return String(row[keyName] || "") === String(clientId);
+      return String(row.tenant_id || "") === String(clientId);
     }
 
     function filteredRows(key) {
@@ -537,6 +581,10 @@
         if (key === "tenants") {
           const clientId = document.getElementById("clientFilter").value;
           return !clientId || String(row.id) === String(clientId);
+        }
+
+        if (key === "registrations") {
+          return withinDateRange(row);
         }
 
         return matchesClient(row) && withinDateRange(row);
@@ -604,27 +652,13 @@
 
     function monthKey(value) {
       if (!value) return "Unknown";
+
       const d = new Date(value);
       if (isNaN(d.getTime())) return "Unknown";
 
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, "0");
       return `${year}-${month}`;
-    }
-
-    function chartColors() {
-      return [
-        "#061C3D",
-        "#D4A63A",
-        "#15803D",
-        "#2563EB",
-        "#EA580C",
-        "#B00020",
-        "#64748B",
-        "#0F766E",
-        "#7C3AED",
-        "#334155"
-      ];
     }
 
     function destroyCharts() {
@@ -639,15 +673,17 @@
 
     function createChart(id, type, title, dataObj) {
       const ctx = document.getElementById(id);
-
       if (!ctx) return;
 
       const labels = Object.keys(dataObj);
       const values = Object.values(dataObj);
 
-      if (labels.length === 0) {
-        return;
-      }
+      if (labels.length === 0) return;
+
+      const palette = chartColors();
+      const textColor = chartTextColor();
+      const softColor = chartSoftTextColor();
+      const gridColor = chartGridColor();
 
       charts[id] = new Chart(ctx, {
         type,
@@ -657,24 +693,69 @@
             {
               label: title,
               data: values,
-              backgroundColor: chartColors(),
-              borderColor: chartColors(),
-              borderWidth: 2,
-              tension: 0.35
+              backgroundColor: type === "line" ? "rgba(212,166,58,0.18)" : palette,
+              borderColor: type === "line" ? getCssVar("--gold") || "#D4A63A" : palette,
+              pointBackgroundColor: getCssVar("--gold") || "#D4A63A",
+              pointBorderColor: textColor,
+              pointHoverBackgroundColor: textColor,
+              pointHoverBorderColor: getCssVar("--gold") || "#D4A63A",
+              borderWidth: 2.5,
+              tension: 0.35,
+              fill: type === "line"
             }
           ]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          color: textColor,
           plugins: {
             legend: {
-              display: type !== "bar" && type !== "line"
+              display: type !== "bar" && type !== "line",
+              labels: {
+                color: textColor,
+                boxWidth: 14,
+                padding: 14,
+                font: {
+                  size: 12,
+                  weight: "bold"
+                }
+              }
+            },
+            tooltip: {
+              backgroundColor: isDarkMode() ? "#0B1220" : "#061C3D",
+              titleColor: "#FFFFFF",
+              bodyColor: "#FFFFFF",
+              borderColor: getCssVar("--gold") || "#D4A63A",
+              borderWidth: 1,
+              padding: 12
             }
           },
           scales: type === "pie" || type === "doughnut" ? {} : {
+            x: {
+              ticks: {
+                color: softColor,
+                font: {
+                  size: 11,
+                  weight: "bold"
+                }
+              },
+              grid: {
+                color: gridColor
+              }
+            },
             y: {
-              beginAtZero: true
+              beginAtZero: true,
+              ticks: {
+                color: softColor,
+                font: {
+                  size: 11,
+                  weight: "bold"
+                }
+              },
+              grid: {
+                color: gridColor
+              }
             }
           }
         }
@@ -753,6 +834,7 @@
       document.getElementById("chartsGrid").innerHTML = cards.join("");
 
       setTimeout(drawCharts, 100);
+      renderTopClients();
     }
 
     function drawCharts() {
