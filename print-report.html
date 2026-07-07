@@ -4,1477 +4,725 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>UNGANI OS Print Report</title>
+  <title>UNGANI OS - Print Report</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="client-shared.js"></script>
 
   <style>
-    :root {
-      --navy: #061C3D;
-      --gold: #D4A63A;
-      --offwhite: #F5F5F3;
-      --white: #FFFFFF;
-      --gray: #E5E7EB;
-      --green: #15803D;
-      --red: #B00020;
-      --orange: #EA580C;
-      --blue: #2563EB;
-      --black: #111827;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: var(--navy);
-      color: var(--white);
-    }
-
-    .container {
-      max-width: 1150px;
-      margin: 0 auto;
-      padding: 32px 18px;
-    }
-
-    .top {
-      text-align: center;
-      margin-bottom: 24px;
-    }
-
-    .logo-wrap {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 16px;
-    }
-
-    .logo {
-      width: 145px;
-      max-width: 60%;
-      height: auto;
-      display: block;
-      object-fit: contain;
-      filter: drop-shadow(0 10px 20px rgba(0,0,0,0.22));
-    }
-
-    .gold {
-      color: var(--gold);
-    }
-
-    .small {
-      font-size: 13px;
-      opacity: 0.82;
-    }
-
-    .nav {
-      text-align: center;
-      margin-bottom: 22px;
-      line-height: 2;
-    }
-
-    .nav a {
-      color: var(--gold);
-      text-decoration: none;
-      font-weight: bold;
-      padding: 5px 7px;
-      border-radius: 999px;
-    }
-
-    .nav a:hover {
-      background: rgba(212,166,58,0.16);
-    }
-
-    .card {
-      background: var(--white);
-      color: var(--navy);
-      padding: 22px;
-      border-radius: 18px;
-      margin-bottom: 18px;
-      border: 1px solid var(--gray);
-      box-shadow: 0 10px 24px rgba(0,0,0,0.13);
-    }
-
-    .status-card {
-      background: var(--offwhite);
-      border-left: 6px solid var(--gold);
-    }
-
-    .drive-highlight {
-      background: linear-gradient(135deg, #ffffff, #f0fff4);
-      border-left: 7px solid var(--green);
-    }
-
-    .print-highlight {
-      background: linear-gradient(135deg, #ffffff, #fff8e5);
-      border-left: 7px solid var(--gold);
-    }
-
-    .status-inner {
-      display: grid;
-      grid-template-columns: 92px 1fr;
-      gap: 18px;
-      align-items: center;
-    }
-
-    .status-logo-box {
-      background: var(--white);
-      border: 1px solid var(--gray);
-      border-radius: 16px;
-      padding: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 90px;
-    }
-
-    .status-logo {
-      width: 72px;
-      height: auto;
-      display: block;
-      object-fit: contain;
-    }
-
-    .hidden {
-      display: none;
-    }
-
-    label {
-      display: block;
-      font-weight: bold;
-      margin-top: 8px;
-    }
-
-    input {
-      width: 100%;
-      padding: 12px;
-      margin: 8px 0 14px;
-      border-radius: 10px;
-      border: 1px solid var(--gray);
-      font-size: 15px;
-      font-family: Arial, sans-serif;
-    }
-
-    button {
-      background: var(--gold);
-      color: var(--navy);
-      border: none;
-      padding: 10px 16px;
-      border-radius: 10px;
-      font-weight: bold;
-      cursor: pointer;
-      margin-top: 8px;
-      margin-right: 8px;
-    }
-
-    button:hover {
-      opacity: 0.92;
-    }
-
-    .dark-btn {
-      background: var(--navy);
-      color: var(--white);
-    }
-
-    .green-btn {
-      background: var(--green);
-      color: var(--white);
-    }
-
-    .danger {
-      color: var(--red);
-      font-weight: bold;
-    }
-
-    .success {
-      color: var(--green);
-      font-weight: bold;
-    }
-
-    .blocked-box {
-      border-left: 6px solid var(--red);
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
-      gap: 14px;
-    }
-
-    .two-col {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(285px, 1fr));
-      gap: 16px;
-    }
-
-    .metric {
-      background: var(--offwhite);
-      padding: 16px;
-      border-radius: 16px;
-      border: 1px solid var(--gray);
-      min-height: 105px;
-      transition: 0.2s ease;
-    }
-
-    .metric h3 {
-      margin: 0 0 8px;
-      font-size: 14px;
-      opacity: 0.86;
-    }
-
-    .metric p {
-      font-size: 23px;
-      font-weight: bold;
-      margin: 0;
-      word-break: break-word;
-    }
-
-    .metric .note {
-      font-size: 12px;
-      margin-top: 8px;
-      opacity: 0.75;
-    }
-
-    .metric.good {
-      border-left: 6px solid var(--green);
-    }
-
-    .metric.alert {
-      border-left: 6px solid var(--red);
-    }
-
-    .metric.warning {
-      border-left: 6px solid var(--orange);
-    }
-
-    .metric.gold-left {
-      border-left: 6px solid var(--gold);
-    }
-
-    .metric.blue-left {
-      border-left: 6px solid var(--blue);
-    }
-
-    .quick-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 14px;
-    }
-
-    .quick-link {
-      display: inline-block;
-      background: var(--navy);
-      color: var(--white);
-      padding: 10px 14px;
-      border-radius: 999px;
-      text-decoration: none;
-      font-weight: bold;
-      transition: 0.2s ease;
-    }
-
-    .quick-link.gold-link {
-      background: var(--gold);
-      color: var(--navy);
-    }
-
-    .quick-link.green-link {
-      background: var(--green);
-      color: var(--white);
-    }
-
-    .quick-link.blue-link {
-      background: var(--blue);
-      color: var(--white);
-    }
-
-    .report-header {
-      background: var(--white);
-      color: var(--navy);
-      border-radius: 18px;
-      padding: 26px;
-      margin-bottom: 18px;
-      border: 1px solid var(--gray);
-      box-shadow: 0 10px 24px rgba(0,0,0,0.13);
-    }
-
-    .report-header-inner {
-      display: grid;
-      grid-template-columns: 95px 1fr;
-      gap: 20px;
-      align-items: center;
-    }
-
-    .report-logo {
-      width: 80px;
-      height: auto;
-      display: block;
-      object-fit: contain;
-    }
-
-    .report-title {
-      margin: 0 0 8px;
-      color: var(--navy);
-    }
-
-    .report-meta {
-      margin: 4px 0;
-      color: var(--black);
-      line-height: 1.45;
-    }
-
-    .section {
-      background: var(--white);
-      color: var(--navy);
-      padding: 22px;
-      border-radius: 18px;
-      margin-bottom: 18px;
-      border: 1px solid var(--gray);
-      box-shadow: 0 10px 24px rgba(0,0,0,0.13);
-      page-break-inside: avoid;
-    }
-
-    .section h2 {
-      margin-top: 0;
-      border-bottom: 2px solid var(--gold);
-      padding-bottom: 8px;
-    }
-
-    .row-card {
-      background: var(--offwhite);
-      border: 1px solid var(--gray);
-      border-radius: 16px;
-      padding: 15px;
-      margin-bottom: 12px;
-      border-left: 6px solid var(--gold);
-      page-break-inside: avoid;
-    }
-
-    .row-card.drive {
-      border-left-color: var(--green);
-      background: linear-gradient(135deg, #ffffff, #f0fff4);
-    }
-
-    .row-card.expiring {
-      border-left-color: var(--orange);
-    }
-
-    .row-card.expired {
-      border-left-color: var(--red);
-    }
-
-    .row-title {
-      font-weight: bold;
-      font-size: 17px;
-      margin-bottom: 6px;
-    }
-
-    .row-detail {
-      margin: 4px 0;
-      line-height: 1.45;
-      word-break: break-word;
-      white-space: pre-wrap;
-    }
-
-    .print-url {
-      margin: 7px 0 0;
-      font-size: 12px;
-      word-break: break-all;
-      color: var(--blue);
-    }
-
-    .badge {
-      display: inline-block;
-      background: var(--navy);
-      color: var(--white);
-      padding: 5px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      margin: 3px 4px 3px 0;
-      text-transform: capitalize;
-    }
-
-    .badge-gold {
-      background: var(--gold);
-      color: var(--navy);
-    }
-
-    .badge-green {
-      background: var(--green);
-      color: var(--white);
-    }
-
-    .badge-red {
-      background: var(--red);
-      color: var(--white);
-    }
-
-    .badge-orange {
-      background: var(--orange);
-      color: var(--white);
-    }
-
-    .badge-blue {
-      background: var(--blue);
-      color: var(--white);
-    }
-
-    .empty {
-      text-align: center;
-      padding: 24px;
-      background: var(--offwhite);
-      border: 1px dashed var(--gray);
-      border-radius: 16px;
-    }
-
-    .footer-note {
-      text-align: center;
-      font-size: 12px;
-      opacity: 0.8;
-      margin-top: 20px;
-    }
-
-    .toast {
-      position: fixed;
-      right: 18px;
-      bottom: 18px;
-      background: var(--navy);
-      color: var(--white);
-      border: 1px solid var(--gold);
-      padding: 14px 16px;
-      border-radius: 14px;
-      box-shadow: 0 12px 24px rgba(0,0,0,0.25);
-      opacity: 0;
-      transform: translateY(12px);
-      pointer-events: none;
-      transition: 0.25s ease;
-      z-index: 9999;
-      max-width: 330px;
-    }
-
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    @media (max-width: 700px) {
-      .status-inner,
-      .report-header-inner {
-        grid-template-columns: 1fr;
-        text-align: center;
-      }
-
-      .status-logo-box {
-        max-width: 120px;
-        margin: 0 auto;
-      }
-
-      .report-logo {
-        margin: 0 auto;
-      }
-
-      .quick-row {
-        justify-content: center;
-      }
-    }
-
     @media print {
-      @page {
-        size: A4;
-        margin: 14mm;
-      }
-
-      body {
-        background: #ffffff;
-        color: #000000;
-      }
-
-      .container {
-        max-width: none;
-        padding: 0;
-      }
-
-      .top,
-      .nav,
-      #loginCard,
-      #blockedCard,
-      .status-card,
-      .drive-highlight,
-      .print-highlight,
+      .ungani-sidebar,
+      .ungani-topbar .ungani-button-row,
       .no-print,
-      .toast {
+      #unganiToast {
         display: none !important;
       }
 
-      .card,
-      .section,
-      .report-header {
-        box-shadow: none;
-        border-radius: 0;
+      .ungani-layout {
+        display: block !important;
       }
 
-      .section,
-      .report-header {
-        border: 1px solid #d1d5db;
+      .ungani-main {
+        max-width: none !important;
+        padding: 0 !important;
       }
 
-      .quick-link {
-        display: none;
+      .ungani-card,
+      .ungani-metric {
+        box-shadow: none !important;
+        page-break-inside: avoid;
       }
 
-      .badge {
-        border: 1px solid #111827;
+      body {
+        background: #ffffff !important;
+        color: #111827 !important;
       }
 
-      .row-card {
-        break-inside: avoid;
+      .ungani-card {
+        border: 1px solid #E5E7EB !important;
+      }
+
+      .ungani-hero {
+        background: #061C3D !important;
+        color: #ffffff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      a {
+        color: #061C3D !important;
+        text-decoration: none !important;
       }
     }
   </style>
 </head>
 
 <body>
-  <div class="container">
-    <div class="top">
-      <div class="logo-wrap">
-        <img src="ungani-logo.png" alt="UNGANI Logo" class="logo" />
-      </div>
-
-      <h1>UNGANI <span class="gold">Print Report</span></h1>
-      <p>Printable business report with Google Drive documents, file links, expiry tracking, team chat, UNGANI chat, calendar, money, tasks, support, records, people, and items.</p>
-      <p class="small">ungani.com | info@ungani.com</p>
-      <p class="small">Print Report Version: Step 266 Google Drive Document Data Added</p>
-    </div>
-
-    <div class="nav">
-      <a href="portal.html">Portal</a> |
-      <a href="client.html">Dashboard</a> |
-      <a href="reports.html">Reports</a> |
-      <a href="my-documents.html">Documents</a> |
-      <a href="my-team-chat.html">Team Chat</a> |
-      <a href="my-chat.html">UNGANI Chat</a> |
-      <a href="my-calendar.html">Calendar</a>
-    </div>
-
-    <div id="loginCard" class="card">
-      <h2>Client Login</h2>
-
-      <label>Email</label>
-      <input id="clientEmail" placeholder="client@example.com" />
-
-      <label>Password</label>
-      <input id="clientPassword" type="password" placeholder="Enter password" />
-
-      <button onclick="loginClient()">Login</button>
-
-      <div id="loginMessage"></div>
-    </div>
-
-    <div id="blockedCard" class="card blocked-box hidden">
-      <h2 class="danger">Access Blocked</h2>
-      <p id="blockedReason"></p>
-      <button onclick="logoutClient()">Logout</button>
-    </div>
-
-    <div id="printArea" class="hidden">
-      <div class="card status-card no-print">
-        <div class="status-inner">
-          <div class="status-logo-box">
-            <img src="ungani-logo.png" alt="UNGANI Logo" class="status-logo" />
-          </div>
-
-          <div>
-            <h2 id="businessName">Print Report</h2>
-            <p id="clientInfo"></p>
-
-            <div class="quick-row">
-              <a class="quick-link green-link" href="my-documents.html">📁 Documents</a>
-              <a class="quick-link" href="reports.html">📄 Reports</a>
-              <a class="quick-link green-link" href="my-team-chat.html">👥 Team Chat</a>
-              <a class="quick-link gold-link" href="my-chat.html">💬 UNGANI Chat</a>
-              <a class="quick-link blue-link" href="my-calendar.html">📅 Calendar</a>
-              <a class="quick-link" href="client.html">🏠 Dashboard</a>
-            </div>
-
-            <br />
-
-            <button onclick="loadPrintReport()">Refresh Print Report</button>
-            <button onclick="window.print()" class="green-btn">Print / Save PDF</button>
-            <button onclick="logoutClient()" class="dark-btn">Logout</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card drive-highlight no-print">
-        <h2>Google Drive Document Data Added to Print Report</h2>
-        <p>
-          The printable report now includes Drive folder status, Google Drive document links, external file links, expiring documents, expired documents, and printable link references.
-        </p>
-      </div>
-
-      <div class="card print-highlight no-print">
-        <h2>Ready for PDF</h2>
-        <p>
-          Use the Print / Save PDF button to save this report as a clean business PDF.
-        </p>
-      </div>
-
-      <div id="reportOutput"></div>
-
-      <p class="footer-note">
-        Generated by UNGANI OS | ungani.com | info@ungani.com
-      </p>
-    </div>
-  </div>
-
-  <div id="toast" class="toast">Updated</div>
-
   <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    let currentContext = null;
+    let isRealEstate = false;
 
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let reportData = {
+      transactions: [],
+      items: [],
+      tasks: [],
+      records: [],
+      documents: [],
+      people: [],
+      events: [],
+      support: []
+    };
 
-    let currentUserId = null;
-    let currentTenantId = null;
-    let currentUser = null;
-    let tenantInfo = null;
-    let reportData = {};
-    let subscriptionStarted = false;
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "print-report",
+        pageTitle: "Print Report",
+        pageSubtitle: "Generate a clean printable business operations report.",
+        onReady: startPrintReport
+      });
+    });
 
-    function safe(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
+    async function startPrintReport(context) {
+      currentContext = context;
+
+      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
+
+      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      const subEl = document.querySelector(".ungani-topbar p");
+
+      if (titleEl) {
+        titleEl.innerText = isRealEstate ? "Printable Property Report" : "Printable Business Report";
+      }
+
+      if (subEl) {
+        subEl.innerText = isRealEstate
+          ? "Print or save a property operations report for properties, money records, leads, agents, tasks, documents, and calendar activities."
+          : "Print or save a business operations report for records, money, tasks, documents, items, people, and calendar activities.";
+      }
+
+      await loadReportData();
     }
 
-    function cleanText(value) {
-      return String(value || "N/A").replaceAll("_", " ");
+    async function loadReportData() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Preparing printable report...");
+
+      const responses = await Promise.all([
+        safeSelect("transactions"),
+        safeSelect("business_items"),
+        safeSelect("tasks"),
+        safeSelect("business_records"),
+        safeSelect("documents"),
+        safeSelect("client_people"),
+        safeSelect("business_events"),
+        safeSelect("support_issues")
+      ]);
+
+      reportData.transactions = responses[0];
+      reportData.items = responses[1];
+      reportData.tasks = responses[2];
+      reportData.records = responses[3];
+      reportData.documents = responses[4];
+      reportData.people = responses[5];
+      reportData.events = responses[6];
+      reportData.support = responses[7];
+
+      renderPrintReport();
     }
 
-    function todayDate() {
-      return new Date().toISOString().slice(0, 10);
-    }
-
-    function dateInDays(days) {
-      const dateObj = new Date();
-      dateObj.setDate(dateObj.getDate() + days);
-      return dateObj.toISOString().slice(0, 10);
-    }
-
-    function isExpired(row) {
-      return row.expiry_date && String(row.expiry_date) < todayDate();
-    }
-
-    function isExpiringSoon(row) {
-      return row.expiry_date &&
-        String(row.expiry_date) >= todayDate() &&
-        String(row.expiry_date) <= dateInDays(30);
-    }
-
-    function isValidUrl(url) {
-      if (!url) return false;
-
+    async function safeSelect(tableName) {
       try {
-        new URL(url);
-        return true;
+        const response = await currentContext.supabaseClient
+          .from(tableName)
+          .select("*")
+          .eq("tenant_id", currentContext.tenantId);
+
+        if (response.error) {
+          console.warn(tableName, response.error.message);
+          return [];
+        }
+
+        return response.data || [];
       } catch (error) {
-        return false;
+        console.warn(tableName, error.message);
+        return [];
       }
     }
 
-    function formatDate(value) {
-      if (!value) return "N/A";
+    function renderPrintReport() {
+      const filtered = getFilteredData();
 
-      const dateObj = new Date(String(value).includes("T") ? value : value + "T00:00:00");
-
-      if (isNaN(dateObj.getTime())) return value;
-
-      return dateObj.toLocaleDateString("en-KE", {
-        weekday: "short",
-        year: "numeric",
-        month: "short",
-        day: "numeric"
-      });
-    }
-
-    function formatDateTime(value) {
-      if (!value) return "N/A";
-
-      const dateObj = new Date(value);
-
-      if (isNaN(dateObj.getTime())) return "N/A";
-
-      return dateObj.toLocaleString("en-KE", {
-        weekday: "short",
+      const tenantName = UnganiClientShared.getTenantName(currentContext.tenant);
+      const businessType = UnganiClientShared.getValue(currentContext.tenant, ["business_type", "business_type_key"], "Business");
+      const generatedDate = new Date().toLocaleString("en-KE", {
         year: "numeric",
         month: "short",
         day: "numeric",
         hour: "2-digit",
         minute: "2-digit"
       });
+
+      const money = calculateMoney(filtered.transactions);
+      const items = calculateItems(filtered.items);
+      const people = calculatePeople(filtered.people);
+      const tasks = calculateTasks(filtered.tasks);
+      const records = calculateRecords(filtered.records);
+      const documents = calculateDocuments(filtered.documents);
+      const events = calculateEvents(filtered.events);
+      const support = calculateSupport(filtered.support);
+
+      UnganiClientShared.setContent(`
+        <section class="ungani-card ungani-hero">
+          <h2>${isRealEstate ? "Property Operations Report" : "Business Operations Report"}</h2>
+          <p>
+            ${UnganiClientShared.safe(tenantName)} · ${UnganiClientShared.safe(businessType)} · Generated on ${UnganiClientShared.safe(generatedDate)}
+          </p>
+
+          <div class="ungani-button-row no-print">
+            <button class="ungani-btn" onclick="window.print()">Print / Save PDF</button>
+            <a class="ungani-btn green" href="reports.html">Back to Reports</a>
+            <button class="ungani-btn dark" onclick="loadReportData()">Refresh</button>
+          </div>
+        </section>
+
+        <section class="ungani-card no-print">
+          <div class="ungani-section-title">
+            <h3>Report Filters</h3>
+            <button class="ungani-btn dark" onclick="resetFilters()">Reset Filters</button>
+          </div>
+
+          <div class="ungani-form-grid">
+            <div>
+              <label for="filterFrom">From Date</label>
+              <input id="filterFrom" type="date" onchange="saveFilters(); renderPrintReport();" />
+            </div>
+
+            <div>
+              <label for="filterTo">To Date</label>
+              <input id="filterTo" type="date" onchange="saveFilters(); renderPrintReport();" />
+            </div>
+
+            <div>
+              <label for="searchBox">Search Report</label>
+              <input id="searchBox" placeholder="Search property, client, task, document..." oninput="saveFilters(); renderPrintReport();" />
+            </div>
+          </div>
+        </section>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <h3>Report Overview</h3>
+          </div>
+
+          <section class="ungani-grid">
+            ${UnganiClientShared.metricCard(isRealEstate ? "Properties / Listings" : "Items / Assets", filtered.items.length, isRealEstate ? items.available + " available · " + items.sold + " sold · " + items.rented + " rented" : items.available + " available", "blue")}
+            ${UnganiClientShared.metricCard("Money Balance", UnganiClientShared.formatKES(money.balance), "Income minus expenses", money.balance >= 0 ? "green" : "red")}
+            ${UnganiClientShared.metricCard(isRealEstate ? "Agents / Leads / People" : "People", filtered.people.length, isRealEstate ? people.agents + " agents · " + people.leads + " leads" : people.active + " active", "gold")}
+            ${UnganiClientShared.metricCard("Pending Tasks", tasks.pending, tasks.overdue + " overdue", tasks.overdue > 0 ? "red" : "orange")}
+            ${UnganiClientShared.metricCard("Documents", filtered.documents.length, documents.driveLinks + " linked", "blue")}
+            ${UnganiClientShared.metricCard("Calendar Events", filtered.events.length, events.upcoming + " upcoming", "green")}
+          </section>
+        </section>
+
+        <section class="ungani-two-col">
+          <div class="ungani-card">
+            <h3>${isRealEstate ? "Property / Listing Summary" : "Items / Assets Summary"}</h3>
+            ${summaryLine("Total Records", filtered.items.length)}
+            ${summaryLine("Available", items.available)}
+            ${summaryLine("Reserved", items.reserved)}
+            ${summaryLine("Sold", items.sold)}
+            ${summaryLine("Rented", items.rented)}
+            ${summaryLine("Maintenance", items.maintenance)}
+            ${summaryLine("Estimated Listed Value", UnganiClientShared.formatKES(items.totalValue))}
+          </div>
+
+          <div class="ungani-card">
+            <h3>Money Summary</h3>
+            ${summaryLine("Income", UnganiClientShared.formatKES(money.income))}
+            ${summaryLine("Expenses", UnganiClientShared.formatKES(money.expenses))}
+            ${summaryLine("Petty Cash", UnganiClientShared.formatKES(money.pettyCash))}
+            ${summaryLine("Pending Amount", UnganiClientShared.formatKES(money.pending))}
+            ${summaryLine("Estimated Balance", UnganiClientShared.formatKES(money.balance))}
+            <p class="ungani-small">This is operational money tracking, not a full accounting or tax report.</p>
+          </div>
+        </section>
+
+        <section class="ungani-two-col">
+          <div class="ungani-card">
+            <h3>${isRealEstate ? "Agents / Leads / People Summary" : "People Summary"}</h3>
+            ${summaryLine("Total People", filtered.people.length)}
+            ${summaryLine("Active People", people.active)}
+            ${summaryLine("Agents", people.agents)}
+            ${summaryLine("Leads", people.leads)}
+            ${summaryLine("Buyers / Renters / Tenants", people.buyersRenters)}
+            ${summaryLine("Commission This Month", UnganiClientShared.formatKES(people.commission))}
+          </div>
+
+          <div class="ungani-card">
+            <h3>Tasks & Follow-ups Summary</h3>
+            ${summaryLine("Total Tasks", filtered.tasks.length)}
+            ${summaryLine("Pending", tasks.pending)}
+            ${summaryLine("Completed", tasks.completed)}
+            ${summaryLine("Overdue", tasks.overdue)}
+            ${summaryLine("High Priority", tasks.highPriority)}
+          </div>
+        </section>
+
+        <section class="ungani-two-col">
+          <div class="ungani-card">
+            <h3>${isRealEstate ? "Records / Viewings Summary" : "Business Records Summary"}</h3>
+            ${summaryLine("Total Records", filtered.records.length)}
+            ${summaryLine("Leads / Inquiries", records.leads)}
+            ${summaryLine("Viewings / Site Visits", records.viewings)}
+            ${summaryLine("Project Updates", records.projects)}
+            ${summaryLine("Open / Pending", records.openPending)}
+            ${summaryLine("Closed / Completed", records.closed)}
+          </div>
+
+          <div class="ungani-card">
+            <h3>Documents Summary</h3>
+            ${summaryLine("Total Documents", filtered.documents.length)}
+            ${summaryLine("Agreements", documents.agreements)}
+            ${summaryLine("Receipts / Invoices", documents.receiptsInvoices)}
+            ${summaryLine("Drive Links", documents.driveLinks)}
+            ${summaryLine("Pending / Review", documents.pending)}
+            ${summaryLine("Archived", documents.archived)}
+          </div>
+        </section>
+
+        <section class="ungani-two-col">
+          <div class="ungani-card">
+            <h3>Calendar Summary</h3>
+            ${summaryLine("Total Events", filtered.events.length)}
+            ${summaryLine("Today", events.today)}
+            ${summaryLine("Upcoming", events.upcoming)}
+            ${summaryLine("Overdue", events.overdue)}
+            ${summaryLine("Viewings / Site Visits", events.viewings)}
+            ${summaryLine("Completed", events.completed)}
+          </div>
+
+          <div class="ungani-card">
+            <h3>Support Summary</h3>
+            ${summaryLine("Open Issues", support.open)}
+            ${summaryLine("Resolved Issues", support.resolved)}
+            ${summaryLine("Urgent / High Priority", support.urgent)}
+            <p class="ungani-small">Support summary shows client issues logged inside UNGANI OS.</p>
+          </div>
+        </section>
+
+        <section class="ungani-card">
+          <h3>${isRealEstate ? "Recent Property / Business Records" : "Recent Business Records"}</h3>
+          ${renderRecentRecords(filtered.records)}
+        </section>
+
+        <section class="ungani-card">
+          <h3>Recent Money Records</h3>
+          ${renderRecentMoney(filtered.transactions)}
+        </section>
+
+        <section class="ungani-card">
+          <h3>Pending Tasks / Follow-ups</h3>
+          ${renderPendingTasks(filtered.tasks)}
+        </section>
+
+        <section class="ungani-card">
+          <h3>Upcoming Calendar Activities</h3>
+          ${renderUpcomingEvents(filtered.events)}
+        </section>
+
+        <section class="ungani-card">
+          <h3>Report Notes</h3>
+          <p class="ungani-small">
+            This report is generated from the client workspace data inside UNGANI OS. It is designed for operational visibility, follow-up tracking, records review, and business coordination.
+          </p>
+          <p class="ungani-small">
+            UNGANI · ungani.com · info@ungani.com
+          </p>
+        </section>
+
+        <p class="ungani-small">
+          Print Report Version: Step 305K Shared Layout · Generated for ${UnganiClientShared.safe(tenantName)}
+        </p>
+      `);
+
+      restoreFilters();
     }
 
-    function formatMoney(value) {
-      const num = Number(value || 0);
-
-      if (isNaN(num)) return "N/A";
-
-      return num.toLocaleString("en-KE", {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2
-      });
-    }
-
-    function getField(row, names, fallback = "") {
-      for (const name of names) {
-        if (row && row[name] !== undefined && row[name] !== null && row[name] !== "") {
-          return row[name];
-        }
-      }
-
-      return fallback;
-    }
-
-    function getBusinessName() {
-      return getField(tenantInfo, ["company_name", "business_name", "name"], "Business");
-    }
-
-    function getDocumentTitle(row) {
-      return getField(row, ["document_title", "file_name", "title"], "Document");
-    }
-
-    function getBestUrl(row) {
-      return getField(row, ["google_drive_url", "external_file_url", "document_url"], "");
-    }
-
-    function showToast(message) {
-      const toast = document.getElementById("toast");
-      toast.innerText = message;
-      toast.classList.add("show");
-
-      setTimeout(() => {
-        toast.classList.remove("show");
-      }, 2500);
-    }
-
-    function showBlocked(reason) {
-      document.getElementById("loginCard").classList.add("hidden");
-      document.getElementById("printArea").classList.add("hidden");
-      document.getElementById("blockedCard").classList.remove("hidden");
-      document.getElementById("blockedReason").innerText = reason;
-    }
-
-    async function checkExistingSession() {
-      const { data: sessionData } = await supabaseClient.auth.getSession();
-
-      if (sessionData?.session?.user?.id) {
-        await loadClientProfile();
-      }
-    }
-
-    async function loginClient() {
-      const email = document.getElementById("clientEmail").value;
-      const password = document.getElementById("clientPassword").value;
-      const msg = document.getElementById("loginMessage");
-
-      const { error } = await supabaseClient.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) {
-        msg.innerHTML = `<p class="danger">${safe(error.message)}</p>`;
-        return;
-      }
-
-      msg.innerHTML = `<p class="success">Login successful.</p>`;
-
-      await loadClientProfile();
-    }
-
-    async function logoutClient() {
-      await supabaseClient.auth.signOut();
-      window.location.reload();
-    }
-
-    async function loadClientProfile() {
-      const { data: sessionData } = await supabaseClient.auth.getSession();
-      currentUserId = sessionData?.session?.user?.id;
-
-      if (!currentUserId) return;
-
-      const { data: userData, error: userError } = await supabaseClient
-        .from("users")
-        .select("id, full_name, email, tenant_id, role, status")
-        .eq("id", currentUserId)
-        .maybeSingle();
-
-      if (userError) {
-        showBlocked(userError.message);
-        return;
-      }
-
-      if (!userData) {
-        showBlocked("Your login exists, but your UNGANI user profile was not found.");
-        return;
-      }
-
-      if (userData.status && userData.status !== "active") {
-        showBlocked("Your user access is not active. Please contact UNGANI support.");
-        return;
-      }
-
-      if (!userData.tenant_id) {
-        showBlocked("Your user is not linked to a business account yet.");
-        return;
-      }
-
-      currentUser = userData;
-      currentTenantId = userData.tenant_id;
-
-      const { data: tenantData, error: tenantError } = await supabaseClient
-        .from("tenants")
-        .select("*")
-        .eq("id", currentTenantId)
-        .maybeSingle();
-
-      if (tenantError) {
-        showBlocked(tenantError.message);
-        return;
-      }
-
-      if (!tenantData) {
-        showBlocked("Your business account was not found.");
-        return;
-      }
-
-      const accountStatus = String(tenantData.account_status || tenantData.status || "active").toLowerCase();
-
-      if (["suspended", "cancelled", "inactive"].includes(accountStatus)) {
-        showBlocked("Your business account is not active. Please contact UNGANI support.");
-        return;
-      }
-
-      tenantInfo = tenantData;
-
-      document.getElementById("loginCard").classList.add("hidden");
-      document.getElementById("blockedCard").classList.add("hidden");
-      document.getElementById("printArea").classList.remove("hidden");
-
-      document.getElementById("businessName").innerText = getBusinessName();
-      document.getElementById("clientInfo").innerText = `${userData.full_name || "Client"} | ${userData.email || ""} | Printable report`;
-
-      await loadPrintReport();
-
-      if (!subscriptionStarted) {
-        subscribeToRealtime();
-        subscriptionStarted = true;
-      }
-    }
-
-    async function safeSelect(tableName) {
-      try {
-        const { data, error } = await supabaseClient
-          .from(tableName)
-          .select("*")
-          .eq("tenant_id", currentTenantId)
-          .limit(10000);
-
-        if (error) {
-          console.log(tableName, error.message);
-          return [];
-        }
-
-        return data || [];
-      } catch (error) {
-        console.log(tableName, error.message);
-        return [];
-      }
-    }
-
-    async function safeRpcEvents() {
-      try {
-        const { data, error } = await supabaseClient.rpc("get_my_business_events");
-
-        if (error) {
-          console.log(error.message);
-          return [];
-        }
-
-        return data || [];
-      } catch (error) {
-        console.log(error.message);
-        return [];
-      }
-    }
-
-    async function loadPrintReport() {
-      showToast("Refreshing print report...");
-
-      const [
-        documents,
-        teamMessages,
-        adminChatMessages,
-        events,
-        transactions,
-        tasks,
-        records,
-        items,
-        people,
-        support,
-        notices
-      ] = await Promise.all([
-        safeSelect("documents"),
-        safeSelect("team_chat_messages"),
-        safeSelect("admin_client_messages"),
-        safeRpcEvents(),
-        safeSelect("transactions"),
-        safeSelect("tasks"),
-        safeSelect("business_records"),
-        safeSelect("business_items"),
-        safeSelect("client_people"),
-        safeSelect("support_issues"),
-        safeSelect("client_notices")
-      ]);
-
-      reportData = {
-        documents,
-        teamMessages,
-        adminChatMessages: adminChatMessages.filter(row => row.is_internal !== true),
-        events,
-        transactions,
-        tasks,
-        records,
-        items,
-        people,
-        support,
-        notices
-      };
-
-      renderPrintReport();
-
-      showToast("Print report updated ✓");
-    }
-
-    function getReportSummary() {
-      const documents = reportData.documents || [];
-
-      const driveDocs = documents.filter(row => row.google_drive_url || row.document_source === "google_drive");
-      const externalDocs = documents.filter(row => row.external_file_url || row.document_source === "external_link");
-      const expiringDocs = documents.filter(isExpiringSoon);
-      const expiredDocs = documents.filter(isExpired);
-
-      const activeTeamMessages = reportData.teamMessages.filter(row => row.is_archived !== true);
-      const pinnedTeamMessages = reportData.teamMessages.filter(row => row.is_pinned === true && row.is_archived !== true);
-
-      const unreadAdminMessages = reportData.adminChatMessages.filter(row =>
-        row.sender_role === "admin" &&
-        !row.read_by_client_at
-      );
-
-      const openTasks = reportData.tasks.filter(row => {
-        const status = String(getField(row, ["status", "task_status"], "pending")).toLowerCase();
-        return !["done", "completed", "closed", "cancelled"].includes(status);
-      });
-
-      const openSupport = reportData.support.filter(row => {
-        const status = String(getField(row, ["status", "issue_status"], "open")).toLowerCase();
-        return ["open", "new", "pending", "in_progress"].includes(status);
-      });
-
-      const moneyTotal = reportData.transactions.reduce((sum, row) => {
-        return sum + Number(getField(row, ["amount", "value", "total"], 0) || 0);
-      }, 0);
+    function getFilteredData() {
+      const from = document.getElementById("filterFrom") ? UnganiClientShared.value("filterFrom") : "";
+      const to = document.getElementById("filterTo") ? UnganiClientShared.value("filterTo") : "";
+      const query = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
 
       return {
-        totalDocuments: documents.length,
-        driveDocuments: driveDocs.length,
-        externalDocuments: externalDocs.length,
-        expiringDocuments: expiringDocs.length,
-        expiredDocuments: expiredDocs.length,
-        driveFolderStatus: tenantInfo?.google_drive_folder_url ? "Connected" : "Not Set",
-        teamMessages: activeTeamMessages.length,
-        pinnedTeamMessages: pinnedTeamMessages.length,
-        adminChatMessages: reportData.adminChatMessages.length,
-        unreadAdminMessages: unreadAdminMessages.length,
-        calendarEvents: reportData.events.length,
-        moneyRecords: reportData.transactions.length,
-        moneyTotal,
-        openTasks: openTasks.length,
-        openSupport: openSupport.length,
-        records: reportData.records.length,
-        items: reportData.items.length,
-        people: reportData.people.length,
-        notices: reportData.notices.length
+        transactions: filterRows(reportData.transactions, from, to, query, ["transaction_date", "created_at"]),
+        items: filterRows(reportData.items, from, to, query, ["date_listed", "created_at"]),
+        tasks: filterRows(reportData.tasks, from, to, query, ["due_date", "created_at"]),
+        records: filterRows(reportData.records, from, to, query, ["record_date", "viewing_date", "created_at"]),
+        documents: filterRows(reportData.documents, from, to, query, ["created_at", "updated_at"]),
+        people: filterRows(reportData.people, from, to, query, ["last_follow_up_date", "created_at"]),
+        events: filterRows(reportData.events, from, to, query, ["event_date", "created_at"]),
+        support: filterRows(reportData.support, from, to, query, ["created_at", "updated_at"])
       };
     }
 
-    function renderPrintReport() {
-      const box = document.getElementById("reportOutput");
-      const summary = getReportSummary();
+    function filterRows(rows, from, to, query, dateFields) {
+      return rows.filter(function (row) {
+        const date = getFirstDate(row, dateFields);
+        const haystack = JSON.stringify(row || {}).toLowerCase();
 
-      box.innerHTML = `
-        ${renderReportHeader()}
-        ${renderExecutiveSummary(summary)}
-        ${renderDriveFolderSection()}
-        ${renderDocumentsSection()}
-        ${renderExpiringDocumentsSection()}
-        ${renderTeamChatSection()}
-        ${renderUnganiChatSection()}
-        ${renderCalendarSection()}
-        ${renderMoneySection(summary)}
-        ${renderTasksSection()}
-        ${renderSupportSection()}
-        ${renderOperationsSection()}
-      `;
+        if (from && date && date < from) return false;
+        if (to && date && date > to) return false;
+        if (query && !haystack.includes(query)) return false;
+
+        return true;
+      });
     }
 
-    function renderReportHeader() {
-      return `
-        <div class="report-header">
-          <div class="report-header-inner">
-            <div>
-              <img src="ungani-logo.png" alt="UNGANI Logo" class="report-logo" />
-            </div>
+    function getFirstDate(row, fields) {
+      for (let i = 0; i < fields.length; i++) {
+        const value = UnganiClientShared.getValue(row, [fields[i]], "");
 
-            <div>
-              <h1 class="report-title">UNGANI OS Business Report</h1>
-              <p class="report-meta"><strong>Business:</strong> ${safe(getBusinessName())}</p>
-              <p class="report-meta"><strong>Prepared For:</strong> ${safe(currentUser?.full_name || "Client")}</p>
-              <p class="report-meta"><strong>Email:</strong> ${safe(currentUser?.email || "N/A")}</p>
-              <p class="report-meta"><strong>Generated:</strong> ${safe(formatDateTime(new Date().toISOString()))}</p>
-              <p class="report-meta"><strong>Contact:</strong> ungani.com | info@ungani.com</p>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderExecutiveSummary(summary) {
-      return `
-        <div class="section">
-          <h2>Executive Summary</h2>
-
-          <div class="grid">
-            <div class="metric good">
-              <h3>Total Documents</h3>
-              <p>${safe(summary.totalDocuments)}</p>
-              <div class="note">All saved document records</div>
-            </div>
-
-            <div class="metric good">
-              <h3>Google Drive Links</h3>
-              <p>${safe(summary.driveDocuments)}</p>
-              <div class="note">Documents with Drive links</div>
-            </div>
-
-            <div class="metric blue-left">
-              <h3>External Links</h3>
-              <p>${safe(summary.externalDocuments)}</p>
-              <div class="note">Other external file links</div>
-            </div>
-
-            <div class="metric warning">
-              <h3>Expiring Soon</h3>
-              <p>${safe(summary.expiringDocuments)}</p>
-              <div class="note">Expiry within 30 days</div>
-            </div>
-
-            <div class="metric alert">
-              <h3>Expired</h3>
-              <p>${safe(summary.expiredDocuments)}</p>
-              <div class="note">Past expiry date</div>
-            </div>
-
-            <div class="metric gold-left">
-              <h3>Drive Folder</h3>
-              <p>${safe(summary.driveFolderStatus)}</p>
-              <div class="note">Business folder connection</div>
-            </div>
-
-            <div class="metric good">
-              <h3>Team Messages</h3>
-              <p>${safe(summary.teamMessages)}</p>
-              <div class="note">Internal active team messages</div>
-            </div>
-
-            <div class="metric blue-left">
-              <h3>Pinned Team Messages</h3>
-              <p>${safe(summary.pinnedTeamMessages)}</p>
-              <div class="note">Important internal updates</div>
-            </div>
-
-            <div class="metric gold-left">
-              <h3>UNGANI Chat Messages</h3>
-              <p>${safe(summary.adminChatMessages)}</p>
-              <div class="note">Client-admin communication</div>
-            </div>
-
-            <div class="metric alert">
-              <h3>Unread Admin Messages</h3>
-              <p>${safe(summary.unreadAdminMessages)}</p>
-              <div class="note">Messages from UNGANI</div>
-            </div>
-
-            <div class="metric blue-left">
-              <h3>Calendar Events</h3>
-              <p>${safe(summary.calendarEvents)}</p>
-              <div class="note">Business schedule records</div>
-            </div>
-
-            <div class="metric warning">
-              <h3>Open Support</h3>
-              <p>${safe(summary.openSupport)}</p>
-              <div class="note">Support issues needing review</div>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderDriveFolderSection() {
-      const connected = !!tenantInfo?.google_drive_folder_url;
-
-      return `
-        <div class="section">
-          <h2>Google Drive Folder</h2>
-
-          <div class="row-card ${connected ? "drive" : "expiring"}">
-            <div class="row-title">Business Google Drive Folder</div>
-            <p class="row-detail"><strong>Status:</strong> ${connected ? "Connected" : "Not Set"}</p>
-            <p class="row-detail"><strong>Notes:</strong> ${safe(tenantInfo?.shared_drive_notes || "N/A")}</p>
-            <p class="row-detail"><strong>Connected At:</strong> ${safe(formatDateTime(tenantInfo?.drive_connected_at))}</p>
-
-            ${connected ? `<span class="badge badge-green">Drive Connected</span>` : `<span class="badge badge-orange">Not Set</span>`}
-
-            ${connected ? `
-              <p class="print-url"><strong>Folder URL:</strong> ${safe(tenantInfo.google_drive_folder_url)}</p>
-              <a class="quick-link green-link" href="${safe(tenantInfo.google_drive_folder_url)}" target="_blank">Open Folder</a>
-            ` : ""}
-          </div>
-        </div>
-      `;
-    }
-
-    function renderDocumentsSection() {
-      const rows = [...(reportData.documents || [])]
-        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-
-      return renderSectionList(
-        "Documents / Google Drive Links",
-        rows,
-        "No document records found.",
-        renderDocumentCard
-      );
-    }
-
-    function renderExpiringDocumentsSection() {
-      const rows = [...(reportData.documents || [])]
-        .filter(row => isExpired(row) || isExpiringSoon(row))
-        .sort((a, b) => String(a.expiry_date || "").localeCompare(String(b.expiry_date || "")));
-
-      return renderSectionList(
-        "Expiring / Expired Documents",
-        rows,
-        "No document is expired or expiring within 30 days.",
-        renderDocumentCard
-      );
-    }
-
-    function renderDocumentCard(row) {
-      const url = getBestUrl(row);
-      const drive = row.google_drive_url || row.document_source === "google_drive";
-
-      let cardClass = "row-card";
-      if (drive) cardClass += " drive";
-      if (isExpiringSoon(row)) cardClass += " expiring";
-      if (isExpired(row)) cardClass += " expired";
-
-      return `
-        <div class="${cardClass}">
-          <div class="row-title">📁 ${safe(getDocumentTitle(row))}</div>
-          <p class="row-detail"><strong>Source:</strong> ${safe(cleanText(row.document_source || "manual"))}</p>
-          <p class="row-detail"><strong>File Type:</strong> ${safe(row.file_type || "N/A")}</p>
-          <p class="row-detail"><strong>File Size:</strong> ${safe(row.file_size_label || "N/A")}</p>
-          <p class="row-detail"><strong>Expiry Date:</strong> ${safe(formatDate(row.expiry_date))}</p>
-          <p class="row-detail"><strong>Saved:</strong> ${safe(formatDateTime(row.created_at))}</p>
-
-          ${drive ? `<span class="badge badge-green">Google Drive</span>` : ""}
-          ${row.external_file_url ? `<span class="badge badge-blue">External Link</span>` : ""}
-          ${!url ? `<span class="badge badge-gold">Manual Record</span>` : ""}
-          ${isExpiringSoon(row) ? `<span class="badge badge-orange">Expiring Soon</span>` : ""}
-          ${isExpired(row) ? `<span class="badge badge-red">Expired</span>` : ""}
-
-          ${isValidUrl(url) ? `
-            <p class="print-url"><strong>Document URL:</strong> ${safe(url)}</p>
-            <a class="quick-link green-link" href="${safe(url)}" target="_blank">Open Document</a>
-          ` : ""}
-        </div>
-      `;
-    }
-
-    function renderTeamChatSection() {
-      const rows = [...(reportData.teamMessages || [])]
-        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-        .slice(0, 30);
-
-      return renderSectionList(
-        "Internal Team Chat",
-        rows,
-        "No team chat messages found.",
-        row => `
-          <div class="row-card ${row.is_pinned ? "drive" : ""}">
-            <div class="row-title">${row.is_pinned ? "📌 " : "👥 "}${safe(row.sender_name || "Team Member")}</div>
-            <p class="row-detail">${safe(row.message_body || "Team message")}</p>
-            <p class="row-detail"><strong>Area:</strong> ${safe(cleanText(row.chat_area || "general"))}</p>
-            <p class="row-detail"><strong>Type:</strong> ${safe(cleanText(row.message_type || "text"))}</p>
-            <p class="row-detail"><strong>Date:</strong> ${safe(formatDateTime(row.created_at))}</p>
-
-            ${row.is_pinned ? `<span class="badge badge-blue">Pinned</span>` : ""}
-            ${row.is_archived ? `<span class="badge badge-red">Archived</span>` : `<span class="badge badge-green">Active</span>`}
-          </div>
-        `
-      );
-    }
-
-    function renderUnganiChatSection() {
-      const rows = [...(reportData.adminChatMessages || [])]
-        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-        .slice(0, 30);
-
-      return renderSectionList(
-        "UNGANI Chat",
-        rows,
-        "No UNGANI chat messages found.",
-        row => {
-          const unread = row.sender_role === "admin" && !row.read_by_client_at;
-
-          return `
-            <div class="row-card ${unread ? "expired" : ""}">
-              <div class="row-title">💬 ${row.sender_role === "admin" ? "UNGANI Admin" : "Client"}</div>
-              <p class="row-detail">${safe(row.message_body || "Chat message")}</p>
-              <p class="row-detail"><strong>Date:</strong> ${safe(formatDateTime(row.created_at))}</p>
-              ${unread ? `<span class="badge badge-red">Unread Admin Message</span>` : `<span class="badge badge-green">Read / Sent</span>`}
-            </div>
-          `;
+        if (value) {
+          return String(value).slice(0, 10);
         }
-      );
+      }
+
+      return "";
     }
 
-    function renderCalendarSection() {
-      const rows = [...(reportData.events || [])]
-        .sort((a, b) => String(a.event_date || "").localeCompare(String(b.event_date || "")))
-        .slice(0, 40);
+    function calculateMoney(rows) {
+      let income = 0;
+      let expenses = 0;
+      let pettyCash = 0;
+      let pending = 0;
 
-      return renderSectionList(
-        "Business Calendar",
-        rows,
-        "No calendar events found.",
-        row => `
-          <div class="row-card">
-            <div class="row-title">📅 ${safe(row.event_title || "Business Event")}</div>
-            <p class="row-detail"><strong>Date:</strong> ${safe(formatDate(row.event_date))}</p>
-            <p class="row-detail"><strong>Time:</strong> ${safe(row.start_time || "N/A")} ${row.end_time ? " - " + safe(row.end_time) : ""}</p>
-            <p class="row-detail"><strong>Location:</strong> ${safe(row.location || "N/A")}</p>
-            <p class="row-detail"><strong>Description:</strong> ${safe(row.description || "N/A")}</p>
-            <span class="badge badge-blue">${safe(cleanText(row.status || "scheduled"))}</span>
-          </div>
-        `
-      );
-    }
+      rows.forEach(function (row) {
+        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+        const type = String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "")).toLowerCase();
+        const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
 
-    function renderMoneySection(summary) {
-      const rows = [...(reportData.transactions || [])]
-        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-        .slice(0, 40);
+        if (type.includes("income") || type.includes("sale") || type.includes("rental")) income += amount;
+        else if (type.includes("petty")) {
+          pettyCash += amount;
+          expenses += amount;
+        } else if (type.includes("expense")) {
+          expenses += amount;
+        }
 
-      const intro = `
-        <div class="row-card drive">
-          <div class="row-title">Money Summary</div>
-          <p class="row-detail"><strong>Records:</strong> ${safe(summary.moneyRecords)}</p>
-          <p class="row-detail"><strong>Total Value:</strong> ${safe(formatMoney(summary.moneyTotal))}</p>
-        </div>
-      `;
-
-      return `
-        <div class="section">
-          <h2>Money Records</h2>
-          ${intro}
-          ${rows.length === 0 ? `<div class="empty"><h3>No money records found</h3></div>` : rows.map(row => `
-            <div class="row-card">
-              <div class="row-title">💰 ${safe(getField(row, ["title", "transaction_title", "description", "record_title"], "Money Record"))}</div>
-              <p class="row-detail"><strong>Type:</strong> ${safe(cleanText(getField(row, ["type", "transaction_type", "record_type"], "record")))}</p>
-              <p class="row-detail"><strong>Amount:</strong> ${safe(formatMoney(getField(row, ["amount", "value", "total"], 0)))}</p>
-              <p class="row-detail"><strong>Date:</strong> ${safe(formatDateTime(row.created_at || row.transaction_date || row.record_date))}</p>
-            </div>
-          `).join("")}
-        </div>
-      `;
-    }
-
-    function renderTasksSection() {
-      const rows = [...(reportData.tasks || [])]
-        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-        .slice(0, 40);
-
-      return renderSectionList(
-        "Tasks / Follow-ups",
-        rows,
-        "No tasks found.",
-        row => `
-          <div class="row-card">
-            <div class="row-title">✅ ${safe(getField(row, ["task_title", "title", "name"], "Task / Follow-up"))}</div>
-            <p class="row-detail">${safe(getField(row, ["description", "notes", "details"], "Task record"))}</p>
-            <p class="row-detail"><strong>Due Date:</strong> ${safe(formatDate(row.due_date))}</p>
-            <span class="badge badge-blue">${safe(cleanText(getField(row, ["status", "task_status"], "pending")))}</span>
-          </div>
-        `
-      );
-    }
-
-    function renderSupportSection() {
-      const rows = [...(reportData.support || [])]
-        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-        .slice(0, 40);
-
-      return renderSectionList(
-        "Support Issues",
-        rows,
-        "No support issues found.",
-        row => `
-          <div class="row-card">
-            <div class="row-title">🛟 ${safe(getField(row, ["issue_title", "subject", "title"], "Support Issue"))}</div>
-            <p class="row-detail">${safe(getField(row, ["description", "message", "details"], "Support issue"))}</p>
-            <p class="row-detail"><strong>Date:</strong> ${safe(formatDateTime(row.created_at))}</p>
-            <span class="badge badge-orange">${safe(cleanText(getField(row, ["status", "issue_status"], "open")))}</span>
-          </div>
-        `
-      );
-    }
-
-    function renderOperationsSection() {
-      const rows = [
-        ...reportData.records.map(row => ({
-          title: getField(row, ["record_title", "title", "name"], "Business Record"),
-          detail: getField(row, ["description", "notes", "details"], "Business record"),
-          status: getField(row, ["status"], "recorded"),
-          date: row.created_at || row.record_date,
-          icon: "📋"
-        })),
-        ...reportData.items.map(row => ({
-          title: getField(row, ["item_name", "asset_name", "stock_name", "name"], "Item / Asset / Stock"),
-          detail: getField(row, ["description", "location", "notes"], "Item record"),
-          status: getField(row, ["status", "item_status"], "active"),
-          date: row.created_at,
-          icon: "📦"
-        })),
-        ...reportData.people.map(row => ({
-          title: getField(row, ["full_name", "name"], "Person / Staff"),
-          detail: getField(row, ["role_title", "department", "person_type"], "People record"),
-          status: getField(row, ["relationship_status", "status"], "active"),
-          date: row.created_at,
-          icon: "👥"
-        })),
-        ...reportData.notices.map(row => ({
-          title: getField(row, ["notice_title", "title", "subject"], "Notice"),
-          detail: getField(row, ["message", "body", "description"], "Notice"),
-          status: getField(row, ["status", "notice_status"], "published"),
-          date: row.created_at,
-          icon: "📢"
-        }))
-      ]
-      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
-      .slice(0, 60);
-
-      return renderSectionList(
-        "Operations Records",
-        rows,
-        "No operations records found.",
-        row => `
-          <div class="row-card">
-            <div class="row-title">${safe(row.icon)} ${safe(row.title)}</div>
-            <p class="row-detail">${safe(row.detail || "N/A")}</p>
-            <p class="row-detail"><strong>Date:</strong> ${safe(formatDateTime(row.date))}</p>
-            <span class="badge badge-gold">${safe(cleanText(row.status || "active"))}</span>
-          </div>
-        `
-      );
-    }
-
-    function renderSectionList(title, rows, emptyText, renderItem) {
-      return `
-        <div class="section">
-          <h2>${safe(title)}</h2>
-
-          ${rows.length === 0 ? `
-            <div class="empty">
-              <h3>${safe(emptyText)}</h3>
-            </div>
-          ` : rows.map(renderItem).join("")}
-        </div>
-      `;
-    }
-
-    function subscribeToRealtime() {
-      [
-        "documents",
-        "team_chat_messages",
-        "admin_client_messages",
-        "business_events",
-        "transactions",
-        "tasks",
-        "business_records",
-        "business_items",
-        "client_people",
-        "support_issues",
-        "client_notices"
-      ].forEach(tableName => {
-        supabaseClient
-          .channel("print-report-drive-" + tableName)
-          .on(
-            "postgres_changes",
-            {
-              event: "*",
-              schema: "public",
-              table: tableName
-            },
-            payload => {
-              const row = payload.new || payload.old;
-
-              if (row && row.tenant_id && String(row.tenant_id) !== String(currentTenantId)) return;
-
-              showToast("Print report updated live ✓");
-              loadPrintReport();
-            }
-          )
-          .subscribe();
+        if (status.includes("pending")) pending += amount;
       });
 
-      supabaseClient
-        .channel("print-report-tenant-drive")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "tenants"
-          },
-          payload => {
-            const row = payload.new || payload.old;
-
-            if (row && row.id && String(row.id) !== String(currentTenantId)) return;
-
-            showToast("Business profile updated live ✓");
-            loadClientProfile();
-          }
-        )
-        .subscribe();
+      return {
+        income,
+        expenses,
+        pettyCash,
+        pending,
+        balance: income - expenses
+      };
     }
 
-    checkExistingSession();
+    function calculateItems(rows) {
+      let available = 0;
+      let reserved = 0;
+      let sold = 0;
+      let rented = 0;
+      let maintenance = 0;
+      let totalValue = 0;
+
+      rows.forEach(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["property_status", "item_status", "status"], "")).toLowerCase();
+        const value = Number(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
+
+        totalValue += value;
+
+        if (status.includes("available")) available++;
+        if (status.includes("reserved")) reserved++;
+        if (status.includes("sold")) sold++;
+        if (status.includes("rented")) rented++;
+        if (status.includes("maintenance") || status.includes("repair")) maintenance++;
+      });
+
+      return { available, reserved, sold, rented, maintenance, totalValue };
+    }
+
+    function calculatePeople(rows) {
+      let active = 0;
+      let agents = 0;
+      let leads = 0;
+      let buyersRenters = 0;
+      let commission = 0;
+
+      rows.forEach(function (row) {
+        const type = String(UnganiClientShared.getValue(row, ["person_type"], "")).toLowerCase();
+        const status = String(UnganiClientShared.getValue(row, ["relationship_status", "status"], "active")).toLowerCase();
+
+        if (!status.includes("inactive")) active++;
+        if (type === "agent") agents++;
+        if (type === "lead") leads++;
+        if (type === "buyer" || type === "renter" || type === "tenant") buyersRenters++;
+
+        commission += Number(UnganiClientShared.getValue(row, ["commission_earned_month"], 0) || 0);
+      });
+
+      return { active, agents, leads, buyersRenters, commission };
+    }
+
+    function calculateTasks(rows) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      let pending = 0;
+      let completed = 0;
+      let overdue = 0;
+      let highPriority = 0;
+
+      rows.forEach(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
+        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
+        const dueValue = UnganiClientShared.getValue(row, ["due_date"], "");
+
+        if (status.includes("completed")) completed++;
+        if (!status.includes("completed") && !status.includes("cancelled")) pending++;
+        if (priority === "high" || priority === "urgent") highPriority++;
+
+        if (dueValue) {
+          const dueDate = new Date(dueValue);
+          dueDate.setHours(0, 0, 0, 0);
+
+          if (!isNaN(dueDate.getTime()) && dueDate < today && !status.includes("completed") && !status.includes("cancelled")) {
+            overdue++;
+          }
+        }
+      });
+
+      return { pending, completed, overdue, highPriority };
+    }
+
+    function calculateRecords(rows) {
+      let leads = 0;
+      let viewings = 0;
+      let projects = 0;
+      let openPending = 0;
+      let closed = 0;
+
+      rows.forEach(function (row) {
+        const type = String(UnganiClientShared.getValue(row, ["record_type"], "")).toLowerCase();
+        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
+
+        if (type.includes("lead") || type.includes("inquiry")) leads++;
+        if (type.includes("viewing") || type.includes("site visit")) viewings++;
+        if (type.includes("project")) projects++;
+
+        if (status.includes("open") || status.includes("pending") || status.includes("contacted") || status.includes("viewing")) openPending++;
+        if (status.includes("closed") || status.includes("completed")) closed++;
+      });
+
+      return { leads, viewings, projects, openPending, closed };
+    }
+
+    function calculateDocuments(rows) {
+      let agreements = 0;
+      let receiptsInvoices = 0;
+      let driveLinks = 0;
+      let pending = 0;
+      let archived = 0;
+
+      rows.forEach(function (row) {
+        const type = String(UnganiClientShared.getValue(row, ["document_type"], "")).toLowerCase();
+        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
+
+        if (type.includes("agreement") || type.includes("lease") || type.includes("sale")) agreements++;
+        if (type.includes("receipt") || type.includes("invoice")) receiptsInvoices++;
+
+        if (
+          UnganiClientShared.getValue(row, ["document_url"], "") ||
+          UnganiClientShared.getValue(row, ["drive_url"], "") ||
+          UnganiClientShared.getValue(row, ["folder_url"], "")
+        ) {
+          driveLinks++;
+        }
+
+        if (status.includes("pending") || status.includes("review")) pending++;
+        if (status.includes("archived")) archived++;
+      });
+
+      return { agreements, receiptsInvoices, driveLinks, pending, archived };
+    }
+
+    function calculateEvents(rows) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayText = today.toISOString().slice(0, 10);
+
+      let todayCount = 0;
+      let upcoming = 0;
+      let overdue = 0;
+      let viewings = 0;
+      let completed = 0;
+
+      rows.forEach(function (row) {
+        const date = String(UnganiClientShared.getValue(row, ["event_date"], "")).slice(0, 10);
+        const type = String(UnganiClientShared.getValue(row, ["event_type"], "")).toLowerCase();
+        const status = String(UnganiClientShared.getValue(row, ["status"], "scheduled")).toLowerCase();
+
+        if (date === todayText) todayCount++;
+        if (date >= todayText && !status.includes("cancelled")) upcoming++;
+        if (date < todayText && !status.includes("completed") && !status.includes("cancelled")) overdue++;
+        if (type.includes("viewing") || type.includes("site visit")) viewings++;
+        if (status.includes("completed")) completed++;
+      });
+
+      return { today: todayCount, upcoming, overdue, viewings, completed };
+    }
+
+    function calculateSupport(rows) {
+      let open = 0;
+      let resolved = 0;
+      let urgent = 0;
+
+      rows.forEach(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "open")).toLowerCase();
+        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
+
+        if (status.includes("resolved") || status.includes("closed")) resolved++;
+        else open++;
+
+        if (priority.includes("urgent") || priority.includes("high")) urgent++;
+      });
+
+      return { open, resolved, urgent };
+    }
+
+    function renderRecentRecords(rows) {
+      const recent = [...rows].sort(function (a, b) {
+        return new Date(UnganiClientShared.getValue(b, ["created_at"], "")) - new Date(UnganiClientShared.getValue(a, ["created_at"], ""));
+      }).slice(0, 6);
+
+      if (recent.length === 0) {
+        return emptyText("No recent records found.");
+      }
+
+      return recent.map(function (row) {
+        const title = UnganiClientShared.getValue(row, ["record_title", "title", "name"], "Business Record");
+        const type = UnganiClientShared.getValue(row, ["record_type"], "general");
+        const status = UnganiClientShared.getValue(row, ["status"], "open");
+        const property = UnganiClientShared.getValue(row, ["property_name"], "");
+        const date = UnganiClientShared.formatDate(UnganiClientShared.getValue(row, ["created_at", "record_date"], ""));
+
+        return summaryBlock(title, type + " · " + status + (property ? " · " + property : ""), date);
+      }).join("");
+    }
+
+    function renderRecentMoney(rows) {
+      const recent = [...rows].sort(function (a, b) {
+        return new Date(UnganiClientShared.getValue(b, ["transaction_date", "created_at"], "")) - new Date(UnganiClientShared.getValue(a, ["transaction_date", "created_at"], ""));
+      }).slice(0, 6);
+
+      if (recent.length === 0) {
+        return emptyText("No recent money records found.");
+      }
+
+      return recent.map(function (row) {
+        const category = UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "Money Record");
+        const amount = UnganiClientShared.formatKES(UnganiClientShared.getValue(row, ["amount"], 0));
+        const type = UnganiClientShared.getValue(row, ["transaction_type", "type"], "record");
+        const date = UnganiClientShared.formatDate(UnganiClientShared.getValue(row, ["transaction_date", "created_at"], ""));
+
+        return summaryBlock(category, type + " · " + amount, date);
+      }).join("");
+    }
+
+    function renderPendingTasks(rows) {
+      const pending = rows.filter(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
+        return !status.includes("completed") && !status.includes("cancelled");
+      }).slice(0, 8);
+
+      if (pending.length === 0) {
+        return emptyText("No pending tasks found.");
+      }
+
+      return pending.map(function (row) {
+        const title = UnganiClientShared.getValue(row, ["task_title", "title", "name"], "Task");
+        const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
+        const due = UnganiClientShared.formatDate(UnganiClientShared.getValue(row, ["due_date"], ""));
+
+        return summaryBlock(title, "Priority: " + priority, "Due: " + due);
+      }).join("");
+    }
+
+    function renderUpcomingEvents(rows) {
+      const todayText = new Date().toISOString().slice(0, 10);
+
+      const upcoming = rows.filter(function (row) {
+        const date = String(UnganiClientShared.getValue(row, ["event_date"], "")).slice(0, 10);
+        return date >= todayText;
+      }).sort(function (a, b) {
+        return new Date(UnganiClientShared.getValue(a, ["event_date"], "")) - new Date(UnganiClientShared.getValue(b, ["event_date"], ""));
+      }).slice(0, 8);
+
+      if (upcoming.length === 0) {
+        return emptyText("No upcoming calendar activities found.");
+      }
+
+      return upcoming.map(function (row) {
+        const title = UnganiClientShared.getValue(row, ["event_title", "title"], "Calendar Event");
+        const type = UnganiClientShared.getValue(row, ["event_type"], "general");
+        const date = UnganiClientShared.formatDate(UnganiClientShared.getValue(row, ["event_date"], ""));
+
+        return summaryBlock(title, type, date);
+      }).join("");
+    }
+
+    function summaryLine(label, value) {
+      return `
+        <div style="display:flex;justify-content:space-between;gap:14px;border-bottom:1px solid var(--ungani-border);padding:10px 0;">
+          <span class="ungani-small">${UnganiClientShared.safe(label)}</span>
+          <strong>${UnganiClientShared.safe(value)}</strong>
+        </div>
+      `;
+    }
+
+    function summaryBlock(title, detail, date) {
+      return `
+        <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
+          <h3 style="margin:0 0 6px;color:var(--ungani-text);font-size:16px;">${UnganiClientShared.safe(title)}</h3>
+          <p class="ungani-small" style="margin:0 0 6px;">${UnganiClientShared.safe(detail)}</p>
+          <span class="ungani-badge gold">${UnganiClientShared.safe(date)}</span>
+        </div>
+      `;
+    }
+
+    function emptyText(message) {
+      return `
+        <div class="ungani-empty">
+          <h3>No data</h3>
+          <p>${UnganiClientShared.safe(message)}</p>
+        </div>
+      `;
+    }
+
+    function restoreFilters() {
+      if (document.getElementById("filterFrom")) document.getElementById("filterFrom").value = sessionStorage.getItem("ungani_print_filter_from") || "";
+      if (document.getElementById("filterTo")) document.getElementById("filterTo").value = sessionStorage.getItem("ungani_print_filter_to") || "";
+      if (document.getElementById("searchBox")) document.getElementById("searchBox").value = sessionStorage.getItem("ungani_print_search") || "";
+    }
+
+    function saveFilters() {
+      if (document.getElementById("filterFrom")) sessionStorage.setItem("ungani_print_filter_from", UnganiClientShared.value("filterFrom"));
+      if (document.getElementById("filterTo")) sessionStorage.setItem("ungani_print_filter_to", UnganiClientShared.value("filterTo"));
+      if (document.getElementById("searchBox")) sessionStorage.setItem("ungani_print_search", UnganiClientShared.value("searchBox"));
+    }
+
+    function resetFilters() {
+      sessionStorage.removeItem("ungani_print_filter_from");
+      sessionStorage.removeItem("ungani_print_filter_to");
+      sessionStorage.removeItem("ungani_print_search");
+      renderPrintReport();
+      UnganiClientShared.showToast("Print report filters reset ✓");
+    }
   </script>
 </body>
 </html>
