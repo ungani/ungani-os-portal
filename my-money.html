@@ -8,195 +8,357 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-shared.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
 </head>
 
 <body>
   <script>
     let currentContext = null;
-    let transactions = [];
-    let categories = [];
-    let filteredTransactions = [];
-    let currentEditId = null;
-    let isRealEstate = false;
+    let businessPreset = null;
+    let moneyRows = [];
+    let editingMoneyId = null;
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "money",
         pageTitle: "Money Records",
-        pageSubtitle: "Track income, expenses, petty cash, payments, deposits, commissions, and business money movements.",
-        onReady: loadMoneyPage
+        pageSubtitle: "Track income, expenses, petty cash, and business payments.",
+        onReady: startMoneyPage
       });
     });
 
-    async function loadMoneyPage(context) {
+    async function startMoneyPage(context) {
       currentContext = context;
 
-      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
-      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
+      if (window.UnganiAnalytics) {
+        UnganiAnalytics.injectChartStyles();
+      }
 
-      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+      businessPreset = UnganiPresets.getPreset(context.tenant);
 
-      document.querySelector(".ungani-topbar h2").innerText = isRealEstate ? "Property Money Records" : "Money Records";
-      document.querySelector(".ungani-topbar p").innerText = isRealEstate
-        ? "Track property sales, rental income, booking deposits, commissions, maintenance costs, legal fees, marketing, and other property-related money records."
-        : "Track income, expenses, petty cash, payments, categories, notes, and business money records.";
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      const subEl = document.querySelector(".ungani-topbar p");
 
-      await Promise.all([
-        loadCategories(),
-        loadTransactions()
-      ]);
+      if (titleEl) {
+        titleEl.innerText = "Money Records";
+      }
+
+      if (subEl) {
+        subEl.innerText = "Income, expenses, petty cash, and payment tracking for " + businessPreset.name + ".";
+      }
+
+      await loadMoneyRows();
     }
 
-    async function loadCategories() {
-      const businessTypeKey = String(UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], "")).toLowerCase();
-      const businessTypeName = String(UnganiClientShared.getValue(currentContext.tenant, ["business_type"], "")).toLowerCase();
-
-      const realEstateFallback = fallbackCategories();
-
-      const response = await currentContext.supabaseClient
-        .from("categories")
-        .select("*")
-        .order("display_order", { ascending: true });
-
-      if (response.error) {
-        categories = realEstateFallback;
-        return;
-      }
-
-      const all = response.data || [];
-
-      const matched = all.filter(function (row) {
-        const rowKey = String(UnganiClientShared.getValue(row, ["business_type_key"], "")).toLowerCase();
-        const rowName = String(UnganiClientShared.getValue(row, ["business_type", "business_type_name"], "")).toLowerCase();
-
-        if (isRealEstate) {
-          return (
-            rowKey.includes("real_estate") ||
-            rowKey.includes("real-estate") ||
-            rowName.includes("real estate")
-          );
-        }
-
-        return rowKey === businessTypeKey || rowName === businessTypeName;
-      });
-
-      if (isRealEstate) {
-        const merged = [...matched];
-
-        realEstateFallback.forEach(function (fallbackRow) {
-          const exists = merged.some(function (row) {
-            return String(UnganiClientShared.getValue(row, ["category_key"], "")).toLowerCase() === String(fallbackRow.category_key).toLowerCase();
-          });
-
-          if (!exists) {
-            merged.push(fallbackRow);
-          }
-        });
-
-        categories = merged;
-        return;
-      }
-
-      if (matched.length > 0) {
-        categories = matched;
-      } else {
-        categories = fallbackCategories();
-      }
-    }
-
-    function fallbackCategories() {
-      if (isRealEstate) {
-        return [
-          { category_key: "property_sale", category_name: "Property Sale", transaction_type: "income" },
-          { category_key: "rental_income", category_name: "Rental Income", transaction_type: "income" },
-          { category_key: "booking_deposit", category_name: "Booking Deposit", transaction_type: "income" },
-          { category_key: "agency_service_fee", category_name: "Agency / Service Fee", transaction_type: "income" },
-
-          { category_key: "agent_commission", category_name: "Agent Commission", transaction_type: "expense" },
-          { category_key: "marketing_advertising", category_name: "Marketing / Advertising", transaction_type: "expense" },
-          { category_key: "legal_documentation_fees", category_name: "Legal / Documentation Fees", transaction_type: "expense" },
-          { category_key: "property_maintenance", category_name: "Property Maintenance", transaction_type: "expense" },
-          { category_key: "staff_wages", category_name: "Staff Wages", transaction_type: "expense" },
-          { category_key: "site_visit_transport", category_name: "Site Visit / Transport Cost", transaction_type: "expense" },
-          { category_key: "project_material_cost", category_name: "Project Material Cost", transaction_type: "expense" },
-          { category_key: "other_real_estate_cost", category_name: "Other Real Estate Cost", transaction_type: "expense" }
-        ];
-      }
-
-      return [
-        { category_key: "sales_income", category_name: "Sales / Income", transaction_type: "income" },
-        { category_key: "service_income", category_name: "Service Income", transaction_type: "income" },
-        { category_key: "business_expense", category_name: "Business Expense", transaction_type: "expense" },
-        { category_key: "petty_cash", category_name: "Petty Cash", transaction_type: "petty_cash" },
-        { category_key: "other", category_name: "Other", transaction_type: "other" }
-      ];
-    }
-
-    async function loadTransactions() {
-      const contentEl = currentContext.contentEl;
-
-      contentEl.innerHTML = UnganiClientShared.loadingCard("Loading money records...");
+    async function loadMoneyRows() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading money records...");
 
       const response = await currentContext.supabaseClient
         .from("transactions")
         .select("*")
         .eq("tenant_id", currentContext.tenantId)
-        .order("transaction_date", { ascending: false })
         .order("created_at", { ascending: false });
 
       if (response.error) {
-        contentEl.innerHTML = UnganiClientShared.errorCard("Could not load money records", response.error.message);
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load money records", response.error.message)
+        );
         return;
       }
 
-      transactions = response.data || [];
-      renderPage();
+      moneyRows = response.data || [];
+      renderMoneyPage();
     }
 
-    function renderPage() {
-      filteredTransactions = getFilteredTransactions();
+    function renderMoneyPage() {
+      const filteredRows = getFilteredRows();
+      const summary = calculateMoneySummary(filteredRows);
+      const expenseBreakdown = calculateExpenseBreakdown(filteredRows);
+      const trend = calculateIncomeExpenseTrend(filteredRows);
 
       UnganiClientShared.setContent(`
-        <section class="ungani-card ungani-hero">
-          <h2>${isRealEstate ? "Property Money Tracking" : "Money Tracking"}</h2>
-          <p>
-            ${isRealEstate
-              ? "Track sales income, rental payments, booking deposits, agent commissions, marketing costs, property maintenance, legal fees, and other property business records."
-              : "Track business income, expenses, petty cash, payments, suppliers, references, and notes."
-            }
-          </p>
+        <style>
+          .money-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+            gap: 18px;
+            align-items: stretch;
+          }
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="scrollToForm()">${currentEditId ? "Update Money Record" : "Add Money Record"}</button>
-            <a class="ungani-btn green" href="reports.html">View Reports</a>
-            <a class="ungani-btn dark" href="my-items.html">${isRealEstate ? "Properties" : "Items / Assets"}</a>
+          .money-preset-box {
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.09);
+            border-radius: 24px;
+            padding: 18px;
+          }
+
+          .money-preset-box h3 {
+            color: white;
+            margin: 0 0 8px;
+          }
+
+          .money-preset-box p {
+            color: rgba(255,255,255,0.74);
+            margin: 0;
+            line-height: 1.55;
+          }
+
+          .money-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+          }
+
+          .money-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 8px 11px;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            font-size: 12px;
+            font-weight: 850;
+          }
+
+          .money-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .money-kpi-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            box-shadow: var(--ungani-shadow);
+            padding: 20px;
+            min-height: 140px;
+          }
+
+          .money-kpi-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 5px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent);
+          }
+
+          .money-kpi-card span {
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.055em;
+          }
+
+          .money-kpi-card h3 {
+            margin: 17px 0 8px;
+            font-size: clamp(25px, 3vw, 36px);
+            line-height: 1;
+            letter-spacing: -0.055em;
+            overflow-wrap: anywhere;
+          }
+
+          .money-kpi-card p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .money-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .money-form-grid .wide {
+            grid-column: span 3;
+          }
+
+          .money-main-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(320px, 0.52fr);
+            gap: 18px;
+            align-items: start;
+          }
+
+          .money-chart-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 18px;
+            margin-bottom: 18px;
+            align-items: start;
+          }
+
+          .money-category-section {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+          }
+
+          .category-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+
+          .category-pill {
+            border: 1px solid var(--ungani-border);
+            background: var(--ungani-soft);
+            color: var(--ungani-text);
+            border-radius: 999px;
+            padding: 8px 11px;
+            font-size: 12px;
+            font-weight: 850;
+            cursor: pointer;
+          }
+
+          .category-pill:hover {
+            border-color: rgba(212,166,58,0.65);
+          }
+
+          .money-table-wrap {
+            overflow-x: auto;
+          }
+
+          .money-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 860px;
+          }
+
+          .money-table th {
+            text-align: left;
+            color: var(--ungani-muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 13px 12px;
+            border-bottom: 1px solid var(--ungani-border);
+          }
+
+          .money-table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--ungani-border);
+            vertical-align: top;
+          }
+
+          .money-table tr:hover td {
+            background: var(--ungani-soft);
+          }
+
+          .money-amount {
+            font-weight: 950;
+            white-space: nowrap;
+          }
+
+          .money-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+
+          @media (max-width: 1180px) {
+            .money-hero-grid,
+            .money-main-grid,
+            .money-chart-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .money-kpi-grid,
+            .money-category-section {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 720px) {
+            .money-kpi-grid,
+            .money-category-section,
+            .money-form-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .money-form-grid .wide {
+              grid-column: span 1;
+            }
+          }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <div class="money-hero-grid">
+            <div>
+              <span class="ungani-badge gold">${UnganiClientShared.safe(businessPreset.name)}</span>
+              <h2 style="font-size:clamp(32px,4vw,52px);line-height:1.02;margin:18px 0 12px;">
+                Money records that match your business.
+              </h2>
+              <p>
+                Track income, expenses, petty cash, payment status, and category breakdowns using presets for ${UnganiClientShared.safe(businessPreset.name)}.
+              </p>
+
+              <div class="ungani-button-row">
+                <button class="ungani-btn gold" onclick="scrollToMoneyForm()">Add Money Record</button>
+                <button class="ungani-btn green" onclick="loadMoneyRows()">Refresh</button>
+                <a class="ungani-btn light" href="my-charts.html">View Charts</a>
+              </div>
+            </div>
+
+            <div class="money-preset-box">
+              <h3>Business preset active</h3>
+              <p>The category options on this page now adapt to the business type selected by the client.</p>
+
+              <div class="money-chip-row">
+                ${businessPreset.incomeCategories.slice(0, 3).map(function (item) {
+                  return `<span class="money-chip">${UnganiClientShared.safe(item)}</span>`;
+                }).join("")}
+
+                ${businessPreset.expenseCategories.slice(0, 3).map(function (item) {
+                  return `<span class="money-chip">${UnganiClientShared.safe(item)}</span>`;
+                }).join("")}
+              </div>
+            </div>
           </div>
         </section>
 
-        ${renderMetrics()}
+        <section class="money-kpi-grid">
+          ${moneyKpi("Income", UnganiAnalytics.compactMoney(summary.income), filteredRows.filter(isIncomeRow).length + " income record(s)", "#16A34A")}
+          ${moneyKpi("Expenses", UnganiAnalytics.compactMoney(summary.expenses), filteredRows.filter(isExpenseRow).length + " expense record(s)", "#D4A63A")}
+          ${moneyKpi("Balance", UnganiAnalytics.compactMoney(summary.balance), "Income minus expenses", summary.balance >= 0 ? "#16A34A" : "#DC2626")}
+          ${moneyKpi("Pending", UnganiAnalytics.compactMoney(summary.pending), "Pending money records", "#DC2626")}
+        </section>
 
         <section class="ungani-card">
           <div class="ungani-section-title">
-            <h3>Filters</h3>
-            <button class="ungani-btn dark" onclick="resetFilters()">Reset Filters</button>
+            <div>
+              <h3>Filters</h3>
+              <p class="ungani-small">Search and filter this business money view.</p>
+            </div>
+
+            <button class="ungani-btn dark" onclick="resetMoneyFilters()">Reset Filters</button>
           </div>
 
-          <div class="ungani-form-grid">
+          <div class="money-form-grid">
             <div>
-              <label for="filterType">Record Type</label>
-              <select id="filterType" onchange="saveFilters(); renderPage();">
+              <label for="filterType">Type</label>
+              <select id="filterType" onchange="saveMoneyFilters(); renderMoneyPage();">
                 <option value="">All Types</option>
                 <option value="income">Income</option>
                 <option value="expense">Expense</option>
-                <option value="petty_cash">Petty Cash</option>
-                <option value="other">Other</option>
+                <option value="petty">Petty Cash</option>
               </select>
             </div>
 
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveFilters(); renderPage();">
-                <option value="">All Statuses</option>
+              <select id="filterStatus" onchange="saveMoneyFilters(); renderMoneyPage();">
+                <option value="">All Status</option>
                 <option value="completed">Completed</option>
                 <option value="pending">Pending</option>
                 <option value="cancelled">Cancelled</option>
@@ -204,639 +366,591 @@
             </div>
 
             <div>
-              <label for="filterFrom">From Date</label>
-              <input id="filterFrom" type="date" onchange="saveFilters(); renderPage();" />
-            </div>
-
-            <div>
-              <label for="filterTo">To Date</label>
-              <input id="filterTo" type="date" onchange="saveFilters(); renderPage();" />
-            </div>
-
-            <div>
-              <label for="searchBox">Search</label>
-              <input id="searchBox" placeholder="${isRealEstate ? "Search property, project, agent, category..." : "Search category, description, reference..."}" oninput="saveFilters(); renderPage();" />
+              <label for="filterSearch">Search</label>
+              <input id="filterSearch" placeholder="Search category, notes, payment method..." oninput="saveMoneyFilters(); renderMoneyPage();" />
             </div>
           </div>
         </section>
 
-        <section id="moneyFormCard" class="ungani-card">
-          <div class="ungani-section-title">
-            <h3>${currentEditId ? "Update Money Record" : "Add Money Record"}</h3>
-            ${currentEditId ? '<button class="ungani-btn dark" onclick="cancelEdit()">Cancel Edit</button>' : ''}
+        <section class="money-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Income vs Expenses</h3>
+                <p class="ungani-small">Animated trend from your money records.</p>
+              </div>
+              <a class="ungani-btn green" href="my-charts.html">Analytics</a>
+            </div>
+
+            ${trend.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="moneyTrendChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add dated income and expense records to show the trend.")}
           </div>
 
-          ${renderForm()}
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Expense Breakdown</h3>
+                <p class="ungani-small">Categories are based on the selected business type.</p>
+              </div>
+            </div>
+
+            ${expenseBreakdown.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="moneyExpenseChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add expense records to show expense breakdown.")}
+          </div>
         </section>
 
-        <section class="ungani-two-col">
+        <section class="money-category-section">
           <div class="ungani-card">
             <div class="ungani-section-title">
               <div>
-                <h3>Money Records</h3>
-                <p class="ungani-small">${filteredTransactions.length} record(s) shown</p>
+                <h3>Income Categories</h3>
+                <p class="ungani-small">Quick-fill income categories for ${UnganiClientShared.safe(businessPreset.name)}.</p>
               </div>
-
-              <button class="ungani-btn green" onclick="loadTransactions()">Refresh</button>
             </div>
 
-            ${renderTransactionsList()}
+            <div class="category-list">
+              ${businessPreset.incomeCategories.map(function (item) {
+                return `<button class="category-pill" onclick="quickCategory('income', '${UnganiClientShared.attr(item)}')">${UnganiClientShared.safe(item)}</button>`;
+              }).join("")}
+            </div>
           </div>
 
           <div class="ungani-card">
             <div class="ungani-section-title">
-              <h3>Category Summary</h3>
+              <div>
+                <h3>Expense Categories</h3>
+                <p class="ungani-small">Quick-fill expense categories for ${UnganiClientShared.safe(businessPreset.name)}.</p>
+              </div>
             </div>
 
-            ${renderCategorySummary()}
+            <div class="category-list">
+              ${businessPreset.expenseCategories.map(function (item) {
+                return `<button class="category-pill" onclick="quickCategory('expense', '${UnganiClientShared.attr(item)}')">${UnganiClientShared.safe(item)}</button>`;
+              }).join("")}
+            </div>
           </div>
+        </section>
+
+        <section class="money-main-grid">
+          <div class="ungani-card" id="moneyFormCard">
+            <div class="ungani-section-title">
+              <div>
+                <h3 id="moneyFormTitle">${editingMoneyId ? "Edit Money Record" : "Add Money Record"}</h3>
+                <p class="ungani-small">Use business-specific categories so reports and charts make sense.</p>
+              </div>
+
+              <button class="ungani-btn dark" onclick="clearMoneyForm()">Clear</button>
+            </div>
+
+            <form onsubmit="saveMoneyRecord(event)">
+              <div class="money-form-grid">
+                <div>
+                  <label for="moneyType">Type</label>
+                  <select id="moneyType" onchange="updateCategoryOptions()">
+                    <option value="income">Income</option>
+                    <option value="expense">Expense</option>
+                    <option value="petty_cash">Petty Cash</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="moneyCategory">Category</label>
+                  <select id="moneyCategory"></select>
+                </div>
+
+                <div>
+                  <label for="moneyAmount">Amount</label>
+                  <input id="moneyAmount" type="number" step="0.01" min="0" placeholder="Example: 50000" required />
+                </div>
+
+                <div>
+                  <label for="moneyDate">Date</label>
+                  <input id="moneyDate" type="date" />
+                </div>
+
+                <div>
+                  <label for="moneyMethod">Payment Method</label>
+                  <select id="moneyMethod">
+                    <option value="">Select Method</option>
+                    <option value="M-Pesa">M-Pesa</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Card">Card</option>
+                    <option value="Cheque">Cheque</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="moneyStatus">Status</label>
+                  <select id="moneyStatus">
+                    <option value="completed">Completed</option>
+                    <option value="pending">Pending</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div class="wide">
+                  <label for="moneyNotes">Notes</label>
+                  <textarea id="moneyNotes" rows="4" placeholder="Example: Client payment, supplier invoice, fuel expense, service income..."></textarea>
+                </div>
+              </div>
+
+              <div class="ungani-button-row" style="margin-top:16px;">
+                <button class="ungani-btn gold" type="submit">${editingMoneyId ? "Update Record" : "Save Record"}</button>
+                <button class="ungani-btn dark" type="button" onclick="clearMoneyForm()">Cancel</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="ungani-card">
+            <div class="ungani-section-title">
+              <div>
+                <h3>Money Guide</h3>
+                <p class="ungani-small">How to keep records clean.</p>
+              </div>
+            </div>
+
+            <div class="ungani-empty" style="text-align:left;">
+              <h3>Use the correct category</h3>
+              <p>For better charts and reports, use the preset categories instead of typing random names.</p>
+            </div>
+
+            <div style="display:grid;gap:10px;margin-top:12px;">
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Income example</strong>
+                <p class="ungani-small">${UnganiClientShared.safe(businessPreset.incomeCategories[0] || "Sales Income")}</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Expense example</strong>
+                <p class="ungani-small">${UnganiClientShared.safe(businessPreset.expenseCategories[0] || "Other Expense")}</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Reports</strong>
+                <p class="ungani-small">These categories will power Dashboard, Charts, Reports, and Print Reports.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Money Records</h3>
+              <p class="ungani-small">${filteredRows.length} record(s) shown.</p>
+            </div>
+
+            <button class="ungani-btn green" onclick="loadMoneyRows()">Refresh</button>
+          </div>
+
+          ${renderMoneyTable(filteredRows)}
         </section>
 
         <p class="ungani-small">
-          Money Version: Step 305D-2 Shared Layout · This is money tracking for operations visibility, not a full accounting replacement · ungani.com · info@ungani.com
+          Money Version: Step 310B-1 Business-Type Money Presets · ungani.com · info@ungani.com
         </p>
       `);
 
-      restoreFilters();
-      populateCategoryDropdown();
-      populateEditFormIfNeeded();
+      restoreMoneyFilters();
+      updateCategoryOptions();
+
+      setTimeout(function () {
+        renderMoneyCharts(trend, expenseBreakdown);
+      }, 150);
     }
 
-    function renderMetrics() {
-      const summary = calculateSummary(transactions);
-      const monthSummary = calculateThisMonthSummary();
-
-      return `
-        <section class="ungani-grid">
-          ${UnganiClientShared.metricCard("Total Records", transactions.length, "All saved money records", "blue")}
-          ${UnganiClientShared.metricCard(isRealEstate ? "Revenue This Month" : "Income This Month", UnganiClientShared.formatKES(monthSummary.income), "Income records this month", "green")}
-          ${UnganiClientShared.metricCard("Expenses This Month", UnganiClientShared.formatKES(monthSummary.expense), "Expense records this month", monthSummary.expense > 0 ? "orange" : "green")}
-          ${UnganiClientShared.metricCard("Estimated Balance", UnganiClientShared.formatKES(summary.balance), "Income minus expenses", summary.balance >= 0 ? "green" : "red")}
-          ${UnganiClientShared.metricCard("Pending Amount", UnganiClientShared.formatKES(summary.pending), "Records marked as pending", summary.pending > 0 ? "orange" : "green")}
-          ${UnganiClientShared.metricCard("Petty Cash", UnganiClientShared.formatKES(summary.pettyCash), "Petty cash records", "blue")}
-        </section>
-      `;
-    }
-
-    function renderForm() {
-      return `
-        <form id="moneyForm" onsubmit="saveTransaction(event)">
-          <div class="ungani-form-grid">
-            <div>
-              <label for="transactionType">Record Type</label>
-              <select id="transactionType" onchange="populateCategoryDropdown()">
-                <option value="income">Income</option>
-                <option value="expense">Expense</option>
-                <option value="petty_cash">Petty Cash</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="categorySelect">Category</label>
-              <select id="categorySelect">
-                <option value="">Select category</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="amount">Amount</label>
-              <input id="amount" type="number" min="0" step="1" required placeholder="Example: 50000" />
-            </div>
-
-            <div>
-              <label for="transactionDate">Date</label>
-              <input id="transactionDate" type="date" required />
-            </div>
-
-            <div>
-              <label for="status">Status</label>
-              <select id="status">
-                <option value="completed">Completed</option>
-                <option value="pending">Pending</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="paymentMethod">Payment Method</label>
-              <select id="paymentMethod">
-                <option value="">Select method</option>
-                <option value="cash">Cash</option>
-                <option value="mpesa">M-Pesa</option>
-                <option value="bank">Bank</option>
-                <option value="card">Card</option>
-                <option value="cheque">Cheque</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="paymentReference">Payment Reference</label>
-              <input id="paymentReference" placeholder="Receipt, invoice, transaction code..." />
-            </div>
-
-            <div>
-              <label for="relatedPerson">${isRealEstate ? "Client / Agent / Tenant" : "Related Person"}</label>
-              <input id="relatedPerson" placeholder="${isRealEstate ? "Example: Brian Otieno / Tenant A" : "Client, supplier, staff, or contact"}" />
-            </div>
-
-            ${
-              isRealEstate
-                ? `
-                  <div>
-                    <label for="propertyName">Property Name</label>
-                    <input id="propertyName" placeholder="Example: Clove Garden A12" />
-                  </div>
-
-                  <div>
-                    <label for="projectName">Project Name</label>
-                    <input id="projectName" placeholder="Example: Clove Garden" />
-                  </div>
-
-                  <div>
-                    <label for="agentName">Agent Name</label>
-                    <input id="agentName" placeholder="Example: Brian Otieno" />
-                  </div>
-
-                  <div>
-                    <label for="commissionAmount">Commission Amount</label>
-                    <input id="commissionAmount" type="number" min="0" step="1" placeholder="If applicable" />
-                  </div>
-                `
-                : ""
-            }
-          </div>
-
-          <label for="description">Description / Notes</label>
-          <textarea id="description" placeholder="${isRealEstate ? "Example: Booking deposit received for Clove Garden A12" : "Add notes about this money record..."}"></textarea>
-
-          <div class="ungani-button-row">
-            <button class="ungani-btn green" type="submit">${currentEditId ? "Update Record" : "Add Record"}</button>
-            ${currentEditId ? '<button class="ungani-btn dark" type="button" onclick="cancelEdit()">Cancel</button>' : ''}
-          </div>
-        </form>
-      `;
-    }
-
-    function populateCategoryDropdown() {
-      const select = document.getElementById("categorySelect");
-      const typeEl = document.getElementById("transactionType");
-
-      if (!select || !typeEl) return;
-
-      const selectedType = String(typeEl.value || "income").toLowerCase();
-
-      let matching = categories.filter(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["transaction_type", "category_type", "type"], "")).toLowerCase();
-
-        if (selectedType === "petty_cash") {
-          return type === "petty_cash" || type === "expense";
+    async function renderMoneyCharts(trend, expenseBreakdown) {
+      try {
+        if (trend.length) {
+          await UnganiAnalytics.renderIncomeExpenseChart("moneyTrendChart", trend);
         }
 
-        return type === selectedType;
-      });
-
-      if (matching.length === 0 && isRealEstate) {
-        matching = fallbackCategories().filter(function (row) {
-          const type = String(row.transaction_type || "").toLowerCase();
-
-          if (selectedType === "petty_cash") {
-            return type === "petty_cash" || type === "expense";
-          }
-
-          return type === selectedType;
-        });
+        if (expenseBreakdown.length) {
+          await UnganiAnalytics.renderExpenseDonutChart("moneyExpenseChart", expenseBreakdown);
+        }
+      } catch (error) {
+        console.warn("Money charts warning:", error.message);
       }
-
-      if (matching.length === 0) {
-        matching = fallbackCategories();
-      }
-
-      select.innerHTML = `<option value="">Select category</option>` + matching.map(function (row) {
-        const key = UnganiClientShared.getValue(row, ["category_key", "slug", "name", "category_name"], "");
-        const name = UnganiClientShared.getValue(row, ["category_name", "name", "title"], key);
-
-        return `<option value="${UnganiClientShared.attr(key)}">${UnganiClientShared.safe(name)}</option>`;
-      }).join("");
     }
 
-    function renderTransactionsList() {
-      if (filteredTransactions.length === 0) {
+    function renderMoneyTable(rows) {
+      if (!rows || rows.length === 0) {
         return `
           <div class="ungani-empty">
-            <h3>No money records found</h3>
-            <p>Add your first money record above.</p>
+            <h3>No money records yet</h3>
+            <p>Add your first income, expense, or petty cash record.</p>
           </div>
         `;
       }
 
-      return filteredTransactions.map(function (row) {
-        return renderTransactionCard(row);
-      }).join("");
-    }
-
-    function renderTransactionCard(row) {
-      const type = getTransactionType(row);
-      const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
-      const categoryName = UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "Money Record");
-      const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
-      const description = UnganiClientShared.getValue(row, ["description", "notes"], "");
-      const date = UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "");
-      const method = UnganiClientShared.getValue(row, ["payment_method"], "");
-      const reference = UnganiClientShared.getValue(row, ["payment_reference", "reference_number"], "");
-      const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
-      const propertyName = UnganiClientShared.getValue(row, ["property_name"], "");
-      const projectName = UnganiClientShared.getValue(row, ["project_name"], "");
-      const agentName = UnganiClientShared.getValue(row, ["agent_name"], "");
-      const commissionAmount = Number(UnganiClientShared.getValue(row, ["commission_amount"], 0) || 0);
-
-      const color = type === "income" ? "green" : type === "expense" ? "orange" : type === "petty_cash" ? "blue" : "gold";
-
       return `
-        <div class="ungani-card" style="box-shadow:none;">
-          <div class="ungani-section-title">
-            <div>
-              <h3>${UnganiClientShared.safe(categoryName)}</h3>
-              <p class="ungani-small">
-                ${UnganiClientShared.safe(UnganiClientShared.formatDate(date))}
-                ${method ? " · " + UnganiClientShared.safe(method) : ""}
-                ${reference ? " · Ref: " + UnganiClientShared.safe(reference) : ""}
-              </p>
-            </div>
+        <div class="money-table-wrap">
+          <table class="money-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Method</th>
+                <th>Status</th>
+                <th>Notes</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
 
-            <div style="text-align:right;">
-              <strong style="font-size:20px;color:var(--ungani-text);">${UnganiClientShared.safe(UnganiClientShared.formatKES(amount))}</strong><br>
-              <span class="ungani-badge ${UnganiClientShared.attr(color)}">${UnganiClientShared.safe(type)}</span>
-              <span class="ungani-badge ${status === "completed" ? "green" : status === "pending" ? "orange" : "red"}">${UnganiClientShared.safe(status)}</span>
-            </div>
-          </div>
+            <tbody>
+              ${rows.map(function (row) {
+                const type = getRowType(row);
+                const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+                const category = UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "Uncategorized");
+                const date = UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "");
+                const method = UnganiClientShared.getValue(row, ["payment_method"], "");
+                const status = UnganiClientShared.getValue(row, ["status"], "completed");
+                const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
-          <section class="ungani-grid">
-            ${miniDetail(isRealEstate ? "Property" : "Related Record", propertyName || "N/A")}
-            ${miniDetail("Project", projectName || "N/A")}
-            ${miniDetail(isRealEstate ? "Agent" : "Person", agentName || relatedPerson || "N/A")}
-            ${miniDetail("Commission", commissionAmount > 0 ? UnganiClientShared.formatKES(commissionAmount) : "N/A")}
-          </section>
-
-          ${description ? `<p class="ungani-small" style="margin-top:12px;">${UnganiClientShared.safe(description)}</p>` : ""}
-
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="editTransaction('${UnganiClientShared.attr(row.id)}')">Edit</button>
-            <button class="ungani-btn green" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'completed')">Completed</button>
-            <button class="ungani-btn orange" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'pending')">Pending</button>
-            <button class="ungani-btn red" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'cancelled')">Cancelled</button>
-          </div>
+                return `
+                  <tr>
+                    <td>${UnganiClientShared.safe(UnganiClientShared.formatDate(date))}</td>
+                    <td>${typeBadge(type)}</td>
+                    <td><strong>${UnganiClientShared.safe(category)}</strong></td>
+                    <td class="money-amount">${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(amount))}</td>
+                    <td>${UnganiClientShared.safe(method || "—")}</td>
+                    <td>${statusBadge(status)}</td>
+                    <td>${UnganiClientShared.safe(notes || "—")}</td>
+                    <td>
+                      <div class="money-actions">
+                        <button class="ungani-btn small gold" onclick="editMoneyRecord('${UnganiClientShared.attr(row.id)}')">Edit</button>
+                        <button class="ungani-btn small red" onclick="deleteMoneyRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
         </div>
       `;
     }
 
-    function renderCategorySummary() {
-      const summary = {};
-
-      filteredTransactions.forEach(function (row) {
-        const category = UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "Uncategorized");
-        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
-        const type = getTransactionType(row);
-
-        if (!summary[category]) {
-          summary[category] = {
-            count: 0,
-            income: 0,
-            expense: 0,
-            pettyCash: 0,
-            other: 0
-          };
-        }
-
-        summary[category].count++;
-
-        if (type === "income") summary[category].income += amount;
-        else if (type === "expense") summary[category].expense += amount;
-        else if (type === "petty_cash") summary[category].pettyCash += amount;
-        else summary[category].other += amount;
-      });
-
-      const keys = Object.keys(summary);
-
-      if (keys.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No category summary yet</h3>
-            <p>Summary will appear after money records are added.</p>
-          </div>
-        `;
-      }
-
-      return keys.map(function (key) {
-        const row = summary[key];
-        const total = row.income + row.expense + row.pettyCash + row.other;
-
-        return `
-          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-            <h3 style="margin:0 0 6px;color:var(--ungani-text);">${UnganiClientShared.safe(key)}</h3>
-            <p class="ungani-small" style="margin:0 0 8px;">${row.count} record(s) · ${UnganiClientShared.safe(UnganiClientShared.formatKES(total))}</p>
-            <span class="ungani-badge green">Income ${UnganiClientShared.safe(UnganiClientShared.formatKES(row.income))}</span>
-            <span class="ungani-badge orange">Expense ${UnganiClientShared.safe(UnganiClientShared.formatKES(row.expense))}</span>
-          </div>
-        `;
-      }).join("");
-    }
-
-    function miniDetail(label, value) {
+    function moneyKpi(title, value, subtitle, accent) {
       return `
-        <div class="ungani-card" style="margin-bottom:0;box-shadow:none;padding:14px;">
-          <p class="ungani-small" style="margin:0 0 5px;">${UnganiClientShared.safe(label)}</p>
-          <strong>${UnganiClientShared.safe(value)}</strong>
+        <div class="money-kpi-card" style="--accent:${UnganiClientShared.attr(accent)};">
+          <span>${UnganiClientShared.safe(title)}</span>
+          <h3>${UnganiClientShared.safe(value)}</h3>
+          <p>${UnganiClientShared.safe(subtitle)}</p>
         </div>
       `;
     }
 
-    function calculateSummary(rows) {
+    function calculateMoneySummary(rows) {
       let income = 0;
-      let expense = 0;
-      let pettyCash = 0;
+      let expenses = 0;
       let pending = 0;
 
       rows.forEach(function (row) {
         const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
-        const type = getTransactionType(row);
         const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
 
-        if (type === "income") income += amount;
-        else if (type === "expense") expense += amount;
-        else if (type === "petty_cash") {
-          pettyCash += amount;
-          expense += amount;
+        if (isIncomeRow(row)) {
+          income += amount;
+        } else if (isExpenseRow(row)) {
+          expenses += amount;
         }
 
-        if (status === "pending") {
+        if (status.includes("pending")) {
           pending += amount;
         }
       });
 
       return {
-        income: income,
-        expense: expense,
-        pettyCash: pettyCash,
-        pending: pending,
-        balance: income - expense
+        income,
+        expenses,
+        pending,
+        balance: income - expenses
       };
     }
 
-    function calculateThisMonthSummary() {
-      const now = new Date();
-      const month = now.getMonth();
-      const year = now.getFullYear();
+    function calculateIncomeExpenseTrend(rows) {
+      if (window.UnganiAnalytics && UnganiAnalytics.calculateIncomeExpenseTrend) {
+        return UnganiAnalytics.calculateIncomeExpenseTrend(rows);
+      }
 
-      const rows = transactions.filter(function (row) {
-        const value = UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "");
-        if (!value) return false;
-
-        const date = new Date(value);
-        if (isNaN(date.getTime())) return false;
-
-        return date.getMonth() === month && date.getFullYear() === year;
-      });
-
-      return calculateSummary(rows);
+      return [];
     }
 
-    function getFilteredTransactions() {
-      const type = document.getElementById("filterType") ? UnganiClientShared.value("filterType").toLowerCase() : "";
-      const status = document.getElementById("filterStatus") ? UnganiClientShared.value("filterStatus").toLowerCase() : "";
-      const from = document.getElementById("filterFrom") ? UnganiClientShared.value("filterFrom") : "";
-      const to = document.getElementById("filterTo") ? UnganiClientShared.value("filterTo") : "";
-      const query = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
+    function calculateExpenseBreakdown(rows) {
+      if (window.UnganiAnalytics && UnganiAnalytics.calculateExpenseBreakdown) {
+        return UnganiAnalytics.calculateExpenseBreakdown(rows);
+      }
 
-      return transactions.filter(function (row) {
-        const rowType = getTransactionType(row);
-        const rowStatus = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
-        const rowDate = String(UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "")).slice(0, 10);
+      return [];
+    }
 
-        const haystack = [
-          rowType,
-          rowStatus,
-          UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], ""),
-          UnganiClientShared.getValue(row, ["description", "notes"], ""),
-          UnganiClientShared.getValue(row, ["payment_reference", "reference_number"], ""),
-          UnganiClientShared.getValue(row, ["related_person"], ""),
-          UnganiClientShared.getValue(row, ["property_name"], ""),
-          UnganiClientShared.getValue(row, ["project_name"], ""),
-          UnganiClientShared.getValue(row, ["agent_name"], "")
-        ].join(" ").toLowerCase();
+    function getFilteredRows() {
+      const filterType = getStoredOrInput("filterType", "ungani_money_filter_type").toLowerCase();
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_money_filter_status").toLowerCase();
+      const search = getStoredOrInput("filterSearch", "ungani_money_filter_search").toLowerCase();
 
-        if (type && rowType !== type) return false;
-        if (status && rowStatus !== status) return false;
-        if (from && rowDate < from) return false;
-        if (to && rowDate > to) return false;
-        if (query && !haystack.includes(query)) return false;
+      return moneyRows.filter(function (row) {
+        const type = getRowType(row).toLowerCase();
+        const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
+        const haystack = JSON.stringify(row || {}).toLowerCase();
+
+        if (filterType && !type.includes(filterType)) return false;
+        if (filterStatus && !status.includes(filterStatus)) return false;
+        if (search && !haystack.includes(search)) return false;
 
         return true;
       });
     }
 
-    async function saveTransaction(event) {
+    function getStoredOrInput(inputId, storageKey) {
+      const el = document.getElementById(inputId);
+
+      if (el) {
+        return String(el.value || "").trim();
+      }
+
+      return String(sessionStorage.getItem(storageKey) || "").trim();
+    }
+
+    function saveMoneyFilters() {
+      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_money_filter_type", UnganiClientShared.value("filterType"));
+      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_money_filter_status", UnganiClientShared.value("filterStatus"));
+      if (document.getElementById("filterSearch")) sessionStorage.setItem("ungani_money_filter_search", UnganiClientShared.value("filterSearch"));
+    }
+
+    function restoreMoneyFilters() {
+      if (document.getElementById("filterType")) document.getElementById("filterType").value = sessionStorage.getItem("ungani_money_filter_type") || "";
+      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_money_filter_status") || "";
+      if (document.getElementById("filterSearch")) document.getElementById("filterSearch").value = sessionStorage.getItem("ungani_money_filter_search") || "";
+    }
+
+    function resetMoneyFilters() {
+      sessionStorage.removeItem("ungani_money_filter_type");
+      sessionStorage.removeItem("ungani_money_filter_status");
+      sessionStorage.removeItem("ungani_money_filter_search");
+      renderMoneyPage();
+      UnganiClientShared.showToast("Money filters reset ✓");
+    }
+
+    function updateCategoryOptions() {
+      const typeEl = document.getElementById("moneyType");
+      const categoryEl = document.getElementById("moneyCategory");
+
+      if (!typeEl || !categoryEl || !businessPreset) return;
+
+      const type = String(typeEl.value || "income").toLowerCase();
+      const current = categoryEl.value;
+
+      let categories = businessPreset.incomeCategories;
+
+      if (type.includes("expense") || type.includes("petty")) {
+        categories = businessPreset.expenseCategories;
+      }
+
+      categoryEl.innerHTML = categories.map(function (item) {
+        return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+      }).join("");
+
+      if (current) {
+        categoryEl.value = current;
+      }
+    }
+
+    function quickCategory(type, category) {
+      scrollToMoneyForm();
+
+      const typeEl = document.getElementById("moneyType");
+      const categoryEl = document.getElementById("moneyCategory");
+
+      if (typeEl) {
+        typeEl.value = type === "income" ? "income" : "expense";
+      }
+
+      updateCategoryOptions();
+
+      if (categoryEl) {
+        categoryEl.value = category;
+      }
+
+      UnganiClientShared.showToast("Category selected ✓");
+    }
+
+    function scrollToMoneyForm() {
+      const el = document.getElementById("moneyFormCard");
+
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    async function saveMoneyRecord(event) {
       event.preventDefault();
 
-      const payload = buildPayload();
+      const amount = Number(UnganiClientShared.value("moneyAmount") || 0);
 
-      if (!payload.amount || payload.amount <= 0) {
-        alert("Please enter a valid amount.");
+      if (!amount || amount <= 0) {
+        UnganiClientShared.showToast("Enter a valid amount.");
         return;
       }
+
+      const payload = {
+        tenant_id: currentContext.tenantId,
+        transaction_type: UnganiClientShared.value("moneyType") || "income",
+        category_name: UnganiClientShared.value("moneyCategory") || "Uncategorized",
+        amount: amount,
+        transaction_date: UnganiClientShared.value("moneyDate") || new Date().toISOString().slice(0, 10),
+        payment_method: UnganiClientShared.value("moneyMethod") || null,
+        status: UnganiClientShared.value("moneyStatus") || "completed",
+        notes: UnganiClientShared.value("moneyNotes") || null
+      };
 
       let response;
 
-      if (currentEditId) {
+      if (editingMoneyId) {
         response = await currentContext.supabaseClient
           .from("transactions")
           .update(payload)
-          .eq("id", currentEditId)
+          .eq("id", editingMoneyId)
           .eq("tenant_id", currentContext.tenantId);
       } else {
-        payload.tenant_id = currentContext.tenantId;
-        payload.created_by = currentContext.authUser.id;
-        payload.created_at = new Date().toISOString();
-
         response = await currentContext.supabaseClient
           .from("transactions")
-          .insert(payload);
+          .insert([payload]);
       }
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not save record: " + response.error.message);
         return;
       }
 
-      currentEditId = null;
-      UnganiClientShared.showToast("Money record saved ✓");
-      await loadTransactions();
+      UnganiClientShared.showToast(editingMoneyId ? "Money record updated ✓" : "Money record added ✓");
+      clearMoneyForm();
+      await loadMoneyRows();
     }
 
-    function buildPayload() {
-      const type = UnganiClientShared.value("transactionType") || "income";
-      const categoryKey = UnganiClientShared.value("categorySelect");
-      const categoryRow = categories.find(function (row) {
-        const key = UnganiClientShared.getValue(row, ["category_key", "slug", "name", "category_name"], "");
-
-        return String(key) === String(categoryKey);
-      }) || null;
-
-      const categoryName = categoryRow
-        ? UnganiClientShared.getValue(categoryRow, ["category_name", "name", "title"], categoryKey)
-        : categoryKey;
-
-      return {
-        business_type_key: UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], null),
-        category_id: categoryRow && categoryRow.id ? categoryRow.id : null,
-        category_key: categoryKey || null,
-        category: categoryName || null,
-        category_name: categoryName || null,
-        transaction_type: type,
-        type: type,
-        amount: numberValue("amount"),
-        transaction_date: UnganiClientShared.value("transactionDate") || new Date().toISOString().slice(0, 10),
-        payment_method: UnganiClientShared.value("paymentMethod") || null,
-        payment_reference: UnganiClientShared.value("paymentReference") || null,
-        reference_number: UnganiClientShared.value("paymentReference") || null,
-        related_person: UnganiClientShared.value("relatedPerson") || null,
-        property_name: isRealEstate ? (UnganiClientShared.value("propertyName") || null) : null,
-        project_name: isRealEstate ? (UnganiClientShared.value("projectName") || null) : null,
-        agent_name: isRealEstate ? (UnganiClientShared.value("agentName") || null) : null,
-        commission_amount: isRealEstate ? numberValue("commissionAmount") : 0,
-        description: UnganiClientShared.value("description") || null,
-        notes: UnganiClientShared.value("description") || null,
-        status: UnganiClientShared.value("status") || "completed",
-        updated_at: new Date().toISOString()
-      };
-    }
-
-    function populateEditFormIfNeeded() {
-      setDefaultDate();
-
-      if (!currentEditId) return;
-
-      const row = transactions.find(function (item) {
-        return String(item.id) === String(currentEditId);
+    function editMoneyRecord(id) {
+      const row = moneyRows.find(function (item) {
+        return String(item.id) === String(id);
       });
 
-      if (!row) return;
-
-      setValue("transactionType", getTransactionType(row));
-      populateCategoryDropdown();
-
-      setValue("categorySelect", UnganiClientShared.getValue(row, ["category_key", "category"], ""));
-      setValue("amount", UnganiClientShared.getValue(row, ["amount"], 0));
-      setValue("transactionDate", String(UnganiClientShared.getValue(row, ["transaction_date"], "")).slice(0, 10));
-      setValue("status", UnganiClientShared.getValue(row, ["status"], "completed"));
-      setValue("paymentMethod", UnganiClientShared.getValue(row, ["payment_method"], ""));
-      setValue("paymentReference", UnganiClientShared.getValue(row, ["payment_reference", "reference_number"], ""));
-      setValue("relatedPerson", UnganiClientShared.getValue(row, ["related_person"], ""));
-      setValue("description", UnganiClientShared.getValue(row, ["description", "notes"], ""));
-
-      if (isRealEstate) {
-        setValue("propertyName", UnganiClientShared.getValue(row, ["property_name"], ""));
-        setValue("projectName", UnganiClientShared.getValue(row, ["project_name"], ""));
-        setValue("agentName", UnganiClientShared.getValue(row, ["agent_name"], ""));
-        setValue("commissionAmount", UnganiClientShared.getValue(row, ["commission_amount"], 0));
+      if (!row) {
+        UnganiClientShared.showToast("Record not found.");
+        return;
       }
+
+      editingMoneyId = row.id;
+
+      scrollToMoneyForm();
+
+      setTimeout(function () {
+        document.getElementById("moneyFormTitle").innerText = "Edit Money Record";
+        document.getElementById("moneyType").value = getRowType(row);
+        updateCategoryOptions();
+        document.getElementById("moneyCategory").value = UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "");
+        document.getElementById("moneyAmount").value = UnganiClientShared.getValue(row, ["amount"], "");
+        document.getElementById("moneyDate").value = String(UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "")).slice(0, 10);
+        document.getElementById("moneyMethod").value = UnganiClientShared.getValue(row, ["payment_method"], "");
+        document.getElementById("moneyStatus").value = UnganiClientShared.getValue(row, ["status"], "completed");
+        document.getElementById("moneyNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
+      }, 150);
     }
 
-    function setDefaultDate() {
-      const dateEl = document.getElementById("transactionDate");
+    async function deleteMoneyRecord(id) {
+      const confirmed = confirm("Delete this money record?");
 
-      if (dateEl && !dateEl.value) {
-        dateEl.value = new Date().toISOString().slice(0, 10);
-      }
-    }
+      if (!confirmed) return;
 
-    function editTransaction(id) {
-      currentEditId = id;
-      renderPage();
-      scrollToForm();
-    }
-
-    function cancelEdit() {
-      currentEditId = null;
-      renderPage();
-      UnganiClientShared.showToast("Edit cancelled");
-    }
-
-    async function quickStatus(id, status) {
       const response = await currentContext.supabaseClient
         .from("transactions")
-        .update({
-          status: status,
-          updated_at: new Date().toISOString()
-        })
+        .delete()
         .eq("id", id)
         .eq("tenant_id", currentContext.tenantId);
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not delete record: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Status updated ✓");
-      await loadTransactions();
+      UnganiClientShared.showToast("Money record deleted ✓");
+      await loadMoneyRows();
     }
 
-    function restoreFilters() {
-      const filterType = sessionStorage.getItem("ungani_money_filter_type") || "";
-      const filterStatus = sessionStorage.getItem("ungani_money_filter_status") || "";
-      const filterFrom = sessionStorage.getItem("ungani_money_filter_from") || "";
-      const filterTo = sessionStorage.getItem("ungani_money_filter_to") || "";
-      const search = sessionStorage.getItem("ungani_money_search") || "";
+    function clearMoneyForm() {
+      editingMoneyId = null;
 
-      if (document.getElementById("filterType")) document.getElementById("filterType").value = filterType;
-      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = filterStatus;
-      if (document.getElementById("filterFrom")) document.getElementById("filterFrom").value = filterFrom;
-      if (document.getElementById("filterTo")) document.getElementById("filterTo").value = filterTo;
-      if (document.getElementById("searchBox")) document.getElementById("searchBox").value = search;
+      const title = document.getElementById("moneyFormTitle");
+      if (title) title.innerText = "Add Money Record";
+
+      if (document.getElementById("moneyType")) document.getElementById("moneyType").value = "income";
+      updateCategoryOptions();
+
+      ["moneyAmount", "moneyDate", "moneyMethod", "moneyNotes"].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+      });
+
+      if (document.getElementById("moneyStatus")) document.getElementById("moneyStatus").value = "completed";
     }
 
-    function saveFilters() {
-      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_money_filter_type", UnganiClientShared.value("filterType"));
-      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_money_filter_status", UnganiClientShared.value("filterStatus"));
-      if (document.getElementById("filterFrom")) sessionStorage.setItem("ungani_money_filter_from", UnganiClientShared.value("filterFrom"));
-      if (document.getElementById("filterTo")) sessionStorage.setItem("ungani_money_filter_to", UnganiClientShared.value("filterTo"));
-      if (document.getElementById("searchBox")) sessionStorage.setItem("ungani_money_search", UnganiClientShared.value("searchBox"));
-    }
-
-    function resetFilters() {
-      sessionStorage.removeItem("ungani_money_filter_type");
-      sessionStorage.removeItem("ungani_money_filter_status");
-      sessionStorage.removeItem("ungani_money_filter_from");
-      sessionStorage.removeItem("ungani_money_filter_to");
-      sessionStorage.removeItem("ungani_money_search");
-      renderPage();
-      UnganiClientShared.showToast("Filters reset ✓");
-    }
-
-    function scrollToForm() {
-      setTimeout(function () {
-        const card = document.getElementById("moneyFormCard");
-        if (card) {
-          card.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 100);
-    }
-
-    function getTransactionType(row) {
+    function getRowType(row) {
       return String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "income")).toLowerCase();
     }
 
-    function numberValue(id) {
-      const value = Number(UnganiClientShared.value(id) || 0);
-      return isNaN(value) ? 0 : value;
+    function isIncomeRow(row) {
+      const type = getRowType(row);
+
+      return (
+        type.includes("income") ||
+        type.includes("sale") ||
+        type.includes("rental") ||
+        type.includes("revenue") ||
+        type.includes("deposit") ||
+        type.includes("payment") ||
+        type.includes("fee")
+      );
     }
 
-    function setValue(id, value) {
-      const element = document.getElementById(id);
-      if (element) {
-        element.value = value === null || value === undefined ? "" : value;
+    function isExpenseRow(row) {
+      const type = getRowType(row);
+
+      return (
+        type.includes("expense") ||
+        type.includes("petty") ||
+        type.includes("cost") ||
+        type.includes("commission") ||
+        type.includes("maintenance")
+      );
+    }
+
+    function typeBadge(type) {
+      const lower = String(type || "").toLowerCase();
+
+      if (lower.includes("income") || lower.includes("sale") || lower.includes("payment") || lower.includes("fee")) {
+        return `<span class="ungani-badge green">${UnganiClientShared.safe(UnganiAnalytics.toTitle(type))}</span>`;
       }
+
+      if (lower.includes("petty")) {
+        return `<span class="ungani-badge gold">Petty Cash</span>`;
+      }
+
+      return `<span class="ungani-badge gold">${UnganiClientShared.safe(UnganiAnalytics.toTitle(type))}</span>`;
+    }
+
+    function statusBadge(status) {
+      const lower = String(status || "").toLowerCase();
+
+      if (lower.includes("completed") || lower.includes("paid") || lower.includes("cleared")) {
+        return `<span class="ungani-badge green">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status))}</span>`;
+      }
+
+      if (lower.includes("cancelled") || lower.includes("failed")) {
+        return `<span class="ungani-badge red">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status))}</span>`;
+      }
+
+      return `<span class="ungani-badge gold">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status || "pending"))}</span>`;
     }
   </script>
 </body>
