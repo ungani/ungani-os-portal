@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,7 +15,7 @@
 <body>
   <script>
     let currentContext = null;
-    let isRealEstate = false;
+    let businessProfile = null;
 
     let dashboardData = {
       transactions: [],
@@ -38,25 +39,14 @@
 
     async function startDashboard(context) {
       currentContext = context;
+      businessProfile = UnganiAnalytics.getBusinessProfile(context.tenant);
       UnganiAnalytics.injectChartStyles();
-
-      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
-      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
-
-      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
 
-      if (titleEl) {
-        titleEl.innerText = isRealEstate ? "Property Operations Dashboard" : "Business Operations Dashboard";
-      }
-
-      if (subEl) {
-        subEl.innerText = isRealEstate
-          ? "Properties, leads, agents, money records, tasks, documents, calendar, and reports."
-          : "Money records, tasks, documents, people, items, calendar, support, and reports.";
-      }
+      if (titleEl) titleEl.innerText = businessProfile.pageTitle;
+      if (subEl) subEl.innerText = businessProfile.hero;
 
       await loadDashboardData();
     }
@@ -112,20 +102,20 @@
 
       const money = UnganiAnalytics.calculateMoney(dashboardData.transactions);
       const trend = UnganiAnalytics.calculateIncomeExpenseTrend(dashboardData.transactions);
-      const property = UnganiAnalytics.calculatePropertySummary(dashboardData.items);
-      const people = UnganiAnalytics.calculatePeopleSummary(dashboardData.people);
+      const itemSummary = UnganiAnalytics.calculatePropertySummary(dashboardData.items);
+      const peopleSummary = UnganiAnalytics.calculatePeopleRoleSummary(dashboardData.people, businessProfile);
       const tasks = UnganiAnalytics.calculateTaskSummary(dashboardData.tasks);
       const projects = UnganiAnalytics.calculateProjects(dashboardData.items);
-      const topAgent = UnganiAnalytics.calculateAgentPerformance(dashboardData.people, isRealEstate)[0] || null;
+      const topPerformer = UnganiAnalytics.calculateAgentPerformance(dashboardData.people, businessProfile)[0] || null;
 
-      const propertyStatus = UnganiAnalytics.calculateStatus(dashboardData.items, ["property_status", "item_status", "status"]);
+      const itemStatus = UnganiAnalytics.calculateStatus(dashboardData.items, ["property_status", "item_status", "status"]);
       const taskStatus = UnganiAnalytics.mapToRows({
         Pending: tasks.pending,
         "In Progress": tasks.inProgress,
         Completed: tasks.completed,
         Overdue: tasks.overdue
       });
-      const leadPipeline = UnganiAnalytics.calculateLeadPipeline(dashboardData.people, dashboardData.records, isRealEstate);
+      const pipeline = UnganiAnalytics.calculateLeadPipeline(dashboardData.people, dashboardData.records, businessProfile);
 
       UnganiClientShared.setContent(`
         <style>
@@ -238,17 +228,6 @@
             background: var(--accent);
           }
 
-          .premium-kpi::after {
-            content: "";
-            position: absolute;
-            right: -60px;
-            bottom: -70px;
-            width: 150px;
-            height: 150px;
-            border-radius: 50%;
-            background: color-mix(in srgb, var(--accent) 18%, transparent);
-          }
-
           .premium-kpi-top {
             position: relative;
             z-index: 1;
@@ -277,7 +256,6 @@
             color: white;
             background: var(--accent);
             font-size: 19px;
-            box-shadow: 0 14px 26px color-mix(in srgb, var(--accent) 30%, transparent);
           }
 
           .premium-kpi h3 {
@@ -313,18 +291,18 @@
             margin-bottom: 18px;
           }
 
-          .property-preview-grid {
+          .item-preview-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 16px;
           }
 
-          .property-preview-card {
+          .item-preview-card {
             padding: 0;
             overflow: hidden;
           }
 
-          .property-preview-photo {
+          .item-preview-photo {
             position: relative;
             min-height: 150px;
             background:
@@ -336,7 +314,7 @@
             padding: 14px;
           }
 
-          .property-preview-photo img {
+          .item-preview-photo img {
             position: absolute;
             inset: 0;
             width: 100%;
@@ -344,14 +322,14 @@
             object-fit: cover;
           }
 
-          .property-preview-photo::after {
+          .item-preview-photo::after {
             content: "";
             position: absolute;
             inset: 0;
             background: linear-gradient(180deg, transparent 32%, rgba(6,28,61,0.78));
           }
 
-          .property-placeholder {
+          .item-placeholder {
             position: absolute;
             inset: 0;
             display: flex;
@@ -361,28 +339,28 @@
             opacity: 0.82;
           }
 
-          .property-preview-photo-content {
+          .item-preview-photo-content {
             position: relative;
             z-index: 2;
           }
 
-          .property-preview-photo-content h3 {
+          .item-preview-photo-content h3 {
             margin: 0 0 4px;
             font-size: 17px;
             color: white;
           }
 
-          .property-preview-photo-content p {
+          .item-preview-photo-content p {
             margin: 0;
             font-size: 12px;
             color: rgba(255,255,255,0.75);
           }
 
-          .property-preview-body {
+          .item-preview-body {
             padding: 14px;
           }
 
-          .property-preview-price {
+          .item-preview-price {
             margin: 0 0 8px;
             font-size: 19px;
             font-weight: 950;
@@ -410,7 +388,7 @@
 
             .premium-kpi-grid,
             .dashboard-small-chart-grid,
-            .property-preview-grid {
+            .item-preview-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
             }
           }
@@ -419,7 +397,7 @@
             .premium-mini-stats,
             .premium-kpi-grid,
             .dashboard-small-chart-grid,
-            .property-preview-grid {
+            .item-preview-grid {
               grid-template-columns: 1fr;
             }
           }
@@ -429,18 +407,13 @@
           <div class="premium-hero">
             <div class="premium-hero-main">
               <div>
-                <span class="ungani-badge gold">${isRealEstate ? "Property Workspace" : "Business Workspace"}</span>
+                <span class="ungani-badge gold">${UnganiClientShared.safe(businessProfile.badge)}</span>
                 <h2 class="premium-hero-title">${UnganiClientShared.safe(tenantName)}</h2>
-                <p>
-                  ${isRealEstate
-                    ? "A premium live workspace for properties, projects, agents, leads, tasks, money records, documents, and reports."
-                    : "A premium live workspace for operations, people, assets, money records, tasks, documents, and reports."
-                  }
-                </p>
+                <p>${UnganiClientShared.safe(businessProfile.hero)}</p>
               </div>
 
               <div class="ungani-button-row">
-                <a class="ungani-btn gold" href="my-items.html">${isRealEstate ? "Browse Properties" : "Open Items"}</a>
+                <a class="ungani-btn gold" href="my-items.html">Open ${UnganiClientShared.safe(businessProfile.itemsTitle)}</a>
                 <a class="ungani-btn green" href="my-charts.html">Open Analytics</a>
                 <a class="ungani-btn light" href="reports.html">View Reports</a>
               </div>
@@ -451,7 +424,8 @@
                 <h3>Live Operations Pulse</h3>
                 <p>
                   ${tasks.pending} pending task(s), ${tasks.overdue} overdue,
-                  ${property.available} available listing(s), and ${property.closed} sold/rented.
+                  ${itemSummary.available} ${UnganiClientShared.safe(businessProfile.availableText)}, and
+                  ${itemSummary.closed} ${UnganiClientShared.safe(businessProfile.closedText)}.
                 </p>
               </div>
 
@@ -462,13 +436,13 @@
                 </div>
 
                 <div class="premium-mini-stat">
-                  <span>${isRealEstate ? "Properties" : "Items"}</span>
-                  <strong>${property.total}</strong>
+                  <span>${UnganiClientShared.safe(businessProfile.itemPlural)}</span>
+                  <strong>${itemSummary.total}</strong>
                 </div>
 
                 <div class="premium-mini-stat">
                   <span>People</span>
-                  <strong>${people.total}</strong>
+                  <strong>${peopleSummary.total}</strong>
                 </div>
               </div>
             </div>
@@ -476,9 +450,9 @@
         </section>
 
         <section class="premium-kpi-grid">
-          ${kpiCard(isRealEstate ? "Properties / Listings" : "Items / Assets", property.total, property.available + " available · " + property.closed + " sold/rented", "🏢", "#2563EB", "my-items.html")}
+          ${kpiCard(businessProfile.itemsTitle, itemSummary.total, itemSummary.available + " " + businessProfile.availableText + " · " + itemSummary.closed + " " + businessProfile.closedText, "📦", "#2563EB", "my-items.html")}
           ${kpiCard("Money Balance", UnganiAnalytics.compactMoney(money.balance), "Income minus expenses", "💰", money.balance >= 0 ? "#16A34A" : "#DC2626", "my-money.html")}
-          ${kpiCard(isRealEstate ? "Agents / Leads" : "People", people.total, people.agents + " agents · " + people.leads + " leads", "👥", "#D4A63A", "my-people.html")}
+          ${kpiCard(businessProfile.peopleTitle, peopleSummary.total, peopleSummary.primary + " " + peopleSummary.primaryLabel + " · " + peopleSummary.secondary + " " + peopleSummary.secondaryLabel, "👥", "#D4A63A", "my-people.html")}
           ${kpiCard("Tasks", tasks.pending, tasks.overdue + " overdue · " + tasks.completed + " done", "✅", tasks.overdue > 0 ? "#DC2626" : "#D4A63A", "my-tasks.html")}
         </section>
 
@@ -487,7 +461,7 @@
             <div class="ungani-chart-head">
               <div>
                 <h3>Income vs Expenses</h3>
-                <p class="ungani-small">Animated monthly money movement from the same records used on Dashboard and Charts.</p>
+                <p class="ungani-small">Animated monthly money movement from the same records used on Charts and Reports.</p>
               </div>
               <a class="ungani-btn green" href="my-money.html">Money</a>
             </div>
@@ -498,13 +472,13 @@
           <div class="ungani-card ungani-chart-card">
             <div class="ungani-chart-head">
               <div>
-                <h3>${isRealEstate ? "Property Status" : "Item Status"}</h3>
-                <p class="ungani-small">${isRealEstate ? "Available, reserved, negotiation, sold, and rented." : "Status split for items/assets."}</p>
+                <h3>${UnganiClientShared.safe(businessProfile.statusTitle)}</h3>
+                <p class="ungani-small">Current status breakdown for this business.</p>
               </div>
               <a class="ungani-btn" href="my-items.html">Open</a>
             </div>
 
-            ${hasValues(propertyStatus) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="dashboardPropertyStatus"></canvas></div>' : UnganiAnalytics.emptyChart("Add properties/items with statuses to show this chart.")}
+            ${hasValues(itemStatus) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="dashboardItemStatus"></canvas></div>' : UnganiAnalytics.emptyChart("Add records with statuses to show this chart.")}
           </div>
         </section>
 
@@ -522,22 +496,22 @@
           <div class="ungani-card ungani-chart-card">
             <div class="ungani-chart-head">
               <div>
-                <h3>${isRealEstate ? "Lead Pipeline" : "People Pipeline"}</h3>
+                <h3>${UnganiClientShared.safe(businessProfile.pipelineTitle)}</h3>
                 <p class="ungani-small">Pipeline stages by current status.</p>
               </div>
             </div>
-            ${hasValues(leadPipeline) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="dashboardLeadPipeline"></canvas></div>' : UnganiAnalytics.emptyChart("Add leads or people statuses to show pipeline.")}
+            ${hasValues(pipeline) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="dashboardPipeline"></canvas></div>' : UnganiAnalytics.emptyChart("Add people, leads, clients, or records to show pipeline.")}
           </div>
 
           <div class="ungani-card">
             <div class="ungani-chart-head">
               <div>
-                <h3>Top Agent This Month</h3>
-                <p class="ungani-small">Based on deals closed and commission.</p>
+                <h3>${UnganiClientShared.safe(businessProfile.topPerformerTitle)}</h3>
+                <p class="ungani-small">Based on deals, work, or commission where recorded.</p>
               </div>
               <a class="ungani-btn gold" href="my-people.html">People</a>
             </div>
-            ${renderTopAgent(topAgent)}
+            ${renderTopPerformer(topPerformer)}
           </div>
         </section>
 
@@ -545,21 +519,21 @@
           <div class="ungani-card">
             <div class="ungani-chart-head">
               <div>
-                <h3>${isRealEstate ? "Property Grid Preview" : "Items Preview"}</h3>
+                <h3>${UnganiClientShared.safe(businessProfile.previewTitle)}</h3>
                 <p class="ungani-small">Latest records with status and value.</p>
               </div>
-              <a class="ungani-btn" href="my-items.html">Open Full Grid</a>
+              <a class="ungani-btn" href="my-items.html">Open Full View</a>
             </div>
-            ${renderPropertyPreview()}
+            ${renderItemPreview()}
           </div>
 
           <div class="ungani-card">
             <div class="ungani-chart-head">
               <div>
-                <h3>Project Progress</h3>
-                <p class="ungani-small">Progress remains consistent with the Properties page.</p>
+                <h3>${UnganiClientShared.safe(businessProfile.progressTitle)}</h3>
+                <p class="ungani-small">Progress remains consistent with the detailed page.</p>
               </div>
-              <a class="ungani-btn" href="my-items.html">Projects</a>
+              <a class="ungani-btn" href="my-items.html">Open</a>
             </div>
             ${renderProjectProgress(projects)}
           </div>
@@ -570,7 +544,7 @@
             <div class="ungani-chart-head">
               <div>
                 <h3>Action Needed</h3>
-                <p class="ungani-small">Tasks, support issues, and upcoming calendar items.</p>
+                <p class="ungani-small">Tasks and support items needing attention.</p>
               </div>
               <a class="ungani-btn green" href="my-activity.html">Activity</a>
             </div>
@@ -590,32 +564,21 @@
         </section>
 
         <p class="ungani-small">
-          Client Dashboard Version: Step 309B Premium Animated Dashboard · ungani.com · info@ungani.com
+          Client Dashboard Version: Step 309D Universal Business Dashboard · ungani.com · info@ungani.com
         </p>
       `);
 
       setTimeout(function () {
-        renderDashboardCharts(trend, propertyStatus, taskStatus, leadPipeline);
-      }, 100);
+        renderDashboardCharts(trend, itemStatus, taskStatus, pipeline);
+      }, 120);
     }
 
-    async function renderDashboardCharts(trend, propertyStatus, taskStatus, leadPipeline) {
+    async function renderDashboardCharts(trend, itemStatus, taskStatus, pipeline) {
       try {
-        if (trend.length) {
-          await UnganiAnalytics.renderIncomeExpenseChart("dashboardMoneyTrend", trend);
-        }
-
-        if (hasValues(propertyStatus)) {
-          await UnganiAnalytics.renderDoughnutStatusChart("dashboardPropertyStatus", propertyStatus);
-        }
-
-        if (hasValues(taskStatus)) {
-          await UnganiAnalytics.renderDoughnutStatusChart("dashboardTaskStatus", taskStatus);
-        }
-
-        if (hasValues(leadPipeline)) {
-          await UnganiAnalytics.renderHorizontalBarChart("dashboardLeadPipeline", leadPipeline, "Records");
-        }
+        if (trend.length) await UnganiAnalytics.renderIncomeExpenseChart("dashboardMoneyTrend", trend);
+        if (hasValues(itemStatus)) await UnganiAnalytics.renderDoughnutStatusChart("dashboardItemStatus", itemStatus);
+        if (hasValues(taskStatus)) await UnganiAnalytics.renderDoughnutStatusChart("dashboardTaskStatus", taskStatus);
+        if (hasValues(pipeline)) await UnganiAnalytics.renderHorizontalBarChart("dashboardPipeline", pipeline, "Records");
       } catch (error) {
         console.warn("Dashboard charts warning:", error.message);
       }
@@ -634,20 +597,20 @@
       `;
     }
 
-    function renderTopAgent(agent) {
-      if (!agent) {
+    function renderTopPerformer(person) {
+      if (!person) {
         return `
           <div class="ungani-empty">
-            <h3>No agent data yet</h3>
-            <p>Add agents with deals closed or commission earned to show performance.</p>
+            <h3>No performance data yet</h3>
+            <p>Add people records with deals, work, or commission to show performance.</p>
           </div>
         `;
       }
 
-      const name = UnganiAnalytics.safeGet(agent, ["full_name", "name"], "Agent");
-      const deals = Number(UnganiAnalytics.safeGet(agent, ["deals_closed"], 0) || 0);
-      const commission = Number(UnganiAnalytics.safeGet(agent, ["commission_earned_month"], 0) || 0);
-      const assigned = UnganiAnalytics.safeGet(agent, ["properties_assigned"], "");
+      const name = UnganiAnalytics.safeGet(person, ["full_name", "name"], "Person");
+      const deals = Number(UnganiAnalytics.safeGet(person, ["deals_closed"], 0) || 0);
+      const commission = Number(UnganiAnalytics.safeGet(person, ["commission_earned_month"], 0) || 0);
+      const assigned = UnganiAnalytics.safeGet(person, ["properties_assigned", "assigned_work", "notes"], "");
 
       return `
         <div>
@@ -655,30 +618,30 @@
             ${UnganiClientShared.safe(makeInitials(name))}
           </div>
           <h2 style="margin:0 0 6px;font-size:27px;">${UnganiClientShared.safe(name)}</h2>
-          ${summaryLine("Deals Closed", deals)}
-          ${summaryLine("Commission", UnganiAnalytics.moneyFormat(commission))}
-          ${summaryLine("Assigned Properties", assigned || "Not recorded")}
+          ${summaryLine("Recorded Deals / Jobs", deals)}
+          ${summaryLine("Commission / Value", UnganiAnalytics.moneyFormat(commission))}
+          ${summaryLine("Assigned Work", assigned || "Not recorded")}
         </div>
       `;
     }
 
-    function renderPropertyPreview() {
+    function renderItemPreview() {
       const rows = dashboardData.items.slice(0, 3);
 
       if (rows.length === 0) {
         return `
           <div class="ungani-empty">
-            <h3>No properties yet</h3>
-            <p>Add properties or items to see a visual preview here.</p>
-            <a class="ungani-btn" href="my-items.html">Add Property</a>
+            <h3>No records yet</h3>
+            <p>Add ${UnganiClientShared.safe(businessProfile.itemPlural.toLowerCase())} to see a visual preview here.</p>
+            <a class="ungani-btn" href="my-items.html">Add Record</a>
           </div>
         `;
       }
 
       return `
-        <div class="property-preview-grid">
+        <div class="item-preview-grid">
           ${rows.map(function (row) {
-            const name = UnganiAnalytics.safeGet(row, ["property_name", "item_name", "name", "title"], "Property");
+            const name = UnganiAnalytics.safeGet(row, ["property_name", "item_name", "name", "title"], businessProfile.itemSingular);
             const project = UnganiAnalytics.safeGet(row, ["project_name"], "");
             const location = UnganiAnalytics.safeGet(row, ["property_location", "location"], "");
             const photo = UnganiAnalytics.safeGet(row, ["photo_url", "image_url", "thumbnail_url"], "");
@@ -686,18 +649,18 @@
             const status = UnganiAnalytics.safeGet(row, ["property_status", "item_status", "status"], "available");
 
             return `
-              <a class="ungani-card property-preview-card" href="my-items.html">
-                <div class="property-preview-photo">
+              <a class="ungani-card item-preview-card" href="my-items.html">
+                <div class="item-preview-photo">
                   ${photo ? `<img src="${UnganiClientShared.attr(photo)}" alt="${UnganiClientShared.attr(name)}" onerror="this.style.display='none';" />` : ""}
-                  <div class="property-placeholder">🏢</div>
-                  <div class="property-preview-photo-content">
+                  <div class="item-placeholder" style="${photo ? "display:none;" : ""}">📦</div>
+                  <div class="item-preview-photo-content">
                     <h3>${UnganiClientShared.safe(name)}</h3>
-                    <p>${UnganiClientShared.safe(project || location || "Property listing")}</p>
+                    <p>${UnganiClientShared.safe(project || location || businessProfile.itemSingular)}</p>
                   </div>
                 </div>
 
-                <div class="property-preview-body">
-                  <p class="property-preview-price">${price > 0 ? UnganiClientShared.safe(UnganiAnalytics.moneyFormat(price)) : "Price not set"}</p>
+                <div class="item-preview-body">
+                  <p class="item-preview-price">${price > 0 ? UnganiClientShared.safe(UnganiAnalytics.moneyFormat(price)) : "Value not set"}</p>
                   ${badge(status, colorClass(status))}
                 </div>
               </a>
@@ -711,8 +674,8 @@
       if (!projects || projects.length === 0) {
         return `
           <div class="ungani-empty">
-            <h3>No project progress yet</h3>
-            <p>Add project names, total units, and sold units under Properties / Listings.</p>
+            <h3>No progress data yet</h3>
+            <p>Add project names, total units, sold units, or progress percentage to see progress here.</p>
           </div>
         `;
       }
@@ -725,7 +688,7 @@
             <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
               <div>
                 <strong>${UnganiClientShared.safe(project.name)}</strong>
-                <p class="ungani-small" style="margin:5px 0 0;">${project.unitsSold}/${project.totalUnits} units sold · ${project.unitsAvailable} available</p>
+                <p class="ungani-small" style="margin:5px 0 0;">${project.unitsSold}/${project.totalUnits} units done · ${project.unitsAvailable} available</p>
               </div>
               <span class="ungani-badge ${progressColor(percent)}">${percent}%</span>
             </div>
@@ -801,7 +764,7 @@
         return `
           <div class="ungani-empty">
             <h3>No recent records</h3>
-            <p>Lead updates, viewing notes, project notes, and business records will appear here.</p>
+            <p>Operational updates will appear here.</p>
           </div>
         `;
       }
@@ -841,7 +804,7 @@
     function colorClass(text) {
       const lower = String(text || "").toLowerCase();
 
-      if (lower.includes("available") || lower.includes("sold") || lower.includes("rented") || lower.includes("completed") || lower.includes("active") || lower.includes("resolved")) return "green";
+      if (lower.includes("available") || lower.includes("in stock") || lower.includes("sold") || lower.includes("rented") || lower.includes("completed") || lower.includes("active") || lower.includes("resolved")) return "green";
       if (lower.includes("overdue") || lower.includes("urgent") || lower.includes("lost") || lower.includes("cancelled") || lower.includes("failed")) return "red";
 
       return "gold";
