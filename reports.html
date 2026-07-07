@@ -4,24 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>UNGANI OS - Reports</title>
+  <title>UNGANI OS - Business Reports</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-shared.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
 </head>
 
 <body>
   <script>
     let currentContext = null;
-    let isRealEstate = false;
+    let businessPreset = null;
 
     let reportData = {
       transactions: [],
       items: [],
-      tasks: [],
-      records: [],
-      documents: [],
       people: [],
+      records: [],
+      tasks: [],
+      documents: [],
       events: [],
       support: []
     };
@@ -30,7 +32,7 @@
       UnganiClientShared.initPage({
         pageKey: "reports",
         pageTitle: "Reports",
-        pageSubtitle: "View business summaries, operations visibility, money records, tasks, documents, calendar activity, and follow-ups.",
+        pageSubtitle: "Owner-friendly business reports and summaries.",
         onReady: startReportsPage
       });
     });
@@ -38,47 +40,46 @@
     async function startReportsPage(context) {
       currentContext = context;
 
-      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
-      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
+      if (window.UnganiAnalytics) {
+        UnganiAnalytics.injectChartStyles();
+      }
 
-      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+      businessPreset = UnganiPresets.getPreset(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
 
       if (titleEl) {
-        titleEl.innerText = isRealEstate ? "Property Operations Report" : "Business Report";
+        titleEl.innerText = businessPreset.name + " Reports";
       }
 
       if (subEl) {
-        subEl.innerText = isRealEstate
-          ? "Review properties, leads, agents, viewings, money records, documents, tasks, calendar activities, and support visibility."
-          : "Review business records, money records, documents, tasks, items, calendar activities, and support visibility.";
+        subEl.innerText = "Simple business reports for money, tasks, records, people, documents, calendar, support, and operations.";
       }
 
       await loadReportData();
     }
 
     async function loadReportData() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading report data...");
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading business reports...");
 
       const responses = await Promise.all([
         safeSelect("transactions"),
         safeSelect("business_items"),
-        safeSelect("tasks"),
-        safeSelect("business_records"),
-        safeSelect("documents"),
         safeSelect("client_people"),
+        safeSelect("business_records"),
+        safeSelect("tasks"),
+        safeSelect("documents"),
         safeSelect("business_events"),
         safeSelect("support_issues")
       ]);
 
       reportData.transactions = responses[0];
       reportData.items = responses[1];
-      reportData.tasks = responses[2];
+      reportData.people = responses[2];
       reportData.records = responses[3];
-      reportData.documents = responses[4];
-      reportData.people = responses[5];
+      reportData.tasks = responses[4];
+      reportData.documents = responses[5];
       reportData.events = responses[6];
       reportData.support = responses[7];
 
@@ -90,7 +91,8 @@
         const response = await currentContext.supabaseClient
           .from(tableName)
           .select("*")
-          .eq("tenant_id", currentContext.tenantId);
+          .eq("tenant_id", currentContext.tenantId)
+          .order("created_at", { ascending: false });
 
         if (response.error) {
           console.warn(tableName, response.error.message);
@@ -107,189 +109,550 @@
     function renderReportsPage() {
       const filtered = getFilteredData();
 
-      const money = calculateMoney(filtered.transactions);
-      const items = calculateItems(filtered.items);
-      const people = calculatePeople(filtered.people);
-      const tasks = calculateTasks(filtered.tasks);
-      const docs = calculateDocuments(filtered.documents);
-      const events = calculateEvents(filtered.events);
-      const records = calculateRecords(filtered.records);
-      const support = calculateSupport(filtered.support);
-
       const tenantName = UnganiClientShared.getTenantName(currentContext.tenant);
+      const money = calculateMoneySummary(filtered.transactions);
+      const taskSummary = calculateTaskSummary(filtered.tasks);
+      const itemSummary = calculateItemSummary(filtered.items);
+      const peopleSummary = calculatePeopleSummary(filtered.people);
+      const documentSummary = calculateDocumentSummary(filtered.documents);
+      const calendarSummary = calculateCalendarSummary(filtered.events);
+      const supportSummary = calculateSupportSummary(filtered.support);
+
+      const incomeCategories = categoryTotals(filtered.transactions, "income");
+      const expenseCategories = categoryTotals(filtered.transactions, "expense");
+
+      const itemTypes = countByField(filtered.items, ["item_type", "property_status", "status"], "Unknown");
+      const peopleTypes = countByField(filtered.people, ["person_type", "type"], "Contact");
+      const recordTypes = countByField(filtered.records, ["record_type", "type"], "General Record");
+      const documentTypes = countByField(filtered.documents, ["document_type", "type"], "Business Document");
+      const calendarTypes = countByField(filtered.events, ["event_type", "type"], "Calendar Activity");
+
+      const trend = UnganiAnalytics.calculateIncomeExpenseTrend(filtered.transactions);
+      const expenseBreakdown = UnganiAnalytics.calculateExpenseBreakdown(filtered.transactions);
+
+      const insights = buildInsights({
+        money,
+        taskSummary,
+        itemSummary,
+        peopleSummary,
+        documentSummary,
+        calendarSummary,
+        supportSummary,
+        incomeCategories,
+        expenseCategories
+      });
 
       UnganiClientShared.setContent(`
-        <section class="ungani-card ungani-hero">
-          <h2>${isRealEstate ? "Property Operations Report" : "Business Operations Report"}</h2>
-          <p>
-            ${isRealEstate
-              ? "This report gives a simple view of property listings, money records, leads, agents, viewings, tasks, documents, and follow-ups for " + UnganiClientShared.safe(tenantName) + "."
-              : "This report gives a simple view of business records, money records, tasks, documents, items, calendar activities, and support for " + UnganiClientShared.safe(tenantName) + "."
-            }
-          </p>
+        <style>
+          .report-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+            gap: 18px;
+            align-items: stretch;
+          }
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="window.print()">Print This Page</button>
-            <a class="ungani-btn green" href="print-report.html">Open Print Report</a>
-            <button class="ungani-btn dark" onclick="loadReportData()">Refresh Report</button>
+          .report-hero-panel {
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.09);
+            border-radius: 24px;
+            padding: 18px;
+          }
+
+          .report-hero-panel h3 {
+            color: white;
+            margin: 0 0 8px;
+          }
+
+          .report-hero-panel p {
+            color: rgba(255,255,255,0.74);
+            margin: 0;
+            line-height: 1.55;
+          }
+
+          .report-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+          }
+
+          .report-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 8px 11px;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            font-size: 12px;
+            font-weight: 850;
+          }
+
+          .report-filter-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .report-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .report-kpi-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            box-shadow: var(--ungani-shadow);
+            padding: 20px;
+            min-height: 140px;
+          }
+
+          .report-kpi-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 5px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent);
+          }
+
+          .report-kpi-card span {
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.055em;
+          }
+
+          .report-kpi-card h3 {
+            margin: 17px 0 8px;
+            font-size: clamp(25px, 3vw, 36px);
+            line-height: 1;
+            letter-spacing: -0.055em;
+            overflow-wrap: anywhere;
+          }
+
+          .report-kpi-card p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .report-main-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 18px;
+            align-items: start;
+            margin-bottom: 18px;
+          }
+
+          .report-section-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+            align-items: start;
+            margin-bottom: 18px;
+          }
+
+          .report-summary-list {
+            display: grid;
+            gap: 10px;
+          }
+
+          .report-summary-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            border-bottom: 1px solid var(--ungani-border);
+            padding: 12px 0;
+          }
+
+          .report-summary-row:last-child {
+            border-bottom: 0;
+          }
+
+          .report-summary-row strong {
+            font-size: 15px;
+          }
+
+          .report-summary-row p {
+            margin: 4px 0 0;
+            color: var(--ungani-muted);
+            font-size: 12px;
+            line-height: 1.45;
+          }
+
+          .report-value {
+            font-weight: 950;
+            white-space: nowrap;
+          }
+
+          .report-insight-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          .report-insight {
+            border: 1px solid var(--ungani-border);
+            background: var(--ungani-soft);
+            border-radius: 20px;
+            padding: 14px;
+            display: grid;
+            grid-template-columns: 42px minmax(0, 1fr);
+            gap: 12px;
+            align-items: start;
+          }
+
+          .report-insight-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--accent);
+            color: white;
+          }
+
+          .report-insight h3 {
+            margin: 0 0 5px;
+            font-size: 16px;
+          }
+
+          .report-insight p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+            line-height: 1.5;
+          }
+
+          .report-table-wrap {
+            overflow-x: auto;
+          }
+
+          .report-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 760px;
+          }
+
+          .report-table th {
+            text-align: left;
+            color: var(--ungani-muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 13px 12px;
+            border-bottom: 1px solid var(--ungani-border);
+          }
+
+          .report-table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--ungani-border);
+            vertical-align: top;
+          }
+
+          .report-table tr:hover td {
+            background: var(--ungani-soft);
+          }
+
+          @media (max-width: 1180px) {
+            .report-hero-grid,
+            .report-main-grid,
+            .report-section-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .report-kpi-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 720px) {
+            .report-filter-grid,
+            .report-kpi-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .report-summary-row {
+              grid-template-columns: 1fr;
+            }
+          }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <div class="report-hero-grid">
+            <div>
+              <span class="ungani-badge gold">${UnganiClientShared.safe(businessPreset.name)}</span>
+              <h2 style="font-size:clamp(32px,4vw,52px);line-height:1.02;margin:18px 0 12px;">
+                Owner-friendly business report.
+              </h2>
+              <p>
+                This report summarizes ${UnganiClientShared.safe(tenantName)} using the right structure for ${UnganiClientShared.safe(businessPreset.name)}:
+                money, ${UnganiClientShared.safe(businessPreset.itemsLabel.toLowerCase())}, ${UnganiClientShared.safe(businessPreset.peopleLabel.toLowerCase())},
+                tasks, records, documents, calendar activity, and support.
+              </p>
+
+              <div class="ungani-button-row">
+                <button class="ungani-btn gold" onclick="loadReportData()">Refresh Report</button>
+                <a class="ungani-btn green" href="print-report.html">Print Report</a>
+                <a class="ungani-btn light" href="my-charts.html">Charts</a>
+              </div>
+            </div>
+
+            <div class="report-hero-panel">
+              <h3>Report sections active</h3>
+              <p>Reports now use the business preset so a logistics report, salon report, property report, and pharmacy report do not feel the same.</p>
+
+              <div class="report-chip-row">
+                ${businessPreset.reportSections.slice(0, 7).map(function (item) {
+                  return `<span class="report-chip">${UnganiClientShared.safe(item)}</span>`;
+                }).join("")}
+              </div>
+            </div>
           </div>
         </section>
 
         <section class="ungani-card">
           <div class="ungani-section-title">
-            <h3>Report Filters</h3>
-            <button class="ungani-btn dark" onclick="resetFilters()">Reset Filters</button>
+            <div>
+              <h3>Report Filters</h3>
+              <p class="ungani-small">Filter the report by date or search term. This affects the report sections below.</p>
+            </div>
+
+            <button class="ungani-btn dark" onclick="resetReportFilters()">Reset Filters</button>
           </div>
 
-          <div class="ungani-form-grid">
+          <div class="report-filter-grid">
             <div>
               <label for="filterFrom">From Date</label>
-              <input id="filterFrom" type="date" onchange="saveFilters(); renderReportsPage();" />
+              <input id="filterFrom" type="date" onchange="saveReportFilters(); renderReportsPage();" />
             </div>
 
             <div>
               <label for="filterTo">To Date</label>
-              <input id="filterTo" type="date" onchange="saveFilters(); renderReportsPage();" />
+              <input id="filterTo" type="date" onchange="saveReportFilters(); renderReportsPage();" />
             </div>
 
             <div>
-              <label for="searchBox">Search Report</label>
-              <input id="searchBox" placeholder="Search property, client, agent, task, record..." oninput="saveFilters(); renderReportsPage();" />
+              <label for="filterSearch">Search</label>
+              <input id="filterSearch" placeholder="Search report data..." oninput="saveReportFilters(); renderReportsPage();" />
             </div>
           </div>
         </section>
 
-        <section class="ungani-grid">
-          ${UnganiClientShared.metricCard(isRealEstate ? "Properties / Listings" : "Items / Assets", filtered.items.length, isRealEstate ? items.available + " available · " + items.sold + " sold · " + items.rented + " rented" : items.available + " available · " + items.maintenance + " maintenance", "blue")}
-          ${UnganiClientShared.metricCard("Estimated Balance", UnganiClientShared.formatKES(money.balance), "Income minus expenses", money.balance >= 0 ? "green" : "red")}
-          ${UnganiClientShared.metricCard(isRealEstate ? "Agents / Leads / People" : "People", filtered.people.length, isRealEstate ? people.agents + " agents · " + people.leads + " leads" : people.active + " active records", "gold")}
-          ${UnganiClientShared.metricCard("Pending Tasks", tasks.pending, tasks.overdue + " overdue · " + tasks.completed + " completed", tasks.overdue > 0 ? "red" : "orange")}
-          ${UnganiClientShared.metricCard("Documents", filtered.documents.length, docs.driveLinks + " with links · " + docs.pending + " pending/review", "blue")}
-          ${UnganiClientShared.metricCard("Calendar", filtered.events.length, events.upcoming + " upcoming · " + events.today + " today", "green")}
+        <section class="report-kpi-grid">
+          ${reportKpi("Income", UnganiAnalytics.compactMoney(money.income), "Total recorded income", "#16A34A")}
+          ${reportKpi("Expenses", UnganiAnalytics.compactMoney(money.expenses), "Total recorded expenses", "#D4A63A")}
+          ${reportKpi("Balance", UnganiAnalytics.compactMoney(money.balance), "Income minus expenses", money.balance >= 0 ? "#16A34A" : "#DC2626")}
+          ${reportKpi("Overdue", taskSummary.overdue + calendarSummary.overdue, "Tasks and calendar activities", taskSummary.overdue + calendarSummary.overdue > 0 ? "#DC2626" : "#16A34A")}
         </section>
 
-        <section class="ungani-two-col">
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <h3>${isRealEstate ? "Property Summary" : "Items / Assets Summary"}</h3>
-              <a class="ungani-btn" href="my-items.html">${isRealEstate ? "Open Properties" : "Open Items"}</a>
+        <section class="report-main-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Money Movement</h3>
+                <p class="ungani-small">Income, expenses, and balance trend for this report period.</p>
+              </div>
+              <a class="ungani-btn green" href="my-money.html">Money</a>
             </div>
 
-            ${renderPropertySummary(items)}
+            ${trend.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="reportMoneyTrend"></canvas></div>' : UnganiAnalytics.emptyChart("Add dated income and expense records to show money movement.")}
           </div>
 
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <h3>Money Summary</h3>
-              <a class="ungani-btn green" href="my-money.html">Open Money</a>
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Expense Breakdown</h3>
+                <p class="ungani-small">Expense categories from the selected business preset.</p>
+              </div>
+              <a class="ungani-btn green" href="my-money.html">Money</a>
             </div>
 
-            ${renderMoneySummary(money)}
-          </div>
-        </section>
-
-        <section class="ungani-two-col">
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <h3>${isRealEstate ? "Leads / Agents / People Summary" : "People Summary"}</h3>
-              <a class="ungani-btn" href="my-people.html">Open People</a>
-            </div>
-
-            ${renderPeopleSummary(people)}
-          </div>
-
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <h3>Tasks & Follow-ups</h3>
-              <a class="ungani-btn orange" href="my-tasks.html">Open Tasks</a>
-            </div>
-
-            ${renderTasksSummary(tasks)}
+            ${expenseBreakdown.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="reportExpenseBreakdown"></canvas></div>' : UnganiAnalytics.emptyChart("Add expense records to show expense breakdown.")}
           </div>
         </section>
 
-        <section class="ungani-two-col">
+        <section class="report-section-grid">
           <div class="ungani-card">
             <div class="ungani-section-title">
-              <h3>${isRealEstate ? "Records / Viewings / Updates" : "Business Records"}</h3>
-              <a class="ungani-btn" href="my-records.html">Open Records</a>
+              <div>
+                <h3>UNGANI Insights</h3>
+                <p class="ungani-small">Simple notes to help the owner know what needs attention.</p>
+              </div>
             </div>
 
-            ${renderRecordsSummary(records)}
+            ${renderInsights(insights)}
           </div>
 
           <div class="ungani-card">
             <div class="ungani-section-title">
-              <h3>Documents Summary</h3>
-              <a class="ungani-btn green" href="my-documents.html">Open Documents</a>
+              <div>
+                <h3>Report Summary</h3>
+                <p class="ungani-small">High-level operational picture for ${UnganiClientShared.safe(businessPreset.name)}.</p>
+              </div>
             </div>
 
-            ${renderDocumentsSummary(docs)}
+            <div class="report-summary-list">
+              ${summaryRow("Business Type", businessPreset.name, "The report wording and categories are adapted to this business type.")}
+              ${summaryRow(businessPreset.itemsLabel, itemSummary.total, itemSummary.available + " available/active · " + itemSummary.closed + " completed/closed.")}
+              ${summaryRow(businessPreset.peopleLabel, peopleSummary.total, peopleSummary.active + " active · " + peopleSummary.leads + " leads/follow-ups.")}
+              ${summaryRow(businessPreset.tasksLabel, filtered.tasks.length, taskSummary.pending + " pending · " + taskSummary.completed + " completed · " + taskSummary.overdue + " overdue.")}
+              ${summaryRow(businessPreset.documentsLabel, filtered.documents.length, documentSummary.active + " active/uploaded · " + documentSummary.attention + " need attention.")}
+              ${summaryRow(businessPreset.calendarLabel, filtered.events.length, calendarSummary.upcoming + " upcoming · " + calendarSummary.today + " today · " + calendarSummary.overdue + " overdue.")}
+            </div>
           </div>
         </section>
 
-        <section class="ungani-two-col">
+        <section class="report-section-grid">
           <div class="ungani-card">
             <div class="ungani-section-title">
-              <h3>Calendar Summary</h3>
-              <a class="ungani-btn" href="my-calendar.html">Open Calendar</a>
+              <div>
+                <h3>Money Report</h3>
+                <p class="ungani-small">Top income and expense categories.</p>
+              </div>
+              <a class="ungani-btn gold" href="my-money.html">Open Money</a>
             </div>
 
-            ${renderEventsSummary(events)}
+            ${renderMoneyCategoryReport(incomeCategories, expenseCategories)}
           </div>
 
           <div class="ungani-card">
             <div class="ungani-section-title">
-              <h3>Support Summary</h3>
-              <a class="ungani-btn dark" href="my-support.html">Open Support</a>
+              <div>
+                <h3>${UnganiClientShared.safe(businessPreset.itemsLabel)} Report</h3>
+                <p class="ungani-small">Status and type breakdown for this business.</p>
+              </div>
+              <a class="ungani-btn gold" href="my-items.html">Open</a>
             </div>
 
-            ${renderSupportSummary(support)}
+            ${renderCountReport(itemTypes, "No item/asset records yet.")}
+          </div>
+        </section>
+
+        <section class="report-section-grid">
+          <div class="ungani-card">
+            <div class="ungani-section-title">
+              <div>
+                <h3>${UnganiClientShared.safe(businessPreset.peopleLabel)} Report</h3>
+                <p class="ungani-small">People roles and contact structure.</p>
+              </div>
+              <a class="ungani-btn gold" href="my-people.html">Open People</a>
+            </div>
+
+            ${renderCountReport(peopleTypes, "No people records yet.")}
+          </div>
+
+          <div class="ungani-card">
+            <div class="ungani-section-title">
+              <div>
+                <h3>${UnganiClientShared.safe(businessPreset.recordsLabel)} Report</h3>
+                <p class="ungani-small">Operational record types captured by the business.</p>
+              </div>
+              <a class="ungani-btn gold" href="my-records.html">Open Records</a>
+            </div>
+
+            ${renderCountReport(recordTypes, "No business records yet.")}
+          </div>
+        </section>
+
+        <section class="report-section-grid">
+          <div class="ungani-card">
+            <div class="ungani-section-title">
+              <div>
+                <h3>${UnganiClientShared.safe(businessPreset.documentsLabel)} Report</h3>
+                <p class="ungani-small">Document types and file organization.</p>
+              </div>
+              <a class="ungani-btn gold" href="my-documents.html">Open Documents</a>
+            </div>
+
+            ${renderCountReport(documentTypes, "No document records yet.")}
+          </div>
+
+          <div class="ungani-card">
+            <div class="ungani-section-title">
+              <div>
+                <h3>${UnganiClientShared.safe(businessPreset.calendarLabel)} Report</h3>
+                <p class="ungani-small">Scheduled activities, deadlines, follow-ups, and appointments.</p>
+              </div>
+              <a class="ungani-btn gold" href="my-calendar.html">Open Calendar</a>
+            </div>
+
+            ${renderCountReport(calendarTypes, "No calendar activities yet.")}
           </div>
         </section>
 
         <section class="ungani-card">
           <div class="ungani-section-title">
-            <h3>Recent Activity</h3>
-            <a class="ungani-btn dark" href="my-activity.html">Open Activity</a>
+            <div>
+              <h3>Recent Report Activity</h3>
+              <p class="ungani-small">Latest tasks, records, calendar activities, documents, and support issues.</p>
+            </div>
+            <a class="ungani-btn green" href="my-activity.html">Activity</a>
           </div>
 
           ${renderRecentActivity(filtered)}
         </section>
 
         <p class="ungani-small">
-          Reports Version: Step 305J Shared Layout · Report generated for ${UnganiClientShared.safe(tenantName)} · ungani.com · info@ungani.com
+          Reports Version: Step 310B-7 Business-Type Reports · ungani.com · info@ungani.com
         </p>
       `);
 
-      restoreFilters();
+      restoreReportFilters();
+
+      setTimeout(function () {
+        renderReportCharts(trend, expenseBreakdown);
+      }, 150);
+    }
+
+    async function renderReportCharts(trend, expenseBreakdown) {
+      try {
+        if (trend.length) {
+          await UnganiAnalytics.renderIncomeExpenseChart("reportMoneyTrend", trend);
+        }
+
+        if (expenseBreakdown.length) {
+          await UnganiAnalytics.renderExpenseDonutChart("reportExpenseBreakdown", expenseBreakdown);
+        }
+      } catch (error) {
+        console.warn("Report charts warning:", error.message);
+      }
     }
 
     function getFilteredData() {
-      const from = document.getElementById("filterFrom") ? UnganiClientShared.value("filterFrom") : "";
-      const to = document.getElementById("filterTo") ? UnganiClientShared.value("filterTo") : "";
-      const query = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
+      const from = getStoredOrInput("filterFrom", "ungani_report_filter_from");
+      const to = getStoredOrInput("filterTo", "ungani_report_filter_to");
+      const search = getStoredOrInput("filterSearch", "ungani_report_filter_search").toLowerCase();
 
       return {
-        transactions: filterRows(reportData.transactions, from, to, query, ["transaction_date", "created_at"]),
-        items: filterRows(reportData.items, from, to, query, ["date_listed", "created_at"]),
-        tasks: filterRows(reportData.tasks, from, to, query, ["due_date", "created_at"]),
-        records: filterRows(reportData.records, from, to, query, ["record_date", "viewing_date", "created_at"]),
-        documents: filterRows(reportData.documents, from, to, query, ["created_at", "updated_at"]),
-        people: filterRows(reportData.people, from, to, query, ["last_follow_up_date", "created_at"]),
-        events: filterRows(reportData.events, from, to, query, ["event_date", "created_at"]),
-        support: filterRows(reportData.support, from, to, query, ["created_at", "updated_at"])
+        transactions: filterRows(reportData.transactions, from, to, search, ["transaction_date", "created_at"]),
+        items: filterRows(reportData.items, from, to, search, ["date_listed", "created_at"]),
+        people: filterRows(reportData.people, from, to, search, ["last_follow_up_date", "created_at"]),
+        records: filterRows(reportData.records, from, to, search, ["record_date", "created_at"]),
+        tasks: filterRows(reportData.tasks, from, to, search, ["due_date", "created_at"]),
+        documents: filterRows(reportData.documents, from, to, search, ["document_date", "created_at"]),
+        events: filterRows(reportData.events, from, to, search, ["event_date", "created_at"]),
+        support: filterRows(reportData.support, from, to, search, ["created_at", "updated_at"])
       };
     }
 
-    function filterRows(rows, from, to, query, dateFields) {
-      return rows.filter(function (row) {
+    function filterRows(rows, from, to, search, dateFields) {
+      return (rows || []).filter(function (row) {
         const date = getFirstDate(row, dateFields);
         const haystack = JSON.stringify(row || {}).toLowerCase();
 
         if (from && date && date < from) return false;
         if (to && date && date > to) return false;
-        if (query && !haystack.includes(query)) return false;
+        if (search && !haystack.includes(search)) return false;
 
         return true;
       });
@@ -299,208 +662,150 @@
       for (let i = 0; i < fields.length; i++) {
         const value = UnganiClientShared.getValue(row, [fields[i]], "");
 
-        if (value) {
-          return String(value).slice(0, 10);
-        }
+        if (value) return String(value).slice(0, 10);
       }
 
       return "";
     }
 
-    function calculateMoney(rows) {
+    function calculateMoneySummary(rows) {
       let income = 0;
       let expenses = 0;
-      let pettyCash = 0;
       let pending = 0;
-      let completed = 0;
 
-      rows.forEach(function (row) {
+      (rows || []).forEach(function (row) {
         const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
-        const type = String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "")).toLowerCase();
         const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
 
-        if (type.includes("income") || type.includes("sale") || type.includes("rental")) income += amount;
-        else if (type.includes("petty")) {
-          pettyCash += amount;
-          expenses += amount;
-        } else if (type.includes("expense")) {
-          expenses += amount;
-        }
-
+        if (isIncomeRow(row)) income += amount;
+        if (isExpenseRow(row)) expenses += amount;
         if (status.includes("pending")) pending += amount;
-        if (status.includes("completed")) completed += amount;
       });
 
       return {
         income,
         expenses,
-        pettyCash,
         pending,
-        completed,
         balance: income - expenses
       };
     }
 
-    function calculateItems(rows) {
-      let available = 0;
-      let reserved = 0;
-      let sold = 0;
-      let rented = 0;
-      let maintenance = 0;
-      let totalValue = 0;
-
-      rows.forEach(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["property_status", "item_status", "status"], "")).toLowerCase();
-        const value = Number(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
-
-        totalValue += value;
-
-        if (status.includes("available")) available++;
-        if (status.includes("reserved")) reserved++;
-        if (status.includes("sold")) sold++;
-        if (status.includes("rented")) rented++;
-        if (status.includes("maintenance") || status.includes("repair")) maintenance++;
-      });
-
-      return { available, reserved, sold, rented, maintenance, totalValue };
-    }
-
-    function calculatePeople(rows) {
-      let active = 0;
-      let agents = 0;
-      let leads = 0;
-      let buyersRenters = 0;
-      let commission = 0;
-
-      rows.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["person_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["relationship_status", "status"], "active")).toLowerCase();
-
-        if (!status.includes("inactive")) active++;
-        if (type === "agent") agents++;
-        if (type === "lead") leads++;
-        if (type === "buyer" || type === "renter" || type === "tenant") buyersRenters++;
-
-        commission += Number(UnganiClientShared.getValue(row, ["commission_earned_month"], 0) || 0);
-      });
-
-      return { active, agents, leads, buyersRenters, commission };
-    }
-
-    function calculateTasks(rows) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
+    function calculateTaskSummary(rows) {
+      const today = new Date().toISOString().slice(0, 10);
       let pending = 0;
       let completed = 0;
       let overdue = 0;
-      let highPriority = 0;
+      let inProgress = 0;
 
-      rows.forEach(function (row) {
+      (rows || []).forEach(function (row) {
         const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
-        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
-        const dueValue = UnganiClientShared.getValue(row, ["due_date"], "");
+        const due = String(UnganiClientShared.getValue(row, ["due_date"], "")).slice(0, 10);
 
         if (status.includes("completed")) completed++;
-        if (!status.includes("completed") && !status.includes("cancelled")) pending++;
-        if (priority === "high" || priority === "urgent") highPriority++;
+        else if (status.includes("progress")) inProgress++;
+        else if (!status.includes("cancelled")) pending++;
 
-        if (dueValue) {
-          const dueDate = new Date(dueValue);
-          dueDate.setHours(0, 0, 0, 0);
-
-          if (!isNaN(dueDate.getTime()) && dueDate < today && !status.includes("completed") && !status.includes("cancelled")) {
-            overdue++;
-          }
-        }
+        if (due && due < today && !status.includes("completed") && !status.includes("cancelled")) overdue++;
       });
 
-      return { pending, completed, overdue, highPriority };
+      return { pending, completed, overdue, inProgress };
     }
 
-    function calculateDocuments(rows) {
-      let agreements = 0;
-      let receiptsInvoices = 0;
-      let driveLinks = 0;
-      let pending = 0;
-      let archived = 0;
-
-      rows.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["document_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
-
-        if (type.includes("agreement") || type.includes("lease") || type.includes("sale")) agreements++;
-        if (type.includes("receipt") || type.includes("invoice")) receiptsInvoices++;
-
-        if (
-          UnganiClientShared.getValue(row, ["document_url"], "") ||
-          UnganiClientShared.getValue(row, ["drive_url"], "") ||
-          UnganiClientShared.getValue(row, ["folder_url"], "")
-        ) {
-          driveLinks++;
-        }
-
-        if (status.includes("pending") || status.includes("review")) pending++;
-        if (status.includes("archived")) archived++;
-      });
-
-      return { agreements, receiptsInvoices, driveLinks, pending, archived };
-    }
-
-    function calculateEvents(rows) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayText = today.toISOString().slice(0, 10);
-
-      let todayCount = 0;
-      let upcoming = 0;
-      let overdue = 0;
-      let viewings = 0;
-      let completed = 0;
-
-      rows.forEach(function (row) {
-        const date = String(UnganiClientShared.getValue(row, ["event_date"], "")).slice(0, 10);
-        const type = String(UnganiClientShared.getValue(row, ["event_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "scheduled")).toLowerCase();
-
-        if (date === todayText) todayCount++;
-        if (date >= todayText && !status.includes("cancelled")) upcoming++;
-        if (date < todayText && !status.includes("completed") && !status.includes("cancelled")) overdue++;
-        if (type.includes("viewing") || type.includes("site visit")) viewings++;
-        if (status.includes("completed")) completed++;
-      });
-
-      return { today: todayCount, upcoming, overdue, viewings, completed };
-    }
-
-    function calculateRecords(rows) {
-      let leads = 0;
-      let viewings = 0;
-      let projects = 0;
-      let openPending = 0;
+    function calculateItemSummary(rows) {
+      let available = 0;
       let closed = 0;
+      let attention = 0;
 
-      rows.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["record_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
+      (rows || []).forEach(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["property_status", "item_status", "status"], "available")).toLowerCase();
 
-        if (type.includes("lead") || type.includes("inquiry")) leads++;
-        if (type.includes("viewing") || type.includes("site visit")) viewings++;
-        if (type.includes("project")) projects++;
-
-        if (status.includes("open") || status.includes("pending") || status.includes("contacted") || status.includes("viewing")) openPending++;
-        if (status.includes("closed") || status.includes("completed")) closed++;
+        if (status.includes("available") || status.includes("active") || status.includes("in stock")) available++;
+        if (status.includes("sold") || status.includes("rented") || status.includes("closed") || status.includes("completed")) closed++;
+        if (status.includes("low") || status.includes("damaged") || status.includes("lost") || status.includes("urgent")) attention++;
       });
 
-      return { leads, viewings, projects, openPending, closed };
+      return {
+        total: (rows || []).length,
+        available,
+        closed,
+        attention
+      };
     }
 
-    function calculateSupport(rows) {
+    function calculatePeopleSummary(rows) {
+      let active = 0;
+      let leads = 0;
+      let attention = 0;
+
+      (rows || []).forEach(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase();
+        const relationship = String(UnganiClientShared.getValue(row, ["relationship_status", "lead_status"], "")).toLowerCase();
+
+        if (status.includes("active") || relationship.includes("converted")) active++;
+        if (status.includes("lead") || status.includes("follow") || relationship.includes("new") || relationship.includes("contacted") || relationship.includes("follow")) leads++;
+        if (status.includes("inactive") || status.includes("lost") || relationship.includes("lost")) attention++;
+      });
+
+      return {
+        total: (rows || []).length,
+        active,
+        leads,
+        attention
+      };
+    }
+
+    function calculateDocumentSummary(rows) {
+      let active = 0;
+      let pending = 0;
+      let attention = 0;
+
+      (rows || []).forEach(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase();
+
+        if (status.includes("active") || status.includes("uploaded") || status.includes("completed")) active++;
+        if (status.includes("pending") || status.includes("review")) pending++;
+        if (status.includes("expired") || status.includes("missing") || status.includes("cancelled") || status.includes("failed")) attention++;
+      });
+
+      return {
+        total: (rows || []).length,
+        active,
+        pending,
+        attention
+      };
+    }
+
+    function calculateCalendarSummary(rows) {
+      const today = new Date().toISOString().slice(0, 10);
+      let upcoming = 0;
+      let todayCount = 0;
+      let completed = 0;
+      let overdue = 0;
+
+      (rows || []).forEach(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "scheduled")).toLowerCase();
+        const date = String(UnganiClientShared.getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+
+        if (status.includes("completed")) completed++;
+        else if (date === today) todayCount++;
+        else if (date && date > today) upcoming++;
+        else if (date && date < today && !status.includes("cancelled")) overdue++;
+      });
+
+      return {
+        upcoming,
+        today: todayCount,
+        completed,
+        overdue
+      };
+    }
+
+    function calculateSupportSummary(rows) {
       let open = 0;
       let resolved = 0;
       let urgent = 0;
 
-      rows.forEach(function (row) {
+      (rows || []).forEach(function (row) {
         const status = String(UnganiClientShared.getValue(row, ["status"], "open")).toLowerCase();
         const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
 
@@ -510,171 +815,394 @@
         if (priority.includes("urgent") || priority.includes("high")) urgent++;
       });
 
-      return { open, resolved, urgent };
+      return {
+        total: (rows || []).length,
+        open,
+        resolved,
+        urgent
+      };
     }
 
-    function renderPropertySummary(summary) {
+    function categoryTotals(rows, mode) {
+      const map = {};
+
+      (rows || []).forEach(function (row) {
+        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+
+        if (mode === "income" && !isIncomeRow(row)) return;
+        if (mode === "expense" && !isExpenseRow(row)) return;
+
+        const category = UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], mode === "income" ? "Other Income" : "Other Expense");
+        map[category] = (map[category] || 0) + amount;
+      });
+
+      return Object.keys(map).map(function (key) {
+        return {
+          label: key,
+          value: map[key]
+        };
+      }).sort(function (a, b) {
+        return b.value - a.value;
+      });
+    }
+
+    function countByField(rows, fields, fallback) {
+      const map = {};
+
+      (rows || []).forEach(function (row) {
+        const label = UnganiClientShared.getValue(row, fields, fallback);
+        map[label] = (map[label] || 0) + 1;
+      });
+
+      return Object.keys(map).map(function (key) {
+        return {
+          label: key,
+          value: map[key]
+        };
+      }).sort(function (a, b) {
+        return b.value - a.value;
+      });
+    }
+
+    function buildInsights(data) {
+      const insights = [];
+
+      if (data.money.balance > 0) {
+        insights.push({
+          icon: "✅",
+          color: "#16A34A",
+          title: "Positive money balance",
+          text: "Recorded income is higher than recorded expenses for this report period."
+        });
+      } else if (data.money.income > 0 || data.money.expenses > 0) {
+        insights.push({
+          icon: "⚠️",
+          color: "#DC2626",
+          title: "Expenses are higher than income",
+          text: "Recorded expenses are currently higher than income. Review top expense categories and pending payments."
+        });
+      } else {
+        insights.push({
+          icon: "💰",
+          color: "#D4A63A",
+          title: "No money movement yet",
+          text: "Add income and expense records so the report can explain business performance."
+        });
+      }
+
+      if (data.taskSummary.overdue > 0) {
+        insights.push({
+          icon: "⏰",
+          color: "#DC2626",
+          title: "Overdue tasks need attention",
+          text: data.taskSummary.overdue + " task(s) are overdue. These should be followed up before they affect operations."
+        });
+      } else {
+        insights.push({
+          icon: "✅",
+          color: "#16A34A",
+          title: "No overdue tasks",
+          text: "There are no overdue tasks in this report view."
+        });
+      }
+
+      if (data.calendarSummary.overdue > 0) {
+        insights.push({
+          icon: "📅",
+          color: "#DC2626",
+          title: "Calendar activities are overdue",
+          text: data.calendarSummary.overdue + " calendar activity/activity(s) are past due and not completed."
+        });
+      }
+
+      if (data.documentSummary.attention > 0) {
+        insights.push({
+          icon: "📄",
+          color: "#DC2626",
+          title: "Some documents need attention",
+          text: data.documentSummary.attention + " document(s) are missing, expired, cancelled, or need review."
+        });
+      }
+
+      if (data.supportSummary.open > 0) {
+        insights.push({
+          icon: "💬",
+          color: "#D4A63A",
+          title: "Open support issues",
+          text: data.supportSummary.open + " support issue(s) are still open."
+        });
+      }
+
+      if (data.peopleSummary.leads > 0) {
+        insights.push({
+          icon: "👥",
+          color: "#2563EB",
+          title: "Follow-ups available",
+          text: data.peopleSummary.leads + " people/contact record(s) are marked as leads or follow-ups."
+        });
+      }
+
+      return insights.slice(0, 6);
+    }
+
+    function renderInsights(insights) {
+      if (!insights || insights.length === 0) {
+        return `
+          <div class="ungani-empty">
+            <h3>No insights yet</h3>
+            <p>Add business records so UNGANI can summarize what needs attention.</p>
+          </div>
+        `;
+      }
+
       return `
-        ${miniSummary("Available", summary.available)}
-        ${miniSummary("Reserved", summary.reserved)}
-        ${miniSummary("Sold", summary.sold)}
-        ${miniSummary("Rented", summary.rented)}
-        ${miniSummary("Maintenance", summary.maintenance)}
-        ${miniSummary("Estimated Listed Value", UnganiClientShared.formatKES(summary.totalValue))}
+        <div class="report-insight-list">
+          ${insights.map(function (item) {
+            return `
+              <div class="report-insight">
+                <div class="report-insight-icon" style="--accent:${UnganiClientShared.attr(item.color)};">${UnganiClientShared.safe(item.icon)}</div>
+                <div>
+                  <h3>${UnganiClientShared.safe(item.title)}</h3>
+                  <p>${UnganiClientShared.safe(item.text)}</p>
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
       `;
     }
 
-    function renderMoneySummary(summary) {
+    function renderMoneyCategoryReport(incomeRows, expenseRows) {
+      const hasIncome = incomeRows && incomeRows.length;
+      const hasExpenses = expenseRows && expenseRows.length;
+
+      if (!hasIncome && !hasExpenses) {
+        return `
+          <div class="ungani-empty">
+            <h3>No money records yet</h3>
+            <p>Add income and expense records to see money report categories.</p>
+          </div>
+        `;
+      }
+
       return `
-        ${miniSummary("Income", UnganiClientShared.formatKES(summary.income))}
-        ${miniSummary("Expenses", UnganiClientShared.formatKES(summary.expenses))}
-        ${miniSummary("Petty Cash", UnganiClientShared.formatKES(summary.pettyCash))}
-        ${miniSummary("Pending Amount", UnganiClientShared.formatKES(summary.pending))}
-        ${miniSummary("Estimated Balance", UnganiClientShared.formatKES(summary.balance))}
+        <div class="report-summary-list">
+          <h3 style="margin:0;">Top Income Categories</h3>
+          ${hasIncome ? incomeRows.slice(0, 5).map(function (row) {
+            return summaryRow(row.label, UnganiAnalytics.moneyFormat(row.value), "Income category");
+          }).join("") : `<p class="ungani-small">No income records yet.</p>`}
+
+          <h3 style="margin:18px 0 0;">Top Expense Categories</h3>
+          ${hasExpenses ? expenseRows.slice(0, 5).map(function (row) {
+            return summaryRow(row.label, UnganiAnalytics.moneyFormat(row.value), "Expense category");
+          }).join("") : `<p class="ungani-small">No expense records yet.</p>`}
+        </div>
       `;
     }
 
-    function renderPeopleSummary(summary) {
-      return `
-        ${miniSummary("Active People", summary.active)}
-        ${miniSummary("Agents", summary.agents)}
-        ${miniSummary("Leads", summary.leads)}
-        ${miniSummary("Buyers / Renters / Tenants", summary.buyersRenters)}
-        ${miniSummary("Commission This Month", UnganiClientShared.formatKES(summary.commission))}
-      `;
-    }
+    function renderCountReport(rows, emptyMessage) {
+      if (!rows || rows.length === 0) {
+        return `
+          <div class="ungani-empty">
+            <h3>No records yet</h3>
+            <p>${UnganiClientShared.safe(emptyMessage)}</p>
+          </div>
+        `;
+      }
 
-    function renderTasksSummary(summary) {
       return `
-        ${miniSummary("Pending Tasks", summary.pending)}
-        ${miniSummary("Completed Tasks", summary.completed)}
-        ${miniSummary("Overdue Tasks", summary.overdue)}
-        ${miniSummary("High Priority", summary.highPriority)}
-      `;
-    }
-
-    function renderRecordsSummary(summary) {
-      return `
-        ${miniSummary("Leads / Inquiries", summary.leads)}
-        ${miniSummary("Viewings / Site Visits", summary.viewings)}
-        ${miniSummary("Project Updates", summary.projects)}
-        ${miniSummary("Open / Pending", summary.openPending)}
-        ${miniSummary("Closed / Completed", summary.closed)}
-      `;
-    }
-
-    function renderDocumentsSummary(summary) {
-      return `
-        ${miniSummary("Agreements", summary.agreements)}
-        ${miniSummary("Receipts / Invoices", summary.receiptsInvoices)}
-        ${miniSummary("Drive Links", summary.driveLinks)}
-        ${miniSummary("Pending / Review", summary.pending)}
-        ${miniSummary("Archived", summary.archived)}
-      `;
-    }
-
-    function renderEventsSummary(summary) {
-      return `
-        ${miniSummary("Today", summary.today)}
-        ${miniSummary("Upcoming", summary.upcoming)}
-        ${miniSummary("Overdue", summary.overdue)}
-        ${miniSummary("Viewings / Site Visits", summary.viewings)}
-        ${miniSummary("Completed", summary.completed)}
-      `;
-    }
-
-    function renderSupportSummary(summary) {
-      return `
-        ${miniSummary("Open Issues", summary.open)}
-        ${miniSummary("Resolved Issues", summary.resolved)}
-        ${miniSummary("Urgent / High Priority", summary.urgent)}
-      `;
-    }
-
-    function miniSummary(label, value) {
-      return `
-        <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-          <p class="ungani-small" style="margin:0 0 5px;">${UnganiClientShared.safe(label)}</p>
-          <strong style="font-size:18px;">${UnganiClientShared.safe(value)}</strong>
+        <div class="report-summary-list">
+          ${rows.slice(0, 8).map(function (row) {
+            return summaryRow(UnganiAnalytics.toTitle(row.label), row.value, "Record count");
+          }).join("")}
         </div>
       `;
     }
 
     function renderRecentActivity(filtered) {
-      const activity = [];
+      const rows = [];
 
-      filtered.transactions.slice(0, 5).forEach(function (row) {
-        activity.push({
-          title: "Money Record",
-          detail: UnganiClientShared.getValue(row, ["category_name", "category", "description"], "Money record") + " · " + UnganiClientShared.formatKES(UnganiClientShared.getValue(row, ["amount"], 0)),
-          date: UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "")
+      (filtered.tasks || []).slice(0, 4).forEach(function (row) {
+        rows.push({
+          section: "Task",
+          title: UnganiClientShared.getValue(row, ["task_title", "title", "name"], "Task"),
+          type: UnganiClientShared.getValue(row, ["task_type", "type"], "Task"),
+          date: UnganiClientShared.getValue(row, ["due_date", "created_at"], ""),
+          status: UnganiClientShared.getValue(row, ["status"], "pending"),
+          href: "my-tasks.html"
         });
       });
 
-      filtered.records.slice(0, 5).forEach(function (row) {
-        activity.push({
-          title: "Business Record",
-          detail: UnganiClientShared.getValue(row, ["record_title", "title", "name"], "Business record"),
-          date: UnganiClientShared.getValue(row, ["created_at", "record_date"], "")
+      (filtered.records || []).slice(0, 4).forEach(function (row) {
+        rows.push({
+          section: "Record",
+          title: UnganiClientShared.getValue(row, ["record_title", "title", "name"], "Business Record"),
+          type: UnganiClientShared.getValue(row, ["record_type", "type"], "Record"),
+          date: UnganiClientShared.getValue(row, ["record_date", "created_at"], ""),
+          status: UnganiClientShared.getValue(row, ["status"], "open"),
+          href: "my-records.html"
         });
       });
 
-      filtered.tasks.slice(0, 5).forEach(function (row) {
-        activity.push({
-          title: "Task / Follow-up",
-          detail: UnganiClientShared.getValue(row, ["task_title", "title", "name"], "Task"),
-          date: UnganiClientShared.getValue(row, ["due_date", "created_at"], "")
+      (filtered.events || []).slice(0, 4).forEach(function (row) {
+        rows.push({
+          section: "Calendar",
+          title: UnganiClientShared.getValue(row, ["event_title", "title", "name"], "Calendar Activity"),
+          type: UnganiClientShared.getValue(row, ["event_type", "type"], "Calendar"),
+          date: UnganiClientShared.getValue(row, ["event_date", "created_at"], ""),
+          status: UnganiClientShared.getValue(row, ["status"], "scheduled"),
+          href: "my-calendar.html"
         });
       });
 
-      filtered.events.slice(0, 5).forEach(function (row) {
-        activity.push({
-          title: "Calendar Event",
-          detail: UnganiClientShared.getValue(row, ["event_title", "title"], "Calendar event"),
-          date: UnganiClientShared.getValue(row, ["event_date", "created_at"], "")
+      (filtered.documents || []).slice(0, 4).forEach(function (row) {
+        rows.push({
+          section: "Document",
+          title: UnganiClientShared.getValue(row, ["document_title", "title", "name", "file_name"], "Document"),
+          type: UnganiClientShared.getValue(row, ["document_type", "type"], "Document"),
+          date: UnganiClientShared.getValue(row, ["document_date", "created_at"], ""),
+          status: UnganiClientShared.getValue(row, ["status"], "active"),
+          href: "my-documents.html"
         });
       });
 
-      activity.sort(function (a, b) {
-        return new Date(b.date || 0) - new Date(a.date || 0);
+      rows.sort(function (a, b) {
+        return String(b.date || "").localeCompare(String(a.date || ""));
       });
 
-      if (activity.length === 0) {
+      if (rows.length === 0) {
         return `
           <div class="ungani-empty">
-            <h3>No recent activity found</h3>
-            <p>Recent activity will appear here once records are added.</p>
+            <h3>No recent activity yet</h3>
+            <p>Tasks, records, calendar activities, and documents will appear here.</p>
           </div>
         `;
       }
 
-      return activity.slice(0, 10).map(function (item) {
-        return `
-          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-            <h3 style="margin:0 0 6px;color:var(--ungani-text);">${UnganiClientShared.safe(item.title)}</h3>
-            <p class="ungani-small" style="margin:0 0 6px;">${UnganiClientShared.safe(item.detail)}</p>
-            <span class="ungani-badge gold">${UnganiClientShared.safe(UnganiClientShared.formatDate(item.date))}</span>
+      return `
+        <div class="report-table-wrap">
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Section</th>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Open</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.slice(0, 12).map(function (row) {
+                return `
+                  <tr>
+                    <td><span class="ungani-badge gold">${UnganiClientShared.safe(row.section)}</span></td>
+                    <td><strong>${UnganiClientShared.safe(row.title)}</strong></td>
+                    <td>${UnganiClientShared.safe(row.type)}</td>
+                    <td>${UnganiClientShared.safe(row.date ? UnganiClientShared.formatDate(row.date) : "No date")}</td>
+                    <td>${statusBadge(row.status)}</td>
+                    <td><a class="ungani-btn small" href="${UnganiClientShared.attr(row.href)}">Open</a></td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function reportKpi(title, value, subtitle, accent) {
+      return `
+        <div class="report-kpi-card" style="--accent:${UnganiClientShared.attr(accent)};">
+          <span>${UnganiClientShared.safe(title)}</span>
+          <h3>${UnganiClientShared.safe(value)}</h3>
+          <p>${UnganiClientShared.safe(subtitle)}</p>
+        </div>
+      `;
+    }
+
+    function summaryRow(label, value, subtitle) {
+      return `
+        <div class="report-summary-row">
+          <div>
+            <strong>${UnganiClientShared.safe(label)}</strong>
+            <p>${UnganiClientShared.safe(subtitle || "")}</p>
           </div>
-        `;
-      }).join("");
+          <div class="report-value">${UnganiClientShared.safe(value)}</div>
+        </div>
+      `;
     }
 
-    function restoreFilters() {
-      if (document.getElementById("filterFrom")) document.getElementById("filterFrom").value = sessionStorage.getItem("ungani_reports_filter_from") || "";
-      if (document.getElementById("filterTo")) document.getElementById("filterTo").value = sessionStorage.getItem("ungani_reports_filter_to") || "";
-      if (document.getElementById("searchBox")) document.getElementById("searchBox").value = sessionStorage.getItem("ungani_reports_search") || "";
+    function statusBadge(status) {
+      const lower = String(status || "").toLowerCase();
+
+      if (lower.includes("completed") || lower.includes("closed") || lower.includes("resolved") || lower.includes("active") || lower.includes("uploaded")) {
+        return `<span class="ungani-badge green">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status))}</span>`;
+      }
+
+      if (lower.includes("urgent") || lower.includes("overdue") || lower.includes("lost") || lower.includes("cancelled") || lower.includes("expired") || lower.includes("missing") || lower.includes("failed")) {
+        return `<span class="ungani-badge red">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status))}</span>`;
+      }
+
+      if (lower.includes("progress")) {
+        return `<span class="ungani-badge blue">In Progress</span>`;
+      }
+
+      return `<span class="ungani-badge gold">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status || "open"))}</span>`;
     }
 
-    function saveFilters() {
-      if (document.getElementById("filterFrom")) sessionStorage.setItem("ungani_reports_filter_from", UnganiClientShared.value("filterFrom"));
-      if (document.getElementById("filterTo")) sessionStorage.setItem("ungani_reports_filter_to", UnganiClientShared.value("filterTo"));
-      if (document.getElementById("searchBox")) sessionStorage.setItem("ungani_reports_search", UnganiClientShared.value("searchBox"));
+    function isIncomeRow(row) {
+      const type = String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "")).toLowerCase();
+
+      return (
+        type.includes("income") ||
+        type.includes("sale") ||
+        type.includes("revenue") ||
+        type.includes("rental") ||
+        type.includes("deposit") ||
+        type.includes("payment") ||
+        type.includes("fee")
+      );
     }
 
-    function resetFilters() {
-      sessionStorage.removeItem("ungani_reports_filter_from");
-      sessionStorage.removeItem("ungani_reports_filter_to");
-      sessionStorage.removeItem("ungani_reports_search");
+    function isExpenseRow(row) {
+      const type = String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "")).toLowerCase();
+
+      return (
+        type.includes("expense") ||
+        type.includes("petty") ||
+        type.includes("cost") ||
+        type.includes("commission") ||
+        type.includes("maintenance")
+      );
+    }
+
+    function getStoredOrInput(inputId, storageKey) {
+      const el = document.getElementById(inputId);
+
+      if (el) {
+        return String(el.value || "").trim();
+      }
+
+      return String(sessionStorage.getItem(storageKey) || "").trim();
+    }
+
+    function saveReportFilters() {
+      if (document.getElementById("filterFrom")) sessionStorage.setItem("ungani_report_filter_from", UnganiClientShared.value("filterFrom"));
+      if (document.getElementById("filterTo")) sessionStorage.setItem("ungani_report_filter_to", UnganiClientShared.value("filterTo"));
+      if (document.getElementById("filterSearch")) sessionStorage.setItem("ungani_report_filter_search", UnganiClientShared.value("filterSearch"));
+    }
+
+    function restoreReportFilters() {
+      if (document.getElementById("filterFrom")) document.getElementById("filterFrom").value = sessionStorage.getItem("ungani_report_filter_from") || "";
+      if (document.getElementById("filterTo")) document.getElementById("filterTo").value = sessionStorage.getItem("ungani_report_filter_to") || "";
+      if (document.getElementById("filterSearch")) document.getElementById("filterSearch").value = sessionStorage.getItem("ungani_report_filter_search") || "";
+    }
+
+    function resetReportFilters() {
+      sessionStorage.removeItem("ungani_report_filter_from");
+      sessionStorage.removeItem("ungani_report_filter_to");
+      sessionStorage.removeItem("ungani_report_filter_search");
       renderReportsPage();
       UnganiClientShared.showToast("Report filters reset ✓");
     }
