@@ -4,1589 +4,793 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>UNGANI OS - Money</title>
+  <title>UNGANI OS - Money Records</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-  <style>
-    :root {
-      --navy: #061C3D;
-      --gold: #D4A63A;
-      --offwhite: #F5F5F3;
-      --white: #FFFFFF;
-      --gray: #E5E7EB;
-      --text: #111827;
-      --soft: #6B7280;
-      --green: #16A34A;
-      --red: #DC2626;
-      --orange: #EA580C;
-      --blue: #2563EB;
-      --card: #FFFFFF;
-      --bg: #F5F5F3;
-      --border: #E5E7EB;
-      --shadow: rgba(6, 28, 61, 0.08);
-    }
-
-    body.dark {
-      --bg: #061C3D;
-      --card: #0B2A55;
-      --text: #FFFFFF;
-      --soft: #CBD5E1;
-      --border: rgba(255,255,255,0.16);
-      --shadow: rgba(0,0,0,0.28);
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .hidden {
-      display: none !important;
-    }
-
-    .screen {
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 24px;
-      background: var(--offwhite);
-    }
-
-    .screen-card {
-      width: 100%;
-      max-width: 460px;
-      background: var(--white);
-      border-radius: 24px;
-      padding: 28px;
-      text-align: center;
-      box-shadow: 0 16px 38px rgba(6,28,61,0.12);
-    }
-
-    .screen-card img {
-      width: 78px;
-      margin-bottom: 14px;
-    }
-
-    .layout {
-      display: grid;
-      grid-template-columns: 280px 1fr;
-      min-height: 100vh;
-    }
-
-    .sidebar {
-      background: var(--navy);
-      color: var(--white);
-      padding: 22px;
-      height: 100vh;
-      position: sticky;
-      top: 0;
-      overflow-y: auto;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 24px;
-    }
-
-    .brand img {
-      width: 48px;
-      height: 48px;
-      object-fit: contain;
-      background: var(--white);
-      padding: 5px;
-      border-radius: 14px;
-    }
-
-    .brand h1 {
-      margin: 0;
-      font-size: 18px;
-      line-height: 1.2;
-    }
-
-    .brand p {
-      margin: 3px 0 0;
-      color: #CBD5E1;
-      font-size: 12px;
-    }
-
-    .nav-title {
-      color: #CBD5E1;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin: 20px 0 8px;
-    }
-
-    .nav-link {
-      display: block;
-      color: var(--white);
-      text-decoration: none;
-      padding: 11px 12px;
-      border-radius: 12px;
-      margin-bottom: 6px;
-      font-size: 14px;
-    }
-
-    .nav-link:hover,
-    .nav-link.active {
-      background: rgba(212,166,58,0.18);
-      color: var(--gold);
-    }
-
-    .main {
-      width: 100%;
-      max-width: 1500px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 14px;
-      flex-wrap: wrap;
-      margin-bottom: 18px;
-    }
-
-    .topbar h2 {
-      margin: 0;
-      font-size: 26px;
-    }
-
-    .topbar p {
-      margin: 5px 0 0;
-      color: var(--soft);
-      line-height: 1.45;
-    }
-
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      padding: 20px;
-      box-shadow: 0 12px 28px var(--shadow);
-      margin-bottom: 18px;
-    }
-
-    .hero {
-      background: linear-gradient(135deg, var(--navy), #0B2A55);
-      color: var(--white);
-      border: none;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .hero:after {
-      content: "";
-      width: 220px;
-      height: 220px;
-      border-radius: 50%;
-      background: rgba(212,166,58,0.22);
-      position: absolute;
-      right: -80px;
-      top: -90px;
-    }
-
-    .hero h2,
-    .hero p,
-    .hero .button-row {
-      position: relative;
-      z-index: 1;
-    }
-
-    .hero h2 {
-      margin: 0 0 8px;
-      color: var(--white);
-    }
-
-    .hero p {
-      margin: 0;
-      color: #E5E7EB;
-      line-height: 1.5;
-      max-width: 850px;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 14px;
-    }
-
-    .two-col {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
-    }
-
-    .metric {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-left: 6px solid var(--gold);
-      border-radius: 20px;
-      padding: 18px;
-      box-shadow: 0 10px 24px var(--shadow);
-    }
-
-    .metric.green { border-left-color: var(--green); }
-    .metric.red { border-left-color: var(--red); }
-    .metric.orange { border-left-color: var(--orange); }
-    .metric.blue { border-left-color: var(--blue); }
-
-    .metric h3 {
-      margin: 0 0 8px;
-      color: var(--soft);
-      font-size: 14px;
-    }
-
-    .metric p {
-      margin: 0;
-      font-size: 28px;
-      font-weight: bold;
-    }
-
-    .metric .note {
-      color: var(--soft);
-      margin-top: 8px;
-      font-size: 12px;
-      line-height: 1.4;
-    }
-
-    .section-title {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 14px;
-    }
-
-    .section-title h3,
-    .section-title h2 {
-      margin: 0;
-    }
-
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 14px;
-    }
-
-    .full {
-      grid-column: 1 / -1;
-    }
-
-    label {
-      display: block;
-      font-weight: bold;
-      margin: 8px 0 6px;
-      font-size: 14px;
-      color: var(--text);
-    }
-
-    input,
-    select,
-    textarea {
-      width: 100%;
-      border: 1px solid var(--border);
-      background: var(--bg);
-      color: var(--text);
-      padding: 12px;
-      border-radius: 12px;
-      font-size: 15px;
-      font-family: Arial, sans-serif;
-    }
-
-    textarea {
-      min-height: 90px;
-      resize: vertical;
-    }
-
-    .button-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 14px;
-    }
-
-    .btn {
-      border: none;
-      background: var(--gold);
-      color: var(--navy);
-      padding: 10px 14px;
-      border-radius: 12px;
-      font-weight: bold;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-block;
-    }
-
-    .btn.dark {
-      background: var(--navy);
-      color: var(--white);
-    }
-
-    body.dark .btn.dark {
-      background: var(--offwhite);
-      color: var(--navy);
-    }
-
-    .btn.green { background: var(--green); color: var(--white); }
-    .btn.red { background: var(--red); color: var(--white); }
-    .btn.orange { background: var(--orange); color: var(--white); }
-    .btn.blue { background: var(--blue); color: var(--white); }
-
-    .money-card {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-left: 6px solid var(--gold);
-      border-radius: 18px;
-      padding: 16px;
-      margin-bottom: 12px;
-    }
-
-    .money-card.income { border-left-color: var(--green); }
-    .money-card.expense { border-left-color: var(--red); }
-    .money-card.petty { border-left-color: var(--orange); }
-    .money-card.other { border-left-color: var(--blue); }
-
-    .money-title {
-      font-size: 18px;
-      font-weight: bold;
-      margin-bottom: 6px;
-    }
-
-    .money-detail {
-      margin: 5px 0;
-      color: var(--soft);
-      line-height: 1.45;
-      word-break: break-word;
-    }
-
-    .amount {
-      font-weight: bold;
-      font-size: 20px;
-    }
-
-    .amount.green { color: var(--green); }
-    .amount.red { color: var(--red); }
-    .amount.orange { color: var(--orange); }
-    .amount.blue { color: var(--blue); }
-
-    .badge {
-      display: inline-block;
-      background: var(--navy);
-      color: var(--white);
-      padding: 5px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      margin: 4px 4px 4px 0;
-      text-transform: capitalize;
-    }
-
-    .badge.green { background: var(--green); }
-    .badge.red { background: var(--red); }
-    .badge.orange { background: var(--orange); }
-    .badge.blue { background: var(--blue); }
-    .badge.gold { background: var(--gold); color: var(--navy); }
-
-    .empty {
-      text-align: center;
-      border: 1px dashed var(--border);
-      border-radius: 18px;
-      padding: 28px;
-      background: var(--bg);
-    }
-
-    .empty h3 {
-      margin: 0 0 8px;
-    }
-
-    .empty p,
-    .small {
-      color: var(--soft);
-      font-size: 13px;
-      line-height: 1.45;
-    }
-
-    .toast {
-      position: fixed;
-      right: 18px;
-      bottom: 18px;
-      background: var(--navy);
-      color: var(--white);
-      padding: 12px 14px;
-      border-radius: 14px;
-      display: none;
-      z-index: 999;
-      box-shadow: 0 14px 32px rgba(0,0,0,0.22);
-    }
-
-    @media (max-width: 980px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
-
-      .sidebar {
-        height: auto;
-        position: relative;
-      }
-
-      .two-col {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+  <script src="client-shared.js"></script>
 </head>
 
 <body>
-  <div id="loadingScreen" class="screen">
-    <div class="screen-card">
-      <img src="ungani-logo.png" alt="UNGANI Logo" />
-      <h2>Loading Money Records</h2>
-      <p class="small">Preparing your income, expense, petty cash, and category records.</p>
-    </div>
-  </div>
-
-  <div id="loginScreen" class="screen hidden">
-    <div class="screen-card">
-      <img src="ungani-logo.png" alt="UNGANI Logo" />
-      <h2>Login Required</h2>
-      <p class="small">Please log in to access your UNGANI OS money records.</p>
-      <div class="button-row" style="justify-content:center;">
-        <a class="btn" href="client.html">Go to Client Login</a>
-      </div>
-    </div>
-  </div>
-
-  <div id="appShell" class="layout hidden">
-    <aside class="sidebar">
-      <div class="brand">
-        <img src="ungani-logo.png" alt="UNGANI Logo" />
-        <div>
-          <h1>UNGANI OS</h1>
-          <p id="sidebarBusinessName">Client Workspace</p>
-        </div>
-      </div>
-
-      <div class="nav-title">Workspace</div>
-      <a class="nav-link" href="client.html">Dashboard</a>
-      <a class="nav-link" href="my-overview.html">Overview</a>
-      <a class="nav-link" href="my-activity.html">Activity</a>
-      <a class="nav-link" href="my-calendar.html">Calendar</a>
-
-      <div class="nav-title">Business</div>
-      <a class="nav-link active" href="my-money.html">Money</a>
-      <a class="nav-link" href="my-records.html">Records</a>
-      <a class="nav-link" href="my-documents.html">Documents</a>
-      <a class="nav-link" href="my-tasks.html">Tasks</a>
-      <a class="nav-link" href="my-items.html">Items / Assets / Stock</a>
-      <a class="nav-link" href="my-people.html">People</a>
-
-      <div class="nav-title">Support</div>
-      <a class="nav-link" href="my-support.html">Support Issues</a>
-      <a class="nav-link" href="my-notices.html">Notices</a>
-      <a class="nav-link" href="my-chat.html">Chat with UNGANI</a>
-      <a class="nav-link" href="my-team-chat.html">Team Chat</a>
-
-      <div class="nav-title">Reports</div>
-      <a class="nav-link" href="reports.html">Reports</a>
-      <a class="nav-link" href="print-report.html">Print Report</a>
-      <a class="nav-link" href="account.html">Account</a>
-
-      <div class="button-row">
-        <button class="btn" onclick="logout()">Logout</button>
-      </div>
-
-      <p class="small" style="margin-top:18px;color:#CBD5E1;">
-        Money Version: Step 302B Category Presets
-      </p>
-    </aside>
-
-    <main class="main">
-      <div class="topbar">
-        <div>
-          <h2>Money</h2>
-          <p id="subtitle">Track income, expenses, petty cash, payments, references, and business-type categories.</p>
-        </div>
-
-        <div class="button-row">
-          <button class="btn green" onclick="loadPageData()">Refresh</button>
-          <a class="btn dark" href="client.html">Dashboard</a>
-        </div>
-      </div>
-
-      <section class="card hero">
-        <h2 id="heroTitle">Business Money Center</h2>
-        <p id="heroText">
-          Record sales, income, expenses, petty cash, supplier payments, rental income, job payments, stock purchases, and business costs using categories that match your business.
-        </p>
-      </section>
-
-      <section class="grid" id="metricsGrid">
-        <div class="metric">
-          <h3>Loading</h3>
-          <p>...</p>
-          <div class="note">Please wait</div>
-        </div>
-      </section>
-
-      <section class="two-col">
-        <div class="card">
-          <div class="section-title">
-            <h3>Add Money Record</h3>
-          </div>
-
-          <div id="newFormBox"></div>
-        </div>
-
-        <div class="card">
-          <div class="section-title">
-            <h3 id="selectedHeading">Selected Money Record</h3>
-          </div>
-
-          <div id="selectedBox">
-            <div class="empty">
-              <h3>No record selected</h3>
-              <p>Select a record below to view or update it.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title">
-          <h3>Filters</h3>
-          <button class="btn dark" onclick="resetFilters()">Reset Filters</button>
-        </div>
-
-        <div class="form-grid">
-          <div>
-            <label for="filterType">Record Type</label>
-            <select id="filterType" onchange="renderPage()">
-              <option value="">All Types</option>
-              <option value="income">Income / Sales</option>
-              <option value="expense">Expense</option>
-              <option value="petty_cash">Petty Cash</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label for="filterCategory">Category</label>
-            <select id="filterCategory" onchange="renderPage()">
-              <option value="">All Categories</option>
-            </select>
-          </div>
-
-          <div>
-            <label for="filterFrom">From Date</label>
-            <input id="filterFrom" type="date" onchange="renderPage()" />
-          </div>
-
-          <div>
-            <label for="filterTo">To Date</label>
-            <input id="filterTo" type="date" onchange="renderPage()" />
-          </div>
-
-          <div class="full">
-            <label for="filterSearch">Search</label>
-            <input id="filterSearch" placeholder="Search description, supplier, reference, payment method..." oninput="renderPage()" />
-          </div>
-        </div>
-      </section>
-
-      <section class="two-col">
-        <div class="card">
-          <div class="section-title">
-            <h3>Category Summary</h3>
-          </div>
-          <div id="summaryBox"></div>
-        </div>
-
-        <div class="card">
-          <div class="section-title">
-            <h3>Recent Priority Notes</h3>
-          </div>
-          <div id="notesBox"></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title">
-          <h3>All Money Records</h3>
-          <p class="small" id="countText">Loading...</p>
-        </div>
-
-        <div id="recordsBox">
-          <div class="empty">
-            <h3>Loading records...</h3>
-            <p>Please wait.</p>
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>
-
-  <div id="toast" class="toast"></div>
-
   <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
-
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-    let currentUser = null;
-    let currentProfile = null;
-    let currentTenant = null;
-    let tenantId = null;
-
-    let businessTypes = [];
-    let currentBusinessType = null;
-    let businessTypeKey = "general";
-
-    let categories = [];
+    let currentContext = null;
     let transactions = [];
-    let selectedRecordId = null;
+    let categories = [];
+    let filteredTransactions = [];
+    let currentEditId = null;
+    let isRealEstate = false;
 
-    window.addEventListener("load", initPage);
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "money",
+        pageTitle: "Money Records",
+        pageSubtitle: "Track income, expenses, petty cash, payments, deposits, commissions, and business money movements.",
+        onReady: loadMoneyPage
+      });
+    });
 
-    async function initPage() {
-      const sessionResponse = await supabaseClient.auth.getSession();
-      const session = sessionResponse && sessionResponse.data ? sessionResponse.data.session : null;
+    async function loadMoneyPage(context) {
+      currentContext = context;
 
-      if (!session) {
-        document.getElementById("loadingScreen").classList.add("hidden");
-        document.getElementById("loginScreen").classList.remove("hidden");
-        return;
-      }
+      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
 
-      currentUser = session.user;
+      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
 
-      await loadProfile();
+      document.querySelector(".ungani-topbar h2").innerText = isRealEstate ? "Property Money Records" : "Money Records";
+      document.querySelector(".ungani-topbar p").innerText = isRealEstate
+        ? "Track property sales, rental income, booking deposits, commissions, maintenance costs, legal fees, marketing, and other property-related money records."
+        : "Track income, expenses, petty cash, payments, categories, notes, and business money records.";
 
-      if (!tenantId) {
-        document.getElementById("loadingScreen").classList.add("hidden");
-        document.getElementById("loginScreen").classList.remove("hidden");
-        return;
-      }
-
-      applyTheme();
-
-      document.getElementById("loadingScreen").classList.add("hidden");
-      document.getElementById("appShell").classList.remove("hidden");
-
-      await loadPageData();
+      await Promise.all([
+        loadCategories(),
+        loadTransactions()
+      ]);
     }
 
-    async function loadProfile() {
-      const byId = await supabaseClient
-        .from("users")
-        .select("*")
-        .eq("id", currentUser.id)
-        .maybeSingle();
+    async function loadCategories() {
+      const businessTypeKey = UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], "");
 
-      currentProfile = byId.data || null;
-
-      if (!currentProfile && currentUser.email) {
-        const byEmail = await supabaseClient
-          .from("users")
-          .select("*")
-          .eq("email", currentUser.email)
-          .maybeSingle();
-
-        currentProfile = byEmail.data || null;
-      }
-
-      if (!currentProfile || !currentProfile.tenant_id) return;
-
-      tenantId = currentProfile.tenant_id;
-
-      const tenantResponse = await supabaseClient
-        .from("tenants")
-        .select("*")
-        .eq("id", tenantId)
-        .maybeSingle();
-
-      currentTenant = tenantResponse.data || null;
-
-      const typesResponse = await supabaseClient
-        .from("business_types")
-        .select("*")
-        .limit(1000);
-
-      businessTypes = typesResponse.data || [];
-      currentBusinessType = resolveBusinessType();
-      businessTypeKey = getBusinessTypeKey();
-
-      const businessName = getTenantName(currentTenant);
-      const typeName = getBusinessTypeName();
-
-      document.getElementById("sidebarBusinessName").innerText = businessName;
-      document.getElementById("subtitle").innerText = businessName + " — " + typeName + " money records and categories.";
-      document.getElementById("heroTitle").innerText = getHeroTitle();
-      document.getElementById("heroText").innerText = getHeroText();
-    }
-
-    function applyTheme() {
-      if (currentProfile && currentProfile.preferred_theme === "dark") {
-        document.body.classList.add("dark");
-      }
-    }
-
-    async function loadPageData() {
-      showToast("Loading money records...");
-
-      const categoryResponse = await supabaseClient
+      const response = await currentContext.supabaseClient
         .from("categories")
         .select("*")
+        .eq("is_active", true)
         .order("display_order", { ascending: true });
 
-      if (categoryResponse.error) {
-        categories = defaultCategories();
-      } else {
-        const allCategories = categoryResponse.data || [];
-        categories = allCategories.filter(function (row) {
-          const rowKey = String(getValue(row, ["business_type_key"], "")).toLowerCase();
-          const active = getValue(row, ["is_active"], true);
-          return truthy(active) && (!rowKey || rowKey === businessTypeKey);
-        });
-
-        if (categories.length === 0) {
-          categories = defaultCategories();
-        }
-      }
-
-      const transactionResponse = await supabaseClient
-        .from("transactions")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("transaction_date", { ascending: false })
-        .order("created_at", { ascending: false });
-
-      if (transactionResponse.error) {
-        document.getElementById("recordsBox").innerHTML = `
-          <div class="empty">
-            <h3>Could not load money records</h3>
-            <p>${safe(transactionResponse.error.message)}</p>
-          </div>
-        `;
-        showToast("Could not load money records");
+      if (response.error) {
+        categories = fallbackCategories();
         return;
       }
 
-      transactions = transactionResponse.data || [];
+      const all = response.data || [];
 
-      fillCategoryFilter();
-      renderNewForm();
-      renderPage();
+      const matched = all.filter(function (row) {
+        const key = String(UnganiClientShared.getValue(row, ["business_type_key"], "")).toLowerCase();
 
-      if (selectedRecordId) {
-        openRecord(selectedRecordId);
+        return key === String(businessTypeKey).toLowerCase();
+      });
+
+      if (matched.length > 0) {
+        categories = matched;
+      } else {
+        categories = fallbackCategories();
+      }
+    }
+
+    function fallbackCategories() {
+      if (isRealEstate) {
+        return [
+          { category_key: "property_sale", category_name: "Property Sale", transaction_type: "income" },
+          { category_key: "rental_income", category_name: "Rental Income", transaction_type: "income" },
+          { category_key: "booking_deposit", category_name: "Booking Deposit", transaction_type: "income" },
+          { category_key: "agent_commission", category_name: "Agent Commission", transaction_type: "expense" },
+          { category_key: "marketing_advertising", category_name: "Marketing / Advertising", transaction_type: "expense" },
+          { category_key: "legal_documentation_fees", category_name: "Legal / Documentation Fees", transaction_type: "expense" },
+          { category_key: "property_maintenance", category_name: "Property Maintenance", transaction_type: "expense" },
+          { category_key: "staff_wages", category_name: "Staff Wages", transaction_type: "expense" },
+          { category_key: "other_real_estate_cost", category_name: "Other Real Estate Cost", transaction_type: "expense" }
+        ];
       }
 
-      showToast("Money records updated ✓");
-    }
-
-    function resolveBusinessType() {
-      if (!currentTenant) return null;
-
-      const typeId = getValue(currentTenant, ["business_type_id"], "");
-      const key = String(getValue(currentTenant, ["business_type_key"], "")).toLowerCase();
-      const name = String(getValue(currentTenant, ["business_type", "business_type_name", "type_name"], "")).toLowerCase();
-
-      if (typeId) {
-        const byId = businessTypes.find(function (row) {
-          return String(row.id) === String(typeId);
-        });
-        if (byId) return byId;
-      }
-
-      if (key) {
-        const byKey = businessTypes.find(function (row) {
-          return String(getValue(row, ["business_type_key", "slug"], "")).toLowerCase().replace(/-/g, "_") === key.replace(/-/g, "_");
-        });
-        if (byKey) return byKey;
-      }
-
-      if (name) {
-        const byName = businessTypes.find(function (row) {
-          return String(getValue(row, ["business_type_name", "type_name", "name"], "")).toLowerCase() === name;
-        });
-        if (byName) return byName;
-      }
-
-      return null;
-    }
-
-    function getBusinessTypeKey() {
-      const fromType = getValue(currentBusinessType || {}, ["business_type_key", "slug"], "");
-      const fromTenant = getValue(currentTenant || {}, ["business_type_key", "business_type", "business_type_name"], "");
-      const raw = fromType || fromTenant || "general";
-
-      return String(raw)
-        .toLowerCase()
-        .replace(/-/g, "_")
-        .replace(/[^a-z0-9_]+/g, "_")
-        .replace(/_+/g, "_")
-        .replace(/^_|_$/g, "");
-    }
-
-    function getBusinessTypeName() {
-      return getValue(currentBusinessType || {}, ["business_type_name", "type_name", "name"], getValue(currentTenant || {}, ["business_type_name", "business_type"], "General Business"));
-    }
-
-    function getTenantName(row) {
-      return getValue(row || {}, ["business_name", "company_name", "tenant_name"], "Client Business");
-    }
-
-    function getHeroTitle() {
-      if (businessTypeKey.includes("boutique") || businessTypeKey.includes("fashion")) return "Boutique Sales, Stock Purchases & Fashion Costs";
-      if (businessTypeKey.includes("pharmacy")) return "Pharmacy Sales, Stock Purchases & Compliance Costs";
-      if (businessTypeKey.includes("gym") || businessTypeKey.includes("fitness")) return "Gym Memberships, Classes, Products & Equipment Costs";
-      if (businessTypeKey.includes("car_hire") || businessTypeKey.includes("rental")) return "Car Hire Rental Income, Fuel, Repairs & Insurance";
-      if (businessTypeKey.includes("photography") || businessTypeKey.includes("videography")) return "Studio Sessions, Packages, Equipment & Production Costs";
-      if (businessTypeKey.includes("agrovet") || businessTypeKey.includes("farm")) return "Agrovet Sales, Supplier Payments & Stock Purchases";
-      if (businessTypeKey.includes("printing") || businessTypeKey.includes("branding")) return "Printing Jobs, Materials, Machines & Delivery Costs";
-      if (businessTypeKey.includes("furniture") || businessTypeKey.includes("carpentry")) return "Furniture Orders, Showroom Sales, Materials & Workshop Costs";
-      return "Business Income, Expenses & Petty Cash";
-    }
-
-    function getHeroText() {
-      if (businessTypeKey.includes("pharmacy")) {
-        return "Track medicine sales, OTC sales, supplier payments, stock purchases, licensing costs, and business expenses. This is a business record page, not a medical system.";
-      }
-
-      return "Record your daily business money movement using income and expense categories that match your selected business type.";
-    }
-
-    function defaultCategories() {
       return [
-        { category_key: "sales_income", category_name: "Sales / Income", transaction_type: "income", display_order: 10 },
-        { category_key: "service_income", category_name: "Service Income", transaction_type: "income", display_order: 20 },
-        { category_key: "stock_purchase", category_name: "Stock Purchase", transaction_type: "expense", display_order: 30 },
-        { category_key: "supplier_payment", category_name: "Supplier Payment", transaction_type: "expense", display_order: 40 },
-        { category_key: "staff_wages", category_name: "Staff Wages", transaction_type: "expense", display_order: 50 },
-        { category_key: "rent", category_name: "Rent", transaction_type: "expense", display_order: 60 },
-        { category_key: "utilities", category_name: "Utilities", transaction_type: "expense", display_order: 70 },
-        { category_key: "transport_delivery", category_name: "Transport / Delivery", transaction_type: "expense", display_order: 80 },
-        { category_key: "petty_cash", category_name: "Petty Cash", transaction_type: "petty_cash", display_order: 90 },
-        { category_key: "other", category_name: "Other", transaction_type: "other", display_order: 100 }
+        { category_key: "sales_income", category_name: "Sales / Income", transaction_type: "income" },
+        { category_key: "service_income", category_name: "Service Income", transaction_type: "income" },
+        { category_key: "business_expense", category_name: "Business Expense", transaction_type: "expense" },
+        { category_key: "petty_cash", category_name: "Petty Cash", transaction_type: "petty_cash" },
+        { category_key: "other", category_name: "Other", transaction_type: "other" }
       ];
     }
 
-    function fillCategoryFilter() {
-      const selected = document.getElementById("filterCategory").value;
+    async function loadTransactions() {
+      const contentEl = currentContext.contentEl;
 
-      const unique = {};
-      categories.forEach(function (cat) {
-        const key = getCategoryKey(cat);
-        unique[key] = cat;
-      });
+      contentEl.innerHTML = UnganiClientShared.loadingCard("Loading money records...");
 
-      const options = Object.values(unique).map(function (cat) {
-        return `<option value="${attr(getCategoryKey(cat))}">${safe(getCategoryName(cat))}</option>`;
-      }).join("");
+      const response = await currentContext.supabaseClient
+        .from("transactions")
+        .select("*")
+        .eq("tenant_id", currentContext.tenantId)
+        .order("transaction_date", { ascending: false })
+        .order("created_at", { ascending: false });
 
-      document.getElementById("filterCategory").innerHTML = `<option value="">All Categories</option>${options}`;
-
-      if (selected) {
-        document.getElementById("filterCategory").value = selected;
+      if (response.error) {
+        contentEl.innerHTML = UnganiClientShared.errorCard("Could not load money records", response.error.message);
+        return;
       }
+
+      transactions = response.data || [];
+      renderPage();
     }
 
-    function renderNewForm() {
-      document.getElementById("newFormBox").innerHTML = recordFormHtml("new", {});
-      updateCategoryOptions("new");
+    function renderPage() {
+      filteredTransactions = getFilteredTransactions();
+
+      UnganiClientShared.setContent(`
+        <section class="ungani-card ungani-hero">
+          <h2>${isRealEstate ? "Property Money Tracking" : "Money Tracking"}</h2>
+          <p>
+            ${isRealEstate
+              ? "Track sales income, rental payments, booking deposits, agent commissions, marketing costs, property maintenance, legal fees, and other property business records."
+              : "Track business income, expenses, petty cash, payments, suppliers, references, and notes."
+            }
+          </p>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn" onclick="scrollToForm()">${currentEditId ? "Update Money Record" : "Add Money Record"}</button>
+            <a class="ungani-btn green" href="reports.html">View Reports</a>
+            <a class="ungani-btn dark" href="my-items.html">${isRealEstate ? "Properties" : "Items / Assets"}</a>
+          </div>
+        </section>
+
+        ${renderMetrics()}
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <h3>Filters</h3>
+            <button class="ungani-btn dark" onclick="resetFilters()">Reset Filters</button>
+          </div>
+
+          <div class="ungani-form-grid">
+            <div>
+              <label for="filterType">Record Type</label>
+              <select id="filterType" onchange="saveFilters(); renderPage();">
+                <option value="">All Types</option>
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+                <option value="petty_cash">Petty Cash</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="filterStatus">Status</label>
+              <select id="filterStatus" onchange="saveFilters(); renderPage();">
+                <option value="">All Statuses</option>
+                <option value="completed">Completed</option>
+                <option value="pending">Pending</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="filterFrom">From Date</label>
+              <input id="filterFrom" type="date" onchange="saveFilters(); renderPage();" />
+            </div>
+
+            <div>
+              <label for="filterTo">To Date</label>
+              <input id="filterTo" type="date" onchange="saveFilters(); renderPage();" />
+            </div>
+
+            <div>
+              <label for="searchBox">Search</label>
+              <input id="searchBox" placeholder="${isRealEstate ? "Search property, project, agent, category..." : "Search category, description, reference..."}" oninput="saveFilters(); renderPage();" />
+            </div>
+          </div>
+        </section>
+
+        <section id="moneyFormCard" class="ungani-card">
+          <div class="ungani-section-title">
+            <h3>${currentEditId ? "Update Money Record" : "Add Money Record"}</h3>
+            ${currentEditId ? '<button class="ungani-btn dark" onclick="cancelEdit()">Cancel Edit</button>' : ''}
+          </div>
+
+          ${renderForm()}
+        </section>
+
+        <section class="ungani-two-col">
+          <div class="ungani-card">
+            <div class="ungani-section-title">
+              <div>
+                <h3>Money Records</h3>
+                <p class="ungani-small">${filteredTransactions.length} record(s) shown</p>
+              </div>
+
+              <button class="ungani-btn green" onclick="loadTransactions()">Refresh</button>
+            </div>
+
+            ${renderTransactionsList()}
+          </div>
+
+          <div class="ungani-card">
+            <div class="ungani-section-title">
+              <h3>Category Summary</h3>
+            </div>
+
+            ${renderCategorySummary()}
+          </div>
+        </section>
+
+        <p class="ungani-small">
+          Money Version: Step 305D Shared Layout · This is money tracking for operations visibility, not a full accounting replacement · ungani.com · info@ungani.com
+        </p>
+      `);
+
+      restoreFilters();
+      populateCategoryDropdown();
+      populateEditFormIfNeeded();
     }
 
-    function recordFormHtml(prefix, record) {
-      const recordType = normalizeType(getValue(record, ["transaction_type", "type"], "income"));
+    function renderMetrics() {
+      const summary = calculateSummary(transactions);
+      const monthSummary = calculateThisMonthSummary();
 
       return `
-        <div class="form-grid">
-          <div>
-            <label for="${prefix}Type">Record Type</label>
-            <select id="${prefix}Type" onchange="updateCategoryOptions('${prefix}')">
-              ${typeOptions(recordType)}
-            </select>
+        <section class="ungani-grid">
+          ${UnganiClientShared.metricCard("Total Records", transactions.length, "All saved money records", "blue")}
+          ${UnganiClientShared.metricCard(isRealEstate ? "Revenue This Month" : "Income This Month", UnganiClientShared.formatKES(monthSummary.income), "Income records this month", "green")}
+          ${UnganiClientShared.metricCard("Expenses This Month", UnganiClientShared.formatKES(monthSummary.expense), "Expense records this month", monthSummary.expense > 0 ? "orange" : "green")}
+          ${UnganiClientShared.metricCard("Estimated Balance", UnganiClientShared.formatKES(summary.balance), "Income minus expenses", summary.balance >= 0 ? "green" : "red")}
+          ${UnganiClientShared.metricCard("Pending Amount", UnganiClientShared.formatKES(summary.pending), "Records marked as pending", summary.pending > 0 ? "orange" : "green")}
+          ${UnganiClientShared.metricCard("Petty Cash", UnganiClientShared.formatKES(summary.pettyCash), "Petty cash records", "blue")}
+        </section>
+      `;
+    }
+
+    function renderForm() {
+      return `
+        <form id="moneyForm" onsubmit="saveTransaction(event)">
+          <div class="ungani-form-grid">
+            <div>
+              <label for="transactionType">Record Type</label>
+              <select id="transactionType" onchange="populateCategoryDropdown()">
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+                <option value="petty_cash">Petty Cash</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="categorySelect">Category</label>
+              <select id="categorySelect">
+                <option value="">Select category</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="amount">Amount</label>
+              <input id="amount" type="number" min="0" step="1" required placeholder="Example: 50000" />
+            </div>
+
+            <div>
+              <label for="transactionDate">Date</label>
+              <input id="transactionDate" type="date" required />
+            </div>
+
+            <div>
+              <label for="status">Status</label>
+              <select id="status">
+                <option value="completed">Completed</option>
+                <option value="pending">Pending</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="paymentMethod">Payment Method</label>
+              <select id="paymentMethod">
+                <option value="">Select method</option>
+                <option value="cash">Cash</option>
+                <option value="mpesa">M-Pesa</option>
+                <option value="bank">Bank</option>
+                <option value="card">Card</option>
+                <option value="cheque">Cheque</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="paymentReference">Payment Reference</label>
+              <input id="paymentReference" placeholder="Receipt, invoice, transaction code..." />
+            </div>
+
+            <div>
+              <label for="relatedPerson">${isRealEstate ? "Client / Agent / Tenant" : "Related Person"}</label>
+              <input id="relatedPerson" placeholder="${isRealEstate ? "Example: Brian Otieno / Tenant A" : "Client, supplier, staff, or contact"}" />
+            </div>
+
+            ${
+              isRealEstate
+                ? `
+                  <div>
+                    <label for="propertyName">Property Name</label>
+                    <input id="propertyName" placeholder="Example: Clove Garden A12" />
+                  </div>
+
+                  <div>
+                    <label for="projectName">Project Name</label>
+                    <input id="projectName" placeholder="Example: Clove Garden" />
+                  </div>
+
+                  <div>
+                    <label for="agentName">Agent Name</label>
+                    <input id="agentName" placeholder="Example: Brian Otieno" />
+                  </div>
+
+                  <div>
+                    <label for="commissionAmount">Commission Amount</label>
+                    <input id="commissionAmount" type="number" min="0" step="1" placeholder="If applicable" />
+                  </div>
+                `
+                : ""
+            }
           </div>
 
-          <div>
-            <label for="${prefix}Category">Category</label>
-            <select id="${prefix}Category"></select>
+          <label for="description">Description / Notes</label>
+          <textarea id="description" placeholder="${isRealEstate ? "Example: Booking deposit received for Clove Garden A12" : "Add notes about this money record..."}"></textarea>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn green" type="submit">${currentEditId ? "Update Record" : "Add Record"}</button>
+            ${currentEditId ? '<button class="ungani-btn dark" type="button" onclick="cancelEdit()">Cancel</button>' : ''}
+          </div>
+        </form>
+      `;
+    }
+
+    function populateCategoryDropdown() {
+      const select = document.getElementById("categorySelect");
+      const typeEl = document.getElementById("transactionType");
+
+      if (!select || !typeEl) return;
+
+      const selectedType = typeEl.value || "income";
+
+      const matching = categories.filter(function (row) {
+        const type = String(UnganiClientShared.getValue(row, ["transaction_type", "category_type", "type"], "")).toLowerCase();
+
+        if (selectedType === "petty_cash") {
+          return type === "petty_cash" || type === "expense";
+        }
+
+        return type === selectedType;
+      });
+
+      const usable = matching.length > 0 ? matching : categories;
+
+      select.innerHTML = `<option value="">Select category</option>` + usable.map(function (row) {
+        const key = UnganiClientShared.getValue(row, ["category_key", "slug", "name", "category_name"], "");
+        const name = UnganiClientShared.getValue(row, ["category_name", "name", "title"], key);
+
+        return `<option value="${UnganiClientShared.attr(key)}">${UnganiClientShared.safe(name)}</option>`;
+      }).join("");
+    }
+
+    function renderTransactionsList() {
+      if (filteredTransactions.length === 0) {
+        return `
+          <div class="ungani-empty">
+            <h3>No money records found</h3>
+            <p>Add your first money record above.</p>
+          </div>
+        `;
+      }
+
+      return filteredTransactions.map(function (row) {
+        return renderTransactionCard(row);
+      }).join("");
+    }
+
+    function renderTransactionCard(row) {
+      const type = getTransactionType(row);
+      const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+      const categoryName = UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "Money Record");
+      const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
+      const description = UnganiClientShared.getValue(row, ["description", "notes"], "");
+      const date = UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "");
+      const method = UnganiClientShared.getValue(row, ["payment_method"], "");
+      const reference = UnganiClientShared.getValue(row, ["payment_reference", "reference_number"], "");
+      const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
+      const propertyName = UnganiClientShared.getValue(row, ["property_name"], "");
+      const projectName = UnganiClientShared.getValue(row, ["project_name"], "");
+      const agentName = UnganiClientShared.getValue(row, ["agent_name"], "");
+      const commissionAmount = Number(UnganiClientShared.getValue(row, ["commission_amount"], 0) || 0);
+
+      const color = type === "income" ? "green" : type === "expense" ? "orange" : type === "petty_cash" ? "blue" : "gold";
+
+      return `
+        <div class="ungani-card" style="box-shadow:none;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>${UnganiClientShared.safe(categoryName)}</h3>
+              <p class="ungani-small">
+                ${UnganiClientShared.safe(UnganiClientShared.formatDate(date))}
+                ${method ? " · " + UnganiClientShared.safe(method) : ""}
+                ${reference ? " · Ref: " + UnganiClientShared.safe(reference) : ""}
+              </p>
+            </div>
+
+            <div style="text-align:right;">
+              <strong style="font-size:20px;color:var(--ungani-text);">${UnganiClientShared.safe(UnganiClientShared.formatKES(amount))}</strong><br>
+              <span class="ungani-badge ${UnganiClientShared.attr(color)}">${UnganiClientShared.safe(type)}</span>
+              <span class="ungani-badge ${status === "completed" ? "green" : status === "pending" ? "orange" : "red"}">${UnganiClientShared.safe(status)}</span>
+            </div>
           </div>
 
-          <div>
-            <label for="${prefix}Amount">Amount</label>
-            <input id="${prefix}Amount" type="number" step="0.01" value="${attr(getValue(record, ["amount"], ""))}" placeholder="0.00" />
-          </div>
+          <section class="ungani-grid">
+            ${miniDetail(isRealEstate ? "Property" : "Related Record", propertyName || "N/A")}
+            ${miniDetail("Project", projectName || "N/A")}
+            ${miniDetail(isRealEstate ? "Agent" : "Person", agentName || relatedPerson || "N/A")}
+            ${miniDetail("Commission", commissionAmount > 0 ? UnganiClientShared.formatKES(commissionAmount) : "N/A")}
+          </section>
 
-          <div>
-            <label for="${prefix}Date">Date</label>
-            <input id="${prefix}Date" type="date" value="${attr(getValue(record, ["transaction_date"], today()))}" />
-          </div>
+          ${description ? `<p class="ungani-small" style="margin-top:12px;">${UnganiClientShared.safe(description)}</p>` : ""}
 
-          <div>
-            <label for="${prefix}PaymentMethod">Payment Method</label>
-            <select id="${prefix}PaymentMethod">
-              ${paymentMethodOptions(getValue(record, ["payment_method"], ""))}
-            </select>
+          <div class="ungani-button-row">
+            <button class="ungani-btn" onclick="editTransaction('${UnganiClientShared.attr(row.id)}')">Edit</button>
+            <button class="ungani-btn green" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'completed')">Completed</button>
+            <button class="ungani-btn orange" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'pending')">Pending</button>
+            <button class="ungani-btn red" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'cancelled')">Cancelled</button>
           </div>
-
-          <div>
-            <label for="${prefix}Status">Status</label>
-            <select id="${prefix}Status">
-              ${statusOptions(getValue(record, ["status"], "completed"))}
-            </select>
-          </div>
-
-          <div>
-            <label for="${prefix}PaymentReference">Payment Reference</label>
-            <input id="${prefix}PaymentReference" value="${attr(getValue(record, ["payment_reference", "reference_number"], ""))}" placeholder="M-Pesa code, receipt number, invoice number..." />
-          </div>
-
-          <div>
-            <label for="${prefix}RelatedPerson">Related Person / Supplier / Client</label>
-            <input id="${prefix}RelatedPerson" value="${attr(getValue(record, ["related_person"], ""))}" placeholder="Supplier, client, staff, renter..." />
-          </div>
-
-          <div class="full">
-            <label for="${prefix}Description">Description</label>
-            <textarea id="${prefix}Description" placeholder="Briefly describe this money record...">${safe(getValue(record, ["description", "notes"], ""))}</textarea>
-          </div>
-        </div>
-
-        <div class="button-row">
-          ${prefix === "new"
-            ? `<button class="btn green" onclick="createRecord()">Add Money Record</button><button class="btn dark" onclick="clearNewForm()">Clear</button>`
-            : `<button class="btn green" onclick="saveRecord()">Save Record</button><button class="btn orange" onclick="setRecordStatus('${attr(record.id)}','pending')">Mark Pending</button><button class="btn blue" onclick="setRecordStatus('${attr(record.id)}','completed')">Mark Completed</button>`
-          }
         </div>
       `;
     }
 
-    function typeOptions(selected) {
-      const options = [
-        ["income", "Income / Sales"],
-        ["expense", "Expense"],
-        ["petty_cash", "Petty Cash"],
-        ["other", "Other"]
-      ];
+    function renderCategorySummary() {
+      const summary = {};
 
-      return options.map(function (item) {
-        const isSelected = item[0] === selected ? "selected" : "";
-        return `<option value="${attr(item[0])}" ${isSelected}>${safe(item[1])}</option>`;
-      }).join("");
-    }
+      filteredTransactions.forEach(function (row) {
+        const category = UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "Uncategorized");
+        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+        const type = getTransactionType(row);
 
-    function paymentMethodOptions(selected) {
-      const options = [
-        ["", "Select Method"],
-        ["cash", "Cash"],
-        ["mpesa", "M-Pesa"],
-        ["bank", "Bank"],
-        ["card", "Card"],
-        ["cheque", "Cheque"],
-        ["credit", "Credit"],
-        ["other", "Other"]
-      ];
+        if (!summary[category]) {
+          summary[category] = {
+            count: 0,
+            income: 0,
+            expense: 0,
+            pettyCash: 0,
+            other: 0
+          };
+        }
 
-      return options.map(function (item) {
-        const isSelected = String(item[0]) === String(selected) ? "selected" : "";
-        return `<option value="${attr(item[0])}" ${isSelected}>${safe(item[1])}</option>`;
-      }).join("");
-    }
+        summary[category].count++;
 
-    function statusOptions(selected) {
-      const options = [
-        ["completed", "Completed"],
-        ["paid", "Paid"],
-        ["pending", "Pending"],
-        ["cancelled", "Cancelled"],
-        ["failed", "Failed"]
-      ];
-
-      return options.map(function (item) {
-        const isSelected = String(item[0]) === String(selected) ? "selected" : "";
-        return `<option value="${attr(item[0])}" ${isSelected}>${safe(item[1])}</option>`;
-      }).join("");
-    }
-
-    function updateCategoryOptions(prefix) {
-      const type = value(prefix + "Type");
-      const select = document.getElementById(prefix + "Category");
-      if (!select) return;
-
-      let matching = categories.filter(function (cat) {
-        const catType = normalizeType(getValue(cat, ["transaction_type", "category_type", "type"], "other"));
-        return catType === type;
+        if (type === "income") summary[category].income += amount;
+        else if (type === "expense") summary[category].expense += amount;
+        else if (type === "petty_cash") summary[category].pettyCash += amount;
+        else summary[category].other += amount;
       });
 
-      if (matching.length === 0) {
-        matching = defaultCategories().filter(function (cat) {
-          return normalizeType(cat.transaction_type) === type;
-        });
+      const keys = Object.keys(summary);
+
+      if (keys.length === 0) {
+        return `
+          <div class="ungani-empty">
+            <h3>No category summary yet</h3>
+            <p>Summary will appear after money records are added.</p>
+          </div>
+        `;
       }
 
-      const currentRecord = prefix === "edit" && selectedRecordId
-        ? transactions.find(function (row) { return String(row.id) === String(selectedRecordId); })
-        : null;
+      return keys.map(function (key) {
+        const row = summary[key];
+        const total = row.income + row.expense + row.pettyCash + row.other;
 
-      const selectedCategory = currentRecord
-        ? getValue(currentRecord, ["category_key"], "")
-        : "";
-
-      select.innerHTML = matching.map(function (cat) {
-        const key = getCategoryKey(cat);
-        const selected = String(key) === String(selectedCategory) ? "selected" : "";
-        return `<option value="${attr(key)}" data-id="${attr(getValue(cat, ["id"], ""))}" ${selected}>${safe(getCategoryName(cat))}</option>`;
+        return `
+          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
+            <h3 style="margin:0 0 6px;color:var(--ungani-text);">${UnganiClientShared.safe(key)}</h3>
+            <p class="ungani-small" style="margin:0 0 8px;">${row.count} record(s) · ${UnganiClientShared.safe(UnganiClientShared.formatKES(total))}</p>
+            <span class="ungani-badge green">Income ${UnganiClientShared.safe(UnganiClientShared.formatKES(row.income))}</span>
+            <span class="ungani-badge orange">Expense ${UnganiClientShared.safe(UnganiClientShared.formatKES(row.expense))}</span>
+          </div>
+        `;
       }).join("");
-
-      if (!select.innerHTML) {
-        select.innerHTML = `<option value="other">Other</option>`;
-      }
     }
 
-    function collect(prefix) {
-      const type = normalizeType(value(prefix + "Type") || "income");
-      const categorySelect = document.getElementById(prefix + "Category");
-      const categoryKey = categorySelect ? categorySelect.value : "other";
-      const selectedOption = categorySelect && categorySelect.options.length > 0 ? categorySelect.options[categorySelect.selectedIndex] : null;
-      const categoryId = selectedOption ? selectedOption.getAttribute("data-id") : null;
-      const categoryName = selectedOption ? selectedOption.textContent : categoryKey;
+    function miniDetail(label, value) {
+      return `
+        <div class="ungani-card" style="margin-bottom:0;box-shadow:none;padding:14px;">
+          <p class="ungani-small" style="margin:0 0 5px;">${UnganiClientShared.safe(label)}</p>
+          <strong>${UnganiClientShared.safe(value)}</strong>
+        </div>
+      `;
+    }
+
+    function calculateSummary(rows) {
+      let income = 0;
+      let expense = 0;
+      let pettyCash = 0;
+      let pending = 0;
+
+      rows.forEach(function (row) {
+        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+        const type = getTransactionType(row);
+        const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
+
+        if (type === "income") income += amount;
+        else if (type === "expense") expense += amount;
+        else if (type === "petty_cash") {
+          pettyCash += amount;
+          expense += amount;
+        }
+
+        if (status === "pending") {
+          pending += amount;
+        }
+      });
 
       return {
-        tenant_id: tenantId,
-        business_type_key: businessTypeKey,
+        income: income,
+        expense: expense,
+        pettyCash: pettyCash,
+        pending: pending,
+        balance: income - expense
+      };
+    }
 
+    function calculateThisMonthSummary() {
+      const now = new Date();
+      const month = now.getMonth();
+      const year = now.getFullYear();
+
+      const rows = transactions.filter(function (row) {
+        const value = UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "");
+        if (!value) return false;
+
+        const date = new Date(value);
+        if (isNaN(date.getTime())) return false;
+
+        return date.getMonth() === month && date.getFullYear() === year;
+      });
+
+      return calculateSummary(rows);
+    }
+
+    function getFilteredTransactions() {
+      const type = document.getElementById("filterType") ? UnganiClientShared.value("filterType").toLowerCase() : "";
+      const status = document.getElementById("filterStatus") ? UnganiClientShared.value("filterStatus").toLowerCase() : "";
+      const from = document.getElementById("filterFrom") ? UnganiClientShared.value("filterFrom") : "";
+      const to = document.getElementById("filterTo") ? UnganiClientShared.value("filterTo") : "";
+      const query = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
+
+      return transactions.filter(function (row) {
+        const rowType = getTransactionType(row);
+        const rowStatus = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
+        const rowDate = String(UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "")).slice(0, 10);
+
+        const haystack = [
+          rowType,
+          rowStatus,
+          UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], ""),
+          UnganiClientShared.getValue(row, ["description", "notes"], ""),
+          UnganiClientShared.getValue(row, ["payment_reference", "reference_number"], ""),
+          UnganiClientShared.getValue(row, ["related_person"], ""),
+          UnganiClientShared.getValue(row, ["property_name"], ""),
+          UnganiClientShared.getValue(row, ["project_name"], ""),
+          UnganiClientShared.getValue(row, ["agent_name"], "")
+        ].join(" ").toLowerCase();
+
+        if (type && rowType !== type) return false;
+        if (status && rowStatus !== status) return false;
+        if (from && rowDate < from) return false;
+        if (to && rowDate > to) return false;
+        if (query && !haystack.includes(query)) return false;
+
+        return true;
+      });
+    }
+
+    async function saveTransaction(event) {
+      event.preventDefault();
+
+      const payload = buildPayload();
+
+      if (!payload.amount || payload.amount <= 0) {
+        alert("Please enter a valid amount.");
+        return;
+      }
+
+      let response;
+
+      if (currentEditId) {
+        response = await currentContext.supabaseClient
+          .from("transactions")
+          .update(payload)
+          .eq("id", currentEditId)
+          .eq("tenant_id", currentContext.tenantId);
+      } else {
+        payload.tenant_id = currentContext.tenantId;
+        payload.created_by = currentContext.authUser.id;
+        payload.created_at = new Date().toISOString();
+
+        response = await currentContext.supabaseClient
+          .from("transactions")
+          .insert(payload);
+      }
+
+      if (response.error) {
+        alert(response.error.message);
+        return;
+      }
+
+      currentEditId = null;
+      UnganiClientShared.showToast("Money record saved ✓");
+      await loadTransactions();
+    }
+
+    function buildPayload() {
+      const type = UnganiClientShared.value("transactionType") || "income";
+      const categoryKey = UnganiClientShared.value("categorySelect");
+      const categoryRow = categories.find(function (row) {
+        const key = UnganiClientShared.getValue(row, ["category_key", "slug", "name", "category_name"], "");
+
+        return String(key) === String(categoryKey);
+      }) || null;
+
+      const categoryName = categoryRow
+        ? UnganiClientShared.getValue(categoryRow, ["category_name", "name", "title"], categoryKey)
+        : categoryKey;
+
+      return {
+        business_type_key: UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], null),
+        category_id: categoryRow && categoryRow.id ? categoryRow.id : null,
+        category_key: categoryKey || null,
+        category: categoryName || null,
+        category_name: categoryName || null,
         transaction_type: type,
         type: type,
-
-        category_id: categoryId || null,
-        category_key: categoryKey || null,
-        category: categoryName || "General",
-        category_name: categoryName || "General",
-
-        amount: number(prefix + "Amount"),
-        transaction_date: value(prefix + "Date") || today(),
-
-        payment_method: nullable(prefix + "PaymentMethod"),
-        payment_reference: nullable(prefix + "PaymentReference"),
-        reference_number: nullable(prefix + "PaymentReference"),
-        related_person: nullable(prefix + "RelatedPerson"),
-
-        description: nullable(prefix + "Description"),
-        notes: nullable(prefix + "Description"),
-
-        status: value(prefix + "Status") || "completed",
+        amount: numberValue("amount"),
+        transaction_date: UnganiClientShared.value("transactionDate") || new Date().toISOString().slice(0, 10),
+        payment_method: UnganiClientShared.value("paymentMethod") || null,
+        payment_reference: UnganiClientShared.value("paymentReference") || null,
+        reference_number: UnganiClientShared.value("paymentReference") || null,
+        related_person: UnganiClientShared.value("relatedPerson") || null,
+        property_name: isRealEstate ? (UnganiClientShared.value("propertyName") || null) : null,
+        project_name: isRealEstate ? (UnganiClientShared.value("projectName") || null) : null,
+        agent_name: isRealEstate ? (UnganiClientShared.value("agentName") || null) : null,
+        commission_amount: isRealEstate ? numberValue("commissionAmount") : 0,
+        description: UnganiClientShared.value("description") || null,
+        notes: UnganiClientShared.value("description") || null,
+        status: UnganiClientShared.value("status") || "completed",
         updated_at: new Date().toISOString()
       };
     }
 
-    async function createRecord() {
-      const payload = collect("new");
+    function populateEditFormIfNeeded() {
+      setDefaultDate();
 
-      if (!payload.amount || payload.amount <= 0) {
-        alert("Please enter an amount greater than zero.");
-        return;
+      if (!currentEditId) return;
+
+      const row = transactions.find(function (item) {
+        return String(item.id) === String(currentEditId);
+      });
+
+      if (!row) return;
+
+      setValue("transactionType", getTransactionType(row));
+      populateCategoryDropdown();
+
+      setValue("categorySelect", UnganiClientShared.getValue(row, ["category_key", "category"], ""));
+      setValue("amount", UnganiClientShared.getValue(row, ["amount"], 0));
+      setValue("transactionDate", String(UnganiClientShared.getValue(row, ["transaction_date"], "")).slice(0, 10));
+      setValue("status", UnganiClientShared.getValue(row, ["status"], "completed"));
+      setValue("paymentMethod", UnganiClientShared.getValue(row, ["payment_method"], ""));
+      setValue("paymentReference", UnganiClientShared.getValue(row, ["payment_reference", "reference_number"], ""));
+      setValue("relatedPerson", UnganiClientShared.getValue(row, ["related_person"], ""));
+      setValue("description", UnganiClientShared.getValue(row, ["description", "notes"], ""));
+
+      if (isRealEstate) {
+        setValue("propertyName", UnganiClientShared.getValue(row, ["property_name"], ""));
+        setValue("projectName", UnganiClientShared.getValue(row, ["project_name"], ""));
+        setValue("agentName", UnganiClientShared.getValue(row, ["agent_name"], ""));
+        setValue("commissionAmount", UnganiClientShared.getValue(row, ["commission_amount"], 0));
       }
-
-      payload.created_by = currentUser.id;
-      payload.created_at = new Date().toISOString();
-
-      const response = await supabaseClient
-        .from("transactions")
-        .insert(payload);
-
-      if (response.error) {
-        alert(response.error.message);
-        return;
-      }
-
-      showToast("Money record added ✓");
-      clearNewForm();
-      await loadPageData();
     }
 
-    async function saveRecord() {
-      if (!selectedRecordId) {
-        alert("No record selected.");
-        return;
+    function setDefaultDate() {
+      const dateEl = document.getElementById("transactionDate");
+
+      if (dateEl && !dateEl.value) {
+        dateEl.value = new Date().toISOString().slice(0, 10);
       }
-
-      const payload = collect("edit");
-
-      if (!payload.amount || payload.amount <= 0) {
-        alert("Please enter an amount greater than zero.");
-        return;
-      }
-
-      const response = await supabaseClient
-        .from("transactions")
-        .update(payload)
-        .eq("id", selectedRecordId);
-
-      if (response.error) {
-        alert(response.error.message);
-        return;
-      }
-
-      showToast("Money record saved ✓");
-      await loadPageData();
     }
 
-    async function setRecordStatus(recordId, status) {
-      const response = await supabaseClient
+    function editTransaction(id) {
+      currentEditId = id;
+      renderPage();
+      scrollToForm();
+    }
+
+    function cancelEdit() {
+      currentEditId = null;
+      renderPage();
+      UnganiClientShared.showToast("Edit cancelled");
+    }
+
+    async function quickStatus(id, status) {
+      const response = await currentContext.supabaseClient
         .from("transactions")
         .update({
           status: status,
           updated_at: new Date().toISOString()
         })
-        .eq("id", recordId);
+        .eq("id", id)
+        .eq("tenant_id", currentContext.tenantId);
 
       if (response.error) {
         alert(response.error.message);
         return;
       }
 
-      selectedRecordId = recordId;
-      showToast("Status updated ✓");
-      await loadPageData();
+      UnganiClientShared.showToast("Status updated ✓");
+      await loadTransactions();
     }
 
-    function clearNewForm() {
-      renderNewForm();
+    function restoreFilters() {
+      const filterType = sessionStorage.getItem("ungani_money_filter_type") || "";
+      const filterStatus = sessionStorage.getItem("ungani_money_filter_status") || "";
+      const filterFrom = sessionStorage.getItem("ungani_money_filter_from") || "";
+      const filterTo = sessionStorage.getItem("ungani_money_filter_to") || "";
+      const search = sessionStorage.getItem("ungani_money_search") || "";
+
+      if (document.getElementById("filterType")) document.getElementById("filterType").value = filterType;
+      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = filterStatus;
+      if (document.getElementById("filterFrom")) document.getElementById("filterFrom").value = filterFrom;
+      if (document.getElementById("filterTo")) document.getElementById("filterTo").value = filterTo;
+      if (document.getElementById("searchBox")) document.getElementById("searchBox").value = search;
     }
 
-    function renderPage() {
-      renderMetrics();
-      renderSummary();
-      renderNotes();
-      renderList();
-    }
-
-    function filteredRecords() {
-      const type = value("filterType");
-      const category = value("filterCategory");
-      const fromDate = value("filterFrom");
-      const toDate = value("filterTo");
-      const query = value("filterSearch").toLowerCase();
-
-      let rows = [...transactions];
-
-      if (type) {
-        rows = rows.filter(function (row) {
-          return normalizeType(getValue(row, ["transaction_type", "type"], "")) === type;
-        });
-      }
-
-      if (category) {
-        rows = rows.filter(function (row) {
-          return String(getValue(row, ["category_key"], "")) === String(category);
-        });
-      }
-
-      if (fromDate) {
-        rows = rows.filter(function (row) {
-          return String(getValue(row, ["transaction_date"], "")) >= fromDate;
-        });
-      }
-
-      if (toDate) {
-        rows = rows.filter(function (row) {
-          return String(getValue(row, ["transaction_date"], "")) <= toDate;
-        });
-      }
-
-      if (query) {
-        rows = rows.filter(function (row) {
-          const haystack = [
-            getValue(row, ["transaction_type", "type"], ""),
-            getValue(row, ["category", "category_name", "category_key"], ""),
-            getValue(row, ["payment_method"], ""),
-            getValue(row, ["payment_reference", "reference_number"], ""),
-            getValue(row, ["related_person"], ""),
-            getValue(row, ["description", "notes"], ""),
-            getValue(row, ["status"], "")
-          ].join(" ").toLowerCase();
-
-          return haystack.includes(query);
-        });
-      }
-
-      return rows;
-    }
-
-    function renderMetrics() {
-      const rows = filteredRecords();
-
-      const income = rows
-        .filter(function (row) { return isIncome(row); })
-        .reduce(function (sum, row) { return sum + getAmount(row); }, 0);
-
-      const expenses = rows
-        .filter(function (row) { return isExpense(row); })
-        .reduce(function (sum, row) { return sum + getAmount(row); }, 0);
-
-      const petty = rows
-        .filter(function (row) { return normalizeType(getValue(row, ["transaction_type", "type"], "")) === "petty_cash"; })
-        .reduce(function (sum, row) { return sum + getAmount(row); }, 0);
-
-      const pending = rows
-        .filter(function (row) { return String(getValue(row, ["status"], "")).toLowerCase() === "pending"; })
-        .reduce(function (sum, row) { return sum + getAmount(row); }, 0);
-
-      const balance = income - expenses - petty;
-
-      const metrics = [
-        ["Total Records", rows.length, "All records in current view", "blue"],
-        ["Income / Sales", money(income), "Total income and sales", "green"],
-        ["Expenses", money(expenses), "Total expense records", "red"],
-        ["Petty Cash", money(petty), "Petty cash movement", "orange"],
-        ["Estimated Balance", money(balance), "Income minus expenses and petty cash", balance >= 0 ? "green" : "red"],
-        ["Pending Amount", money(pending), "Pending money records", pending > 0 ? "orange" : "green"]
-      ];
-
-      document.getElementById("metricsGrid").innerHTML = metrics.map(function (item) {
-        return `
-          <div class="metric ${attr(item[3])}">
-            <h3>${safe(item[0])}</h3>
-            <p>${safe(item[1])}</p>
-            <div class="note">${safe(item[2])}</div>
-          </div>
-        `;
-      }).join("");
-    }
-
-    function renderSummary() {
-      const rows = filteredRecords();
-      const map = {};
-
-      rows.forEach(function (row) {
-        const category = getValue(row, ["category", "category_name", "category_key"], "General");
-
-        if (!map[category]) {
-          map[category] = {
-            category: category,
-            income: 0,
-            expense: 0,
-            petty: 0,
-            count: 0
-          };
-        }
-
-        map[category].count += 1;
-
-        if (isIncome(row)) map[category].income += getAmount(row);
-        else if (isExpense(row)) map[category].expense += getAmount(row);
-        else if (normalizeType(getValue(row, ["transaction_type", "type"], "")) === "petty_cash") map[category].petty += getAmount(row);
-      });
-
-      const summary = Object.values(map).sort(function (a, b) {
-        return b.count - a.count;
-      }).slice(0, 10);
-
-      if (summary.length === 0) {
-        document.getElementById("summaryBox").innerHTML = `
-          <div class="empty">
-            <h3>No category summary yet</h3>
-            <p>Add money records to see category totals.</p>
-          </div>
-        `;
-        return;
-      }
-
-      document.getElementById("summaryBox").innerHTML = summary.map(function (row) {
-        return `
-          <div class="money-card other">
-            <div class="money-title">${safe(row.category)}</div>
-            <p class="money-detail"><strong>Records:</strong> ${safe(row.count)}</p>
-            <p class="money-detail"><strong>Income:</strong> ${safe(money(row.income))}</p>
-            <p class="money-detail"><strong>Expenses:</strong> ${safe(money(row.expense))}</p>
-            <p class="money-detail"><strong>Petty Cash:</strong> ${safe(money(row.petty))}</p>
-          </div>
-        `;
-      }).join("");
-    }
-
-    function renderNotes() {
-      const rows = filteredRecords()
-        .filter(function (row) {
-          return getValue(row, ["description", "notes"], "") || getValue(row, ["payment_reference", "reference_number"], "") || getValue(row, ["related_person"], "");
-        })
-        .slice(0, 6);
-
-      if (rows.length === 0) {
-        document.getElementById("notesBox").innerHTML = `
-          <div class="empty">
-            <h3>No recent notes</h3>
-            <p>Records with descriptions, references, or related people will appear here.</p>
-          </div>
-        `;
-        return;
-      }
-
-      document.getElementById("notesBox").innerHTML = rows.map(function (row) {
-        return moneyCard(row, true);
-      }).join("");
-    }
-
-    function renderList() {
-      const rows = filteredRecords();
-
-      document.getElementById("countText").innerText = rows.length + " money record(s) shown";
-
-      if (rows.length === 0) {
-        document.getElementById("recordsBox").innerHTML = `
-          <div class="empty">
-            <h3>No money records found</h3>
-            <p>Add a new income, expense, or petty cash record, or adjust your filters.</p>
-          </div>
-        `;
-        return;
-      }
-
-      document.getElementById("recordsBox").innerHTML = rows.map(function (row) {
-        return moneyCard(row, false);
-      }).join("");
-    }
-
-    function moneyCard(row, compact) {
-      const type = normalizeType(getValue(row, ["transaction_type", "type"], "other"));
-      const amountClass = isIncome(row) ? "green" : type === "expense" ? "red" : type === "petty_cash" ? "orange" : "blue";
-
-      return `
-        <div class="money-card ${cardClass(row)}">
-          <div class="money-title">${safe(getValue(row, ["category", "category_name", "category_key"], "General"))}</div>
-
-          <p class="money-detail">
-            <span class="amount ${amountClass}">${safe(money(getAmount(row)))}</span>
-          </p>
-
-          <p class="money-detail"><strong>Type:</strong> ${safe(labelType(type))}</p>
-          <p class="money-detail"><strong>Date:</strong> ${safe(getValue(row, ["transaction_date"], "N/A"))}</p>
-          <p class="money-detail"><strong>Status:</strong> ${safe(cleanText(getValue(row, ["status"], "completed")))}</p>
-          <p class="money-detail"><strong>Payment:</strong> ${safe(cleanText(getValue(row, ["payment_method"], "N/A")))}</p>
-          <p class="money-detail"><strong>Reference:</strong> ${safe(getValue(row, ["payment_reference", "reference_number"], "N/A"))}</p>
-          <p class="money-detail"><strong>Related:</strong> ${safe(getValue(row, ["related_person"], "N/A"))}</p>
-          <p class="money-detail"><strong>Description:</strong> ${safe(getValue(row, ["description", "notes"], "N/A"))}</p>
-
-          ${badges(row)}
-
-          ${compact ? "" : `
-            <div class="button-row">
-              <button class="btn" onclick="openRecord('${attr(row.id)}')">Open / Edit</button>
-              <button class="btn blue" onclick="setRecordStatus('${attr(row.id)}','completed')">Completed</button>
-              <button class="btn orange" onclick="setRecordStatus('${attr(row.id)}','pending')">Pending</button>
-              <button class="btn red" onclick="setRecordStatus('${attr(row.id)}','cancelled')">Cancelled</button>
-            </div>
-          `}
-        </div>
-      `;
-    }
-
-    function openRecord(recordId) {
-      const record = transactions.find(function (row) {
-        return String(row.id) === String(recordId);
-      });
-
-      if (!record) {
-        selectedRecordId = null;
-        document.getElementById("selectedHeading").innerText = "Selected Money Record";
-        document.getElementById("selectedBox").innerHTML = `
-          <div class="empty">
-            <h3>Record not found</h3>
-            <p>Please refresh and try again.</p>
-          </div>
-        `;
-        return;
-      }
-
-      selectedRecordId = record.id;
-      document.getElementById("selectedHeading").innerText = getValue(record, ["category", "category_name", "category_key"], "Money Record");
-      document.getElementById("selectedBox").innerHTML = recordFormHtml("edit", record);
-      updateCategoryOptions("edit");
-
-      const editCategory = document.getElementById("editCategory");
-      const recordCategory = getValue(record, ["category_key"], "");
-
-      if (editCategory && recordCategory) {
-        editCategory.value = recordCategory;
-      }
-
-      window.scrollTo({ top: 0, behavior: "smooth" });
+    function saveFilters() {
+      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_money_filter_type", UnganiClientShared.value("filterType"));
+      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_money_filter_status", UnganiClientShared.value("filterStatus"));
+      if (document.getElementById("filterFrom")) sessionStorage.setItem("ungani_money_filter_from", UnganiClientShared.value("filterFrom"));
+      if (document.getElementById("filterTo")) sessionStorage.setItem("ungani_money_filter_to", UnganiClientShared.value("filterTo"));
+      if (document.getElementById("searchBox")) sessionStorage.setItem("ungani_money_search", UnganiClientShared.value("searchBox"));
     }
 
     function resetFilters() {
-      document.getElementById("filterType").value = "";
-      document.getElementById("filterCategory").value = "";
-      document.getElementById("filterFrom").value = "";
-      document.getElementById("filterTo").value = "";
-      document.getElementById("filterSearch").value = "";
+      sessionStorage.removeItem("ungani_money_filter_type");
+      sessionStorage.removeItem("ungani_money_filter_status");
+      sessionStorage.removeItem("ungani_money_filter_from");
+      sessionStorage.removeItem("ungani_money_filter_to");
+      sessionStorage.removeItem("ungani_money_search");
       renderPage();
-      showToast("Filters reset ✓");
+      UnganiClientShared.showToast("Filters reset ✓");
     }
 
-    function getCategoryKey(row) {
-      return String(getValue(row, ["category_key", "slug", "name"], "other"))
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/_+/g, "_")
-        .replace(/^_|_$/g, "");
-    }
-
-    function getCategoryName(row) {
-      return getValue(row, ["category_name", "name", "title", "category"], "Other");
-    }
-
-    function normalizeType(type) {
-      const raw = String(type || "other").toLowerCase().replace(/\s+/g, "_");
-
-      if (raw === "sale" || raw === "sales" || raw === "income_sales") return "income";
-      if (raw === "petty_cash" || raw === "pettycash") return "petty_cash";
-      if (raw === "expense") return "expense";
-      if (raw === "income") return "income";
-
-      return raw || "other";
-    }
-
-    function isIncome(row) {
-      return normalizeType(getValue(row, ["transaction_type", "type"], "")) === "income";
-    }
-
-    function isExpense(row) {
-      return normalizeType(getValue(row, ["transaction_type", "type"], "")) === "expense";
-    }
-
-    function getAmount(row) {
-      return toNumber(getValue(row, ["amount"], 0));
-    }
-
-    function cardClass(row) {
-      const type = normalizeType(getValue(row, ["transaction_type", "type"], "other"));
-      if (type === "income") return "income";
-      if (type === "expense") return "expense";
-      if (type === "petty_cash") return "petty";
-      return "other";
-    }
-
-    function badges(row) {
-      const type = normalizeType(getValue(row, ["transaction_type", "type"], "other"));
-      const status = String(getValue(row, ["status"], "completed")).toLowerCase();
-
-      let html = "";
-
-      if (type === "income") html += `<span class="badge green">Income</span>`;
-      else if (type === "expense") html += `<span class="badge red">Expense</span>`;
-      else if (type === "petty_cash") html += `<span class="badge orange">Petty Cash</span>`;
-      else html += `<span class="badge blue">Other</span>`;
-
-      if (status === "pending") html += `<span class="badge orange">Pending</span>`;
-      if (status === "completed" || status === "paid") html += `<span class="badge green">${safe(cleanText(status))}</span>`;
-      if (status === "cancelled" || status === "failed") html += `<span class="badge red">${safe(cleanText(status))}</span>`;
-
-      return html;
-    }
-
-    function labelType(type) {
-      if (type === "income") return "Income / Sales";
-      if (type === "expense") return "Expense";
-      if (type === "petty_cash") return "Petty Cash";
-      return cleanText(type || "Other");
-    }
-
-    function money(amount) {
-      const value = toNumber(amount);
-
-      return "KES " + value.toLocaleString("en-KE", {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2
-      });
-    }
-
-    function today() {
-      return new Date().toISOString().slice(0, 10);
-    }
-
-    function getValue(row, names, fallback) {
-      for (let i = 0; i < names.length; i++) {
-        const key = names[i];
-
-        if (row && row[key] !== undefined && row[key] !== null && row[key] !== "") {
-          return row[key];
-        }
-      }
-
-      return fallback;
-    }
-
-    function value(id) {
-      const element = document.getElementById(id);
-      return element ? String(element.value || "").trim() : "";
-    }
-
-    function nullable(id) {
-      const text = value(id);
-      return text ? text : null;
-    }
-
-    function number(id) {
-      const num = Number(value(id));
-      return isNaN(num) ? 0 : num;
-    }
-
-    function toNumber(value) {
-      const num = Number(value);
-      return isNaN(num) ? 0 : num;
-    }
-
-    function truthy(value) {
-      return value === true || value === "true" || value === 1 || value === "1";
-    }
-
-    function cleanText(value) {
-      return String(value || "")
-        .replace(/_/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    }
-
-    function safe(value) {
-      return String(value === null || value === undefined ? "" : value)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-    }
-
-    function attr(value) {
-      return safe(value)
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
-
-    function showToast(message) {
-      const toast = document.getElementById("toast");
-      toast.innerText = message;
-      toast.style.display = "block";
-
+    function scrollToForm() {
       setTimeout(function () {
-        toast.style.display = "none";
-      }, 2200);
+        const card = document.getElementById("moneyFormCard");
+        if (card) {
+          card.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 100);
     }
 
-    async function logout() {
-      await supabaseClient.auth.signOut();
-      window.location.href = "client.html";
+    function getTransactionType(row) {
+      return String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "income")).toLowerCase();
+    }
+
+    function numberValue(id) {
+      const value = Number(UnganiClientShared.value(id) || 0);
+      return isNaN(value) ? 0 : value;
+    }
+
+    function setValue(id, value) {
+      const element = document.getElementById(id);
+      if (element) {
+        element.value = value === null || value === undefined ? "" : value;
+      }
     }
   </script>
 </body>
