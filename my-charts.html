@@ -4,10 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>UNGANI OS - Property Analytics</title>
+  <title>UNGANI OS - Premium Analytics</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-shared.js"></script>
+  <script src="ungani-analytics.js"></script>
 </head>
 
 <body>
@@ -26,35 +27,18 @@
       support: []
     };
 
-    const CATEGORY_COLORS = {
-      "agent commission": "#D4A63A",
-      "marketing / advertising": "#2563EB",
-      "marketing": "#2563EB",
-      "advertising": "#2563EB",
-      "legal / documentation fees": "#7C3AED",
-      "legal fees": "#7C3AED",
-      "documentation": "#7C3AED",
-      "property maintenance": "#0891B2",
-      "maintenance": "#0891B2",
-      "staff wages": "#0F766E",
-      "site visit / transport cost": "#EA580C",
-      "transport": "#EA580C",
-      "project material cost": "#A16207",
-      "other real estate cost": "#64748B",
-      "other expense": "#64748B"
-    };
-
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "charts",
-        pageTitle: "Property Analytics",
-        pageSubtitle: "Visual charts for income, expenses, property status, project progress, agents, leads, tasks, documents, and support.",
+        pageTitle: "Analytics",
+        pageSubtitle: "Premium visual charts for business operations.",
         onReady: startChartsPage
       });
     });
 
     async function startChartsPage(context) {
       currentContext = context;
+      UnganiAnalytics.injectChartStyles();
 
       const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
       const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
@@ -70,15 +54,15 @@
 
       if (subEl) {
         subEl.innerText = isRealEstate
-          ? "Visual charts for money movement, expense categories, property status, project progress, agents, leads, and tasks."
-          : "Visual charts for money movement, items, people, tasks, documents, records, and support.";
+          ? "Live visual charts for money, properties, projects, agents, leads, tasks, documents, and support."
+          : "Live visual charts for money, items, people, tasks, records, documents, and support.";
       }
 
       await loadChartData();
     }
 
     async function loadChartData() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading analytics...");
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading premium analytics...");
 
       const responses = await Promise.all([
         safeSelect("transactions"),
@@ -126,40 +110,87 @@
     function renderChartsPage() {
       const filtered = getFilteredData();
 
-      const money = calculateMoney(filtered.transactions);
-      const trend = calculateIncomeExpenseTrend(filtered.transactions);
-      const expenses = calculateExpenseBreakdown(filtered.transactions);
-      const propertyStatus = calculatePropertyStatus(filtered.items);
-      const projects = calculateProjects(filtered.items);
-      const agents = calculateAgentPerformance(filtered.people);
-      const leads = calculateLeadPipeline(filtered.people, filtered.records);
-      const tasks = calculateTaskStatus(filtered.tasks);
-      const documents = calculateDocumentStatus(filtered.documents);
-      const support = calculateSupportStatus(filtered.support);
+      const money = UnganiAnalytics.calculateMoney(filtered.transactions);
+      const trend = UnganiAnalytics.calculateIncomeExpenseTrend(filtered.transactions);
+      const expenses = UnganiAnalytics.calculateExpenseBreakdown(filtered.transactions);
+
+      const propertySummary = UnganiAnalytics.calculatePropertySummary(filtered.items);
+      const peopleSummary = UnganiAnalytics.calculatePeopleSummary(filtered.people);
+      const taskSummary = UnganiAnalytics.calculateTaskSummary(filtered.tasks);
+
+      const propertyStatus = UnganiAnalytics.calculateStatus(filtered.items, ["property_status", "item_status", "status"]);
+      const projects = UnganiAnalytics.calculateProjects(filtered.items);
+      const agents = UnganiAnalytics.calculateAgentPerformance(filtered.people, isRealEstate);
+      const agentChartRows = buildAgentChartRows(agents);
+
+      const leadPipeline = UnganiAnalytics.calculateLeadPipeline(filtered.people, filtered.records, isRealEstate);
+      const taskStatus = UnganiAnalytics.mapToRows({
+        Pending: taskSummary.pending,
+        "In Progress": taskSummary.inProgress,
+        Completed: taskSummary.completed,
+        Overdue: taskSummary.overdue
+      });
+
+      const calendarActivity = UnganiAnalytics.calculateStatus(filtered.events, ["event_type", "status"]);
+      const documentStatus = UnganiAnalytics.calculateStatus(filtered.documents, ["document_type", "category", "status"]);
+      const supportStatus = UnganiAnalytics.calculateStatus(filtered.support, ["status"]);
 
       UnganiClientShared.setContent(`
         <style>
-          .analytics-hero-grid {
+          .premium-analytics-hero {
             display: grid;
-            grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+            grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
             gap: 18px;
             align-items: stretch;
           }
 
-          .analytics-note {
+          .premium-analytics-hero h2 {
+            font-size: clamp(32px, 4vw, 54px);
+            line-height: 1.02;
+            margin: 18px 0 12px;
+            letter-spacing: -0.055em;
+          }
+
+          .premium-chart-note {
             border: 1px solid rgba(255,255,255,0.14);
             background: rgba(255,255,255,0.09);
             border-radius: 24px;
             padding: 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
           }
 
-          .analytics-note h3 {
-            margin-top: 0;
+          .premium-chart-note h3 {
             color: white;
+            margin: 0 0 8px;
           }
 
-          .analytics-note p {
-            color: rgba(255,255,255,0.72);
+          .premium-chart-note p {
+            color: rgba(255,255,255,0.74);
+            margin: 0;
+            line-height: 1.55;
+          }
+
+          .premium-color-guide {
+            display: grid;
+            gap: 8px;
+            margin-top: 18px;
+          }
+
+          .premium-color-guide span {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255,255,255,0.76);
+            font-size: 12px;
+            font-weight: 800;
+          }
+
+          .premium-dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 999px;
           }
 
           .analytics-filter-grid {
@@ -168,369 +199,187 @@
             gap: 14px;
           }
 
-          .chart-grid {
+          .analytics-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .premium-stat-card {
+            display: block;
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            box-shadow: var(--ungani-shadow);
+            padding: 20px;
+            min-height: 142px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+          }
+
+          .premium-stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--ungani-shadow-hover);
+            border-color: rgba(212,166,58,0.42);
+          }
+
+          .premium-stat-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 5px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent);
+          }
+
+          .premium-stat-card span {
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.055em;
+          }
+
+          .premium-stat-card h3 {
+            margin: 17px 0 8px;
+            font-size: clamp(25px, 3vw, 36px);
+            line-height: 1;
+            letter-spacing: -0.055em;
+          }
+
+          .premium-stat-card p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .main-chart-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 18px;
+            align-items: start;
+            margin-bottom: 18px;
+          }
+
+          .small-chart-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 18px;
             align-items: start;
-          }
-
-          .chart-card {
-            min-height: 360px;
-          }
-
-          .chart-title-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 14px;
-            align-items: flex-start;
-            margin-bottom: 16px;
-          }
-
-          .chart-title-row h3 {
-            margin: 0;
-          }
-
-          .money-summary-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 12px;
             margin-bottom: 18px;
           }
 
-          .money-box {
-            border: 1px solid var(--ungani-border);
-            border-radius: 20px;
-            padding: 15px;
-            background: var(--ungani-soft);
-          }
-
-          .money-box span {
-            display: block;
-            color: var(--ungani-muted);
-            font-size: 12px;
-            font-weight: 850;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 7px;
-          }
-
-          .money-box strong {
-            display: block;
-            font-size: 21px;
-            line-height: 1.05;
-            font-weight: 950;
-            letter-spacing: -0.04em;
-            overflow-wrap: anywhere;
-          }
-
-          .trend-wrap {
-            overflow-x: auto;
-            padding-bottom: 6px;
-          }
-
-          .trend-chart {
-            min-width: 520px;
-            height: 260px;
-            display: flex;
-            align-items: flex-end;
-            gap: 18px;
-            padding: 16px 8px 36px;
-            border-left: 1px solid var(--ungani-border);
-            border-bottom: 1px solid var(--ungani-border);
-            position: relative;
-          }
-
-          .trend-group {
-            flex: 1;
-            min-width: 64px;
-            height: 100%;
-            display: flex;
-            align-items: flex-end;
-            justify-content: center;
-            gap: 8px;
-            position: relative;
-          }
-
-          .trend-bar {
-            width: 18px;
-            min-height: 4px;
-            border-radius: 999px 999px 4px 4px;
-            transition: transform 0.18s ease;
-          }
-
-          .trend-bar:hover {
-            transform: translateY(-4px);
-          }
-
-          .trend-bar.income {
-            background: linear-gradient(180deg, #34A853, #15803D);
-          }
-
-          .trend-bar.expense {
-            background: linear-gradient(180deg, #F4C95D, #D4A63A);
-          }
-
-          .trend-label {
-            position: absolute;
-            left: 50%;
-            bottom: -30px;
-            transform: translateX(-50%);
-            color: var(--ungani-muted);
-            font-size: 11px;
-            white-space: nowrap;
-            font-weight: 800;
-          }
-
-          .chart-legend {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 14px;
-          }
-
-          .legend-item {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            font-size: 12px;
-            color: var(--ungani-muted);
-            font-weight: 800;
-          }
-
-          .legend-dot {
-            width: 11px;
-            height: 11px;
-            border-radius: 999px;
-            display: inline-block;
-          }
-
-          .donut-layout {
+          .triple-chart-grid {
             display: grid;
-            grid-template-columns: 230px minmax(0, 1fr);
-            gap: 22px;
-            align-items: center;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+            align-items: start;
+            margin-bottom: 18px;
           }
 
-          .donut-chart {
-            width: 220px;
-            height: 220px;
-            border-radius: 50%;
-            position: relative;
-            margin: 0 auto;
-            box-shadow: inset 0 0 0 1px var(--ungani-border);
+          .expense-breakdown-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 16px;
           }
 
-          .donut-chart::after {
-            content: "";
-            position: absolute;
-            inset: 54px;
-            border-radius: 50%;
-            background: var(--ungani-card);
-            border: 1px solid var(--ungani-border);
-          }
-
-          .donut-center {
-            position: absolute;
-            inset: 65px;
-            z-index: 2;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            text-align: center;
-          }
-
-          .donut-center strong {
-            font-size: 22px;
-            line-height: 1;
-          }
-
-          .donut-center span {
-            margin-top: 5px;
-            font-size: 11px;
-            color: var(--ungani-muted);
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-          }
-
-          .donut-legend-row {
+          .expense-row {
             display: grid;
             grid-template-columns: 14px minmax(0, 1fr) auto;
             gap: 10px;
             align-items: center;
             border-bottom: 1px solid var(--ungani-border);
-            padding: 10px 0;
+            padding: 9px 0;
           }
 
-          .donut-legend-row:last-child {
+          .expense-row:last-child {
             border-bottom: 0;
           }
 
-          .donut-legend-row strong {
+          .expense-row strong {
             font-size: 13px;
           }
 
-          .donut-legend-row span {
+          .expense-row span {
             color: var(--ungani-muted);
             font-size: 12px;
             font-weight: 800;
           }
 
-          .progress-card {
-            border: 1px solid var(--ungani-border);
-            border-radius: 20px;
-            padding: 14px;
-            background: var(--ungani-soft);
-            margin-bottom: 12px;
+          .premium-mini-list {
+            display: grid;
+            gap: 10px;
           }
 
-          .progress-track {
-            height: 12px;
-            border-radius: 999px;
-            background: rgba(6,28,61,0.10);
-            overflow: hidden;
-            margin: 10px 0 7px;
-          }
-
-          html[data-ungani-theme="dark"] .progress-track {
-            background: rgba(255,255,255,0.11);
-          }
-
-          .progress-fill {
-            height: 100%;
-            border-radius: 999px;
-            background: linear-gradient(90deg, #D4A63A, #15803D);
-          }
-
-          .mini-bar-row {
-            margin-bottom: 15px;
-          }
-
-          .mini-bar-head {
+          .premium-mini-row {
             display: flex;
+            align-items: center;
             justify-content: space-between;
             gap: 12px;
-            margin-bottom: 7px;
-            align-items: center;
-          }
-
-          .mini-bar-head strong {
-            font-size: 14px;
-          }
-
-          .mini-bar-track {
-            height: 12px;
-            border-radius: 999px;
-            background: rgba(6,28,61,0.09);
-            overflow: hidden;
-          }
-
-          html[data-ungani-theme="dark"] .mini-bar-track {
-            background: rgba(255,255,255,0.11);
-          }
-
-          .mini-bar-fill {
-            height: 100%;
-            border-radius: 999px;
-            min-width: 3%;
-          }
-
-          .mini-bar-fill.green { background: linear-gradient(90deg, #15803D, #34A853); }
-          .mini-bar-fill.gold { background: linear-gradient(90deg, #D4A63A, #F4C95D); }
-          .mini-bar-fill.red { background: linear-gradient(90deg, #B91C1C, #EF4444); }
-          .mini-bar-fill.blue { background: linear-gradient(90deg, #061C3D, #0B3A75); }
-
-          .leader-row {
-            display: grid;
-            grid-template-columns: 44px minmax(0, 1fr) auto;
-            gap: 12px;
-            align-items: center;
             border-bottom: 1px solid var(--ungani-border);
-            padding: 12px 0;
+            padding: 11px 0;
           }
 
-          .leader-row:last-child {
+          .premium-mini-row:last-child {
             border-bottom: 0;
           }
 
-          .leader-rank {
-            width: 38px;
-            height: 38px;
-            border-radius: 15px;
-            background: var(--ungani-gold);
-            color: var(--ungani-navy);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 950;
-          }
-
           @media (max-width: 1180px) {
-            .analytics-hero-grid,
-            .chart-grid,
-            .donut-layout {
+            .premium-analytics-hero,
+            .main-chart-grid,
+            .small-chart-grid,
+            .triple-chart-grid {
               grid-template-columns: 1fr;
             }
 
-            .money-summary-grid {
-              grid-template-columns: 1fr;
+            .analytics-summary-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
             }
           }
 
           @media (max-width: 680px) {
-            .analytics-filter-grid {
+            .analytics-filter-grid,
+            .analytics-summary-grid {
               grid-template-columns: 1fr;
-            }
-
-            .chart-card {
-              min-height: auto;
-            }
-
-            .chart-title-row {
-              flex-direction: column;
-            }
-
-            .donut-chart {
-              width: 190px;
-              height: 190px;
-            }
-
-            .donut-chart::after {
-              inset: 46px;
-            }
-
-            .donut-center {
-              inset: 56px;
             }
           }
         </style>
 
         <section class="ungani-card ungani-hero">
-          <div class="analytics-hero-grid">
+          <div class="premium-analytics-hero">
             <div>
               <span class="ungani-badge gold">${isRealEstate ? "Property Analytics" : "Business Analytics"}</span>
-              <h2 style="font-size:clamp(30px,4vw,50px);line-height:1.02;margin:18px 0 12px;">
-                ${isRealEstate ? "Visual property performance." : "Visual business performance."}
-              </h2>
+              <h2>${isRealEstate ? "Live property performance charts." : "Live business performance charts."}</h2>
               <p>
                 ${isRealEstate
-                  ? "This page shows property money movement, expense breakdown, income vs expenses over time, project progress, agent performance, lead pipeline, tasks, documents, and support."
-                  : "This page shows business money movement, expense breakdown, income vs expenses over time, item status, people activity, tasks, documents, and support."
+                  ? "Track income, expenses, project progress, property status, agents, leads, tasks, documents, and support using animated visual charts."
+                  : "Track income, expenses, item status, people, tasks, documents, support, and activity using animated visual charts."
                 }
               </p>
 
               <div class="ungani-button-row">
                 <button class="ungani-btn gold" onclick="loadChartData()">Refresh Charts</button>
-                <a class="ungani-btn green" href="reports.html">Open Reports</a>
-                <a class="ungani-btn light" href="client.html">Dashboard</a>
+                <a class="ungani-btn green" href="client.html">Dashboard</a>
+                <a class="ungani-btn light" href="reports.html">Reports</a>
               </div>
             </div>
 
-            <div class="analytics-note">
-              <h3>Color guide</h3>
-              <p>Green means positive/income/completed. Gold means neutral/informational. Red is only for attention-needed items such as overdue, lost, cancelled, or urgent records.</p>
+            <div class="premium-chart-note">
+              <div>
+                <h3>Premium color logic</h3>
+                <p>Colors are intentional. Red is reserved only for attention-needed items, not normal expense categories.</p>
+              </div>
+
+              <div class="premium-color-guide">
+                <span><i class="premium-dot" style="background:#16A34A;"></i>Green: income, positive, completed, available</span>
+                <span><i class="premium-dot" style="background:#D4A63A;"></i>Gold: neutral, informational, in progress</span>
+                <span><i class="premium-dot" style="background:#2563EB;"></i>Blue/Violet/Teal: normal categories</span>
+                <span><i class="premium-dot" style="background:#DC2626;"></i>Red: overdue, urgent, lost, cancelled</span>
+              </div>
             </div>
           </div>
         </section>
@@ -539,7 +388,7 @@
           <div class="ungani-section-title">
             <div>
               <h3>Filters</h3>
-              <p class="ungani-small">Filter analytics by date or search term.</p>
+              <p class="ungani-small">Filter analytics by date or search term. Charts update from the same client data.</p>
             </div>
             <button class="ungani-btn dark" onclick="resetFilters()">Reset Filters</button>
           </div>
@@ -557,99 +406,86 @@
 
             <div>
               <label for="searchBox">Search</label>
-              <input id="searchBox" placeholder="Search property, task, lead, document..." oninput="saveFilters(); renderChartsPage();" />
+              <input id="searchBox" placeholder="Search property, lead, task, document..." oninput="saveFilters(); renderChartsPage();" />
             </div>
           </div>
         </section>
 
-        <section class="ungani-grid">
-          ${UnganiClientShared.metricCard("Income", UnganiClientShared.formatKES(money.income), "Same source as dashboard", "green", "my-money.html")}
-          ${UnganiClientShared.metricCard("Expenses", UnganiClientShared.formatKES(money.expenses), "Same source as dashboard", "gold", "my-money.html")}
-          ${UnganiClientShared.metricCard("Balance", UnganiClientShared.formatKES(money.balance), "Income minus expenses", money.balance >= 0 ? "green" : "red", "my-money.html")}
-          ${UnganiClientShared.metricCard(isRealEstate ? "Properties / Listings" : "Items / Assets", filtered.items.length, "Current records in view", "blue", "my-items.html")}
+        <section class="analytics-summary-grid">
+          ${statCard("Income", UnganiAnalytics.compactMoney(money.income), "Same source as Dashboard", "#16A34A", "my-money.html")}
+          ${statCard("Expenses", UnganiAnalytics.compactMoney(money.expenses), "Same source as Dashboard", "#D4A63A", "my-money.html")}
+          ${statCard("Balance", UnganiAnalytics.compactMoney(money.balance), "Income minus expenses", money.balance >= 0 ? "#16A34A" : "#DC2626", "my-money.html")}
+          ${statCard(isRealEstate ? "Properties" : "Items", propertySummary.total, propertySummary.available + " available · " + propertySummary.closed + " sold/rented", "#2563EB", "my-items.html")}
         </section>
 
-        <section class="chart-grid">
-          <div class="ungani-card chart-card">
-            <div class="chart-title-row">
+        <section class="main-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
               <div>
                 <h3>Income vs Expenses Over Time</h3>
-                <p class="ungani-small">Monthly trend from the same transaction records used on the dashboard.</p>
+                <p class="ungani-small">Animated monthly trend with income, expenses, and balance line.</p>
               </div>
               <a class="ungani-btn green" href="my-money.html">Money</a>
             </div>
 
-            ${renderIncomeExpenseTrend(trend)}
+            ${trend.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="chartIncomeExpense"></canvas></div>' : UnganiAnalytics.emptyChart("Add dated income and expense records to show monthly trends.")}
           </div>
 
-          <div class="ungani-card chart-card">
-            <div class="chart-title-row">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
               <div>
                 <h3>Expense Breakdown</h3>
-                <p class="ungani-small">Donut chart by expense category with percentage share.</p>
+                <p class="ungani-small">Animated donut chart with category share and percentage.</p>
               </div>
               <a class="ungani-btn green" href="my-money.html">Money</a>
             </div>
 
-            ${renderExpenseDonut(expenses)}
+            ${expenses.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="chartExpenseDonut"></canvas></div>' : UnganiAnalytics.emptyChart("Add expense records to show category breakdown.")}
+            ${renderExpenseBreakdownList(expenses)}
           </div>
         </section>
 
-        <section class="chart-grid">
-          <div class="ungani-card chart-card">
-            <div class="chart-title-row">
+        <section class="small-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
               <div>
-                <h3>${isRealEstate ? "Project Progress" : "Work Progress"}</h3>
-                <p class="ungani-small">${isRealEstate ? "Units sold, available units, and progress percentage." : "Progress grouped by project or work area."}</p>
+                <h3>${isRealEstate ? "Property Status" : "Item Status"}</h3>
+                <p class="ungani-small">${isRealEstate ? "Available, reserved, negotiation, sold, and rented." : "Current item/asset status split."}</p>
               </div>
               <a class="ungani-btn" href="my-items.html">Open</a>
+            </div>
+
+            ${hasValues(propertyStatus) ? '<div class="ungani-chart-canvas-wrap"><canvas id="chartPropertyStatus"></canvas></div>' : UnganiAnalytics.emptyChart("Add properties/items with statuses to show this chart.")}
+          </div>
+
+          <div class="ungani-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>${isRealEstate ? "Project Progress" : "Work Progress"}</h3>
+                <p class="ungani-small">This keeps the working progress card style and matches Dashboard values.</p>
+              </div>
+              <a class="ungani-btn" href="my-items.html">Projects</a>
             </div>
 
             ${renderProjectProgress(projects)}
           </div>
-
-          <div class="ungani-card chart-card">
-            <div class="chart-title-row">
-              <div>
-                <h3>${isRealEstate ? "Property Status" : "Item Status"}</h3>
-                <p class="ungani-small">${isRealEstate ? "Available, reserved, negotiation, sold, and rented." : "Status of items, assets, and stock records."}</p>
-              </div>
-              <a class="ungani-btn" href="my-items.html">Open</a>
-            </div>
-
-            ${renderMiniBars(propertyStatus, isRealEstate ? "No property status data yet." : "No item status data yet.")}
-          </div>
         </section>
 
-        <section class="chart-grid">
-          <div class="ungani-card chart-card">
-            <div class="chart-title-row">
-              <div>
-                <h3>${isRealEstate ? "Agent Performance" : "People Performance"}</h3>
-                <p class="ungani-small">${isRealEstate ? "Top agents by deals closed and commission." : "People records ranked by activity where available."}</p>
-              </div>
-              <a class="ungani-btn gold" href="my-people.html">People</a>
-            </div>
-
-            ${renderAgentPerformance(agents)}
-          </div>
-
-          <div class="ungani-card chart-card">
-            <div class="chart-title-row">
+        <section class="small-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
               <div>
                 <h3>${isRealEstate ? "Lead Pipeline" : "People Pipeline"}</h3>
-                <p class="ungani-small">${isRealEstate ? "Lead stages from inquiry to closed or lost." : "People/customer stages by status."}</p>
+                <p class="ungani-small">Animated horizontal chart by pipeline/status stage.</p>
               </div>
               <a class="ungani-btn gold" href="my-people.html">People</a>
             </div>
 
-            ${renderMiniBars(leads, "No lead pipeline data yet.")}
+            ${hasValues(leadPipeline) ? '<div class="ungani-chart-canvas-wrap"><canvas id="chartLeadPipeline"></canvas></div>' : UnganiAnalytics.emptyChart("Add lead or people statuses to show the pipeline.")}
           </div>
-        </section>
 
-        <section class="chart-grid">
-          <div class="ungani-card chart-card">
-            <div class="chart-title-row">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
               <div>
                 <h3>Task Status</h3>
                 <p class="ungani-small">Pending, in progress, completed, and overdue tasks.</p>
@@ -657,38 +493,131 @@
               <a class="ungani-btn gold" href="my-tasks.html">Tasks</a>
             </div>
 
-            ${renderMiniBars(tasks, "No task data yet.")}
+            ${hasValues(taskStatus) ? '<div class="ungani-chart-canvas-wrap"><canvas id="chartTaskStatus"></canvas></div>' : UnganiAnalytics.emptyChart("Add tasks to show task status.")}
+          </div>
+        </section>
+
+        <section class="small-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>${isRealEstate ? "Agent Performance" : "People Performance"}</h3>
+                <p class="ungani-small">Animated ranking chart plus clear agent list.</p>
+              </div>
+              <a class="ungani-btn gold" href="my-people.html">People</a>
+            </div>
+
+            ${hasValues(agentChartRows) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="chartAgentPerformance"></canvas></div>' : UnganiAnalytics.emptyChart("Add deals closed or commission data to show performance.")}
+            ${renderAgentList(agents)}
           </div>
 
-          <div class="ungani-card chart-card">
-            <div class="chart-title-row">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
               <div>
-                <h3>Documents & Support</h3>
-                <p class="ungani-small">Document and support visibility without clutter.</p>
+                <h3>Calendar Activity</h3>
+                <p class="ungani-small">${isRealEstate ? "Viewings, site visits, follow-ups, reminders, and meetings." : "Appointments, follow-ups, reminders, and meetings."}</p>
+              </div>
+              <a class="ungani-btn green" href="my-calendar.html">Calendar</a>
+            </div>
+
+            ${hasValues(calendarActivity) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="chartCalendarActivity"></canvas></div>' : UnganiAnalytics.emptyChart("Add calendar events to show activity.")}
+          </div>
+        </section>
+
+        <section class="small-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Documents</h3>
+                <p class="ungani-small">Document records by type or status.</p>
+              </div>
+              <a class="ungani-btn" href="my-documents.html">Documents</a>
+            </div>
+
+            ${hasValues(documentStatus) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="chartDocuments"></canvas></div>' : UnganiAnalytics.emptyChart("Add documents to show this chart.")}
+          </div>
+
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Support Status</h3>
+                <p class="ungani-small">Open, in progress, resolved, or closed support issues.</p>
               </div>
               <a class="ungani-btn dark" href="my-support.html">Support</a>
             </div>
 
-            <h3 style="font-size:16px;margin:0 0 12px;">Documents</h3>
-            ${renderMiniBars(documents, "No document data yet.")}
-
-            <h3 style="font-size:16px;margin:20px 0 12px;">Support</h3>
-            ${renderMiniBars(support, "No support data yet.")}
+            ${hasValues(supportStatus) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="chartSupport"></canvas></div>' : UnganiAnalytics.emptyChart("Add support issues to show this chart.")}
           </div>
         </section>
 
         <p class="ungani-small">
-          Charts Version: Step 308D-2 Donut and Trend Analytics · ungani.com · info@ungani.com
+          Charts Version: Step 309C Premium Animated Analytics · ungani.com · info@ungani.com
         </p>
       `);
 
       restoreFilters();
+
+      setTimeout(function () {
+        renderAllCharts({
+          trend,
+          expenses,
+          propertyStatus,
+          leadPipeline,
+          taskStatus,
+          agentChartRows,
+          calendarActivity,
+          documentStatus,
+          supportStatus
+        });
+      }, 120);
+    }
+
+    async function renderAllCharts(data) {
+      try {
+        if (data.trend.length) {
+          await UnganiAnalytics.renderIncomeExpenseChart("chartIncomeExpense", data.trend);
+        }
+
+        if (data.expenses.length) {
+          await UnganiAnalytics.renderExpenseDonutChart("chartExpenseDonut", data.expenses);
+        }
+
+        if (hasValues(data.propertyStatus)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("chartPropertyStatus", data.propertyStatus);
+        }
+
+        if (hasValues(data.leadPipeline)) {
+          await UnganiAnalytics.renderHorizontalBarChart("chartLeadPipeline", data.leadPipeline, "Records");
+        }
+
+        if (hasValues(data.taskStatus)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("chartTaskStatus", data.taskStatus);
+        }
+
+        if (hasValues(data.agentChartRows)) {
+          await UnganiAnalytics.renderHorizontalBarChart("chartAgentPerformance", data.agentChartRows, "Deals / Performance");
+        }
+
+        if (hasValues(data.calendarActivity)) {
+          await UnganiAnalytics.renderHorizontalBarChart("chartCalendarActivity", data.calendarActivity, "Events");
+        }
+
+        if (hasValues(data.documentStatus)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("chartDocuments", data.documentStatus);
+        }
+
+        if (hasValues(data.supportStatus)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("chartSupport", data.supportStatus);
+        }
+      } catch (error) {
+        console.warn("Charts warning:", error.message);
+      }
     }
 
     function getFilteredData() {
-      const from = document.getElementById("filterFrom") ? UnganiClientShared.value("filterFrom") : "";
-      const to = document.getElementById("filterTo") ? UnganiClientShared.value("filterTo") : "";
-      const query = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
+      const from = getFilterValue("filterFrom", "ungani_charts_filter_from");
+      const to = getFilterValue("filterTo", "ungani_charts_filter_to");
+      const query = getFilterValue("searchBox", "ungani_charts_search").toLowerCase();
 
       return {
         transactions: filterRows(chartData.transactions, from, to, query, ["transaction_date", "created_at"]),
@@ -717,7 +646,7 @@
 
     function getFirstDate(row, fields) {
       for (let i = 0; i < fields.length; i++) {
-        const value = UnganiClientShared.getValue(row, [fields[i]], "");
+        const value = UnganiAnalytics.safeGet(row, [fields[i]], "");
 
         if (value) {
           return String(value).slice(0, 10);
@@ -727,415 +656,50 @@
       return "";
     }
 
-    function calculateMoney(rows) {
-      let income = 0;
-      let expenses = 0;
-      let pending = 0;
+    function buildAgentChartRows(agents) {
+      return (agents || []).map(function (agent) {
+        const name = UnganiAnalytics.safeGet(agent, ["full_name", "name"], "Agent");
+        const deals = Number(UnganiAnalytics.safeGet(agent, ["deals_closed"], 0) || 0);
+        const commission = Number(UnganiAnalytics.safeGet(agent, ["commission_earned_month"], 0) || 0);
 
-      rows.forEach(function (row) {
-        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
-        const type = String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
-
-        if (type.includes("income") || type.includes("sale") || type.includes("rental")) {
-          income += amount;
-        } else if (type.includes("expense") || type.includes("petty")) {
-          expenses += amount;
-        }
-
-        if (status.includes("pending")) {
-          pending += amount;
-        }
-      });
-
-      return {
-        income,
-        expenses,
-        pending,
-        balance: income - expenses
-      };
-    }
-
-    function calculateIncomeExpenseTrend(rows) {
-      const map = {};
-
-      rows.forEach(function (row) {
-        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
-        const type = String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "")).toLowerCase();
-        const rawDate = UnganiClientShared.getValue(row, ["transaction_date", "created_at"], "");
-
-        if (!rawDate) return;
-
-        const date = new Date(rawDate);
-        if (isNaN(date.getTime())) return;
-
-        const key = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0");
-        const label = date.toLocaleDateString("en-KE", { month: "short", year: "numeric" });
-
-        if (!map[key]) {
-          map[key] = {
-            key,
-            label,
-            income: 0,
-            expenses: 0
-          };
-        }
-
-        if (type.includes("income") || type.includes("sale") || type.includes("rental")) {
-          map[key].income += amount;
-        } else if (type.includes("expense") || type.includes("petty")) {
-          map[key].expenses += amount;
-        }
-      });
-
-      return Object.keys(map)
-        .sort()
-        .map(function (key) {
-          return map[key];
-        });
-    }
-
-    function calculateExpenseBreakdown(rows) {
-      const map = {};
-
-      rows.forEach(function (row) {
-        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
-        const type = String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "")).toLowerCase();
-
-        if (!type.includes("expense") && !type.includes("petty")) return;
-
-        const category = normalizeExpenseCategory(UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "Other Expense"));
-        map[category] = (map[category] || 0) + amount;
-      });
-
-      return Object.keys(map).map(function (key) {
         return {
-          label: key,
-          value: Number(map[key] || 0),
-          color: getExpenseCategoryColor(key)
+          label: name,
+          value: deals > 0 ? deals : Math.round(commission / 100000)
         };
-      }).sort(function (a, b) {
-        return b.value - a.value;
+      }).filter(function (row) {
+        return Number(row.value || 0) > 0;
       });
     }
 
-    function normalizeExpenseCategory(category) {
-      const lower = String(category || "Other Expense").toLowerCase();
-
-      if (lower.includes("agent") && lower.includes("commission")) return "Agent Commission";
-      if (lower.includes("marketing") || lower.includes("advertising")) return "Marketing / Advertising";
-      if (lower.includes("legal") || lower.includes("documentation")) return "Legal / Documentation Fees";
-      if (lower.includes("maintenance") || lower.includes("repair")) return "Property Maintenance";
-      if (lower.includes("staff") || lower.includes("wage")) return "Staff Wages";
-      if (lower.includes("transport") || lower.includes("site visit")) return "Site Visit / Transport Cost";
-      if (lower.includes("material") || lower.includes("project")) return "Project Material Cost";
-
-      return category || "Other Expense";
-    }
-
-    function getExpenseCategoryColor(category) {
-      const lower = String(category || "").toLowerCase();
-
-      if (CATEGORY_COLORS[lower]) {
-        return CATEGORY_COLORS[lower];
-      }
-
-      if (lower.includes("agent")) return CATEGORY_COLORS["agent commission"];
-      if (lower.includes("marketing") || lower.includes("advertising")) return CATEGORY_COLORS["marketing / advertising"];
-      if (lower.includes("legal") || lower.includes("documentation")) return CATEGORY_COLORS["legal / documentation fees"];
-      if (lower.includes("maintenance") || lower.includes("repair")) return CATEGORY_COLORS["property maintenance"];
-      if (lower.includes("staff") || lower.includes("wage")) return CATEGORY_COLORS["staff wages"];
-      if (lower.includes("transport") || lower.includes("site visit")) return CATEGORY_COLORS["site visit / transport cost"];
-      if (lower.includes("material") || lower.includes("project")) return CATEGORY_COLORS["project material cost"];
-
-      return "#64748B";
-    }
-
-    function calculatePropertyStatus(rows) {
-      const map = {};
-
-      rows.forEach(function (row) {
-        const status = UnganiClientShared.getValue(row, ["property_status", "item_status", "status"], "Unknown");
-        map[status] = (map[status] || 0) + 1;
-      });
-
-      return mapToRows(map);
-    }
-
-    function calculateProjects(rows) {
-      const map = {};
-
-      rows.forEach(function (row) {
-        const project = UnganiClientShared.getValue(row, ["project_name"], "");
-
-        if (!project) return;
-
-        if (!map[project]) {
-          map[project] = {
-            name: project,
-            count: 0,
-            totalUnits: 0,
-            unitsSold: 0,
-            unitsAvailable: 0,
-            progressTotal: 0,
-            progressCount: 0,
-            value: 0
-          };
-        }
-
-        const item = map[project];
-
-        item.count += 1;
-        item.totalUnits += Number(UnganiClientShared.getValue(row, ["total_units"], 0) || 0);
-        item.unitsSold += Number(UnganiClientShared.getValue(row, ["units_sold"], 0) || 0);
-        item.unitsAvailable += Number(UnganiClientShared.getValue(row, ["units_available"], 0) || 0);
-        item.value += Number(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
-
-        const progress = Number(UnganiClientShared.getValue(row, ["project_progress_percent"], 0) || 0);
-
-        if (progress > 0) {
-          item.progressTotal += progress;
-          item.progressCount += 1;
-        }
-      });
-
-      return Object.keys(map).map(function (key) {
-        const item = map[key];
-
-        if (item.progressCount > 0) {
-          item.progress = Math.round(item.progressTotal / item.progressCount);
-        } else if (item.totalUnits > 0) {
-          item.progress = Math.round((item.unitsSold / item.totalUnits) * 100);
-        } else {
-          item.progress = 0;
-        }
-
-        item.progress = Math.max(0, Math.min(100, item.progress));
-
-        return item;
-      }).sort(function (a, b) {
-        return b.value - a.value;
-      });
-    }
-
-    function calculateAgentPerformance(rows) {
-      const agents = rows.filter(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["person_type"], "")).toLowerCase();
-
-        if (isRealEstate) {
-          return type === "agent";
-        }
-
-        return type === "staff" || type === "manager" || type === "agent" || type === "sales";
-      });
-
-      agents.sort(function (a, b) {
-        const aDeals = Number(UnganiClientShared.getValue(a, ["deals_closed"], 0) || 0);
-        const bDeals = Number(UnganiClientShared.getValue(b, ["deals_closed"], 0) || 0);
-        const aCommission = Number(UnganiClientShared.getValue(a, ["commission_earned_month"], 0) || 0);
-        const bCommission = Number(UnganiClientShared.getValue(b, ["commission_earned_month"], 0) || 0);
-
-        return (bDeals * 1000000 + bCommission) - (aDeals * 1000000 + aCommission);
-      });
-
-      return agents.slice(0, 6);
-    }
-
-    function calculateLeadPipeline(peopleRows, recordRows) {
-      const map = {};
-
-      peopleRows.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["person_type"], "")).toLowerCase();
-
-        if (isRealEstate && type !== "lead" && type !== "buyer" && type !== "renter" && type !== "tenant") return;
-
-        let stage = UnganiClientShared.getValue(row, ["lead_status", "relationship_status", "status"], "");
-
-        if (!stage) {
-          stage = type || "Contact";
-        }
-
-        map[stage] = (map[stage] || 0) + 1;
-      });
-
-      recordRows.forEach(function (row) {
-        const recordType = String(UnganiClientShared.getValue(row, ["record_type"], "")).toLowerCase();
-
-        if (isRealEstate && !recordType.includes("lead") && !recordType.includes("viewing") && !recordType.includes("inquiry")) return;
-
-        const stage = UnganiClientShared.getValue(row, ["lead_status", "deal_status", "status"], "Record");
-        map[stage] = (map[stage] || 0) + 1;
-      });
-
-      return mapToRows(map);
-    }
-
-    function calculateTaskStatus(rows) {
-      const today = new Date().toISOString().slice(0, 10);
-      const map = {
-        pending: 0,
-        "in progress": 0,
-        completed: 0,
-        overdue: 0
-      };
-
-      rows.forEach(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
-        const due = String(UnganiClientShared.getValue(row, ["due_date"], "")).slice(0, 10);
-
-        if (due && due < today && !status.includes("completed") && !status.includes("cancelled")) {
-          map.overdue += 1;
-        }
-
-        if (status.includes("completed")) {
-          map.completed += 1;
-        } else if (status.includes("progress")) {
-          map["in progress"] += 1;
-        } else if (!status.includes("cancelled")) {
-          map.pending += 1;
-        }
-      });
-
-      return mapToRows(map);
-    }
-
-    function calculateDocumentStatus(rows) {
-      const map = {};
-
-      rows.forEach(function (row) {
-        const type = UnganiClientShared.getValue(row, ["document_type", "category", "status"], "Document");
-        map[type] = (map[type] || 0) + 1;
-      });
-
-      return mapToRows(map);
-    }
-
-    function calculateSupportStatus(rows) {
-      const map = {};
-
-      rows.forEach(function (row) {
-        const status = UnganiClientShared.getValue(row, ["status"], "Open");
-        map[status] = (map[status] || 0) + 1;
-      });
-
-      return mapToRows(map);
-    }
-
-    function mapToRows(map) {
-      return Object.keys(map).map(function (key) {
-        return {
-          label: key,
-          value: Number(map[key] || 0)
-        };
-      }).sort(function (a, b) {
-        return b.value - a.value;
-      });
-    }
-
-    function renderIncomeExpenseTrend(rows) {
-      const cleanRows = (rows || []).filter(function (row) {
-        return Number(row.income || 0) !== 0 || Number(row.expenses || 0) !== 0;
-      });
-
-      if (cleanRows.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No trend data yet</h3>
-            <p>Add dated income and expense records to see income vs expenses over time.</p>
-          </div>
-        `;
-      }
-
-      const maxValue = Math.max.apply(null, cleanRows.map(function (row) {
-        return Math.max(Number(row.income || 0), Number(row.expenses || 0));
-      })) || 1;
-
-      return `
-        <div class="trend-wrap">
-          <div class="trend-chart">
-            ${cleanRows.map(function (row) {
-              const incomeHeight = Math.max(4, Math.round((Number(row.income || 0) / maxValue) * 100));
-              const expenseHeight = Math.max(4, Math.round((Number(row.expenses || 0) / maxValue) * 100));
-
-              return `
-                <div class="trend-group">
-                  <div
-                    class="trend-bar income"
-                    style="height:${incomeHeight}%;"
-                    title="Income: ${UnganiClientShared.attr(UnganiClientShared.formatKES(row.income))}"
-                  ></div>
-                  <div
-                    class="trend-bar expense"
-                    style="height:${expenseHeight}%;"
-                    title="Expenses: ${UnganiClientShared.attr(UnganiClientShared.formatKES(row.expenses))}"
-                  ></div>
-                  <div class="trend-label">${UnganiClientShared.safe(row.label)}</div>
-                </div>
-              `;
-            }).join("")}
-          </div>
-        </div>
-
-        <div class="chart-legend">
-          <span class="legend-item"><span class="legend-dot" style="background:#15803D;"></span>Income</span>
-          <span class="legend-item"><span class="legend-dot" style="background:#D4A63A;"></span>Expenses</span>
-        </div>
-      `;
-    }
-
-    function renderExpenseDonut(rows) {
-      const cleanRows = (rows || []).filter(function (row) {
+    function renderExpenseBreakdownList(expenses) {
+      const rows = (expenses || []).filter(function (row) {
         return Number(row.value || 0) > 0;
       });
 
-      if (cleanRows.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No expense breakdown yet</h3>
-            <p>Add expense records such as Agent Commission, Marketing, Legal Fees, or Property Maintenance to see a donut chart.</p>
-          </div>
-        `;
+      if (rows.length === 0) {
+        return "";
       }
 
-      const total = cleanRows.reduce(function (sum, row) {
+      const total = rows.reduce(function (sum, row) {
         return sum + Number(row.value || 0);
       }, 0);
 
-      let current = 0;
-      const gradientParts = cleanRows.map(function (row) {
-        const start = current;
-        const percent = total > 0 ? (Number(row.value || 0) / total) * 100 : 0;
-        const end = current + percent;
-        current = end;
-
-        return `${row.color} ${start}% ${end}%`;
-      });
-
       return `
-        <div class="donut-layout">
-          <div class="donut-chart" style="background: conic-gradient(${gradientParts.join(", ")});">
-            <div class="donut-center">
-              <strong>${UnganiClientShared.safe(UnganiClientShared.formatKES(total))}</strong>
-              <span>Total Expenses</span>
-            </div>
-          </div>
+        <div class="expense-breakdown-list">
+          ${rows.map(function (row) {
+            const percent = total > 0 ? Math.round((Number(row.value || 0) / total) * 100) : 0;
 
-          <div>
-            ${cleanRows.map(function (row) {
-              const percent = total > 0 ? Math.round((Number(row.value || 0) / total) * 100) : 0;
-
-              return `
-                <div class="donut-legend-row">
-                  <span class="legend-dot" style="background:${UnganiClientShared.attr(row.color)};"></span>
-                  <div>
-                    <strong>${UnganiClientShared.safe(row.label)}</strong>
-                    <span>${UnganiClientShared.safe(UnganiClientShared.formatKES(row.value))}</span>
-                  </div>
-                  <strong>${percent}%</strong>
+            return `
+              <div class="expense-row">
+                <i class="premium-dot" style="background:${UnganiClientShared.attr(row.color)};"></i>
+                <div>
+                  <strong>${UnganiClientShared.safe(row.label)}</strong>
+                  <span>${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(row.value))}</span>
                 </div>
-              `;
-            }).join("")}
-          </div>
+                <strong>${percent}%</strong>
+              </div>
+            `;
+          }).join("")}
         </div>
       `;
     }
@@ -1154,97 +718,70 @@
         const percent = Math.max(0, Math.min(100, Number(project.progress || 0)));
 
         return `
-          <div class="progress-card">
-            <div class="chart-title-row" style="margin-bottom:8px;">
+          <div class="ungani-project-progress-card">
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
               <div>
-                <h3 style="font-size:16px;">${UnganiClientShared.safe(project.name)}</h3>
-                <p class="ungani-small">${project.count} listing(s) · ${project.unitsSold}/${project.totalUnits} units sold</p>
+                <strong>${UnganiClientShared.safe(project.name)}</strong>
+                <p class="ungani-small" style="margin:5px 0 0;">
+                  ${project.count} listing(s) · ${project.unitsSold}/${project.totalUnits} units sold · ${project.unitsAvailable} available
+                </p>
               </div>
               <span class="ungani-badge ${progressColor(percent)}">${percent}%</span>
             </div>
 
-            <div class="progress-track">
-              <div class="progress-fill" style="width:${percent}%;"></div>
+            <div class="ungani-project-track">
+              <div class="ungani-project-fill" style="width:${percent}%;"></div>
             </div>
 
             <p class="ungani-small">
-              ${project.unitsAvailable} available · ${UnganiClientShared.safe(UnganiClientShared.formatKES(project.value))} estimated value
+              Estimated value: <strong>${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(project.value))}</strong>
             </p>
           </div>
         `;
       }).join("");
     }
 
-    function renderMiniBars(rows, emptyMessage) {
-      const cleanRows = (rows || []).filter(function (row) {
-        return Number(row.value || 0) !== 0;
-      });
-
-      if (cleanRows.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No chart data</h3>
-            <p>${UnganiClientShared.safe(emptyMessage || "No data available yet.")}</p>
-          </div>
-        `;
+    function renderAgentList(agents) {
+      if (!agents || agents.length === 0) {
+        return "";
       }
 
-      const maxValue = Math.max.apply(null, cleanRows.map(function (row) {
-        return Math.abs(Number(row.value || 0));
-      })) || 1;
+      return `
+        <div class="premium-mini-list" style="margin-top:16px;">
+          ${agents.slice(0, 5).map(function (agent, index) {
+            const name = UnganiAnalytics.safeGet(agent, ["full_name", "name"], "Agent");
+            const deals = Number(UnganiAnalytics.safeGet(agent, ["deals_closed"], 0) || 0);
+            const commission = Number(UnganiAnalytics.safeGet(agent, ["commission_earned_month"], 0) || 0);
 
-      return cleanRows.slice(0, 8).map(function (row) {
-        const value = Number(row.value || 0);
-        const width = Math.max(4, Math.round((Math.abs(value) / maxValue) * 100));
-        const color = getMeaningColor(row.label);
-
-        return `
-          <div class="mini-bar-row">
-            <div class="mini-bar-head">
-              <strong>${UnganiClientShared.safe(toTitle(row.label))}</strong>
-              <span class="ungani-small">${UnganiClientShared.safe(value)}</span>
-            </div>
-
-            <div class="mini-bar-track">
-              <div class="mini-bar-fill ${UnganiClientShared.attr(color)}" style="width:${width}%;"></div>
-            </div>
-          </div>
-        `;
-      }).join("");
+            return `
+              <div class="ungani-rank-row">
+                <div class="ungani-rank-number">${index + 1}</div>
+                <div>
+                  <strong>${UnganiClientShared.safe(name)}</strong>
+                  <p class="ungani-small" style="margin:4px 0 0;">${deals} deal(s)</p>
+                </div>
+                <strong>${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(commission))}</strong>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
     }
 
-    function renderAgentPerformance(agents) {
-      if (!agents || agents.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No performance data yet</h3>
-            <p>${isRealEstate ? "Add agents with deals closed or commission earned to show performance." : "Add people records with activity values to show performance."}</p>
-          </div>
-        `;
-      }
+    function statCard(title, value, subtitle, accent, href) {
+      return `
+        <a class="premium-stat-card" href="${UnganiClientShared.attr(href)}" style="--accent:${UnganiClientShared.attr(accent)};">
+          <span>${UnganiClientShared.safe(title)}</span>
+          <h3>${UnganiClientShared.safe(value)}</h3>
+          <p>${UnganiClientShared.safe(subtitle)}</p>
+        </a>
+      `;
+    }
 
-      return agents.map(function (agent, index) {
-        const name = UnganiClientShared.getValue(agent, ["full_name", "name"], "Person");
-        const deals = Number(UnganiClientShared.getValue(agent, ["deals_closed"], 0) || 0);
-        const commission = Number(UnganiClientShared.getValue(agent, ["commission_earned_month"], 0) || 0);
-        const type = UnganiClientShared.getValue(agent, ["person_type"], "person");
-
-        return `
-          <div class="leader-row">
-            <div class="leader-rank">${index + 1}</div>
-
-            <div>
-              <strong>${UnganiClientShared.safe(name)}</strong>
-              <p class="ungani-small" style="margin:4px 0 0;">${UnganiClientShared.safe(toTitle(type))}</p>
-            </div>
-
-            <div style="text-align:right;">
-              <strong>${deals} deal(s)</strong>
-              <p class="ungani-small" style="margin:4px 0 0;">${UnganiClientShared.safe(UnganiClientShared.formatKES(commission))}</p>
-            </div>
-          </div>
-        `;
-      }).join("");
+    function hasValues(rows) {
+      return (rows || []).some(function (row) {
+        return Number(row.value || 0) > 0;
+      });
     }
 
     function progressColor(percent) {
@@ -1255,33 +792,14 @@
       return "red";
     }
 
-    function getMeaningColor(label) {
-      const lower = String(label || "").toLowerCase();
+    function getFilterValue(inputId, storageKey) {
+      const el = document.getElementById(inputId);
 
-      if (
-        lower.includes("income") ||
-        lower.includes("available") ||
-        lower.includes("completed") ||
-        lower.includes("closed") ||
-        lower.includes("sold") ||
-        lower.includes("rented") ||
-        lower.includes("resolved") ||
-        lower.includes("active")
-      ) {
-        return "green";
+      if (el) {
+        return String(el.value || "").trim();
       }
 
-      if (
-        lower.includes("urgent") ||
-        lower.includes("overdue") ||
-        lower.includes("lost") ||
-        lower.includes("cancelled") ||
-        lower.includes("failed")
-      ) {
-        return "red";
-      }
-
-      return "gold";
+      return String(sessionStorage.getItem(storageKey) || "").trim();
     }
 
     function restoreFilters() {
@@ -1302,14 +820,6 @@
       sessionStorage.removeItem("ungani_charts_search");
       renderChartsPage();
       UnganiClientShared.showToast("Chart filters reset ✓");
-    }
-
-    function toTitle(value) {
-      return String(value || "")
-        .replace(/_/g, " ")
-        .replace(/\w\S*/g, function (text) {
-          return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
-        });
     }
   </script>
 </body>
