@@ -8,20 +8,22 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-shared.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
 </head>
 
 <body>
   <script>
     let currentContext = null;
-    let events = [];
-    let currentEditId = null;
-    let isRealEstate = false;
+    let businessPreset = null;
+    let eventRows = [];
+    let editingEventId = null;
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "calendar",
         pageTitle: "Calendar",
-        pageSubtitle: "Manage business dates, follow-ups, appointments, site visits, deadlines, and reminders.",
+        pageSubtitle: "Manage appointments, deadlines, meetings, follow-ups, and business activities.",
         onReady: startCalendarPage
       });
     });
@@ -29,28 +31,27 @@
     async function startCalendarPage(context) {
       currentContext = context;
 
-      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
-      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
+      if (window.UnganiAnalytics) {
+        UnganiAnalytics.injectChartStyles();
+      }
 
-      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+      businessPreset = UnganiPresets.getPreset(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
 
       if (titleEl) {
-        titleEl.innerText = isRealEstate ? "Property Calendar" : "Business Calendar";
+        titleEl.innerText = businessPreset.calendarLabel;
       }
 
       if (subEl) {
-        subEl.innerText = isRealEstate
-          ? "Schedule property viewings, site visits, client follow-ups, rent reminders, document deadlines, and project dates."
-          : "Schedule business meetings, follow-ups, deadlines, reminders, and operational activities.";
+        subEl.innerText = "Appointments, deadlines, meetings, reminders, and activities for " + businessPreset.name + ".";
       }
 
-      await loadEvents();
+      await loadEventRows();
     }
 
-    async function loadEvents() {
+    async function loadEventRows() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading calendar activities...");
 
       const response = await currentContext.supabaseClient
@@ -58,626 +59,998 @@
         .select("*")
         .eq("tenant_id", currentContext.tenantId)
         .order("event_date", { ascending: true })
-        .order("start_time", { ascending: true });
+        .order("created_at", { ascending: false });
 
       if (response.error) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load calendar", response.error.message);
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load calendar activities", response.error.message)
+        );
         return;
       }
 
-      events = response.data || [];
+      eventRows = response.data || [];
       renderCalendarPage();
     }
 
     function renderCalendarPage() {
-      const filtered = filterEvents();
-      const summary = calculateSummary();
+      const filteredRows = getFilteredRows();
+      const summary = calculateCalendarSummary(filteredRows);
+      const typeRows = buildTypeRows(filteredRows);
+      const statusRows = buildStatusRows(filteredRows);
+      const priorityRows = buildPriorityRows(filteredRows);
 
       UnganiClientShared.setContent(`
-        <section class="ungani-card ungani-hero">
-          <h2>${isRealEstate ? "Property Calendar & Site Visits" : "Business Calendar"}</h2>
-          <p>
-            ${isRealEstate
-              ? "Use this section to schedule property viewings, site visits, rent reminders, document deadlines, payment reminders, project dates, and agent follow-ups."
-              : "Use this section to schedule business meetings, follow-ups, deadlines, reminders, and operational activities."
-            }
-          </p>
+        <style>
+          .calendar-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+            gap: 18px;
+            align-items: stretch;
+          }
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="scrollToForm()">${currentEditId ? "Update Calendar Event" : "Add Calendar Event"}</button>
-            <a class="ungani-btn green" href="my-tasks.html">Tasks</a>
-            <a class="ungani-btn dark" href="my-records.html">Records</a>
+          .calendar-preset-box {
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.09);
+            border-radius: 24px;
+            padding: 18px;
+          }
+
+          .calendar-preset-box h3 {
+            color: white;
+            margin: 0 0 8px;
+          }
+
+          .calendar-preset-box p {
+            color: rgba(255,255,255,0.74);
+            margin: 0;
+            line-height: 1.55;
+          }
+
+          .calendar-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+          }
+
+          .calendar-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 8px 11px;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            font-size: 12px;
+            font-weight: 850;
+          }
+
+          .calendar-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .calendar-kpi-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            box-shadow: var(--ungani-shadow);
+            padding: 20px;
+            min-height: 140px;
+          }
+
+          .calendar-kpi-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 5px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent);
+          }
+
+          .calendar-kpi-card span {
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.055em;
+          }
+
+          .calendar-kpi-card h3 {
+            margin: 17px 0 8px;
+            font-size: clamp(25px, 3vw, 36px);
+            line-height: 1;
+            letter-spacing: -0.055em;
+          }
+
+          .calendar-kpi-card p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .calendar-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .calendar-form-grid .wide {
+            grid-column: span 3;
+          }
+
+          .calendar-main-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(320px, 0.52fr);
+            gap: 18px;
+            align-items: start;
+          }
+
+          .calendar-chart-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+            margin-bottom: 18px;
+            align-items: start;
+          }
+
+          .calendar-type-section {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+          }
+
+          .type-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+
+          .type-pill {
+            border: 1px solid var(--ungani-border);
+            background: var(--ungani-soft);
+            color: var(--ungani-text);
+            border-radius: 999px;
+            padding: 8px 11px;
+            font-size: 12px;
+            font-weight: 850;
+            cursor: pointer;
+          }
+
+          .type-pill:hover {
+            border-color: rgba(212,166,58,0.65);
+          }
+
+          .calendar-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          .event-card {
+            border: 1px solid var(--ungani-border);
+            border-radius: 24px;
+            padding: 16px;
+            background: var(--ungani-card);
+            box-shadow: var(--ungani-shadow);
+            display: grid;
+            grid-template-columns: 74px minmax(0, 1fr) auto;
+            gap: 14px;
+            align-items: start;
+          }
+
+          .event-card:hover {
+            border-color: rgba(212,166,58,0.55);
+          }
+
+          .event-date-box {
+            border-radius: 20px;
+            background: linear-gradient(135deg, #061C3D, #D4A63A);
+            color: white;
+            text-align: center;
+            padding: 12px 8px;
+            min-height: 74px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+          }
+
+          .event-date-box strong {
+            font-size: 24px;
+            line-height: 1;
+          }
+
+          .event-date-box span {
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 900;
+            margin-top: 4px;
+            color: rgba(255,255,255,0.82);
+          }
+
+          .event-title-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+          }
+
+          .event-title-row h3 {
+            margin: 0;
+            font-size: 18px;
+          }
+
+          .event-meta-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+          }
+
+          .event-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+          }
+
+          @media (max-width: 1180px) {
+            .calendar-hero-grid,
+            .calendar-main-grid,
+            .calendar-chart-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .calendar-kpi-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 820px) {
+            .event-card {
+              grid-template-columns: 1fr;
+            }
+
+            .event-actions {
+              justify-content: flex-start;
+            }
+
+            .event-date-box {
+              width: 74px;
+            }
+          }
+
+          @media (max-width: 720px) {
+            .calendar-kpi-grid,
+            .calendar-form-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .calendar-form-grid .wide {
+              grid-column: span 1;
+            }
+          }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <div class="calendar-hero-grid">
+            <div>
+              <span class="ungani-badge gold">${UnganiClientShared.safe(businessPreset.name)}</span>
+              <h2 style="font-size:clamp(32px,4vw,52px);line-height:1.02;margin:18px 0 12px;">
+                Calendar activities that match your business.
+              </h2>
+              <p>
+                Plan appointments, deadlines, reminders, trips, deliveries, viewings, restocks, bookings, and follow-ups using presets for ${UnganiClientShared.safe(businessPreset.name)}.
+              </p>
+
+              <div class="ungani-button-row">
+                <button class="ungani-btn gold" onclick="scrollToEventForm()">Add Calendar Activity</button>
+                <button class="ungani-btn green" onclick="loadEventRows()">Refresh</button>
+                <a class="ungani-btn light" href="my-charts.html">View Charts</a>
+              </div>
+            </div>
+
+            <div class="calendar-preset-box">
+              <h3>Business calendar preset active</h3>
+              <p>The calendar activity types on this page now adapt to the business type selected by the client.</p>
+
+              <div class="calendar-chip-row">
+                ${businessPreset.calendarTypes.slice(0, 7).map(function (item) {
+                  return `<span class="calendar-chip">${UnganiClientShared.safe(item)}</span>`;
+                }).join("")}
+              </div>
+            </div>
           </div>
         </section>
 
-        <section class="ungani-grid">
-          ${UnganiClientShared.metricCard("Total Events", events.length, "All calendar activities", "blue")}
-          ${UnganiClientShared.metricCard("Today", summary.today, "Activities scheduled today", summary.today > 0 ? "orange" : "green")}
-          ${UnganiClientShared.metricCard("Upcoming", summary.upcoming, "Future scheduled activities", "green")}
-          ${UnganiClientShared.metricCard("Overdue", summary.overdue, "Past activities not completed", summary.overdue > 0 ? "red" : "green")}
-          ${UnganiClientShared.metricCard("Viewings / Site Visits", summary.viewings, "Property-related visits", "gold")}
-          ${UnganiClientShared.metricCard("Completed", summary.completed, "Completed activities", "green")}
+        <section class="calendar-kpi-grid">
+          ${calendarKpi("Upcoming", summary.upcoming, "Future scheduled activities", "#2563EB")}
+          ${calendarKpi("Today", summary.today, "Activities due today", "#D4A63A")}
+          ${calendarKpi("Completed", summary.completed, "Finished activities", "#16A34A")}
+          ${calendarKpi("Overdue", summary.overdue, "Past activities not completed", summary.overdue > 0 ? "#DC2626" : "#16A34A")}
         </section>
 
         <section class="ungani-card">
           <div class="ungani-section-title">
-            <h3>Filters</h3>
-            <button class="ungani-btn dark" onclick="resetFilters()">Reset Filters</button>
+            <div>
+              <h3>Filters</h3>
+              <p class="ungani-small">Search and filter calendar activities.</p>
+            </div>
+
+            <button class="ungani-btn dark" onclick="resetCalendarFilters()">Reset Filters</button>
           </div>
 
-          <div class="ungani-form-grid">
+          <div class="calendar-form-grid">
             <div>
-              <label for="filterType">Event Type</label>
-              <select id="filterType" onchange="saveFilters(); renderCalendarPage();">
+              <label for="filterType">Activity Type</label>
+              <select id="filterType" onchange="saveCalendarFilters(); renderCalendarPage();">
                 <option value="">All Types</option>
-                <option value="viewing">Viewing</option>
-                <option value="site visit">Site Visit</option>
-                <option value="follow up">Follow Up</option>
-                <option value="rent reminder">Rent Reminder</option>
-                <option value="payment reminder">Payment Reminder</option>
-                <option value="document deadline">Document Deadline</option>
-                <option value="project deadline">Project Deadline</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="meeting">Meeting</option>
-                <option value="general">General</option>
+                ${businessPreset.calendarTypes.map(function (item) {
+                  return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+                }).join("")}
               </select>
             </div>
 
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveFilters(); renderCalendarPage();">
-                <option value="">All Statuses</option>
+              <select id="filterStatus" onchange="saveCalendarFilters(); renderCalendarPage();">
+                <option value="">All Status</option>
                 <option value="scheduled">Scheduled</option>
-                <option value="pending">Pending</option>
+                <option value="in progress">In Progress</option>
                 <option value="completed">Completed</option>
-                <option value="postponed">Postponed</option>
                 <option value="cancelled">Cancelled</option>
               </select>
             </div>
 
             <div>
-              <label for="filterFrom">From Date</label>
-              <input id="filterFrom" type="date" onchange="saveFilters(); renderCalendarPage();" />
-            </div>
-
-            <div>
-              <label for="filterTo">To Date</label>
-              <input id="filterTo" type="date" onchange="saveFilters(); renderCalendarPage();" />
-            </div>
-
-            <div>
-              <label for="searchBox">Search</label>
-              <input id="searchBox" placeholder="Search event, property, project, agent, client..." oninput="saveFilters(); renderCalendarPage();" />
+              <label for="filterSearch">Search</label>
+              <input id="filterSearch" placeholder="Search activity, person, item, location..." oninput="saveCalendarFilters(); renderCalendarPage();" />
             </div>
           </div>
         </section>
 
-        <section id="calendarFormCard" class="ungani-card">
-          <div class="ungani-section-title">
-            <h3>${currentEditId ? "Update Calendar Event" : "Add Calendar Event"}</h3>
-            ${currentEditId ? '<button class="ungani-btn dark" onclick="cancelEdit()">Cancel Edit</button>' : ""}
+        <section class="calendar-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Calendar Activity Types</h3>
+                <p class="ungani-small">Animated chart showing the types of activities being planned.</p>
+              </div>
+            </div>
+
+            ${hasValues(typeRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="calendarTypeChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add calendar activities to show type breakdown.")}
           </div>
 
-          ${renderEventForm()}
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Calendar Status</h3>
+                <p class="ungani-small">Scheduled, in progress, completed, cancelled, and overdue activities.</p>
+              </div>
+            </div>
+
+            ${hasValues(statusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="calendarStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add calendar activities to show status breakdown.")}
+          </div>
         </section>
 
-        <section class="ungani-two-col">
+        <section class="calendar-type-section">
           <div class="ungani-card">
             <div class="ungani-section-title">
               <div>
-                <h3>${isRealEstate ? "Property Calendar Activities" : "Calendar Activities"}</h3>
-                <p class="ungani-small">${filtered.length} event(s) shown</p>
+                <h3>Calendar Activity Types</h3>
+                <p class="ungani-small">Quick-fill calendar activity types for ${UnganiClientShared.safe(businessPreset.name)}.</p>
               </div>
-
-              <button class="ungani-btn green" onclick="loadEvents()">Refresh</button>
             </div>
 
-            ${renderEventList(filtered)}
+            <div class="type-list">
+              ${businessPreset.calendarTypes.map(function (item) {
+                return `<button class="type-pill" onclick="quickCalendarType('${UnganiClientShared.attr(item)}')">${UnganiClientShared.safe(item)}</button>`;
+              }).join("")}
+            </div>
+          </div>
+        </section>
+
+        <section class="calendar-main-grid">
+          <div class="ungani-card" id="eventFormCard">
+            <div class="ungani-section-title">
+              <div>
+                <h3 id="eventFormTitle">${editingEventId ? "Edit Calendar Activity" : "Add Calendar Activity"}</h3>
+                <p class="ungani-small">Use business-specific calendar types so reports and charts make sense.</p>
+              </div>
+
+              <button class="ungani-btn dark" onclick="clearEventForm()">Clear</button>
+            </div>
+
+            <form onsubmit="saveEvent(event)">
+              <div class="calendar-form-grid">
+                <div class="wide">
+                  <label for="eventTitle">Activity Title</label>
+                  <input id="eventTitle" placeholder="Example: Client meeting, delivery date, viewing, appointment..." required />
+                </div>
+
+                <div>
+                  <label for="eventType">Activity Type</label>
+                  <select id="eventType">
+                    ${businessPreset.calendarTypes.map(function (item) {
+                      return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+                    }).join("")}
+                  </select>
+                </div>
+
+                <div>
+                  <label for="eventDate">Date</label>
+                  <input id="eventDate" type="date" required />
+                </div>
+
+                <div>
+                  <label for="eventStatus">Status</label>
+                  <select id="eventStatus">
+                    <option value="scheduled">Scheduled</option>
+                    <option value="in progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="eventStartTime">Start Time</label>
+                  <input id="eventStartTime" type="time" />
+                </div>
+
+                <div>
+                  <label for="eventEndTime">End Time</label>
+                  <input id="eventEndTime" type="time" />
+                </div>
+
+                <div>
+                  <label for="eventPriority">Priority</label>
+                  <select id="eventPriority">
+                    <option value="low">Low</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="eventLocation">Location</label>
+                  <input id="eventLocation" placeholder="Office, client site, yard, shop, salon, project site..." />
+                </div>
+
+                <div>
+                  <label for="eventRelatedPerson">Related Person</label>
+                  <input id="eventRelatedPerson" placeholder="Client, staff, supplier, driver, agent..." />
+                </div>
+
+                <div>
+                  <label for="eventRelatedItem">Related Item / Work</label>
+                  <input id="eventRelatedItem" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)}" />
+                </div>
+
+                <div class="wide">
+                  <label for="eventNotes">Notes</label>
+                  <textarea id="eventNotes" rows="5" placeholder="Add meeting details, appointment notes, delivery details, reminders, or preparation notes..."></textarea>
+                </div>
+              </div>
+
+              <div class="ungani-button-row" style="margin-top:16px;">
+                <button class="ungani-btn gold" type="submit">${editingEventId ? "Update Activity" : "Save Activity"}</button>
+                <button class="ungani-btn dark" type="button" onclick="clearEventForm()">Cancel</button>
+              </div>
+            </form>
           </div>
 
           <div class="ungani-card">
             <div class="ungani-section-title">
-              <h3>Calendar Summary</h3>
+              <div>
+                <h3>Calendar Guide</h3>
+                <p class="ungani-small">How to keep the business moving.</p>
+              </div>
             </div>
 
-            ${renderSummaryPanel(filtered)}
+            <div class="ungani-empty" style="text-align:left;">
+              <h3>Use dates before things become urgent</h3>
+              <p>Add delivery dates, appointments, follow-ups, site visits, restock dates, service dates, and payment reminders early.</p>
+            </div>
+
+            <div style="display:grid;gap:10px;margin-top:12px;">
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Example activity</strong>
+                <p class="ungani-small">${UnganiClientShared.safe(businessPreset.calendarTypes[0] || "Follow-up")}</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Priority rule</strong>
+                <p class="ungani-small">Use urgent only when the activity truly needs immediate attention.</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Reports</strong>
+                <p class="ungani-small">Calendar activities appear in Dashboard, Charts, Reports, and Activity summaries.</p>
+              </div>
+            </div>
           </div>
         </section>
 
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Calendar Activity List</h3>
+              <p class="ungani-small">${filteredRows.length} calendar activity record(s) shown.</p>
+            </div>
+
+            <button class="ungani-btn green" onclick="loadEventRows()">Refresh</button>
+          </div>
+
+          ${renderEventList(filteredRows)}
+        </section>
+
         <p class="ungani-small">
-          Calendar Version: Step 305H Shared Layout · ungani.com · info@ungani.com
+          Calendar Version: Step 310B-6 Business-Type Calendar Presets · ungani.com · info@ungani.com
         </p>
       `);
 
-      restoreFilters();
-      fillEditForm();
+      restoreCalendarFilters();
+
+      setTimeout(function () {
+        renderCalendarCharts(typeRows, statusRows, priorityRows);
+      }, 150);
     }
 
-    function renderEventForm() {
-      return `
-        <form id="calendarForm" onsubmit="saveEvent(event)">
-          <div class="ungani-form-grid">
-            <div>
-              <label for="eventTitle">Event Title</label>
-              <input id="eventTitle" required placeholder="Example: Clove Garden A12 viewing with Kevin Demo Buyer" />
-            </div>
+    async function renderCalendarCharts(typeRows, statusRows, priorityRows) {
+      try {
+        if (hasValues(typeRows)) {
+          await UnganiAnalytics.renderHorizontalBarChart("calendarTypeChart", typeRows, "Activities");
+        }
 
-            <div>
-              <label for="eventType">Event Type</label>
-              <select id="eventType">
-                <option value="viewing">Viewing</option>
-                <option value="site visit">Site Visit</option>
-                <option value="follow up">Follow Up</option>
-                <option value="rent reminder">Rent Reminder</option>
-                <option value="payment reminder">Payment Reminder</option>
-                <option value="document deadline">Document Deadline</option>
-                <option value="project deadline">Project Deadline</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="meeting">Meeting</option>
-                <option value="general">General</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="eventDate">Event Date</label>
-              <input id="eventDate" type="date" required />
-            </div>
-
-            <div>
-              <label for="startTime">Start Time</label>
-              <input id="startTime" type="time" />
-            </div>
-
-            <div>
-              <label for="endTime">End Time</label>
-              <input id="endTime" type="time" />
-            </div>
-
-            <div>
-              <label for="status">Status</label>
-              <select id="status">
-                <option value="scheduled">Scheduled</option>
-                <option value="pending">Pending</option>
-                <option value="completed">Completed</option>
-                <option value="postponed">Postponed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="location">Location</label>
-              <input id="location" placeholder="Example: Nyali, Mombasa" />
-            </div>
-
-            <div>
-              <label for="propertyName">Property Name</label>
-              <input id="propertyName" placeholder="Example: Clove Garden A12" />
-            </div>
-
-            <div>
-              <label for="projectName">Project Name</label>
-              <input id="projectName" placeholder="Example: Clove Garden" />
-            </div>
-
-            <div>
-              <label for="assignedAgent">${isRealEstate ? "Assigned Agent" : "Assigned Person"}</label>
-              <input id="assignedAgent" placeholder="Example: Brian Otieno" />
-            </div>
-
-            <div>
-              <label for="clientName">Client / Lead Name</label>
-              <input id="clientName" placeholder="Example: Kevin Demo Buyer" />
-            </div>
-          </div>
-
-          <label for="description">Description</label>
-          <textarea id="description" placeholder="${isRealEstate ? "Add viewing notes, site visit details, payment reminder notes, or project deadline details..." : "Add event details or notes..."}"></textarea>
-
-          <label for="notes">Internal Notes</label>
-          <textarea id="notes" placeholder="Add internal notes, preparation details, or next steps..."></textarea>
-
-          <div class="ungani-button-row">
-            <button class="ungani-btn green" type="submit">${currentEditId ? "Update Event" : "Add Event"}</button>
-            ${currentEditId ? '<button class="ungani-btn dark" type="button" onclick="cancelEdit()">Cancel</button>' : ""}
-          </div>
-        </form>
-      `;
+        if (hasValues(statusRows)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("calendarStatusChart", statusRows);
+        }
+      } catch (error) {
+        console.warn("Calendar charts warning:", error.message);
+      }
     }
 
     function renderEventList(rows) {
-      if (rows.length === 0) {
+      if (!rows || rows.length === 0) {
         return `
           <div class="ungani-empty">
-            <h3>No calendar events found</h3>
-            <p>Add your first viewing, site visit, follow-up, reminder, or business event above.</p>
+            <h3>No calendar activities yet</h3>
+            <p>Add your first appointment, delivery, viewing, meeting, reminder, or follow-up.</p>
           </div>
         `;
       }
 
-      return rows.map(function (row) {
-        return renderEventCard(row);
-      }).join("");
-    }
-
-    function renderEventCard(row) {
-      const title = UnganiClientShared.getValue(row, ["event_title", "title"], "Calendar Event");
-      const type = UnganiClientShared.getValue(row, ["event_type"], "general");
-      const date = UnganiClientShared.getValue(row, ["event_date"], "");
-      const startTime = UnganiClientShared.getValue(row, ["start_time"], "");
-      const endTime = UnganiClientShared.getValue(row, ["end_time"], "");
-      const status = UnganiClientShared.getValue(row, ["status"], "scheduled");
-      const location = UnganiClientShared.getValue(row, ["location"], "");
-      const property = UnganiClientShared.getValue(row, ["property_name"], "");
-      const project = UnganiClientShared.getValue(row, ["project_name"], "");
-      const agent = UnganiClientShared.getValue(row, ["assigned_agent"], "");
-      const client = UnganiClientShared.getValue(row, ["client_name"], "");
-      const description = UnganiClientShared.getValue(row, ["description"], "");
-      const notes = UnganiClientShared.getValue(row, ["notes"], "");
-
       return `
-        <div class="ungani-card" style="box-shadow:none;">
-          <div class="ungani-section-title">
-            <div>
-              <h3>${UnganiClientShared.safe(title)}</h3>
-              <p class="ungani-small">
-                ${UnganiClientShared.safe(UnganiClientShared.formatDate(date))}
-                ${startTime ? " · " + UnganiClientShared.safe(formatTime(startTime)) : ""}
-                ${endTime ? " - " + UnganiClientShared.safe(formatTime(endTime)) : ""}
-              </p>
-            </div>
+        <div class="calendar-list">
+          ${rows.map(function (row) {
+            const title = getEventTitle(row);
+            const type = UnganiClientShared.getValue(row, ["event_type", "type"], "Calendar Activity");
+            const status = UnganiClientShared.getValue(row, ["status"], "scheduled");
+            const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
+            const date = UnganiClientShared.getValue(row, ["event_date", "date", "start_date", "created_at"], "");
+            const startTime = UnganiClientShared.getValue(row, ["start_time"], "");
+            const endTime = UnganiClientShared.getValue(row, ["end_time"], "");
+            const location = UnganiClientShared.getValue(row, ["location"], "");
+            const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
+            const relatedItem = UnganiClientShared.getValue(row, ["related_item"], "");
+            const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
-            <div>
-              ${badge(type, "blue")}
-              ${badge(status, statusColor(status))}
-            </div>
-          </div>
+            return `
+              <div class="event-card">
+                ${eventDateBox(date)}
 
-          <section class="ungani-grid">
-            ${miniDetail("Date", UnganiClientShared.formatDate(date))}
-            ${miniDetail("Time", formatEventTime(startTime, endTime))}
-            ${miniDetail("Location", location || "N/A")}
-            ${miniDetail("Property", property || "N/A")}
-            ${miniDetail("Project", project || "N/A")}
-            ${miniDetail(isRealEstate ? "Assigned Agent" : "Assigned Person", agent || "N/A")}
-            ${miniDetail("Client / Lead", client || "N/A")}
-          </section>
+                <div>
+                  <div class="event-title-row">
+                    ${statusBadge(status, date)}
+                    ${priorityBadge(priority)}
+                    <h3>${UnganiClientShared.safe(title)}</h3>
+                  </div>
 
-          ${description ? `<p class="ungani-small" style="margin-top:12px;"><strong>Description:</strong> ${UnganiClientShared.safe(description)}</p>` : ""}
-          ${notes ? `<p class="ungani-small"><strong>Notes:</strong> ${UnganiClientShared.safe(notes)}</p>` : ""}
+                  <p class="ungani-small" style="margin:0;">
+                    ${UnganiClientShared.safe(notes || "No notes added.")}
+                  </p>
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="editEvent('${UnganiClientShared.attr(row.id)}')">Edit</button>
-            <button class="ungani-btn orange" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'postponed')">Postponed</button>
-            <button class="ungani-btn green" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'completed')">Completed</button>
-            <button class="ungani-btn red" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'cancelled')">Cancelled</button>
-          </div>
+                  <div class="event-meta-grid">
+                    <span class="ungani-badge gold">${UnganiClientShared.safe(type)}</span>
+                    <span class="ungani-badge blue">${UnganiClientShared.safe(formatTimeRange(startTime, endTime))}</span>
+                    ${location ? `<span class="ungani-badge green">Location: ${UnganiClientShared.safe(location)}</span>` : ""}
+                    ${relatedPerson ? `<span class="ungani-badge gold">Person: ${UnganiClientShared.safe(relatedPerson)}</span>` : ""}
+                    ${relatedItem ? `<span class="ungani-badge blue">Related: ${UnganiClientShared.safe(relatedItem)}</span>` : ""}
+                  </div>
+                </div>
+
+                <div class="event-actions">
+                  ${String(status).toLowerCase() !== "completed" ? `<button class="ungani-btn small green" onclick="markEventCompleted('${UnganiClientShared.attr(row.id)}')">Done</button>` : ""}
+                  <button class="ungani-btn small gold" onclick="editEvent('${UnganiClientShared.attr(row.id)}')">Edit</button>
+                  <button class="ungani-btn small red" onclick="deleteEvent('${UnganiClientShared.attr(row.id)}')">Delete</button>
+                </div>
+              </div>
+            `;
+          }).join("")}
         </div>
       `;
     }
 
-    function renderSummaryPanel(rows) {
-      const typeSummary = {};
-      const statusSummary = {};
+    function eventDateBox(dateValue) {
+      const raw = String(dateValue || "");
+      const date = raw ? new Date(raw) : null;
 
-      rows.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["event_type"], "general")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "scheduled")).toLowerCase();
-
-        typeSummary[type] = (typeSummary[type] || 0) + 1;
-        statusSummary[status] = (statusSummary[status] || 0) + 1;
-      });
-
-      const typeKeys = Object.keys(typeSummary);
-      const statusKeys = Object.keys(statusSummary);
-
-      if (typeKeys.length === 0 && statusKeys.length === 0) {
+      if (!date || isNaN(date.getTime())) {
         return `
-          <div class="ungani-empty">
-            <h3>No summary yet</h3>
-            <p>Summary will appear when calendar events are added.</p>
+          <div class="event-date-box">
+            <strong>--</strong>
+            <span>No Date</span>
           </div>
         `;
       }
 
-      let html = `<h3 style="margin-top:0;color:var(--ungani-text);">By Event Type</h3>`;
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = date.toLocaleDateString("en-KE", { month: "short" });
 
-      html += typeKeys.map(function (key) {
-        return `
-          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-            <strong>${UnganiClientShared.safe(toTitle(key))}</strong>
-            <p class="ungani-small" style="margin:5px 0 0;">${typeSummary[key]} event(s)</p>
-          </div>
-        `;
-      }).join("");
-
-      html += `<h3 style="color:var(--ungani-text);">By Status</h3>`;
-
-      html += statusKeys.map(function (key) {
-        return `
-          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-            <strong>${UnganiClientShared.safe(toTitle(key))}</strong>
-            <p class="ungani-small" style="margin:5px 0 0;">${statusSummary[key]} event(s)</p>
-          </div>
-        `;
-      }).join("");
-
-      return html;
+      return `
+        <div class="event-date-box">
+          <strong>${UnganiClientShared.safe(day)}</strong>
+          <span>${UnganiClientShared.safe(month)}</span>
+        </div>
+      `;
     }
 
-    function calculateSummary() {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    function calendarKpi(title, value, subtitle, accent) {
+      return `
+        <div class="calendar-kpi-card" style="--accent:${UnganiClientShared.attr(accent)};">
+          <span>${UnganiClientShared.safe(title)}</span>
+          <h3>${UnganiClientShared.safe(value)}</h3>
+          <p>${UnganiClientShared.safe(subtitle)}</p>
+        </div>
+      `;
+    }
 
-      const todayText = today.toISOString().slice(0, 10);
-
-      let todayCount = 0;
+    function calculateCalendarSummary(rows) {
+      const today = new Date().toISOString().slice(0, 10);
       let upcoming = 0;
-      let overdue = 0;
-      let viewings = 0;
+      let todayCount = 0;
       let completed = 0;
+      let overdue = 0;
 
-      events.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["event_type"], "")).toLowerCase();
+      rows.forEach(function (row) {
         const status = String(UnganiClientShared.getValue(row, ["status"], "scheduled")).toLowerCase();
-        const dateValue = String(UnganiClientShared.getValue(row, ["event_date"], "")).slice(0, 10);
+        const date = String(UnganiClientShared.getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
 
-        if (dateValue === todayText) todayCount++;
-        if (dateValue >= todayText && status !== "cancelled") upcoming++;
-        if (dateValue < todayText && status !== "completed" && status !== "cancelled") overdue++;
+        if (status.includes("completed")) {
+          completed++;
+          return;
+        }
 
-        if (type.includes("viewing") || type.includes("site visit")) viewings++;
-        if (status === "completed") completed++;
+        if (date === today) {
+          todayCount++;
+        } else if (date && date > today) {
+          upcoming++;
+        } else if (date && date < today && !status.includes("cancelled")) {
+          overdue++;
+        }
       });
 
       return {
+        upcoming,
         today: todayCount,
-        upcoming: upcoming,
-        overdue: overdue,
-        viewings: viewings,
-        completed: completed
+        completed,
+        overdue
       };
     }
 
-    function filterEvents() {
-      const filterType = document.getElementById("filterType") ? UnganiClientShared.value("filterType").toLowerCase() : "";
-      const filterStatus = document.getElementById("filterStatus") ? UnganiClientShared.value("filterStatus").toLowerCase() : "";
-      const filterFrom = document.getElementById("filterFrom") ? UnganiClientShared.value("filterFrom") : "";
-      const filterTo = document.getElementById("filterTo") ? UnganiClientShared.value("filterTo") : "";
-      const query = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
+    function buildTypeRows(rows) {
+      const map = {};
 
-      return events.filter(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["event_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
-        const date = String(UnganiClientShared.getValue(row, ["event_date"], "")).slice(0, 10);
+      rows.forEach(function (row) {
+        const type = UnganiClientShared.getValue(row, ["event_type", "type"], "Calendar Activity");
+        map[type] = (map[type] || 0) + 1;
+      });
 
-        const haystack = [
-          UnganiClientShared.getValue(row, ["event_title", "title"], ""),
-          type,
-          status,
-          date,
-          UnganiClientShared.getValue(row, ["location"], ""),
-          UnganiClientShared.getValue(row, ["property_name"], ""),
-          UnganiClientShared.getValue(row, ["project_name"], ""),
-          UnganiClientShared.getValue(row, ["assigned_agent"], ""),
-          UnganiClientShared.getValue(row, ["client_name"], ""),
-          UnganiClientShared.getValue(row, ["description"], ""),
-          UnganiClientShared.getValue(row, ["notes"], "")
-        ].join(" ").toLowerCase();
+      return UnganiAnalytics.mapToRows(map);
+    }
 
-        if (filterType && type !== filterType) return false;
-        if (filterStatus && status !== filterStatus) return false;
-        if (filterFrom && date < filterFrom) return false;
-        if (filterTo && date > filterTo) return false;
-        if (query && !haystack.includes(query)) return false;
+    function buildStatusRows(rows) {
+      const map = {};
+
+      rows.forEach(function (row) {
+        const status = getSmartStatus(row);
+        map[status] = (map[status] || 0) + 1;
+      });
+
+      return UnganiAnalytics.mapToRows(map);
+    }
+
+    function buildPriorityRows(rows) {
+      const map = {};
+
+      rows.forEach(function (row) {
+        const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
+        map[priority] = (map[priority] || 0) + 1;
+      });
+
+      return UnganiAnalytics.mapToRows(map);
+    }
+
+    function getSmartStatus(row) {
+      const status = String(UnganiClientShared.getValue(row, ["status"], "scheduled")).toLowerCase();
+      const date = String(UnganiClientShared.getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+
+      if (date && date < today && !status.includes("completed") && !status.includes("cancelled")) {
+        return "Overdue";
+      }
+
+      return UnganiAnalytics.toTitle(status || "Scheduled");
+    }
+
+    function getFilteredRows() {
+      const filterType = getStoredOrInput("filterType", "ungani_calendar_filter_type").toLowerCase();
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_calendar_filter_status").toLowerCase();
+      const search = getStoredOrInput("filterSearch", "ungani_calendar_filter_search").toLowerCase();
+
+      return eventRows.filter(function (row) {
+        const type = String(UnganiClientShared.getValue(row, ["event_type", "type"], "calendar activity")).toLowerCase();
+        const status = String(UnganiClientShared.getValue(row, ["status"], "scheduled")).toLowerCase();
+        const haystack = JSON.stringify(row || {}).toLowerCase();
+
+        if (filterType && !type.includes(filterType)) return false;
+        if (filterStatus && !status.includes(filterStatus)) return false;
+        if (search && !haystack.includes(search)) return false;
 
         return true;
       });
+    }
+
+    function getStoredOrInput(inputId, storageKey) {
+      const el = document.getElementById(inputId);
+
+      if (el) {
+        return String(el.value || "").trim();
+      }
+
+      return String(sessionStorage.getItem(storageKey) || "").trim();
+    }
+
+    function saveCalendarFilters() {
+      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_calendar_filter_type", UnganiClientShared.value("filterType"));
+      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_calendar_filter_status", UnganiClientShared.value("filterStatus"));
+      if (document.getElementById("filterSearch")) sessionStorage.setItem("ungani_calendar_filter_search", UnganiClientShared.value("filterSearch"));
+    }
+
+    function restoreCalendarFilters() {
+      if (document.getElementById("filterType")) document.getElementById("filterType").value = sessionStorage.getItem("ungani_calendar_filter_type") || "";
+      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_calendar_filter_status") || "";
+      if (document.getElementById("filterSearch")) document.getElementById("filterSearch").value = sessionStorage.getItem("ungani_calendar_filter_search") || "";
+    }
+
+    function resetCalendarFilters() {
+      sessionStorage.removeItem("ungani_calendar_filter_type");
+      sessionStorage.removeItem("ungani_calendar_filter_status");
+      sessionStorage.removeItem("ungani_calendar_filter_search");
+      renderCalendarPage();
+      UnganiClientShared.showToast("Calendar filters reset ✓");
+    }
+
+    function quickCalendarType(eventType) {
+      scrollToEventForm();
+
+      setTimeout(function () {
+        const el = document.getElementById("eventType");
+        if (el) el.value = eventType;
+      }, 150);
+
+      UnganiClientShared.showToast("Calendar type selected ✓");
+    }
+
+    function scrollToEventForm() {
+      const el = document.getElementById("eventFormCard");
+
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
 
     async function saveEvent(event) {
       event.preventDefault();
 
       const title = UnganiClientShared.value("eventTitle");
+      const eventDate = UnganiClientShared.value("eventDate");
 
       if (!title) {
-        alert("Please enter an event title.");
+        UnganiClientShared.showToast("Enter an activity title.");
         return;
       }
 
-      if (!UnganiClientShared.value("eventDate")) {
-        alert("Please select an event date.");
+      if (!eventDate) {
+        UnganiClientShared.showToast("Select an activity date.");
         return;
       }
 
       const payload = {
-        business_type_key: UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], null),
-        section_key: "business_calendar",
+        tenant_id: currentContext.tenantId,
         event_title: title,
-        title: title,
-        event_type: UnganiClientShared.value("eventType") || "general",
-        event_date: UnganiClientShared.value("eventDate"),
-        start_time: UnganiClientShared.value("startTime") || null,
-        end_time: UnganiClientShared.value("endTime") || null,
-        status: UnganiClientShared.value("status") || "scheduled",
-        location: UnganiClientShared.value("location") || null,
-        property_name: UnganiClientShared.value("propertyName") || null,
-        project_name: UnganiClientShared.value("projectName") || null,
-        assigned_agent: UnganiClientShared.value("assignedAgent") || null,
-        client_name: UnganiClientShared.value("clientName") || null,
-        description: UnganiClientShared.value("description") || null,
-        notes: UnganiClientShared.value("notes") || null,
-        updated_at: new Date().toISOString()
+        event_type: UnganiClientShared.value("eventType") || "Calendar Activity",
+        event_date: eventDate,
+        start_time: UnganiClientShared.value("eventStartTime") || null,
+        end_time: UnganiClientShared.value("eventEndTime") || null,
+        status: UnganiClientShared.value("eventStatus") || "scheduled",
+        priority: UnganiClientShared.value("eventPriority") || "normal",
+        location: UnganiClientShared.value("eventLocation") || null,
+        related_person: UnganiClientShared.value("eventRelatedPerson") || null,
+        related_item: UnganiClientShared.value("eventRelatedItem") || null,
+        notes: UnganiClientShared.value("eventNotes") || null
       };
 
       let response;
 
-      if (currentEditId) {
+      if (editingEventId) {
         response = await currentContext.supabaseClient
           .from("business_events")
           .update(payload)
-          .eq("id", currentEditId)
+          .eq("id", editingEventId)
           .eq("tenant_id", currentContext.tenantId);
       } else {
-        payload.tenant_id = currentContext.tenantId;
-        payload.created_by = currentContext.authUser.id;
-        payload.created_at = new Date().toISOString();
-
         response = await currentContext.supabaseClient
           .from("business_events")
-          .insert(payload);
+          .insert([payload]);
       }
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not save activity: " + response.error.message);
         return;
       }
 
-      currentEditId = null;
-      UnganiClientShared.showToast("Calendar event saved ✓");
-      await loadEvents();
-    }
-
-    function fillEditForm() {
-      if (!currentEditId) return;
-
-      const row = events.find(function (item) {
-        return String(item.id) === String(currentEditId);
-      });
-
-      if (!row) return;
-
-      setValue("eventTitle", UnganiClientShared.getValue(row, ["event_title", "title"], ""));
-      setValue("eventType", UnganiClientShared.getValue(row, ["event_type"], "general"));
-      setValue("eventDate", String(UnganiClientShared.getValue(row, ["event_date"], "")).slice(0, 10));
-      setValue("startTime", String(UnganiClientShared.getValue(row, ["start_time"], "")).slice(0, 5));
-      setValue("endTime", String(UnganiClientShared.getValue(row, ["end_time"], "")).slice(0, 5));
-      setValue("status", UnganiClientShared.getValue(row, ["status"], "scheduled"));
-      setValue("location", UnganiClientShared.getValue(row, ["location"], ""));
-      setValue("propertyName", UnganiClientShared.getValue(row, ["property_name"], ""));
-      setValue("projectName", UnganiClientShared.getValue(row, ["project_name"], ""));
-      setValue("assignedAgent", UnganiClientShared.getValue(row, ["assigned_agent"], ""));
-      setValue("clientName", UnganiClientShared.getValue(row, ["client_name"], ""));
-      setValue("description", UnganiClientShared.getValue(row, ["description"], ""));
-      setValue("notes", UnganiClientShared.getValue(row, ["notes"], ""));
+      UnganiClientShared.showToast(editingEventId ? "Calendar activity updated ✓" : "Calendar activity added ✓");
+      clearEventForm();
+      await loadEventRows();
     }
 
     function editEvent(id) {
-      currentEditId = id;
-      renderCalendarPage();
-      scrollToForm();
+      const row = eventRows.find(function (item) {
+        return String(item.id) === String(id);
+      });
+
+      if (!row) {
+        UnganiClientShared.showToast("Calendar activity not found.");
+        return;
+      }
+
+      editingEventId = row.id;
+
+      scrollToEventForm();
+
+      setTimeout(function () {
+        document.getElementById("eventFormTitle").innerText = "Edit Calendar Activity";
+        document.getElementById("eventTitle").value = getEventTitle(row);
+        document.getElementById("eventType").value = UnganiClientShared.getValue(row, ["event_type", "type"], "");
+        document.getElementById("eventDate").value = String(UnganiClientShared.getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        document.getElementById("eventStartTime").value = String(UnganiClientShared.getValue(row, ["start_time"], "")).slice(0, 5);
+        document.getElementById("eventEndTime").value = String(UnganiClientShared.getValue(row, ["end_time"], "")).slice(0, 5);
+        document.getElementById("eventStatus").value = UnganiClientShared.getValue(row, ["status"], "scheduled");
+        document.getElementById("eventPriority").value = UnganiClientShared.getValue(row, ["priority"], "normal");
+        document.getElementById("eventLocation").value = UnganiClientShared.getValue(row, ["location"], "");
+        document.getElementById("eventRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person"], "");
+        document.getElementById("eventRelatedItem").value = UnganiClientShared.getValue(row, ["related_item"], "");
+        document.getElementById("eventNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
+      }, 150);
     }
 
-    function cancelEdit() {
-      currentEditId = null;
-      renderCalendarPage();
-      UnganiClientShared.showToast("Edit cancelled");
-    }
-
-    async function quickStatus(id, status) {
+    async function markEventCompleted(id) {
       const response = await currentContext.supabaseClient
         .from("business_events")
-        .update({
-          status: status,
-          updated_at: new Date().toISOString()
-        })
+        .update({ status: "completed" })
         .eq("id", id)
         .eq("tenant_id", currentContext.tenantId);
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not update activity: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Status updated ✓");
-      await loadEvents();
+      UnganiClientShared.showToast("Calendar activity marked completed ✓");
+      await loadEventRows();
     }
 
-    function restoreFilters() {
-      if (document.getElementById("filterType")) document.getElementById("filterType").value = sessionStorage.getItem("ungani_calendar_filter_type") || "";
-      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_calendar_filter_status") || "";
-      if (document.getElementById("filterFrom")) document.getElementById("filterFrom").value = sessionStorage.getItem("ungani_calendar_filter_from") || "";
-      if (document.getElementById("filterTo")) document.getElementById("filterTo").value = sessionStorage.getItem("ungani_calendar_filter_to") || "";
-      if (document.getElementById("searchBox")) document.getElementById("searchBox").value = sessionStorage.getItem("ungani_calendar_search") || "";
-    }
+    async function deleteEvent(id) {
+      const confirmed = confirm("Delete this calendar activity?");
 
-    function saveFilters() {
-      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_calendar_filter_type", UnganiClientShared.value("filterType"));
-      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_calendar_filter_status", UnganiClientShared.value("filterStatus"));
-      if (document.getElementById("filterFrom")) sessionStorage.setItem("ungani_calendar_filter_from", UnganiClientShared.value("filterFrom"));
-      if (document.getElementById("filterTo")) sessionStorage.setItem("ungani_calendar_filter_to", UnganiClientShared.value("filterTo"));
-      if (document.getElementById("searchBox")) sessionStorage.setItem("ungani_calendar_search", UnganiClientShared.value("searchBox"));
-    }
+      if (!confirmed) return;
 
-    function resetFilters() {
-      sessionStorage.removeItem("ungani_calendar_filter_type");
-      sessionStorage.removeItem("ungani_calendar_filter_status");
-      sessionStorage.removeItem("ungani_calendar_filter_from");
-      sessionStorage.removeItem("ungani_calendar_filter_to");
-      sessionStorage.removeItem("ungani_calendar_search");
-      renderCalendarPage();
-      UnganiClientShared.showToast("Filters reset ✓");
-    }
+      const response = await currentContext.supabaseClient
+        .from("business_events")
+        .delete()
+        .eq("id", id)
+        .eq("tenant_id", currentContext.tenantId);
 
-    function badge(text, color) {
-      return `<span class="ungani-badge ${UnganiClientShared.attr(color || "blue")}">${UnganiClientShared.safe(text)}</span>`;
-    }
-
-    function statusColor(status) {
-      const lower = String(status || "").toLowerCase();
-
-      if (lower.includes("completed")) return "green";
-      if (lower.includes("scheduled") || lower.includes("pending") || lower.includes("postponed")) return "orange";
-      if (lower.includes("cancelled")) return "red";
-
-      return "blue";
-    }
-
-    function miniDetail(label, value) {
-      return `
-        <div class="ungani-card" style="margin-bottom:0;box-shadow:none;padding:14px;">
-          <p class="ungani-small" style="margin:0 0 5px;">${UnganiClientShared.safe(label)}</p>
-          <strong>${UnganiClientShared.safe(value)}</strong>
-        </div>
-      `;
-    }
-
-    function formatTime(value) {
-      if (!value) return "";
-      return String(value).slice(0, 5);
-    }
-
-    function formatEventTime(start, end) {
-      if (!start && !end) return "N/A";
-      if (start && !end) return formatTime(start);
-      if (!start && end) return formatTime(end);
-      return formatTime(start) + " - " + formatTime(end);
-    }
-
-    function toTitle(value) {
-      return String(value || "")
-        .replace(/_/g, " ")
-        .replace(/\w\S*/g, function (text) {
-          return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
-        });
-    }
-
-    function setValue(id, value) {
-      const element = document.getElementById(id);
-
-      if (element) {
-        element.value = value === null || value === undefined ? "" : value;
+      if (response.error) {
+        UnganiClientShared.showToast("Could not delete activity: " + response.error.message);
+        return;
       }
+
+      UnganiClientShared.showToast("Calendar activity deleted ✓");
+      await loadEventRows();
     }
 
-    function scrollToForm() {
-      setTimeout(function () {
-        const card = document.getElementById("calendarFormCard");
+    function clearEventForm() {
+      editingEventId = null;
 
-        if (card) {
-          card.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 100);
+      const title = document.getElementById("eventFormTitle");
+      if (title) title.innerText = "Add Calendar Activity";
+
+      if (document.getElementById("eventTitle")) document.getElementById("eventTitle").value = "";
+      if (document.getElementById("eventType")) document.getElementById("eventType").value = businessPreset.calendarTypes[0] || "Meeting";
+      if (document.getElementById("eventDate")) document.getElementById("eventDate").value = "";
+      if (document.getElementById("eventStartTime")) document.getElementById("eventStartTime").value = "";
+      if (document.getElementById("eventEndTime")) document.getElementById("eventEndTime").value = "";
+      if (document.getElementById("eventStatus")) document.getElementById("eventStatus").value = "scheduled";
+      if (document.getElementById("eventPriority")) document.getElementById("eventPriority").value = "normal";
+      if (document.getElementById("eventLocation")) document.getElementById("eventLocation").value = "";
+      if (document.getElementById("eventRelatedPerson")) document.getElementById("eventRelatedPerson").value = "";
+      if (document.getElementById("eventRelatedItem")) document.getElementById("eventRelatedItem").value = "";
+      if (document.getElementById("eventNotes")) document.getElementById("eventNotes").value = "";
+    }
+
+    function getEventTitle(row) {
+      return UnganiClientShared.getValue(row, ["event_title", "title", "name"], "Calendar Activity");
+    }
+
+    function statusBadge(status, dateValue) {
+      const lower = String(status || "").toLowerCase();
+      const date = String(dateValue || "").slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+
+      if (date && date < today && !lower.includes("completed") && !lower.includes("cancelled")) {
+        return `<span class="ungani-badge red">Overdue</span>`;
+      }
+
+      if (lower.includes("completed")) {
+        return `<span class="ungani-badge green">Completed</span>`;
+      }
+
+      if (lower.includes("progress")) {
+        return `<span class="ungani-badge blue">In Progress</span>`;
+      }
+
+      if (lower.includes("cancelled")) {
+        return `<span class="ungani-badge red">Cancelled</span>`;
+      }
+
+      return `<span class="ungani-badge gold">Scheduled</span>`;
+    }
+
+    function priorityBadge(priority) {
+      const lower = String(priority || "normal").toLowerCase();
+
+      if (lower.includes("urgent") || lower.includes("high")) {
+        return `<span class="ungani-badge red">${UnganiClientShared.safe(UnganiAnalytics.toTitle(priority))}</span>`;
+      }
+
+      if (lower.includes("low")) {
+        return `<span class="ungani-badge blue">Low</span>`;
+      }
+
+      return `<span class="ungani-badge gold">Normal</span>`;
+    }
+
+    function formatTimeRange(startTime, endTime) {
+      const start = String(startTime || "").slice(0, 5);
+      const end = String(endTime || "").slice(0, 5);
+
+      if (start && end) return start + " - " + end;
+      if (start) return start;
+      return "No time set";
+    }
+
+    function hasValues(rows) {
+      return (rows || []).some(function (row) {
+        return Number(row.value || 0) > 0;
+      });
     }
   </script>
 </body>
