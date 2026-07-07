@@ -8,20 +8,22 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-shared.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
 </head>
 
 <body>
   <script>
     let currentContext = null;
-    let records = [];
-    let currentEditId = null;
-    let isRealEstate = false;
+    let businessPreset = null;
+    let recordRows = [];
+    let editingRecordId = null;
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "records",
         pageTitle: "Business Records",
-        pageSubtitle: "Track business activity, updates, leads, viewings, notes, and follow-up records.",
+        pageSubtitle: "Track updates, notes, issues, client activity, and operational records.",
         onReady: startRecordsPage
       });
     });
@@ -29,28 +31,27 @@
     async function startRecordsPage(context) {
       currentContext = context;
 
-      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
-      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
+      if (window.UnganiAnalytics) {
+        UnganiAnalytics.injectChartStyles();
+      }
 
-      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+      businessPreset = UnganiPresets.getPreset(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
 
       if (titleEl) {
-        titleEl.innerText = isRealEstate ? "Leads / Viewings / Property Records" : "Business Records";
+        titleEl.innerText = businessPreset.recordsLabel;
       }
 
       if (subEl) {
-        subEl.innerText = isRealEstate
-          ? "Track leads, inquiries, viewings, site visits, project updates, sales updates, rental updates, and property activity notes."
-          : "Track business activity, updates, notes, follow-ups, and operational records.";
+        subEl.innerText = "Operational notes, updates, issues, and activity records for " + businessPreset.name + ".";
       }
 
-      await loadRecords();
+      await loadRecordRows();
     }
 
-    async function loadRecords() {
+    async function loadRecordRows() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading business records...");
 
       const response = await currentContext.supabaseClient
@@ -60,418 +61,711 @@
         .order("created_at", { ascending: false });
 
       if (response.error) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load records", response.error.message);
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load business records", response.error.message)
+        );
         return;
       }
 
-      records = response.data || [];
+      recordRows = response.data || [];
       renderRecordsPage();
     }
 
     function renderRecordsPage() {
-      const filtered = filterRecords();
-      const summary = calculateSummary();
+      const filteredRows = getFilteredRows();
+      const summary = calculateRecordSummary(filteredRows);
+      const typeRows = buildTypeRows(filteredRows);
+      const statusRows = buildStatusRows(filteredRows);
+      const priorityRows = buildPriorityRows(filteredRows);
 
       UnganiClientShared.setContent(`
-        <section class="ungani-card ungani-hero">
-          <h2>${isRealEstate ? "Property Activity Records" : "Business Records"}</h2>
-          <p>
-            ${isRealEstate
-              ? "Use this section to capture leads, inquiries, site visits, viewing notes, project updates, sales updates, rental updates, and follow-up status."
-              : "Use this section to capture business updates, notes, activity records, and follow-up details."
-            }
-          </p>
+        <style>
+          .records-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+            gap: 18px;
+            align-items: stretch;
+          }
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="scrollToForm()">${currentEditId ? "Update Record" : "Add Record"}</button>
-            <a class="ungani-btn green" href="my-people.html">Agents / Leads</a>
-            <a class="ungani-btn dark" href="my-tasks.html">Tasks</a>
+          .records-preset-box {
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.09);
+            border-radius: 24px;
+            padding: 18px;
+          }
+
+          .records-preset-box h3 {
+            color: white;
+            margin: 0 0 8px;
+          }
+
+          .records-preset-box p {
+            color: rgba(255,255,255,0.74);
+            margin: 0;
+            line-height: 1.55;
+          }
+
+          .record-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+          }
+
+          .record-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 8px 11px;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            font-size: 12px;
+            font-weight: 850;
+          }
+
+          .record-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .record-kpi-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            box-shadow: var(--ungani-shadow);
+            padding: 20px;
+            min-height: 140px;
+          }
+
+          .record-kpi-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 5px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent);
+          }
+
+          .record-kpi-card span {
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.055em;
+          }
+
+          .record-kpi-card h3 {
+            margin: 17px 0 8px;
+            font-size: clamp(25px, 3vw, 36px);
+            line-height: 1;
+            letter-spacing: -0.055em;
+          }
+
+          .record-kpi-card p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .record-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .record-form-grid .wide {
+            grid-column: span 3;
+          }
+
+          .record-main-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(320px, 0.52fr);
+            gap: 18px;
+            align-items: start;
+          }
+
+          .record-chart-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+            margin-bottom: 18px;
+            align-items: start;
+          }
+
+          .record-type-section {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+          }
+
+          .type-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+
+          .type-pill {
+            border: 1px solid var(--ungani-border);
+            background: var(--ungani-soft);
+            color: var(--ungani-text);
+            border-radius: 999px;
+            padding: 8px 11px;
+            font-size: 12px;
+            font-weight: 850;
+            cursor: pointer;
+          }
+
+          .type-pill:hover {
+            border-color: rgba(212,166,58,0.65);
+          }
+
+          .record-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          .record-card {
+            border: 1px solid var(--ungani-border);
+            border-radius: 22px;
+            padding: 16px;
+            background: var(--ungani-card);
+            box-shadow: var(--ungani-shadow);
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 14px;
+            align-items: start;
+          }
+
+          .record-card:hover {
+            border-color: rgba(212,166,58,0.55);
+          }
+
+          .record-title-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+          }
+
+          .record-title-row h3 {
+            margin: 0;
+            font-size: 18px;
+          }
+
+          .record-meta-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+          }
+
+          .record-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+          }
+
+          @media (max-width: 1180px) {
+            .records-hero-grid,
+            .record-main-grid,
+            .record-chart-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .record-kpi-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 720px) {
+            .record-kpi-grid,
+            .record-form-grid,
+            .record-card {
+              grid-template-columns: 1fr;
+            }
+
+            .record-form-grid .wide {
+              grid-column: span 1;
+            }
+
+            .record-actions {
+              justify-content: flex-start;
+            }
+          }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <div class="records-hero-grid">
+            <div>
+              <span class="ungani-badge gold">${UnganiClientShared.safe(businessPreset.name)}</span>
+              <h2 style="font-size:clamp(32px,4vw,52px);line-height:1.02;margin:18px 0 12px;">
+                Records that match your business operations.
+              </h2>
+              <p>
+                Keep clear activity notes, updates, issue logs, client records, job records, and operational updates using presets for ${UnganiClientShared.safe(businessPreset.name)}.
+              </p>
+
+              <div class="ungani-button-row">
+                <button class="ungani-btn gold" onclick="scrollToRecordForm()">Add Record</button>
+                <button class="ungani-btn green" onclick="loadRecordRows()">Refresh</button>
+                <a class="ungani-btn light" href="my-charts.html">View Charts</a>
+              </div>
+            </div>
+
+            <div class="records-preset-box">
+              <h3>Business record preset active</h3>
+              <p>The record types on this page now adapt to the business type selected by the client.</p>
+
+              <div class="record-chip-row">
+                ${businessPreset.recordTypes.slice(0, 6).map(function (item) {
+                  return `<span class="record-chip">${UnganiClientShared.safe(item)}</span>`;
+                }).join("")}
+              </div>
+            </div>
           </div>
         </section>
 
-        <section class="ungani-grid">
-          ${UnganiClientShared.metricCard("Total Records", records.length, "All saved business records", "blue")}
-          ${UnganiClientShared.metricCard("Leads / Inquiries", summary.leads, "Lead and inquiry records", "orange")}
-          ${UnganiClientShared.metricCard("Viewings", summary.viewings, "Viewing and site visit records", "green")}
-          ${UnganiClientShared.metricCard("Project Updates", summary.projects, "Project/development updates", "gold")}
-          ${UnganiClientShared.metricCard("Open / Pending", summary.openPending, "Needs attention or follow-up", summary.openPending > 0 ? "orange" : "green")}
-          ${UnganiClientShared.metricCard("Closed", summary.closed, "Completed or closed records", "green")}
+        <section class="record-kpi-grid">
+          ${recordKpi("Total Records", summary.total, "All records in view", "#2563EB")}
+          ${recordKpi("Open", summary.open, "Active/open records", "#D4A63A")}
+          ${recordKpi("Completed", summary.completed, "Closed or completed", "#16A34A")}
+          ${recordKpi("Attention", summary.attention, "Urgent/high/lost/cancelled", summary.attention > 0 ? "#DC2626" : "#16A34A")}
         </section>
 
         <section class="ungani-card">
           <div class="ungani-section-title">
-            <h3>Filters</h3>
-            <button class="ungani-btn dark" onclick="resetFilters()">Reset Filters</button>
-          </div>
-
-          <div class="ungani-form-grid">
             <div>
-              <label for="filterType">Record Type</label>
-              <select id="filterType" onchange="saveFilters(); renderRecordsPage();">
-                <option value="">All Types</option>
-                <option value="lead">Lead</option>
-                <option value="inquiry">Inquiry</option>
-                <option value="viewing">Viewing</option>
-                <option value="site visit">Site Visit</option>
-                <option value="project update">Project Update</option>
-                <option value="sales update">Sales Update</option>
-                <option value="rental update">Rental Update</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="follow up">Follow Up</option>
-                <option value="meeting">Meeting</option>
-                <option value="general">General</option>
-              </select>
+              <h3>Filters</h3>
+              <p class="ungani-small">Search and filter this business records view.</p>
             </div>
 
+            <button class="ungani-btn dark" onclick="resetRecordFilters()">Reset Filters</button>
+          </div>
+
+          <div class="record-form-grid">
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveFilters(); renderRecordsPage();">
-                <option value="">All Statuses</option>
+              <select id="filterStatus" onchange="saveRecordFilters(); renderRecordsPage();">
+                <option value="">All Status</option>
                 <option value="open">Open</option>
-                <option value="pending">Pending</option>
-                <option value="contacted">Contacted</option>
-                <option value="viewing scheduled">Viewing Scheduled</option>
-                <option value="under negotiation">Under Negotiation</option>
+                <option value="in progress">In Progress</option>
                 <option value="completed">Completed</option>
                 <option value="closed">Closed</option>
-                <option value="lost">Lost</option>
+                <option value="cancelled">Cancelled</option>
               </select>
             </div>
 
             <div>
-              <label for="filterAgent">Assigned Agent</label>
-              <input id="filterAgent" placeholder="Example: Brian Otieno" oninput="saveFilters(); renderRecordsPage();" />
+              <label for="filterPriority">Priority</label>
+              <select id="filterPriority" onchange="saveRecordFilters(); renderRecordsPage();">
+                <option value="">All Priority</option>
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
             </div>
 
             <div>
-              <label for="searchBox">Search</label>
-              <input id="searchBox" placeholder="Search property, project, lead, notes..." oninput="saveFilters(); renderRecordsPage();" />
+              <label for="filterSearch">Search</label>
+              <input id="filterSearch" placeholder="Search title, type, person, item, notes..." oninput="saveRecordFilters(); renderRecordsPage();" />
             </div>
           </div>
         </section>
 
-        <section id="recordFormCard" class="ungani-card">
-          <div class="ungani-section-title">
-            <h3>${currentEditId ? "Update Record" : "Add Record"}</h3>
-            ${currentEditId ? '<button class="ungani-btn dark" onclick="cancelEdit()">Cancel Edit</button>' : ""}
+        <section class="record-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Record Types</h3>
+                <p class="ungani-small">Animated chart showing the kinds of records being added.</p>
+              </div>
+            </div>
+
+            ${hasValues(typeRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="recordTypeChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add records to show record type breakdown.")}
           </div>
 
-          ${renderRecordForm()}
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Record Status</h3>
+                <p class="ungani-small">Open, in progress, completed, closed, and attention-needed records.</p>
+              </div>
+            </div>
+
+            ${hasValues(statusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="recordStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add records to show status breakdown.")}
+          </div>
         </section>
 
-        <section class="ungani-two-col">
+        <section class="record-type-section">
           <div class="ungani-card">
             <div class="ungani-section-title">
               <div>
-                <h3>${isRealEstate ? "Property Activity Records" : "Business Records"}</h3>
-                <p class="ungani-small">${filtered.length} record(s) shown</p>
+                <h3>Record Types</h3>
+                <p class="ungani-small">Quick-fill record types for ${UnganiClientShared.safe(businessPreset.name)}.</p>
               </div>
-
-              <button class="ungani-btn green" onclick="loadRecords()">Refresh</button>
             </div>
 
-            ${renderRecordList(filtered)}
+            <div class="type-list">
+              ${businessPreset.recordTypes.map(function (item) {
+                return `<button class="type-pill" onclick="quickRecordType('${UnganiClientShared.attr(item)}')">${UnganiClientShared.safe(item)}</button>`;
+              }).join("")}
+            </div>
+          </div>
+        </section>
+
+        <section class="record-main-grid">
+          <div class="ungani-card" id="recordFormCard">
+            <div class="ungani-section-title">
+              <div>
+                <h3 id="recordFormTitle">${editingRecordId ? "Edit Record" : "Add Record"}</h3>
+                <p class="ungani-small">Use business-specific record types so reports and charts make sense.</p>
+              </div>
+
+              <button class="ungani-btn dark" onclick="clearRecordForm()">Clear</button>
+            </div>
+
+            <form onsubmit="saveRecord(event)">
+              <div class="record-form-grid">
+                <div class="wide">
+                  <label for="recordTitle">Record Title</label>
+                  <input id="recordTitle" placeholder="Example: Client update, trip update, viewing note, job update..." required />
+                </div>
+
+                <div>
+                  <label for="recordType">Record Type</label>
+                  <select id="recordType">
+                    ${businessPreset.recordTypes.map(function (item) {
+                      return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+                    }).join("")}
+                  </select>
+                </div>
+
+                <div>
+                  <label for="recordDate">Record Date</label>
+                  <input id="recordDate" type="date" />
+                </div>
+
+                <div>
+                  <label for="recordStatus">Status</label>
+                  <select id="recordStatus">
+                    <option value="open">Open</option>
+                    <option value="in progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="closed">Closed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="recordPriority">Priority</label>
+                  <select id="recordPriority">
+                    <option value="low">Low</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="recordRelatedPerson">Related Person</label>
+                  <input id="recordRelatedPerson" placeholder="Client, supplier, driver, agent, customer..." />
+                </div>
+
+                <div>
+                  <label for="recordRelatedItem">Related Item / Work</label>
+                  <input id="recordRelatedItem" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)}" />
+                </div>
+
+                <div class="wide">
+                  <label for="recordNotes">Notes</label>
+                  <textarea id="recordNotes" rows="5" placeholder="Write the full update, observation, issue, progress note, or client feedback..."></textarea>
+                </div>
+              </div>
+
+              <div class="ungani-button-row" style="margin-top:16px;">
+                <button class="ungani-btn gold" type="submit">${editingRecordId ? "Update Record" : "Save Record"}</button>
+                <button class="ungani-btn dark" type="button" onclick="clearRecordForm()">Cancel</button>
+              </div>
+            </form>
           </div>
 
           <div class="ungani-card">
             <div class="ungani-section-title">
-              <h3>Records Summary</h3>
+              <div>
+                <h3>Record Guide</h3>
+                <p class="ungani-small">How to keep updates useful.</p>
+              </div>
             </div>
 
-            ${renderSummaryPanel(filtered)}
+            <div class="ungani-empty" style="text-align:left;">
+              <h3>Record the important details</h3>
+              <p>Use records for updates that should not be lost in WhatsApp, calls, or memory.</p>
+            </div>
+
+            <div style="display:grid;gap:10px;margin-top:12px;">
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Example record</strong>
+                <p class="ungani-small">${UnganiClientShared.safe(businessPreset.recordTypes[0] || "Daily Update")}</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Best use</strong>
+                <p class="ungani-small">Add notes after calls, visits, deliveries, jobs, service work, or client follow-ups.</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Reports</strong>
+                <p class="ungani-small">Important updates can appear in reports and activity summaries.</p>
+              </div>
+            </div>
           </div>
         </section>
 
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Record List</h3>
+              <p class="ungani-small">${filteredRows.length} record(s) shown.</p>
+            </div>
+
+            <button class="ungani-btn green" onclick="loadRecordRows()">Refresh</button>
+          </div>
+
+          ${renderRecordList(filteredRows)}
+        </section>
+
         <p class="ungani-small">
-          Records Version: Step 305F Shared Layout · ungani.com · info@ungani.com
+          Records Version: Step 310B-3 Business-Type Record Presets · ungani.com · info@ungani.com
         </p>
       `);
 
-      restoreFilters();
-      fillEditForm();
+      restoreRecordFilters();
+
+      setTimeout(function () {
+        renderRecordCharts(typeRows, statusRows, priorityRows);
+      }, 150);
     }
 
-    function renderRecordForm() {
-      return `
-        <form id="recordForm" onsubmit="saveRecord(event)">
-          <div class="ungani-form-grid">
-            <div>
-              <label for="recordTitle">Record Title</label>
-              <input id="recordTitle" required placeholder="Example: Clove Garden A12 viewing scheduled" />
-            </div>
+    async function renderRecordCharts(typeRows, statusRows, priorityRows) {
+      try {
+        if (hasValues(typeRows)) {
+          await UnganiAnalytics.renderHorizontalBarChart("recordTypeChart", typeRows, "Records");
+        }
 
-            <div>
-              <label for="recordType">Record Type</label>
-              <select id="recordType">
-                <option value="lead">Lead</option>
-                <option value="inquiry">Inquiry</option>
-                <option value="viewing">Viewing</option>
-                <option value="site visit">Site Visit</option>
-                <option value="project update">Project Update</option>
-                <option value="sales update">Sales Update</option>
-                <option value="rental update">Rental Update</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="follow up">Follow Up</option>
-                <option value="meeting">Meeting</option>
-                <option value="general">General</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="status">Status</label>
-              <select id="status">
-                <option value="open">Open</option>
-                <option value="pending">Pending</option>
-                <option value="contacted">Contacted</option>
-                <option value="viewing scheduled">Viewing Scheduled</option>
-                <option value="under negotiation">Under Negotiation</option>
-                <option value="completed">Completed</option>
-                <option value="closed">Closed</option>
-                <option value="lost">Lost</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="category">Category</label>
-              <input id="category" placeholder="Example: Sales / Rentals / Projects" />
-            </div>
-
-            <div>
-              <label for="propertyName">Property Name</label>
-              <input id="propertyName" placeholder="Example: Clove Garden A12" />
-            </div>
-
-            <div>
-              <label for="projectName">Project Name</label>
-              <input id="projectName" placeholder="Example: Clove Garden" />
-            </div>
-
-            <div>
-              <label for="propertyOfInterest">Property of Interest</label>
-              <input id="propertyOfInterest" placeholder="Example: 3-bedroom apartment" />
-            </div>
-
-            <div>
-              <label for="assignedAgent">Assigned Agent</label>
-              <input id="assignedAgent" placeholder="Example: Brian Otieno" />
-            </div>
-
-            <div>
-              <label for="leadStatus">Lead Status</label>
-              <select id="leadStatus">
-                <option value="">Not a lead</option>
-                <option value="new">New</option>
-                <option value="contacted">Contacted</option>
-                <option value="viewing scheduled">Viewing Scheduled</option>
-                <option value="follow up">Follow Up</option>
-                <option value="under negotiation">Under Negotiation</option>
-                <option value="closed">Closed</option>
-                <option value="lost">Lost</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="dealStatus">Deal Status</label>
-              <select id="dealStatus">
-                <option value="">No deal status</option>
-                <option value="open">Open</option>
-                <option value="pending">Pending</option>
-                <option value="reserved">Reserved</option>
-                <option value="under negotiation">Under Negotiation</option>
-                <option value="closed">Closed</option>
-                <option value="sold">Sold</option>
-                <option value="rented">Rented</option>
-                <option value="lost">Lost</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="viewingDate">Viewing / Site Visit Date</label>
-              <input id="viewingDate" type="date" />
-            </div>
-
-            <div>
-              <label for="lastFollowUpDate">Last Follow-up Date</label>
-              <input id="lastFollowUpDate" type="date" />
-            </div>
-
-            <div>
-              <label for="commissionAmount">Commission Amount</label>
-              <input id="commissionAmount" type="number" min="0" step="1" placeholder="If applicable" />
-            </div>
-          </div>
-
-          <label for="description">Description</label>
-          <textarea id="description" placeholder="Add details about the lead, viewing, project update, site visit, or follow-up..."></textarea>
-
-          <label for="notes">Internal Notes</label>
-          <textarea id="notes" placeholder="Add internal notes, next steps, or important details..."></textarea>
-
-          <div class="ungani-button-row">
-            <button class="ungani-btn green" type="submit">${currentEditId ? "Update Record" : "Add Record"}</button>
-            ${currentEditId ? '<button class="ungani-btn dark" type="button" onclick="cancelEdit()">Cancel</button>' : ""}
-          </div>
-        </form>
-      `;
+        if (hasValues(statusRows)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("recordStatusChart", statusRows);
+        }
+      } catch (error) {
+        console.warn("Record charts warning:", error.message);
+      }
     }
 
     function renderRecordList(rows) {
-      if (rows.length === 0) {
+      if (!rows || rows.length === 0) {
         return `
           <div class="ungani-empty">
-            <h3>No records found</h3>
-            <p>Add your first lead, viewing, project update, or business record above.</p>
+            <h3>No business records yet</h3>
+            <p>Add your first business update, issue log, client note, or operational record.</p>
           </div>
         `;
       }
 
-      return rows.map(function (row) {
-        return renderRecordCard(row);
-      }).join("");
-    }
-
-    function renderRecordCard(row) {
-      const title = UnganiClientShared.getValue(row, ["record_title", "title", "name"], "Business Record");
-      const type = UnganiClientShared.getValue(row, ["record_type"], "general");
-      const status = UnganiClientShared.getValue(row, ["status"], "open");
-      const property = UnganiClientShared.getValue(row, ["property_name"], "");
-      const project = UnganiClientShared.getValue(row, ["project_name"], "");
-      const agent = UnganiClientShared.getValue(row, ["assigned_agent"], "");
-      const leadStatus = UnganiClientShared.getValue(row, ["lead_status"], "");
-      const dealStatus = UnganiClientShared.getValue(row, ["deal_status"], "");
-      const description = UnganiClientShared.getValue(row, ["description"], "");
-      const notes = UnganiClientShared.getValue(row, ["notes"], "");
-      const viewingDate = UnganiClientShared.getValue(row, ["viewing_date"], "");
-      const followUp = UnganiClientShared.getValue(row, ["last_follow_up_date"], "");
-      const commission = Number(UnganiClientShared.getValue(row, ["commission_amount"], 0) || 0);
-
       return `
-        <div class="ungani-card" style="box-shadow:none;">
-          <div class="ungani-section-title">
-            <div>
-              <h3>${UnganiClientShared.safe(title)}</h3>
-              <p class="ungani-small">
-                ${UnganiClientShared.safe(type)}
-                ${property ? " · " + UnganiClientShared.safe(property) : ""}
-                ${project ? " · " + UnganiClientShared.safe(project) : ""}
-              </p>
-            </div>
+        <div class="record-list">
+          ${rows.map(function (row) {
+            const title = getRecordTitle(row);
+            const type = UnganiClientShared.getValue(row, ["record_type", "type"], "General Record");
+            const status = UnganiClientShared.getValue(row, ["status"], "open");
+            const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
+            const date = UnganiClientShared.getValue(row, ["record_date", "created_at"], "");
+            const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
+            const relatedItem = UnganiClientShared.getValue(row, ["related_item"], "");
+            const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
-            <div>
-              ${badge(type, "blue")}
-              ${badge(status, statusColor(status))}
-              ${leadStatus ? badge(leadStatus, "orange") : ""}
-              ${dealStatus ? badge(dealStatus, "gold") : ""}
-            </div>
-          </div>
+            return `
+              <div class="record-card">
+                <div>
+                  <div class="record-title-row">
+                    ${statusBadge(status)}
+                    ${priorityBadge(priority)}
+                    <h3>${UnganiClientShared.safe(title)}</h3>
+                  </div>
 
-          <section class="ungani-grid">
-            ${miniDetail("Property", property || "N/A")}
-            ${miniDetail("Project", project || "N/A")}
-            ${miniDetail("Assigned Agent", agent || "N/A")}
-            ${miniDetail("Viewing Date", UnganiClientShared.formatDate(viewingDate))}
-            ${miniDetail("Last Follow-up", UnganiClientShared.formatDate(followUp))}
-            ${miniDetail("Commission", commission > 0 ? UnganiClientShared.formatKES(commission) : "N/A")}
-          </section>
+                  <p class="ungani-small" style="margin:0;">
+                    ${UnganiClientShared.safe(notes || "No notes added.")}
+                  </p>
 
-          ${description ? `<p class="ungani-small" style="margin-top:12px;"><strong>Description:</strong> ${UnganiClientShared.safe(description)}</p>` : ""}
-          ${notes ? `<p class="ungani-small"><strong>Notes:</strong> ${UnganiClientShared.safe(notes)}</p>` : ""}
+                  <div class="record-meta-grid">
+                    <span class="ungani-badge gold">${UnganiClientShared.safe(type)}</span>
+                    <span class="ungani-badge blue">Date: ${UnganiClientShared.safe(date ? UnganiClientShared.formatDate(date) : "No date")}</span>
+                    ${relatedPerson ? `<span class="ungani-badge green">Person: ${UnganiClientShared.safe(relatedPerson)}</span>` : ""}
+                    ${relatedItem ? `<span class="ungani-badge blue">Related: ${UnganiClientShared.safe(relatedItem)}</span>` : ""}
+                  </div>
+                </div>
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="editRecord('${UnganiClientShared.attr(row.id)}')">Edit</button>
-            <button class="ungani-btn orange" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'pending')">Pending</button>
-            <button class="ungani-btn blue" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'viewing scheduled')">Viewing Scheduled</button>
-            <button class="ungani-btn green" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'completed')">Completed</button>
-            <button class="ungani-btn dark" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'closed')">Closed</button>
-          </div>
+                <div class="record-actions">
+                  ${status.toLowerCase() !== "completed" && status.toLowerCase() !== "closed" ? `<button class="ungani-btn small green" onclick="markRecordCompleted('${UnganiClientShared.attr(row.id)}')">Complete</button>` : ""}
+                  <button class="ungani-btn small gold" onclick="editRecord('${UnganiClientShared.attr(row.id)}')">Edit</button>
+                  <button class="ungani-btn small red" onclick="deleteRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>
+                </div>
+              </div>
+            `;
+          }).join("")}
         </div>
       `;
     }
 
-    function renderSummaryPanel(rows) {
-      const typeSummary = {};
+    function recordKpi(title, value, subtitle, accent) {
+      return `
+        <div class="record-kpi-card" style="--accent:${UnganiClientShared.attr(accent)};">
+          <span>${UnganiClientShared.safe(title)}</span>
+          <h3>${UnganiClientShared.safe(value)}</h3>
+          <p>${UnganiClientShared.safe(subtitle)}</p>
+        </div>
+      `;
+    }
+
+    function calculateRecordSummary(rows) {
+      let open = 0;
+      let completed = 0;
+      let attention = 0;
 
       rows.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["record_type"], "general")).toLowerCase();
-        typeSummary[type] = (typeSummary[type] || 0) + 1;
+        const status = String(UnganiClientShared.getValue(row, ["status"], "open")).toLowerCase();
+        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
+
+        if (status.includes("completed") || status.includes("closed") || status.includes("resolved")) {
+          completed++;
+        } else if (!status.includes("cancelled")) {
+          open++;
+        }
+
+        if (
+          priority.includes("urgent") ||
+          priority.includes("high") ||
+          status.includes("lost") ||
+          status.includes("cancelled") ||
+          status.includes("failed")
+        ) {
+          attention++;
+        }
       });
 
-      const keys = Object.keys(typeSummary);
-
-      if (keys.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No summary yet</h3>
-            <p>Summary will appear when records are added.</p>
-          </div>
-        `;
-      }
-
-      return keys.map(function (key) {
-        return `
-          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-            <strong>${UnganiClientShared.safe(toTitle(key))}</strong>
-            <p class="ungani-small" style="margin:5px 0 0;">${typeSummary[key]} record(s)</p>
-          </div>
-        `;
-      }).join("");
+      return {
+        total: rows.length,
+        open,
+        completed,
+        attention
+      };
     }
 
-    function calculateSummary() {
-      let leads = 0;
-      let viewings = 0;
-      let projects = 0;
-      let openPending = 0;
-      let closed = 0;
+    function buildTypeRows(rows) {
+      const map = {};
 
-      records.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["record_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
-
-        if (type.includes("lead") || type.includes("inquiry")) leads++;
-        if (type.includes("viewing") || type.includes("site visit")) viewings++;
-        if (type.includes("project")) projects++;
-
-        if (status.includes("open") || status.includes("pending") || status.includes("contacted") || status.includes("viewing")) openPending++;
-        if (status.includes("closed") || status.includes("completed")) closed++;
+      rows.forEach(function (row) {
+        const type = UnganiClientShared.getValue(row, ["record_type", "type"], "General Record");
+        map[type] = (map[type] || 0) + 1;
       });
 
-      return { leads, viewings, projects, openPending, closed };
+      return UnganiAnalytics.mapToRows(map);
     }
 
-    function filterRecords() {
-      const filterType = document.getElementById("filterType") ? UnganiClientShared.value("filterType").toLowerCase() : "";
-      const filterStatus = document.getElementById("filterStatus") ? UnganiClientShared.value("filterStatus").toLowerCase() : "";
-      const filterAgent = document.getElementById("filterAgent") ? UnganiClientShared.value("filterAgent").toLowerCase() : "";
-      const query = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
+    function buildStatusRows(rows) {
+      const map = {};
 
-      return records.filter(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["record_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
-        const agent = String(UnganiClientShared.getValue(row, ["assigned_agent"], "")).toLowerCase();
+      rows.forEach(function (row) {
+        const status = UnganiClientShared.getValue(row, ["status"], "open");
+        map[status] = (map[status] || 0) + 1;
+      });
 
-        const haystack = [
-          UnganiClientShared.getValue(row, ["record_title", "title", "name"], ""),
-          type,
-          status,
-          agent,
-          UnganiClientShared.getValue(row, ["property_name"], ""),
-          UnganiClientShared.getValue(row, ["project_name"], ""),
-          UnganiClientShared.getValue(row, ["property_of_interest"], ""),
-          UnganiClientShared.getValue(row, ["lead_status"], ""),
-          UnganiClientShared.getValue(row, ["deal_status"], ""),
-          UnganiClientShared.getValue(row, ["description"], ""),
-          UnganiClientShared.getValue(row, ["notes"], "")
-        ].join(" ").toLowerCase();
+      return UnganiAnalytics.mapToRows(map);
+    }
 
-        if (filterType && type !== filterType) return false;
-        if (filterStatus && status !== filterStatus) return false;
-        if (filterAgent && !agent.includes(filterAgent)) return false;
-        if (query && !haystack.includes(query)) return false;
+    function buildPriorityRows(rows) {
+      const map = {};
+
+      rows.forEach(function (row) {
+        const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
+        map[priority] = (map[priority] || 0) + 1;
+      });
+
+      return UnganiAnalytics.mapToRows(map);
+    }
+
+    function getFilteredRows() {
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_record_filter_status").toLowerCase();
+      const filterPriority = getStoredOrInput("filterPriority", "ungani_record_filter_priority").toLowerCase();
+      const search = getStoredOrInput("filterSearch", "ungani_record_filter_search").toLowerCase();
+
+      return recordRows.filter(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "open")).toLowerCase();
+        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
+        const haystack = JSON.stringify(row || {}).toLowerCase();
+
+        if (filterStatus && !status.includes(filterStatus)) return false;
+        if (filterPriority && !priority.includes(filterPriority)) return false;
+        if (search && !haystack.includes(search)) return false;
 
         return true;
       });
+    }
+
+    function getStoredOrInput(inputId, storageKey) {
+      const el = document.getElementById(inputId);
+
+      if (el) {
+        return String(el.value || "").trim();
+      }
+
+      return String(sessionStorage.getItem(storageKey) || "").trim();
+    }
+
+    function saveRecordFilters() {
+      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_record_filter_status", UnganiClientShared.value("filterStatus"));
+      if (document.getElementById("filterPriority")) sessionStorage.setItem("ungani_record_filter_priority", UnganiClientShared.value("filterPriority"));
+      if (document.getElementById("filterSearch")) sessionStorage.setItem("ungani_record_filter_search", UnganiClientShared.value("filterSearch"));
+    }
+
+    function restoreRecordFilters() {
+      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_record_filter_status") || "";
+      if (document.getElementById("filterPriority")) document.getElementById("filterPriority").value = sessionStorage.getItem("ungani_record_filter_priority") || "";
+      if (document.getElementById("filterSearch")) document.getElementById("filterSearch").value = sessionStorage.getItem("ungani_record_filter_search") || "";
+    }
+
+    function resetRecordFilters() {
+      sessionStorage.removeItem("ungani_record_filter_status");
+      sessionStorage.removeItem("ungani_record_filter_priority");
+      sessionStorage.removeItem("ungani_record_filter_search");
+      renderRecordsPage();
+      UnganiClientShared.showToast("Record filters reset ✓");
+    }
+
+    function quickRecordType(recordType) {
+      scrollToRecordForm();
+
+      setTimeout(function () {
+        const el = document.getElementById("recordType");
+        if (el) el.value = recordType;
+      }, 150);
+
+      UnganiClientShared.showToast("Record type selected ✓");
+    }
+
+    function scrollToRecordForm() {
+      const el = document.getElementById("recordFormCard");
+
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
 
     async function saveRecord(event) {
@@ -480,191 +774,165 @@
       const title = UnganiClientShared.value("recordTitle");
 
       if (!title) {
-        alert("Please enter a record title.");
+        UnganiClientShared.showToast("Enter a record title.");
         return;
       }
 
       const payload = {
+        tenant_id: currentContext.tenantId,
         record_title: title,
-        title: title,
-        name: title,
-        record_type: UnganiClientShared.value("recordType") || "general",
-        category: UnganiClientShared.value("category") || null,
-        status: UnganiClientShared.value("status") || "open",
-        property_name: UnganiClientShared.value("propertyName") || null,
-        project_name: UnganiClientShared.value("projectName") || null,
-        property_of_interest: UnganiClientShared.value("propertyOfInterest") || null,
-        assigned_agent: UnganiClientShared.value("assignedAgent") || null,
-        lead_status: UnganiClientShared.value("leadStatus") || null,
-        deal_status: UnganiClientShared.value("dealStatus") || null,
-        viewing_date: UnganiClientShared.value("viewingDate") || null,
-        last_follow_up_date: UnganiClientShared.value("lastFollowUpDate") || null,
-        commission_amount: numberValue("commissionAmount"),
-        description: UnganiClientShared.value("description") || null,
-        notes: UnganiClientShared.value("notes") || null,
-        updated_at: new Date().toISOString()
+        record_type: UnganiClientShared.value("recordType") || "General Record",
+        record_date: UnganiClientShared.value("recordDate") || new Date().toISOString().slice(0, 10),
+        status: UnganiClientShared.value("recordStatus") || "open",
+        priority: UnganiClientShared.value("recordPriority") || "normal",
+        related_person: UnganiClientShared.value("recordRelatedPerson") || null,
+        related_item: UnganiClientShared.value("recordRelatedItem") || null,
+        notes: UnganiClientShared.value("recordNotes") || null
       };
 
       let response;
 
-      if (currentEditId) {
+      if (editingRecordId) {
         response = await currentContext.supabaseClient
           .from("business_records")
           .update(payload)
-          .eq("id", currentEditId)
+          .eq("id", editingRecordId)
           .eq("tenant_id", currentContext.tenantId);
       } else {
-        payload.tenant_id = currentContext.tenantId;
-        payload.created_by = currentContext.authUser.id;
-        payload.created_at = new Date().toISOString();
-
         response = await currentContext.supabaseClient
           .from("business_records")
-          .insert(payload);
+          .insert([payload]);
       }
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not save record: " + response.error.message);
         return;
       }
 
-      currentEditId = null;
-      UnganiClientShared.showToast("Record saved ✓");
-      await loadRecords();
-    }
-
-    function fillEditForm() {
-      if (!currentEditId) return;
-
-      const row = records.find(function (item) {
-        return String(item.id) === String(currentEditId);
-      });
-
-      if (!row) return;
-
-      setValue("recordTitle", UnganiClientShared.getValue(row, ["record_title", "title", "name"], ""));
-      setValue("recordType", UnganiClientShared.getValue(row, ["record_type"], "general"));
-      setValue("status", UnganiClientShared.getValue(row, ["status"], "open"));
-      setValue("category", UnganiClientShared.getValue(row, ["category"], ""));
-      setValue("propertyName", UnganiClientShared.getValue(row, ["property_name"], ""));
-      setValue("projectName", UnganiClientShared.getValue(row, ["project_name"], ""));
-      setValue("propertyOfInterest", UnganiClientShared.getValue(row, ["property_of_interest"], ""));
-      setValue("assignedAgent", UnganiClientShared.getValue(row, ["assigned_agent"], ""));
-      setValue("leadStatus", UnganiClientShared.getValue(row, ["lead_status"], ""));
-      setValue("dealStatus", UnganiClientShared.getValue(row, ["deal_status"], ""));
-      setValue("viewingDate", String(UnganiClientShared.getValue(row, ["viewing_date"], "")).slice(0, 10));
-      setValue("lastFollowUpDate", String(UnganiClientShared.getValue(row, ["last_follow_up_date"], "")).slice(0, 10));
-      setValue("commissionAmount", UnganiClientShared.getValue(row, ["commission_amount"], 0));
-      setValue("description", UnganiClientShared.getValue(row, ["description"], ""));
-      setValue("notes", UnganiClientShared.getValue(row, ["notes"], ""));
+      UnganiClientShared.showToast(editingRecordId ? "Record updated ✓" : "Record added ✓");
+      clearRecordForm();
+      await loadRecordRows();
     }
 
     function editRecord(id) {
-      currentEditId = id;
-      renderRecordsPage();
-      scrollToForm();
+      const row = recordRows.find(function (item) {
+        return String(item.id) === String(id);
+      });
+
+      if (!row) {
+        UnganiClientShared.showToast("Record not found.");
+        return;
+      }
+
+      editingRecordId = row.id;
+
+      scrollToRecordForm();
+
+      setTimeout(function () {
+        document.getElementById("recordFormTitle").innerText = "Edit Record";
+        document.getElementById("recordTitle").value = getRecordTitle(row);
+        document.getElementById("recordType").value = UnganiClientShared.getValue(row, ["record_type", "type"], "");
+        document.getElementById("recordDate").value = String(UnganiClientShared.getValue(row, ["record_date", "created_at"], "")).slice(0, 10);
+        document.getElementById("recordStatus").value = UnganiClientShared.getValue(row, ["status"], "open");
+        document.getElementById("recordPriority").value = UnganiClientShared.getValue(row, ["priority"], "normal");
+        document.getElementById("recordRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person"], "");
+        document.getElementById("recordRelatedItem").value = UnganiClientShared.getValue(row, ["related_item"], "");
+        document.getElementById("recordNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
+      }, 150);
     }
 
-    function cancelEdit() {
-      currentEditId = null;
-      renderRecordsPage();
-      UnganiClientShared.showToast("Edit cancelled");
-    }
-
-    async function quickStatus(id, status) {
+    async function markRecordCompleted(id) {
       const response = await currentContext.supabaseClient
         .from("business_records")
-        .update({
-          status: status,
-          updated_at: new Date().toISOString()
-        })
+        .update({ status: "completed" })
         .eq("id", id)
         .eq("tenant_id", currentContext.tenantId);
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not update record: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Status updated ✓");
-      await loadRecords();
+      UnganiClientShared.showToast("Record marked completed ✓");
+      await loadRecordRows();
     }
 
-    function restoreFilters() {
-      if (document.getElementById("filterType")) document.getElementById("filterType").value = sessionStorage.getItem("ungani_records_filter_type") || "";
-      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_records_filter_status") || "";
-      if (document.getElementById("filterAgent")) document.getElementById("filterAgent").value = sessionStorage.getItem("ungani_records_filter_agent") || "";
-      if (document.getElementById("searchBox")) document.getElementById("searchBox").value = sessionStorage.getItem("ungani_records_search") || "";
+    async function deleteRecord(id) {
+      const confirmed = confirm("Delete this business record?");
+
+      if (!confirmed) return;
+
+      const response = await currentContext.supabaseClient
+        .from("business_records")
+        .delete()
+        .eq("id", id)
+        .eq("tenant_id", currentContext.tenantId);
+
+      if (response.error) {
+        UnganiClientShared.showToast("Could not delete record: " + response.error.message);
+        return;
+      }
+
+      UnganiClientShared.showToast("Record deleted ✓");
+      await loadRecordRows();
     }
 
-    function saveFilters() {
-      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_records_filter_type", UnganiClientShared.value("filterType"));
-      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_records_filter_status", UnganiClientShared.value("filterStatus"));
-      if (document.getElementById("filterAgent")) sessionStorage.setItem("ungani_records_filter_agent", UnganiClientShared.value("filterAgent"));
-      if (document.getElementById("searchBox")) sessionStorage.setItem("ungani_records_search", UnganiClientShared.value("searchBox"));
+    function clearRecordForm() {
+      editingRecordId = null;
+
+      const title = document.getElementById("recordFormTitle");
+      if (title) title.innerText = "Add Record";
+
+      if (document.getElementById("recordTitle")) document.getElementById("recordTitle").value = "";
+      if (document.getElementById("recordType")) document.getElementById("recordType").value = businessPreset.recordTypes[0] || "General Record";
+      if (document.getElementById("recordDate")) document.getElementById("recordDate").value = "";
+      if (document.getElementById("recordStatus")) document.getElementById("recordStatus").value = "open";
+      if (document.getElementById("recordPriority")) document.getElementById("recordPriority").value = "normal";
+      if (document.getElementById("recordRelatedPerson")) document.getElementById("recordRelatedPerson").value = "";
+      if (document.getElementById("recordRelatedItem")) document.getElementById("recordRelatedItem").value = "";
+      if (document.getElementById("recordNotes")) document.getElementById("recordNotes").value = "";
     }
 
-    function resetFilters() {
-      sessionStorage.removeItem("ungani_records_filter_type");
-      sessionStorage.removeItem("ungani_records_filter_status");
-      sessionStorage.removeItem("ungani_records_filter_agent");
-      sessionStorage.removeItem("ungani_records_search");
-      renderRecordsPage();
-      UnganiClientShared.showToast("Filters reset ✓");
+    function getRecordTitle(row) {
+      return UnganiClientShared.getValue(row, ["record_title", "title", "name"], "Business Record");
     }
 
-    function badge(text, color) {
-      return `<span class="ungani-badge ${UnganiClientShared.attr(color || "blue")}">${UnganiClientShared.safe(text)}</span>`;
-    }
-
-    function statusColor(status) {
+    function statusBadge(status) {
       const lower = String(status || "").toLowerCase();
 
-      if (lower.includes("closed") || lower.includes("completed") || lower.includes("sold") || lower.includes("rented")) return "green";
-      if (lower.includes("pending") || lower.includes("contacted") || lower.includes("viewing") || lower.includes("negotiation")) return "orange";
-      if (lower.includes("lost") || lower.includes("cancelled")) return "red";
-
-      return "blue";
-    }
-
-    function miniDetail(label, value) {
-      return `
-        <div class="ungani-card" style="margin-bottom:0;box-shadow:none;padding:14px;">
-          <p class="ungani-small" style="margin:0 0 5px;">${UnganiClientShared.safe(label)}</p>
-          <strong>${UnganiClientShared.safe(value)}</strong>
-        </div>
-      `;
-    }
-
-    function toTitle(value) {
-      return String(value || "")
-        .replace(/_/g, " ")
-        .replace(/\w\S*/g, function (text) {
-          return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
-        });
-    }
-
-    function setValue(id, value) {
-      const element = document.getElementById(id);
-
-      if (element) {
-        element.value = value === null || value === undefined ? "" : value;
+      if (lower.includes("completed") || lower.includes("closed") || lower.includes("resolved")) {
+        return `<span class="ungani-badge green">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status))}</span>`;
       }
+
+      if (lower.includes("cancelled") || lower.includes("lost") || lower.includes("failed")) {
+        return `<span class="ungani-badge red">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status))}</span>`;
+      }
+
+      if (lower.includes("progress")) {
+        return `<span class="ungani-badge blue">In Progress</span>`;
+      }
+
+      return `<span class="ungani-badge gold">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status || "open"))}</span>`;
     }
 
-    function numberValue(id) {
-      const value = Number(UnganiClientShared.value(id) || 0);
-      return isNaN(value) ? 0 : value;
+    function priorityBadge(priority) {
+      const lower = String(priority || "normal").toLowerCase();
+
+      if (lower.includes("urgent") || lower.includes("high")) {
+        return `<span class="ungani-badge red">${UnganiClientShared.safe(UnganiAnalytics.toTitle(priority))}</span>`;
+      }
+
+      if (lower.includes("low")) {
+        return `<span class="ungani-badge blue">Low</span>`;
+      }
+
+      return `<span class="ungani-badge gold">Normal</span>`;
     }
 
-    function scrollToForm() {
-      setTimeout(function () {
-        const card = document.getElementById("recordFormCard");
-
-        if (card) {
-          card.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 100);
+    function hasValues(rows) {
+      return (rows || []).some(function (row) {
+        return Number(row.value || 0) > 0;
+      });
     }
   </script>
 </body>
