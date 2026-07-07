@@ -48,26 +48,54 @@
     }
 
     async function loadCategories() {
-      const businessTypeKey = UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], "");
+      const businessTypeKey = String(UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], "")).toLowerCase();
+      const businessTypeName = String(UnganiClientShared.getValue(currentContext.tenant, ["business_type"], "")).toLowerCase();
+
+      const realEstateFallback = fallbackCategories();
 
       const response = await currentContext.supabaseClient
         .from("categories")
         .select("*")
-        .eq("is_active", true)
         .order("display_order", { ascending: true });
 
       if (response.error) {
-        categories = fallbackCategories();
+        categories = realEstateFallback;
         return;
       }
 
       const all = response.data || [];
 
       const matched = all.filter(function (row) {
-        const key = String(UnganiClientShared.getValue(row, ["business_type_key"], "")).toLowerCase();
+        const rowKey = String(UnganiClientShared.getValue(row, ["business_type_key"], "")).toLowerCase();
+        const rowName = String(UnganiClientShared.getValue(row, ["business_type", "business_type_name"], "")).toLowerCase();
 
-        return key === String(businessTypeKey).toLowerCase();
+        if (isRealEstate) {
+          return (
+            rowKey.includes("real_estate") ||
+            rowKey.includes("real-estate") ||
+            rowName.includes("real estate")
+          );
+        }
+
+        return rowKey === businessTypeKey || rowName === businessTypeName;
       });
+
+      if (isRealEstate) {
+        const merged = [...matched];
+
+        realEstateFallback.forEach(function (fallbackRow) {
+          const exists = merged.some(function (row) {
+            return String(UnganiClientShared.getValue(row, ["category_key"], "")).toLowerCase() === String(fallbackRow.category_key).toLowerCase();
+          });
+
+          if (!exists) {
+            merged.push(fallbackRow);
+          }
+        });
+
+        categories = merged;
+        return;
+      }
 
       if (matched.length > 0) {
         categories = matched;
@@ -82,11 +110,15 @@
           { category_key: "property_sale", category_name: "Property Sale", transaction_type: "income" },
           { category_key: "rental_income", category_name: "Rental Income", transaction_type: "income" },
           { category_key: "booking_deposit", category_name: "Booking Deposit", transaction_type: "income" },
+          { category_key: "agency_service_fee", category_name: "Agency / Service Fee", transaction_type: "income" },
+
           { category_key: "agent_commission", category_name: "Agent Commission", transaction_type: "expense" },
           { category_key: "marketing_advertising", category_name: "Marketing / Advertising", transaction_type: "expense" },
           { category_key: "legal_documentation_fees", category_name: "Legal / Documentation Fees", transaction_type: "expense" },
           { category_key: "property_maintenance", category_name: "Property Maintenance", transaction_type: "expense" },
           { category_key: "staff_wages", category_name: "Staff Wages", transaction_type: "expense" },
+          { category_key: "site_visit_transport", category_name: "Site Visit / Transport Cost", transaction_type: "expense" },
+          { category_key: "project_material_cost", category_name: "Project Material Cost", transaction_type: "expense" },
           { category_key: "other_real_estate_cost", category_name: "Other Real Estate Cost", transaction_type: "expense" }
         ];
       }
@@ -221,7 +253,7 @@
         </section>
 
         <p class="ungani-small">
-          Money Version: Step 305D Shared Layout · This is money tracking for operations visibility, not a full accounting replacement · ungani.com · info@ungani.com
+          Money Version: Step 305D-2 Shared Layout · This is money tracking for operations visibility, not a full accounting replacement · ungani.com · info@ungani.com
         </p>
       `);
 
@@ -353,9 +385,9 @@
 
       if (!select || !typeEl) return;
 
-      const selectedType = typeEl.value || "income";
+      const selectedType = String(typeEl.value || "income").toLowerCase();
 
-      const matching = categories.filter(function (row) {
+      let matching = categories.filter(function (row) {
         const type = String(UnganiClientShared.getValue(row, ["transaction_type", "category_type", "type"], "")).toLowerCase();
 
         if (selectedType === "petty_cash") {
@@ -365,9 +397,23 @@
         return type === selectedType;
       });
 
-      const usable = matching.length > 0 ? matching : categories;
+      if (matching.length === 0 && isRealEstate) {
+        matching = fallbackCategories().filter(function (row) {
+          const type = String(row.transaction_type || "").toLowerCase();
 
-      select.innerHTML = `<option value="">Select category</option>` + usable.map(function (row) {
+          if (selectedType === "petty_cash") {
+            return type === "petty_cash" || type === "expense";
+          }
+
+          return type === selectedType;
+        });
+      }
+
+      if (matching.length === 0) {
+        matching = fallbackCategories();
+      }
+
+      select.innerHTML = `<option value="">Select category</option>` + matching.map(function (row) {
         const key = UnganiClientShared.getValue(row, ["category_key", "slug", "name", "category_name"], "");
         const name = UnganiClientShared.getValue(row, ["category_name", "name", "title"], key);
 
