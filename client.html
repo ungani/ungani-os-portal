@@ -8,6 +8,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-shared.js"></script>
+  <script src="ungani-analytics.js"></script>
 </head>
 
 <body>
@@ -23,23 +24,21 @@
       tasks: [],
       documents: [],
       events: [],
-      support: [],
-      notices: [],
-      chat: [],
-      teamChat: []
+      support: []
     };
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "dashboard",
-        pageTitle: "Property Operations Dashboard",
-        pageSubtitle: "Properties, leads, agents, money records, tasks, documents, calendar, and reports.",
+        pageTitle: "Dashboard",
+        pageSubtitle: "Premium business operations overview.",
         onReady: startDashboard
       });
     });
 
     async function startDashboard(context) {
       currentContext = context;
+      UnganiAnalytics.injectChartStyles();
 
       const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
       const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
@@ -63,7 +62,7 @@
     }
 
     async function loadDashboardData() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading dashboard...");
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading premium dashboard...");
 
       const responses = await Promise.all([
         safeSelect("transactions"),
@@ -73,10 +72,7 @@
         safeSelect("tasks"),
         safeSelect("documents"),
         safeSelect("business_events"),
-        safeSelect("support_issues"),
-        safeSelect("client_notices"),
-        safeSelect("admin_client_messages"),
-        safeSelect("team_chat_messages")
+        safeSelect("support_issues")
       ]);
 
       dashboardData.transactions = responses[0];
@@ -87,9 +83,6 @@
       dashboardData.documents = responses[5];
       dashboardData.events = responses[6];
       dashboardData.support = responses[7];
-      dashboardData.notices = responses[8];
-      dashboardData.chat = responses[9];
-      dashboardData.teamChat = responses[10];
 
       renderDashboard();
     }
@@ -117,59 +110,223 @@
     function renderDashboard() {
       const tenantName = UnganiClientShared.getTenantName(currentContext.tenant);
 
-      const money = calculateMoney();
-      const property = calculatePropertySummary();
-      const people = calculatePeopleSummary();
-      const tasks = calculateTaskSummary();
-      const topAgent = getTopAgent();
-      const projects = calculateProjects();
+      const money = UnganiAnalytics.calculateMoney(dashboardData.transactions);
+      const trend = UnganiAnalytics.calculateIncomeExpenseTrend(dashboardData.transactions);
+      const property = UnganiAnalytics.calculatePropertySummary(dashboardData.items);
+      const people = UnganiAnalytics.calculatePeopleSummary(dashboardData.people);
+      const tasks = UnganiAnalytics.calculateTaskSummary(dashboardData.tasks);
+      const projects = UnganiAnalytics.calculateProjects(dashboardData.items);
+      const topAgent = UnganiAnalytics.calculateAgentPerformance(dashboardData.people, isRealEstate)[0] || null;
+
+      const propertyStatus = UnganiAnalytics.calculateStatus(dashboardData.items, ["property_status", "item_status", "status"]);
+      const taskStatus = UnganiAnalytics.mapToRows({
+        Pending: tasks.pending,
+        "In Progress": tasks.inProgress,
+        Completed: tasks.completed,
+        Overdue: tasks.overdue
+      });
+      const leadPipeline = UnganiAnalytics.calculateLeadPipeline(dashboardData.people, dashboardData.records, isRealEstate);
 
       UnganiClientShared.setContent(`
         <style>
-          .dashboard-welcome {
+          .premium-hero {
             display: grid;
-            grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+            grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
             gap: 18px;
             align-items: stretch;
           }
 
-          .dashboard-welcome-panel {
-            min-height: 220px;
+          .premium-hero-main {
+            min-height: 245px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
           }
 
-          .dashboard-focus-panel {
+          .premium-hero-title {
+            font-size: clamp(32px, 4vw, 54px);
+            line-height: 1.02;
+            margin: 18px 0 12px;
+            letter-spacing: -0.055em;
+          }
+
+          .premium-live-card {
             border: 1px solid rgba(255,255,255,0.14);
             background: rgba(255,255,255,0.09);
             border-radius: 24px;
             padding: 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
           }
 
-          .dashboard-focus-panel h3 {
+          .premium-live-card h3 {
             color: white;
-            margin-top: 0;
+            margin: 0 0 8px;
           }
 
-          .dashboard-focus-panel p {
-            color: rgba(255,255,255,0.72);
+          .premium-live-card p {
+            color: rgba(255,255,255,0.74);
+            margin: 0;
+            line-height: 1.55;
           }
 
-          .dashboard-preview-grid {
+          .premium-mini-stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 18px;
+          }
+
+          .premium-mini-stat {
+            border-radius: 18px;
+            padding: 14px;
+            background: rgba(255,255,255,0.10);
+            border: 1px solid rgba(255,255,255,0.12);
+          }
+
+          .premium-mini-stat span {
+            display: block;
+            font-size: 11px;
+            color: rgba(255,255,255,0.66);
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 6px;
+          }
+
+          .premium-mini-stat strong {
+            color: white;
+            font-size: 23px;
+            line-height: 1;
+          }
+
+          .premium-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .premium-kpi {
+            display: block;
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            box-shadow: var(--ungani-shadow);
+            padding: 20px;
+            min-height: 155px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+          }
+
+          .premium-kpi:hover {
+            transform: translateY(-6px);
+            box-shadow: var(--ungani-shadow-hover);
+            border-color: rgba(212,166,58,0.42);
+          }
+
+          .premium-kpi::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 5px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent);
+          }
+
+          .premium-kpi::after {
+            content: "";
+            position: absolute;
+            right: -60px;
+            bottom: -70px;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: color-mix(in srgb, var(--accent) 18%, transparent);
+          }
+
+          .premium-kpi-top {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 18px;
+          }
+
+          .premium-kpi-label {
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.055em;
+          }
+
+          .premium-kpi-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 17px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            background: var(--accent);
+            font-size: 19px;
+            box-shadow: 0 14px 26px color-mix(in srgb, var(--accent) 30%, transparent);
+          }
+
+          .premium-kpi h3 {
+            position: relative;
+            z-index: 1;
+            margin: 0 0 9px;
+            font-size: clamp(27px, 3vw, 38px);
+            letter-spacing: -0.055em;
+            line-height: 1;
+          }
+
+          .premium-kpi p {
+            position: relative;
+            z-index: 1;
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+            line-height: 1.45;
+          }
+
+          .dashboard-chart-grid {
+            display: grid;
+            grid-template-columns: 1.25fr 0.75fr;
+            gap: 18px;
+            align-items: start;
+            margin-bottom: 18px;
+          }
+
+          .dashboard-small-chart-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+            margin-bottom: 18px;
+          }
+
+          .property-preview-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 16px;
           }
 
-          .mini-property-card {
-            overflow: hidden;
+          .property-preview-card {
             padding: 0;
+            overflow: hidden;
           }
 
-          .mini-property-photo {
+          .property-preview-photo {
             position: relative;
-            min-height: 155px;
+            min-height: 150px;
             background:
               radial-gradient(circle at top right, rgba(212,166,58,0.30), transparent 35%),
               linear-gradient(135deg, #061C3D, #082852);
@@ -179,7 +336,7 @@
             padding: 14px;
           }
 
-          .mini-property-photo img {
+          .property-preview-photo img {
             position: absolute;
             inset: 0;
             width: 100%;
@@ -187,14 +344,14 @@
             object-fit: cover;
           }
 
-          .mini-property-photo::after {
+          .property-preview-photo::after {
             content: "";
             position: absolute;
             inset: 0;
             background: linear-gradient(180deg, transparent 32%, rgba(6,28,61,0.78));
           }
 
-          .mini-property-placeholder {
+          .property-placeholder {
             position: absolute;
             inset: 0;
             display: flex;
@@ -202,79 +359,37 @@
             justify-content: center;
             font-size: 58px;
             opacity: 0.82;
-            background:
-              radial-gradient(circle at 30% 20%, rgba(212,166,58,0.35), transparent 28%),
-              linear-gradient(135deg, #061C3D, #0B2A55);
           }
 
-          .mini-property-photo-content {
+          .property-preview-photo-content {
             position: relative;
             z-index: 2;
           }
 
-          .mini-property-photo-content h3 {
+          .property-preview-photo-content h3 {
             margin: 0 0 4px;
             font-size: 17px;
             color: white;
           }
 
-          .mini-property-photo-content p {
+          .property-preview-photo-content p {
             margin: 0;
             font-size: 12px;
             color: rgba(255,255,255,0.75);
           }
 
-          .mini-property-body {
+          .property-preview-body {
             padding: 14px;
           }
 
-          .mini-property-price {
+          .property-preview-price {
             margin: 0 0 8px;
             font-size: 19px;
             font-weight: 950;
             letter-spacing: -0.04em;
           }
 
-          .project-preview-card {
-            box-shadow: none;
-          }
-
-          .progress-track {
-            height: 11px;
-            border-radius: 999px;
-            background: rgba(6,28,61,0.10);
-            overflow: hidden;
-            margin: 10px 0 7px;
-          }
-
-          .progress-bar {
-            height: 100%;
-            border-radius: 999px;
-            background: linear-gradient(90deg, #D4A63A, #15803D);
-          }
-
-          .agent-card {
-            min-height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-          }
-
-          .agent-avatar {
-            width: 58px;
-            height: 58px;
-            border-radius: 20px;
-            background: var(--ungani-gold);
-            color: var(--ungani-navy);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 950;
-            font-size: 20px;
-            margin-bottom: 12px;
-          }
-
-          .focus-row {
+          .action-row {
             display: flex;
             justify-content: space-between;
             gap: 12px;
@@ -283,253 +398,239 @@
             padding: 12px 0;
           }
 
-          .focus-row:last-child {
+          .action-row:last-child {
             border-bottom: 0;
           }
 
-          .icon-shortcut-grid {
-            display: grid;
-            grid-template-columns: repeat(6, minmax(0, 1fr));
-            gap: 12px;
-          }
-
-          .icon-shortcut {
-            border: 1px solid var(--ungani-border);
-            border-radius: 20px;
-            padding: 14px;
-            background: var(--ungani-card);
-            text-align: center;
-            box-shadow: var(--ungani-shadow);
-            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-          }
-
-          .icon-shortcut:hover {
-            transform: translateY(-4px);
-            box-shadow: var(--ungani-shadow-hover);
-            border-color: rgba(212,166,58,0.40);
-          }
-
-          .icon-shortcut span {
-            display: block;
-            font-size: 25px;
-            margin-bottom: 8px;
-          }
-
-          .icon-shortcut strong {
-            font-size: 13px;
-          }
-
           @media (max-width: 1180px) {
-            .dashboard-welcome,
-            .dashboard-preview-grid {
+            .premium-hero,
+            .dashboard-chart-grid {
               grid-template-columns: 1fr;
             }
 
-            .icon-shortcut-grid {
-              grid-template-columns: repeat(3, minmax(0, 1fr));
+            .premium-kpi-grid,
+            .dashboard-small-chart-grid,
+            .property-preview-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
             }
           }
 
           @media (max-width: 680px) {
-            .icon-shortcut-grid {
-              grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
-            .mini-property-photo {
-              min-height: 140px;
+            .premium-mini-stats,
+            .premium-kpi-grid,
+            .dashboard-small-chart-grid,
+            .property-preview-grid {
+              grid-template-columns: 1fr;
             }
           }
         </style>
 
         <section class="ungani-card ungani-hero">
-          <div class="dashboard-welcome">
-            <div class="dashboard-welcome-panel">
+          <div class="premium-hero">
+            <div class="premium-hero-main">
               <div>
                 <span class="ungani-badge gold">${isRealEstate ? "Property Workspace" : "Business Workspace"}</span>
-                <h2 style="font-size:clamp(30px,4vw,50px);line-height:1.02;margin:18px 0 12px;">
-                  ${UnganiClientShared.safe(tenantName)}
-                </h2>
+                <h2 class="premium-hero-title">${UnganiClientShared.safe(tenantName)}</h2>
                 <p>
                   ${isRealEstate
-                    ? "A clear workspace for properties, projects, leads, agents, viewings, tasks, money records, documents, and reports."
-                    : "A clear workspace for business operations, tasks, money records, people, documents, support, and reports."
+                    ? "A premium live workspace for properties, projects, agents, leads, tasks, money records, documents, and reports."
+                    : "A premium live workspace for operations, people, assets, money records, tasks, documents, and reports."
                   }
                 </p>
               </div>
 
               <div class="ungani-button-row">
                 <a class="ungani-btn gold" href="my-items.html">${isRealEstate ? "Browse Properties" : "Open Items"}</a>
-                <a class="ungani-btn green" href="reports.html">View Reports</a>
-                <a class="ungani-btn light" href="my-tasks.html">Today’s Tasks</a>
+                <a class="ungani-btn green" href="my-charts.html">Open Analytics</a>
+                <a class="ungani-btn light" href="reports.html">View Reports</a>
               </div>
             </div>
 
-            <div class="dashboard-focus-panel">
-              <h3>Today’s Focus</h3>
-              <p>${tasks.pending} pending task(s), ${tasks.overdue} overdue, and ${property.available} available listing(s).</p>
-              <div class="ungani-button-row">
-                <a class="ungani-btn light" href="my-activity.html">Open Activity</a>
+            <div class="premium-live-card">
+              <div>
+                <h3>Live Operations Pulse</h3>
+                <p>
+                  ${tasks.pending} pending task(s), ${tasks.overdue} overdue,
+                  ${property.available} available listing(s), and ${property.closed} sold/rented.
+                </p>
+              </div>
+
+              <div class="premium-mini-stats">
+                <div class="premium-mini-stat">
+                  <span>Balance</span>
+                  <strong>${UnganiClientShared.safe(UnganiAnalytics.compactMoney(money.balance))}</strong>
+                </div>
+
+                <div class="premium-mini-stat">
+                  <span>${isRealEstate ? "Properties" : "Items"}</span>
+                  <strong>${property.total}</strong>
+                </div>
+
+                <div class="premium-mini-stat">
+                  <span>People</span>
+                  <strong>${people.total}</strong>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
-        <section class="ungani-grid">
-          ${UnganiClientShared.metricCard(isRealEstate ? "Properties / Listings" : "Items / Assets", property.total, property.available + " available · " + property.closed + " sold/rented", "blue", "my-items.html")}
-          ${UnganiClientShared.metricCard("Money Balance", UnganiClientShared.formatKES(money.balance), "Income minus expenses", money.balance >= 0 ? "green" : "red", "my-money.html")}
-          ${UnganiClientShared.metricCard(isRealEstate ? "Agents / Leads / People" : "People", people.total, people.agents + " agents · " + people.leads + " leads", "gold", "my-people.html")}
-          ${UnganiClientShared.metricCard("Pending Tasks", tasks.pending, tasks.overdue + " overdue", tasks.overdue > 0 ? "red" : "gold", "my-tasks.html")}
+        <section class="premium-kpi-grid">
+          ${kpiCard(isRealEstate ? "Properties / Listings" : "Items / Assets", property.total, property.available + " available · " + property.closed + " sold/rented", "🏢", "#2563EB", "my-items.html")}
+          ${kpiCard("Money Balance", UnganiAnalytics.compactMoney(money.balance), "Income minus expenses", "💰", money.balance >= 0 ? "#16A34A" : "#DC2626", "my-money.html")}
+          ${kpiCard(isRealEstate ? "Agents / Leads" : "People", people.total, people.agents + " agents · " + people.leads + " leads", "👥", "#D4A63A", "my-people.html")}
+          ${kpiCard("Tasks", tasks.pending, tasks.overdue + " overdue · " + tasks.completed + " done", "✅", tasks.overdue > 0 ? "#DC2626" : "#D4A63A", "my-tasks.html")}
         </section>
 
-        <section class="ungani-two-col">
+        <section class="dashboard-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Income vs Expenses</h3>
+                <p class="ungani-small">Animated monthly money movement from the same records used on Dashboard and Charts.</p>
+              </div>
+              <a class="ungani-btn green" href="my-money.html">Money</a>
+            </div>
+
+            ${trend.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="dashboardMoneyTrend"></canvas></div>' : UnganiAnalytics.emptyChart("Add dated income and expense records to show this live chart.")}
+          </div>
+
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>${isRealEstate ? "Property Status" : "Item Status"}</h3>
+                <p class="ungani-small">${isRealEstate ? "Available, reserved, negotiation, sold, and rented." : "Status split for items/assets."}</p>
+              </div>
+              <a class="ungani-btn" href="my-items.html">Open</a>
+            </div>
+
+            ${hasValues(propertyStatus) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="dashboardPropertyStatus"></canvas></div>' : UnganiAnalytics.emptyChart("Add properties/items with statuses to show this chart.")}
+          </div>
+        </section>
+
+        <section class="dashboard-small-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Task Status</h3>
+                <p class="ungani-small">Pending, progress, completed, overdue.</p>
+              </div>
+            </div>
+            ${hasValues(taskStatus) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="dashboardTaskStatus"></canvas></div>' : UnganiAnalytics.emptyChart("Add tasks to show task status.")}
+          </div>
+
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>${isRealEstate ? "Lead Pipeline" : "People Pipeline"}</h3>
+                <p class="ungani-small">Pipeline stages by current status.</p>
+              </div>
+            </div>
+            ${hasValues(leadPipeline) ? '<div class="ungani-chart-canvas-wrap small"><canvas id="dashboardLeadPipeline"></canvas></div>' : UnganiAnalytics.emptyChart("Add leads or people statuses to show pipeline.")}
+          </div>
+
           <div class="ungani-card">
-            <div class="ungani-section-title">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Top Agent This Month</h3>
+                <p class="ungani-small">Based on deals closed and commission.</p>
+              </div>
+              <a class="ungani-btn gold" href="my-people.html">People</a>
+            </div>
+            ${renderTopAgent(topAgent)}
+          </div>
+        </section>
+
+        <section class="ungani-analytics-grid-2">
+          <div class="ungani-card">
+            <div class="ungani-chart-head">
               <div>
                 <h3>${isRealEstate ? "Property Grid Preview" : "Items Preview"}</h3>
-                <p class="ungani-small">A quick visual look at your latest listings.</p>
+                <p class="ungani-small">Latest records with status and value.</p>
               </div>
               <a class="ungani-btn" href="my-items.html">Open Full Grid</a>
             </div>
-
             ${renderPropertyPreview()}
           </div>
 
-          <div class="ungani-card agent-card">
-            <div>
-              <div class="ungani-section-title">
-                <div>
-                  <h3>Top Agent This Month</h3>
-                  <p class="ungani-small">Based on deals closed and commission recorded.</p>
-                </div>
-                <a class="ungani-btn gold" href="my-people.html">Agents</a>
+          <div class="ungani-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Project Progress</h3>
+                <p class="ungani-small">Progress remains consistent with the Properties page.</p>
               </div>
-
-              ${renderTopAgent(topAgent)}
+              <a class="ungani-btn" href="my-items.html">Projects</a>
             </div>
+            ${renderProjectProgress(projects)}
           </div>
         </section>
 
-        <section class="ungani-two-col">
+        <section class="ungani-analytics-grid-2">
           <div class="ungani-card">
-            <div class="ungani-section-title">
-              <div>
-                <h3>Project Progress</h3>
-                <p class="ungani-small">Development progress, units sold, and availability.</p>
-              </div>
-              <a class="ungani-btn" href="my-items.html">View Projects</a>
-            </div>
-
-            ${renderProjectPreview(projects)}
-          </div>
-
-          <div class="ungani-card">
-            <div class="ungani-section-title">
+            <div class="ungani-chart-head">
               <div>
                 <h3>Action Needed</h3>
-                <p class="ungani-small">Tasks, calendar items, and support items needing attention.</p>
+                <p class="ungani-small">Tasks, support issues, and upcoming calendar items.</p>
               </div>
               <a class="ungani-btn green" href="my-activity.html">Activity</a>
             </div>
-
-            ${renderTodayFocus()}
-          </div>
-        </section>
-
-        <section class="ungani-card">
-          <div class="ungani-section-title">
-            <div>
-              <h3>Workspace Shortcuts</h3>
-              <p class="ungani-small">Simple shortcuts. The KPI cards above are also clickable.</p>
-            </div>
-          </div>
-
-          <div class="icon-shortcut-grid">
-            ${shortcut("🏷️", isRealEstate ? "Properties" : "Items", "my-items.html")}
-            ${shortcut("💰", "Money", "my-money.html")}
-            ${shortcut("👥", isRealEstate ? "Agents / Leads" : "People", "my-people.html")}
-            ${shortcut("✅", "Tasks", "my-tasks.html")}
-            ${shortcut("📄", "Documents", "my-documents.html")}
-            ${shortcut("📑", "Reports", "reports.html")}
-          </div>
-        </section>
-
-        <section class="ungani-two-col">
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <div>
-                <h3>Money Snapshot</h3>
-                <p class="ungani-small">Operational money visibility, not full accounting.</p>
-              </div>
-              <a class="ungani-btn green" href="my-money.html">Open Money</a>
-            </div>
-
-            ${summaryLine("Income", UnganiClientShared.formatKES(money.income))}
-            ${summaryLine("Expenses", UnganiClientShared.formatKES(money.expenses))}
-            ${summaryLine("Pending Amount", UnganiClientShared.formatKES(money.pending))}
-            ${summaryLine("Estimated Balance", UnganiClientShared.formatKES(money.balance))}
+            ${renderActionNeeded()}
           </div>
 
           <div class="ungani-card">
-            <div class="ungani-section-title">
+            <div class="ungani-chart-head">
               <div>
                 <h3>Recent Records</h3>
-                <p class="ungani-small">Latest operational records and updates.</p>
+                <p class="ungani-small">Latest operational updates.</p>
               </div>
-              <a class="ungani-btn" href="my-records.html">Open Records</a>
+              <a class="ungani-btn" href="my-records.html">Records</a>
             </div>
-
             ${renderRecentRecords()}
           </div>
         </section>
 
         <p class="ungani-small">
-          Client Dashboard Version: Step 308C-2 Duplicate Fix · ungani.com · info@ungani.com
+          Client Dashboard Version: Step 309B Premium Animated Dashboard · ungani.com · info@ungani.com
         </p>
       `);
+
+      setTimeout(function () {
+        renderDashboardCharts(trend, propertyStatus, taskStatus, leadPipeline);
+      }, 100);
     }
 
-    function renderPropertyPreview() {
-      const rows = dashboardData.items.slice(0, 3);
+    async function renderDashboardCharts(trend, propertyStatus, taskStatus, leadPipeline) {
+      try {
+        if (trend.length) {
+          await UnganiAnalytics.renderIncomeExpenseChart("dashboardMoneyTrend", trend);
+        }
 
-      if (rows.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No properties yet</h3>
-            <p>Add properties or listings to see them here.</p>
-            <a class="ungani-btn" href="my-items.html">Add Property</a>
-          </div>
-        `;
+        if (hasValues(propertyStatus)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("dashboardPropertyStatus", propertyStatus);
+        }
+
+        if (hasValues(taskStatus)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("dashboardTaskStatus", taskStatus);
+        }
+
+        if (hasValues(leadPipeline)) {
+          await UnganiAnalytics.renderHorizontalBarChart("dashboardLeadPipeline", leadPipeline, "Records");
+        }
+      } catch (error) {
+        console.warn("Dashboard charts warning:", error.message);
       }
+    }
 
+    function kpiCard(title, value, subtitle, icon, accent, href) {
       return `
-        <div class="dashboard-preview-grid">
-          ${rows.map(function (row) {
-            const name = getItemName(row);
-            const project = UnganiClientShared.getValue(row, ["project_name"], "");
-            const location = UnganiClientShared.getValue(row, ["property_location", "location"], "");
-            const photo = UnganiClientShared.getValue(row, ["photo_url", "image_url", "thumbnail_url"], "");
-            const price = Number(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
-            const status = getStatus(row);
-
-            return `
-              <a class="ungani-card mini-property-card" href="my-items.html">
-                <div class="mini-property-photo">
-                  ${photo ? `<img src="${UnganiClientShared.attr(photo)}" alt="${UnganiClientShared.attr(name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ""}
-                  <div class="mini-property-placeholder" style="${photo ? "display:none;" : "display:flex;"}">🏢</div>
-                  <div class="mini-property-photo-content">
-                    <h3>${UnganiClientShared.safe(name)}</h3>
-                    <p>${UnganiClientShared.safe(project || location || "Property listing")}</p>
-                  </div>
-                </div>
-
-                <div class="mini-property-body">
-                  <p class="mini-property-price">${price > 0 ? UnganiClientShared.safe(UnganiClientShared.formatKES(price)) : "Price not set"}</p>
-                  ${badge(status, statusColor(status))}
-                </div>
-              </a>
-            `;
-          }).join("")}
-        </div>
+        <a class="premium-kpi" href="${UnganiClientShared.attr(href)}" style="--accent:${UnganiClientShared.attr(accent)};">
+          <div class="premium-kpi-top">
+            <span class="premium-kpi-label">${UnganiClientShared.safe(title)}</span>
+            <span class="premium-kpi-icon">${UnganiClientShared.safe(icon)}</span>
+          </div>
+          <h3>${UnganiClientShared.safe(value)}</h3>
+          <p>${UnganiClientShared.safe(subtitle)}</p>
+        </a>
       `;
     }
 
@@ -543,31 +644,71 @@
         `;
       }
 
-      const name = UnganiClientShared.getValue(agent, ["full_name", "name"], "Agent");
-      const deals = Number(UnganiClientShared.getValue(agent, ["deals_closed"], 0) || 0);
-      const commission = Number(UnganiClientShared.getValue(agent, ["commission_earned_month"], 0) || 0);
-      const assigned = UnganiClientShared.getValue(agent, ["properties_assigned"], "");
-      const status = UnganiClientShared.getValue(agent, ["relationship_status", "status"], "active");
+      const name = UnganiAnalytics.safeGet(agent, ["full_name", "name"], "Agent");
+      const deals = Number(UnganiAnalytics.safeGet(agent, ["deals_closed"], 0) || 0);
+      const commission = Number(UnganiAnalytics.safeGet(agent, ["commission_earned_month"], 0) || 0);
+      const assigned = UnganiAnalytics.safeGet(agent, ["properties_assigned"], "");
 
       return `
         <div>
-          <div class="agent-avatar">${UnganiClientShared.safe(makeInitials(name))}</div>
-          <h2 style="margin:0 0 6px;font-size:28px;">${UnganiClientShared.safe(name)}</h2>
-          <p class="ungani-small">${badge(status, statusColor(status))}</p>
-
-          ${summaryLine("Deals Closed", deals)}
-          ${summaryLine("Commission This Month", UnganiClientShared.formatKES(commission))}
-          ${summaryLine("Assigned Properties", assigned || "Not recorded")}
-
-          <div class="ungani-button-row">
-            <a class="ungani-btn gold" href="my-people.html">Open Agents</a>
+          <div class="ungani-rank-number" style="width:58px;height:58px;font-size:20px;margin-bottom:12px;">
+            ${UnganiClientShared.safe(makeInitials(name))}
           </div>
+          <h2 style="margin:0 0 6px;font-size:27px;">${UnganiClientShared.safe(name)}</h2>
+          ${summaryLine("Deals Closed", deals)}
+          ${summaryLine("Commission", UnganiAnalytics.moneyFormat(commission))}
+          ${summaryLine("Assigned Properties", assigned || "Not recorded")}
         </div>
       `;
     }
 
-    function renderProjectPreview(projects) {
-      if (projects.length === 0) {
+    function renderPropertyPreview() {
+      const rows = dashboardData.items.slice(0, 3);
+
+      if (rows.length === 0) {
+        return `
+          <div class="ungani-empty">
+            <h3>No properties yet</h3>
+            <p>Add properties or items to see a visual preview here.</p>
+            <a class="ungani-btn" href="my-items.html">Add Property</a>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="property-preview-grid">
+          ${rows.map(function (row) {
+            const name = UnganiAnalytics.safeGet(row, ["property_name", "item_name", "name", "title"], "Property");
+            const project = UnganiAnalytics.safeGet(row, ["project_name"], "");
+            const location = UnganiAnalytics.safeGet(row, ["property_location", "location"], "");
+            const photo = UnganiAnalytics.safeGet(row, ["photo_url", "image_url", "thumbnail_url"], "");
+            const price = Number(UnganiAnalytics.safeGet(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
+            const status = UnganiAnalytics.safeGet(row, ["property_status", "item_status", "status"], "available");
+
+            return `
+              <a class="ungani-card property-preview-card" href="my-items.html">
+                <div class="property-preview-photo">
+                  ${photo ? `<img src="${UnganiClientShared.attr(photo)}" alt="${UnganiClientShared.attr(name)}" onerror="this.style.display='none';" />` : ""}
+                  <div class="property-placeholder">🏢</div>
+                  <div class="property-preview-photo-content">
+                    <h3>${UnganiClientShared.safe(name)}</h3>
+                    <p>${UnganiClientShared.safe(project || location || "Property listing")}</p>
+                  </div>
+                </div>
+
+                <div class="property-preview-body">
+                  <p class="property-preview-price">${price > 0 ? UnganiClientShared.safe(UnganiAnalytics.moneyFormat(price)) : "Price not set"}</p>
+                  ${badge(status, colorClass(status))}
+                </div>
+              </a>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function renderProjectProgress(projects) {
+      if (!projects || projects.length === 0) {
         return `
           <div class="ungani-empty">
             <h3>No project progress yet</h3>
@@ -580,94 +721,68 @@
         const percent = Math.max(0, Math.min(100, Number(project.progress || 0)));
 
         return `
-          <div class="ungani-card project-preview-card">
-            <div class="ungani-section-title">
+          <div class="ungani-project-progress-card">
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
               <div>
-                <h3 style="font-size:17px;">${UnganiClientShared.safe(project.name)}</h3>
-                <p class="ungani-small">${project.count} listing(s) · ${project.unitsSold}/${project.totalUnits} units sold</p>
+                <strong>${UnganiClientShared.safe(project.name)}</strong>
+                <p class="ungani-small" style="margin:5px 0 0;">${project.unitsSold}/${project.totalUnits} units sold · ${project.unitsAvailable} available</p>
               </div>
               <span class="ungani-badge ${progressColor(percent)}">${percent}%</span>
             </div>
 
-            <div class="progress-track">
-              <div class="progress-bar" style="width:${percent}%;"></div>
+            <div class="ungani-project-track">
+              <div class="ungani-project-fill" style="width:${percent}%;"></div>
             </div>
-
-            <p class="ungani-small">
-              ${project.unitsAvailable} available · Estimated value ${UnganiClientShared.safe(UnganiClientShared.formatKES(project.value))}
-            </p>
           </div>
         `;
       }).join("");
     }
 
-    function renderTodayFocus() {
+    function renderActionNeeded() {
       const today = new Date().toISOString().slice(0, 10);
-
-      const dueTasks = dashboardData.tasks.filter(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
-        const due = String(UnganiClientShared.getValue(row, ["due_date"], "")).slice(0, 10);
-
-        return due && due <= today && !status.includes("completed") && !status.includes("cancelled");
-      });
-
-      const upcomingEvents = dashboardData.events.filter(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
-        const date = String(UnganiClientShared.getValue(row, ["event_date"], "")).slice(0, 10);
-
-        return date && date >= today && !status.includes("cancelled");
-      });
-
-      const openSupport = dashboardData.support.filter(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "open")).toLowerCase();
-
-        return !status.includes("resolved") && !status.includes("closed");
-      });
-
       const rows = [];
 
-      dueTasks.slice(0, 3).forEach(function (row) {
-        rows.push({
-          label: "Task",
-          title: UnganiClientShared.getValue(row, ["task_title", "title", "name"], "Task"),
-          detail: "Due " + UnganiClientShared.formatDate(UnganiClientShared.getValue(row, ["due_date"], "")),
-          color: "red",
-          href: "my-tasks.html"
-        });
+      dashboardData.tasks.forEach(function (row) {
+        const status = String(UnganiAnalytics.safeGet(row, ["status"], "")).toLowerCase();
+        const due = String(UnganiAnalytics.safeGet(row, ["due_date"], "")).slice(0, 10);
+
+        if (due && due <= today && !status.includes("completed") && !status.includes("cancelled")) {
+          rows.push({
+            label: "Task",
+            title: UnganiAnalytics.safeGet(row, ["task_title", "title", "name"], "Task"),
+            detail: "Due " + UnganiClientShared.formatDate(due),
+            href: "my-tasks.html",
+            color: due < today ? "red" : "gold"
+          });
+        }
       });
 
-      upcomingEvents.slice(0, 2).forEach(function (row) {
-        rows.push({
-          label: "Calendar",
-          title: UnganiClientShared.getValue(row, ["event_title", "title"], "Calendar Event"),
-          detail: UnganiClientShared.formatDate(UnganiClientShared.getValue(row, ["event_date"], "")),
-          color: "green",
-          href: "my-calendar.html"
-        });
-      });
+      dashboardData.support.forEach(function (row) {
+        const status = String(UnganiAnalytics.safeGet(row, ["status"], "open")).toLowerCase();
 
-      openSupport.slice(0, 2).forEach(function (row) {
-        rows.push({
-          label: "Support",
-          title: UnganiClientShared.getValue(row, ["issue_title", "subject"], "Support Issue"),
-          detail: UnganiClientShared.getValue(row, ["priority"], "normal") + " priority",
-          color: "gold",
-          href: "my-support.html"
-        });
+        if (!status.includes("resolved") && !status.includes("closed")) {
+          rows.push({
+            label: "Support",
+            title: UnganiAnalytics.safeGet(row, ["issue_title", "subject"], "Support issue"),
+            detail: UnganiAnalytics.safeGet(row, ["priority"], "normal") + " priority",
+            href: "my-support.html",
+            color: "gold"
+          });
+        }
       });
 
       if (rows.length === 0) {
         return `
           <div class="ungani-empty">
-            <h3>No urgent action today</h3>
-            <p>Tasks, calendar events, and support items needing attention will appear here.</p>
+            <h3>No urgent action</h3>
+            <p>Tasks and support items needing attention will appear here.</p>
           </div>
         `;
       }
 
-      return rows.map(function (item) {
+      return rows.slice(0, 6).map(function (item) {
         return `
-          <a class="focus-row" href="${UnganiClientShared.attr(item.href)}">
+          <a class="action-row" href="${UnganiClientShared.attr(item.href)}">
             <div>
               ${badge(item.label, item.color)}
               <h3 style="font-size:16px;margin:8px 0 4px;">${UnganiClientShared.safe(item.title)}</h3>
@@ -686,227 +801,28 @@
         return `
           <div class="ungani-empty">
             <h3>No recent records</h3>
-            <p>Lead updates, viewings, project notes, and business records will appear here.</p>
+            <p>Lead updates, viewing notes, project notes, and business records will appear here.</p>
           </div>
         `;
       }
 
       return rows.map(function (row) {
-        const title = UnganiClientShared.getValue(row, ["record_title", "title", "name"], "Record");
-        const type = UnganiClientShared.getValue(row, ["record_type"], "record");
-        const status = UnganiClientShared.getValue(row, ["status"], "open");
-        const date = UnganiClientShared.getValue(row, ["record_date", "created_at"], "");
+        const title = UnganiAnalytics.safeGet(row, ["record_title", "title", "name"], "Record");
+        const type = UnganiAnalytics.safeGet(row, ["record_type"], "record");
+        const status = UnganiAnalytics.safeGet(row, ["status"], "open");
+        const date = UnganiAnalytics.safeGet(row, ["record_date", "created_at"], "");
 
         return `
-          <a class="focus-row" href="my-records.html">
+          <a class="action-row" href="my-records.html">
             <div>
               ${badge(type, "gold")}
               <h3 style="font-size:16px;margin:8px 0 4px;">${UnganiClientShared.safe(title)}</h3>
               <p class="ungani-small" style="margin:0;">${UnganiClientShared.safe(UnganiClientShared.formatDate(date))}</p>
             </div>
-            ${badge(status, statusColor(status))}
+            ${badge(status, colorClass(status))}
           </a>
         `;
       }).join("");
-    }
-
-    function calculateMoney() {
-      let income = 0;
-      let expenses = 0;
-      let pending = 0;
-
-      dashboardData.transactions.forEach(function (row) {
-        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
-        const type = String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
-
-        if (type.includes("income") || type.includes("sale") || type.includes("rental")) {
-          income += amount;
-        } else if (type.includes("expense") || type.includes("petty")) {
-          expenses += amount;
-        }
-
-        if (status.includes("pending")) {
-          pending += amount;
-        }
-      });
-
-      return {
-        income,
-        expenses,
-        pending,
-        balance: income - expenses
-      };
-    }
-
-    function calculatePropertySummary() {
-      let available = 0;
-      let closed = 0;
-
-      dashboardData.items.forEach(function (row) {
-        const status = getStatus(row).toLowerCase();
-
-        if (status.includes("available")) available++;
-        if (status.includes("sold") || status.includes("rented") || status.includes("closed")) closed++;
-      });
-
-      return {
-        total: dashboardData.items.length,
-        available,
-        closed
-      };
-    }
-
-    function calculatePeopleSummary() {
-      let agents = 0;
-      let leads = 0;
-
-      dashboardData.people.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["person_type"], "")).toLowerCase();
-
-        if (type === "agent") agents++;
-        if (type === "lead") leads++;
-      });
-
-      return {
-        total: dashboardData.people.length,
-        agents,
-        leads
-      };
-    }
-
-    function calculateTaskSummary() {
-      const today = new Date().toISOString().slice(0, 10);
-      let pending = 0;
-      let overdue = 0;
-
-      dashboardData.tasks.forEach(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
-        const due = String(UnganiClientShared.getValue(row, ["due_date"], "")).slice(0, 10);
-
-        if (!status.includes("completed") && !status.includes("cancelled")) {
-          pending++;
-        }
-
-        if (due && due < today && !status.includes("completed") && !status.includes("cancelled")) {
-          overdue++;
-        }
-      });
-
-      return { pending, overdue };
-    }
-
-    function getTopAgent() {
-      const agents = dashboardData.people.filter(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["person_type"], "")).toLowerCase();
-        return type === "agent";
-      });
-
-      if (agents.length === 0) return null;
-
-      agents.sort(function (a, b) {
-        const aDeals = Number(UnganiClientShared.getValue(a, ["deals_closed"], 0) || 0);
-        const bDeals = Number(UnganiClientShared.getValue(b, ["deals_closed"], 0) || 0);
-        const aCommission = Number(UnganiClientShared.getValue(a, ["commission_earned_month"], 0) || 0);
-        const bCommission = Number(UnganiClientShared.getValue(b, ["commission_earned_month"], 0) || 0);
-
-        return (bDeals * 1000000 + bCommission) - (aDeals * 1000000 + aCommission);
-      });
-
-      return agents[0];
-    }
-
-    function calculateProjects() {
-      const map = {};
-
-      dashboardData.items.forEach(function (row) {
-        const project = UnganiClientShared.getValue(row, ["project_name"], "");
-
-        if (!project) return;
-
-        if (!map[project]) {
-          map[project] = {
-            name: project,
-            count: 0,
-            totalUnits: 0,
-            unitsSold: 0,
-            unitsAvailable: 0,
-            progressTotal: 0,
-            progressCount: 0,
-            value: 0
-          };
-        }
-
-        const item = map[project];
-
-        item.count += 1;
-        item.totalUnits += Number(UnganiClientShared.getValue(row, ["total_units"], 0) || 0);
-        item.unitsSold += Number(UnganiClientShared.getValue(row, ["units_sold"], 0) || 0);
-        item.unitsAvailable += Number(UnganiClientShared.getValue(row, ["units_available"], 0) || 0);
-        item.value += Number(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
-
-        const progress = Number(UnganiClientShared.getValue(row, ["project_progress_percent"], 0) || 0);
-
-        if (progress > 0) {
-          item.progressTotal += progress;
-          item.progressCount += 1;
-        }
-      });
-
-      return Object.keys(map).map(function (key) {
-        const item = map[key];
-        let progress = 0;
-
-        if (item.progressCount > 0) {
-          progress = Math.round(item.progressTotal / item.progressCount);
-        } else if (item.totalUnits > 0) {
-          progress = Math.round((item.unitsSold / item.totalUnits) * 100);
-        }
-
-        item.progress = progress;
-        return item;
-      }).sort(function (a, b) {
-        return b.value - a.value;
-      });
-    }
-
-    function getItemName(row) {
-      return UnganiClientShared.getValue(row, ["property_name", "item_name", "name", "title"], "Property");
-    }
-
-    function getStatus(row) {
-      return UnganiClientShared.getValue(row, ["property_status", "item_status", "status"], "available");
-    }
-
-    function statusColor(status) {
-      const lower = String(status || "").toLowerCase();
-
-      if (lower.includes("available") || lower.includes("sold") || lower.includes("rented") || lower.includes("completed") || lower.includes("active") || lower.includes("resolved")) return "green";
-      if (lower.includes("reserved") || lower.includes("negotiation") || lower.includes("pending") || lower.includes("review") || lower.includes("open") || lower.includes("progress")) return "gold";
-      if (lower.includes("urgent") || lower.includes("overdue") || lower.includes("maintenance") || lower.includes("cancelled") || lower.includes("lost")) return "red";
-
-      return "blue";
-    }
-
-    function progressColor(percent) {
-      const value = Number(percent || 0);
-
-      if (value >= 75) return "green";
-      if (value >= 35) return "gold";
-      return "red";
-    }
-
-    function badge(text, color) {
-      return `<span class="ungani-badge ${UnganiClientShared.attr(color || "blue")}">${UnganiClientShared.safe(toTitle(text))}</span>`;
-    }
-
-    function shortcut(icon, label, href) {
-      return `
-        <a class="icon-shortcut" href="${UnganiClientShared.attr(href)}">
-          <span>${UnganiClientShared.safe(icon)}</span>
-          <strong>${UnganiClientShared.safe(label)}</strong>
-        </a>
-      `;
     }
 
     function summaryLine(label, value) {
@@ -918,6 +834,33 @@
       `;
     }
 
+    function badge(text, color) {
+      return `<span class="ungani-badge ${UnganiClientShared.attr(color || "gold")}">${UnganiClientShared.safe(UnganiAnalytics.toTitle(text))}</span>`;
+    }
+
+    function colorClass(text) {
+      const lower = String(text || "").toLowerCase();
+
+      if (lower.includes("available") || lower.includes("sold") || lower.includes("rented") || lower.includes("completed") || lower.includes("active") || lower.includes("resolved")) return "green";
+      if (lower.includes("overdue") || lower.includes("urgent") || lower.includes("lost") || lower.includes("cancelled") || lower.includes("failed")) return "red";
+
+      return "gold";
+    }
+
+    function progressColor(percent) {
+      const value = Number(percent || 0);
+
+      if (value >= 75) return "green";
+      if (value >= 35) return "gold";
+      return "red";
+    }
+
+    function hasValues(rows) {
+      return (rows || []).some(function (row) {
+        return Number(row.value || 0) > 0;
+      });
+    }
+
     function makeInitials(valueText) {
       const parts = String(valueText || "A").trim().split(/\s+/).filter(Boolean);
 
@@ -925,14 +868,6 @@
       if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
 
       return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-
-    function toTitle(value) {
-      return String(value || "")
-        .replace(/_/g, " ")
-        .replace(/\w\S*/g, function (text) {
-          return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
-        });
     }
   </script>
 </body>
