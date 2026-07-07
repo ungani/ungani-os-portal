@@ -32,8 +32,8 @@
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "dashboard",
-        pageTitle: "Dashboard",
-        pageSubtitle: "Your business operations workspace in one place.",
+        pageTitle: "Property Operations Dashboard",
+        pageSubtitle: "Properties, leads, agents, money records, tasks, documents, calendar, and reports.",
         onReady: startDashboard
       });
     });
@@ -121,55 +121,39 @@
       const property = calculatePropertySummary();
       const people = calculatePeopleSummary();
       const tasks = calculateTaskSummary();
-      const documents = calculateDocumentSummary();
-      const events = calculateEventSummary();
-      const support = calculateSupportSummary();
       const topAgent = getTopAgent();
       const projects = calculateProjects();
 
       UnganiClientShared.setContent(`
         <style>
-          .dashboard-hero {
+          .dashboard-welcome {
             display: grid;
-            grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+            grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
             gap: 18px;
             align-items: stretch;
           }
 
-          .dashboard-hero-main {
-            min-height: 250px;
+          .dashboard-welcome-panel {
+            min-height: 220px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
           }
 
-          .dashboard-hero-stats {
-            display: grid;
-            gap: 12px;
-          }
-
-          .mini-stat {
+          .dashboard-focus-panel {
             border: 1px solid rgba(255,255,255,0.14);
             background: rgba(255,255,255,0.09);
-            border-radius: 20px;
-            padding: 15px;
+            border-radius: 24px;
+            padding: 18px;
           }
 
-          .mini-stat span {
-            display: block;
-            color: rgba(255,255,255,0.68);
-            font-size: 12px;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 6px;
+          .dashboard-focus-panel h3 {
+            color: white;
+            margin-top: 0;
           }
 
-          .mini-stat strong {
-            display: block;
-            color: #FFFFFF;
-            font-size: 24px;
-            line-height: 1;
+          .dashboard-focus-panel p {
+            color: rgba(255,255,255,0.72);
           }
 
           .dashboard-preview-grid {
@@ -185,7 +169,7 @@
 
           .mini-property-photo {
             position: relative;
-            min-height: 145px;
+            min-height: 155px;
             background:
               radial-gradient(circle at top right, rgba(212,166,58,0.30), transparent 35%),
               linear-gradient(135deg, #061C3D, #082852);
@@ -207,21 +191,34 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: linear-gradient(180deg, transparent 32%, rgba(6,28,61,0.75));
+            background: linear-gradient(180deg, transparent 32%, rgba(6,28,61,0.78));
           }
 
-          .mini-property-photo div {
+          .mini-property-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 58px;
+            opacity: 0.82;
+            background:
+              radial-gradient(circle at 30% 20%, rgba(212,166,58,0.35), transparent 28%),
+              linear-gradient(135deg, #061C3D, #0B2A55);
+          }
+
+          .mini-property-photo-content {
             position: relative;
             z-index: 2;
           }
 
-          .mini-property-photo h3 {
+          .mini-property-photo-content h3 {
             margin: 0 0 4px;
             font-size: 17px;
             color: white;
           }
 
-          .mini-property-photo p {
+          .mini-property-photo-content p {
             margin: 0;
             font-size: 12px;
             color: rgba(255,255,255,0.75);
@@ -323,7 +320,7 @@
           }
 
           @media (max-width: 1180px) {
-            .dashboard-hero,
+            .dashboard-welcome,
             .dashboard-preview-grid {
               grid-template-columns: 1fr;
             }
@@ -339,23 +336,23 @@
             }
 
             .mini-property-photo {
-              min-height: 130px;
+              min-height: 140px;
             }
           }
         </style>
 
         <section class="ungani-card ungani-hero">
-          <div class="dashboard-hero">
-            <div class="dashboard-hero-main">
+          <div class="dashboard-welcome">
+            <div class="dashboard-welcome-panel">
               <div>
                 <span class="ungani-badge gold">${isRealEstate ? "Property Workspace" : "Business Workspace"}</span>
-                <h2 style="font-size:clamp(30px,4vw,52px);line-height:1.02;margin:18px 0 12px;">
-                  ${isRealEstate ? "Manage property operations in one place." : "Manage business operations in one place."}
+                <h2 style="font-size:clamp(30px,4vw,50px);line-height:1.02;margin:18px 0 12px;">
+                  ${UnganiClientShared.safe(tenantName)}
                 </h2>
                 <p>
                   ${isRealEstate
-                    ? "UNGANI OS helps " + UnganiClientShared.safe(tenantName) + " track properties, projects, leads, agents, viewings, money records, documents, tasks, and reports without scattered follow-ups."
-                    : "UNGANI OS helps " + UnganiClientShared.safe(tenantName) + " track work, money records, documents, tasks, people, support, and reports in one clean workspace."
+                    ? "A clear workspace for properties, projects, leads, agents, viewings, tasks, money records, documents, and reports."
+                    : "A clear workspace for business operations, tasks, money records, people, documents, support, and reports."
                   }
                 </p>
               </div>
@@ -367,34 +364,21 @@
               </div>
             </div>
 
-            <div class="dashboard-hero-stats">
-              <div class="mini-stat">
-                <span>${isRealEstate ? "Properties / Listings" : "Items / Assets"}</span>
-                <strong>${property.total}</strong>
-              </div>
-
-              <div class="mini-stat">
-                <span>Operational Balance</span>
-                <strong>${UnganiClientShared.safe(compactMoney(money.balance))}</strong>
-              </div>
-
-              <div class="mini-stat">
-                <span>Pending Tasks</span>
-                <strong>${tasks.pending}</strong>
+            <div class="dashboard-focus-panel">
+              <h3>Today’s Focus</h3>
+              <p>${tasks.pending} pending task(s), ${tasks.overdue} overdue, and ${property.available} available listing(s).</p>
+              <div class="ungani-button-row">
+                <a class="ungani-btn light" href="my-activity.html">Open Activity</a>
               </div>
             </div>
           </div>
         </section>
 
         <section class="ungani-grid">
-          ${UnganiClientShared.metricCard(isRealEstate ? "Properties / Listings" : "Items / Assets", property.total, property.available + " available · " + property.closed + " closed", "blue", "my-items.html")}
+          ${UnganiClientShared.metricCard(isRealEstate ? "Properties / Listings" : "Items / Assets", property.total, property.available + " available · " + property.closed + " sold/rented", "blue", "my-items.html")}
           ${UnganiClientShared.metricCard("Money Balance", UnganiClientShared.formatKES(money.balance), "Income minus expenses", money.balance >= 0 ? "green" : "red", "my-money.html")}
           ${UnganiClientShared.metricCard(isRealEstate ? "Agents / Leads / People" : "People", people.total, people.agents + " agents · " + people.leads + " leads", "gold", "my-people.html")}
           ${UnganiClientShared.metricCard("Pending Tasks", tasks.pending, tasks.overdue + " overdue", tasks.overdue > 0 ? "red" : "gold", "my-tasks.html")}
-          ${UnganiClientShared.metricCard("Documents", documents.total, documents.withLinks + " with links", "blue", "my-documents.html")}
-          ${UnganiClientShared.metricCard("Upcoming Events", events.upcoming, events.today + " today", "green", "my-calendar.html")}
-          ${UnganiClientShared.metricCard("Open Support", support.open, support.urgent + " urgent/high", support.urgent > 0 ? "red" : "gold", "my-support.html")}
-          ${UnganiClientShared.metricCard("Reports", "Ready", "Open full business reports", "blue", "reports.html")}
         </section>
 
         <section class="ungani-two-col">
@@ -441,7 +425,7 @@
           <div class="ungani-card">
             <div class="ungani-section-title">
               <div>
-                <h3>Today / Action Needed</h3>
+                <h3>Action Needed</h3>
                 <p class="ungani-small">Tasks, calendar items, and support items needing attention.</p>
               </div>
               <a class="ungani-btn green" href="my-activity.html">Activity</a>
@@ -455,7 +439,7 @@
           <div class="ungani-section-title">
             <div>
               <h3>Workspace Shortcuts</h3>
-              <p class="ungani-small">Simple icon shortcuts only. The KPI cards above are also clickable.</p>
+              <p class="ungani-small">Simple shortcuts. The KPI cards above are also clickable.</p>
             </div>
           </div>
 
@@ -499,7 +483,7 @@
         </section>
 
         <p class="ungani-small">
-          Client Dashboard Version: Step 308C Premium Dashboard · ungani.com · info@ungani.com
+          Client Dashboard Version: Step 308C-2 Duplicate Fix · ungani.com · info@ungani.com
         </p>
       `);
     }
@@ -530,8 +514,9 @@
             return `
               <a class="ungani-card mini-property-card" href="my-items.html">
                 <div class="mini-property-photo">
-                  ${photo ? `<img src="${UnganiClientShared.attr(photo)}" alt="${UnganiClientShared.attr(name)}" onerror="this.style.display='none';" />` : ""}
-                  <div>
+                  ${photo ? `<img src="${UnganiClientShared.attr(photo)}" alt="${UnganiClientShared.attr(name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ""}
+                  <div class="mini-property-placeholder" style="${photo ? "display:none;" : "display:flex;"}">🏢</div>
+                  <div class="mini-property-photo-content">
                     <h3>${UnganiClientShared.safe(name)}</h3>
                     <p>${UnganiClientShared.safe(project || location || "Property listing")}</p>
                   </div>
@@ -811,64 +796,6 @@
       return { pending, overdue };
     }
 
-    function calculateDocumentSummary() {
-      let withLinks = 0;
-
-      dashboardData.documents.forEach(function (row) {
-        if (
-          UnganiClientShared.getValue(row, ["document_url"], "") ||
-          UnganiClientShared.getValue(row, ["drive_url"], "") ||
-          UnganiClientShared.getValue(row, ["folder_url"], "")
-        ) {
-          withLinks++;
-        }
-      });
-
-      return {
-        total: dashboardData.documents.length,
-        withLinks
-      };
-    }
-
-    function calculateEventSummary() {
-      const today = new Date().toISOString().slice(0, 10);
-      let upcoming = 0;
-      let todayCount = 0;
-
-      dashboardData.events.forEach(function (row) {
-        const date = String(UnganiClientShared.getValue(row, ["event_date"], "")).slice(0, 10);
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
-
-        if (date === today && !status.includes("cancelled")) todayCount++;
-        if (date >= today && !status.includes("cancelled")) upcoming++;
-      });
-
-      return {
-        upcoming,
-        today: todayCount
-      };
-    }
-
-    function calculateSupportSummary() {
-      let open = 0;
-      let urgent = 0;
-
-      dashboardData.support.forEach(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "open")).toLowerCase();
-        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
-
-        if (!status.includes("resolved") && !status.includes("closed")) {
-          open++;
-        }
-
-        if (priority === "high" || priority === "urgent") {
-          urgent++;
-        }
-      });
-
-      return { open, urgent };
-    }
-
     function getTopAgent() {
       const agents = dashboardData.people.filter(function (row) {
         const type = String(UnganiClientShared.getValue(row, ["person_type"], "")).toLowerCase();
@@ -989,32 +916,6 @@
           <strong>${UnganiClientShared.safe(value)}</strong>
         </div>
       `;
-    }
-
-    function compactMoney(value) {
-      const amount = Number(value || 0);
-      const sign = amount < 0 ? "-" : "";
-      const absolute = Math.abs(amount);
-
-      if (absolute >= 1000000) {
-        return "Ksh " + sign + trimDecimal(absolute / 1000000) + "M";
-      }
-
-      if (absolute >= 1000) {
-        return "Ksh " + sign + trimDecimal(absolute / 1000) + "K";
-      }
-
-      return UnganiClientShared.formatKES(amount);
-    }
-
-    function trimDecimal(valueNumber) {
-      const rounded = Math.round(valueNumber * 10) / 10;
-
-      if (Number.isInteger(rounded)) {
-        return String(rounded);
-      }
-
-      return String(rounded);
     }
 
     function makeInitials(valueText) {
