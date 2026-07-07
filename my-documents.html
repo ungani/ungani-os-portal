@@ -8,20 +8,22 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-shared.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
 </head>
 
 <body>
   <script>
     let currentContext = null;
-    let documents = [];
-    let currentEditId = null;
-    let isRealEstate = false;
+    let businessPreset = null;
+    let documentRows = [];
+    let editingDocumentId = null;
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "documents",
         pageTitle: "Documents",
-        pageSubtitle: "Manage document records, file links, Drive folders, agreements, receipts, and business files.",
+        pageSubtitle: "Organize business documents, links, receipts, agreements, and files.",
         onReady: startDocumentsPage
       });
     });
@@ -29,28 +31,27 @@
     async function startDocumentsPage(context) {
       currentContext = context;
 
-      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
-      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
+      if (window.UnganiAnalytics) {
+        UnganiAnalytics.injectChartStyles();
+      }
 
-      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+      businessPreset = UnganiPresets.getPreset(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
 
       if (titleEl) {
-        titleEl.innerText = isRealEstate ? "Property Documents" : "Documents";
+        titleEl.innerText = businessPreset.documentsLabel;
       }
 
       if (subEl) {
-        subEl.innerText = isRealEstate
-          ? "Track lease agreements, sale agreements, title documents, booking forms, receipts, invoices, client records, project files, and Drive links."
-          : "Track business documents, receipts, invoices, agreements, file links, folders, and important records.";
+        subEl.innerText = "Documents, file links, agreements, receipts, and records for " + businessPreset.name + ".";
       }
 
-      await loadDocuments();
+      await loadDocumentRows();
     }
 
-    async function loadDocuments() {
+    async function loadDocumentRows() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading documents...");
 
       const response = await currentContext.supabaseClient
@@ -60,424 +61,755 @@
         .order("created_at", { ascending: false });
 
       if (response.error) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load documents", response.error.message);
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load documents", response.error.message)
+        );
         return;
       }
 
-      documents = response.data || [];
+      documentRows = response.data || [];
       renderDocumentsPage();
     }
 
     function renderDocumentsPage() {
-      const filtered = filterDocuments();
-      const summary = calculateSummary();
+      const filteredRows = getFilteredRows();
+      const summary = calculateDocumentSummary(filteredRows);
+      const typeRows = buildTypeRows(filteredRows);
+      const statusRows = buildStatusRows(filteredRows);
+      const folderRows = buildFolderRows(filteredRows);
 
       UnganiClientShared.setContent(`
-        <section class="ungani-card ungani-hero">
-          <h2>${isRealEstate ? "Property Document Center" : "Document Center"}</h2>
-          <p>
-            ${isRealEstate
-              ? "Use this section to organize property documents, sale agreements, lease agreements, receipts, invoices, title files, booking forms, project files, and Google Drive links."
-              : "Use this section to organize business documents, receipts, invoices, agreements, records, and Google Drive links."
-            }
-          </p>
+        <style>
+          .documents-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+            gap: 18px;
+            align-items: stretch;
+          }
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="scrollToForm()">${currentEditId ? "Update Document" : "Add Document"}</button>
-            <a class="ungani-btn green" href="reports.html">Reports</a>
-            <a class="ungani-btn dark" href="my-records.html">Records</a>
+          .documents-preset-box {
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.09);
+            border-radius: 24px;
+            padding: 18px;
+          }
+
+          .documents-preset-box h3 {
+            color: white;
+            margin: 0 0 8px;
+          }
+
+          .documents-preset-box p {
+            color: rgba(255,255,255,0.74);
+            margin: 0;
+            line-height: 1.55;
+          }
+
+          .document-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+          }
+
+          .document-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 8px 11px;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            font-size: 12px;
+            font-weight: 850;
+          }
+
+          .document-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .document-kpi-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            box-shadow: var(--ungani-shadow);
+            padding: 20px;
+            min-height: 140px;
+          }
+
+          .document-kpi-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 5px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent);
+          }
+
+          .document-kpi-card span {
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.055em;
+          }
+
+          .document-kpi-card h3 {
+            margin: 17px 0 8px;
+            font-size: clamp(25px, 3vw, 36px);
+            line-height: 1;
+            letter-spacing: -0.055em;
+          }
+
+          .document-kpi-card p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .document-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .document-form-grid .wide {
+            grid-column: span 3;
+          }
+
+          .document-main-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(320px, 0.52fr);
+            gap: 18px;
+            align-items: start;
+          }
+
+          .document-chart-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+            margin-bottom: 18px;
+            align-items: start;
+          }
+
+          .document-type-section {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+          }
+
+          .type-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+
+          .type-pill {
+            border: 1px solid var(--ungani-border);
+            background: var(--ungani-soft);
+            color: var(--ungani-text);
+            border-radius: 999px;
+            padding: 8px 11px;
+            font-size: 12px;
+            font-weight: 850;
+            cursor: pointer;
+          }
+
+          .type-pill:hover {
+            border-color: rgba(212,166,58,0.65);
+          }
+
+          .document-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .document-card {
+            border: 1px solid var(--ungani-border);
+            border-radius: 24px;
+            padding: 16px;
+            background: var(--ungani-card);
+            box-shadow: var(--ungani-shadow);
+            display: grid;
+            gap: 12px;
+          }
+
+          .document-card:hover {
+            border-color: rgba(212,166,58,0.55);
+          }
+
+          .document-top {
+            display: grid;
+            grid-template-columns: 54px minmax(0, 1fr);
+            gap: 14px;
+            align-items: start;
+          }
+
+          .document-icon {
+            width: 54px;
+            height: 54px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #061C3D, #D4A63A);
+            color: white;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+          }
+
+          .document-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-start;
+          }
+
+          .document-head h3 {
+            margin: 0 0 4px;
+            font-size: 18px;
+          }
+
+          .document-head p {
+            margin: 0;
+          }
+
+          .document-meta-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+          }
+
+          .document-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+          }
+
+          .document-url {
+            overflow-wrap: anywhere;
+          }
+
+          @media (max-width: 1180px) {
+            .documents-hero-grid,
+            .document-main-grid,
+            .document-chart-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .document-kpi-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 820px) {
+            .document-list {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          @media (max-width: 720px) {
+            .document-kpi-grid,
+            .document-form-grid,
+            .document-top {
+              grid-template-columns: 1fr;
+            }
+
+            .document-form-grid .wide {
+              grid-column: span 1;
+            }
+          }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <div class="documents-hero-grid">
+            <div>
+              <span class="ungani-badge gold">${UnganiClientShared.safe(businessPreset.name)}</span>
+              <h2 style="font-size:clamp(32px,4vw,52px);line-height:1.02;margin:18px 0 12px;">
+                Documents that match your business.
+              </h2>
+              <p>
+                Organize receipts, invoices, agreements, licenses, delivery notes, client documents, and file links using presets for ${UnganiClientShared.safe(businessPreset.name)}.
+              </p>
+
+              <div class="ungani-button-row">
+                <button class="ungani-btn gold" onclick="scrollToDocumentForm()">Add Document</button>
+                <button class="ungani-btn green" onclick="loadDocumentRows()">Refresh</button>
+                <a class="ungani-btn light" href="my-charts.html">View Charts</a>
+              </div>
+            </div>
+
+            <div class="documents-preset-box">
+              <h3>Business document preset active</h3>
+              <p>The document types on this page now adapt to the business type selected by the client.</p>
+
+              <div class="document-chip-row">
+                ${businessPreset.documentTypes.slice(0, 7).map(function (item) {
+                  return `<span class="document-chip">${UnganiClientShared.safe(item)}</span>`;
+                }).join("")}
+              </div>
+            </div>
           </div>
         </section>
 
-        <section class="ungani-grid">
-          ${UnganiClientShared.metricCard("Total Documents", documents.length, "All saved document records", "blue")}
-          ${UnganiClientShared.metricCard("Agreements", summary.agreements, "Lease, sale, and other agreements", "green")}
-          ${UnganiClientShared.metricCard("Receipts / Invoices", summary.receiptsInvoices, "Payment and billing documents", "gold")}
-          ${UnganiClientShared.metricCard("Drive Links", summary.driveLinks, "Documents or folders with links", "blue")}
-          ${UnganiClientShared.metricCard("Pending", summary.pending, "Needs review or completion", summary.pending > 0 ? "orange" : "green")}
-          ${UnganiClientShared.metricCard("Archived", summary.archived, "Archived document records", "orange")}
+        <section class="document-kpi-grid">
+          ${documentKpi("Total Documents", summary.total, "All documents in view", "#2563EB")}
+          ${documentKpi("Active", summary.active, "Active document records", "#16A34A")}
+          ${documentKpi("Pending", summary.pending, "Needs review or upload", "#D4A63A")}
+          ${documentKpi("Attention", summary.attention, "Expired, missing, or cancelled", summary.attention > 0 ? "#DC2626" : "#16A34A")}
         </section>
 
         <section class="ungani-card">
           <div class="ungani-section-title">
-            <h3>Filters</h3>
-            <button class="ungani-btn dark" onclick="resetFilters()">Reset Filters</button>
+            <div>
+              <h3>Filters</h3>
+              <p class="ungani-small">Search and filter document records.</p>
+            </div>
+
+            <button class="ungani-btn dark" onclick="resetDocumentFilters()">Reset Filters</button>
           </div>
 
-          <div class="ungani-form-grid">
+          <div class="document-form-grid">
             <div>
               <label for="filterType">Document Type</label>
-              <select id="filterType" onchange="saveFilters(); renderDocumentsPage();">
+              <select id="filterType" onchange="saveDocumentFilters(); renderDocumentsPage();">
                 <option value="">All Types</option>
-                <option value="lease agreement">Lease Agreement</option>
-                <option value="sale agreement">Sale Agreement</option>
-                <option value="title document">Title Document</option>
-                <option value="booking form">Booking Form</option>
-                <option value="receipt">Receipt</option>
-                <option value="invoice">Invoice</option>
-                <option value="client document">Client Document</option>
-                <option value="project file">Project File</option>
-                <option value="property photos">Property Photos</option>
-                <option value="marketing file">Marketing File</option>
-                <option value="maintenance file">Maintenance File</option>
-                <option value="agreement">Agreement</option>
-                <option value="general">General</option>
+                ${businessPreset.documentTypes.map(function (item) {
+                  return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+                }).join("")}
               </select>
             </div>
 
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveFilters(); renderDocumentsPage();">
-                <option value="">All Statuses</option>
+              <select id="filterStatus" onchange="saveDocumentFilters(); renderDocumentsPage();">
+                <option value="">All Status</option>
                 <option value="active">Active</option>
                 <option value="pending">Pending</option>
-                <option value="review">Review</option>
+                <option value="uploaded">Uploaded</option>
+                <option value="missing">Missing</option>
                 <option value="expired">Expired</option>
-                <option value="archived">Archived</option>
+                <option value="cancelled">Cancelled</option>
               </select>
             </div>
 
             <div>
-              <label for="filterProperty">Property / Project</label>
-              <input id="filterProperty" placeholder="Example: Clove Garden" oninput="saveFilters(); renderDocumentsPage();" />
-            </div>
-
-            <div>
-              <label for="searchBox">Search</label>
-              <input id="searchBox" placeholder="Search title, client, agent, notes..." oninput="saveFilters(); renderDocumentsPage();" />
+              <label for="filterSearch">Search</label>
+              <input id="filterSearch" placeholder="Search title, type, file name, folder, person..." oninput="saveDocumentFilters(); renderDocumentsPage();" />
             </div>
           </div>
         </section>
 
-        <section id="documentFormCard" class="ungani-card">
-          <div class="ungani-section-title">
-            <h3>${currentEditId ? "Update Document" : "Add Document"}</h3>
-            ${currentEditId ? '<button class="ungani-btn dark" onclick="cancelEdit()">Cancel Edit</button>' : ""}
+        <section class="document-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Document Types</h3>
+                <p class="ungani-small">Animated chart showing the document types being stored.</p>
+              </div>
+            </div>
+
+            ${hasValues(typeRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="documentTypeChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add documents to show document type breakdown.")}
           </div>
 
-          ${renderDocumentForm()}
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Document Status</h3>
+                <p class="ungani-small">Active, uploaded, pending, missing, expired, and attention-needed documents.</p>
+              </div>
+            </div>
+
+            ${hasValues(statusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="documentStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add documents to show status breakdown.")}
+          </div>
         </section>
 
-        <section class="ungani-two-col">
+        <section class="document-type-section">
           <div class="ungani-card">
             <div class="ungani-section-title">
               <div>
-                <h3>${isRealEstate ? "Property Documents" : "Document Records"}</h3>
-                <p class="ungani-small">${filtered.length} document(s) shown</p>
+                <h3>Document Types</h3>
+                <p class="ungani-small">Quick-fill document types for ${UnganiClientShared.safe(businessPreset.name)}.</p>
               </div>
-
-              <button class="ungani-btn green" onclick="loadDocuments()">Refresh</button>
             </div>
 
-            ${renderDocumentList(filtered)}
+            <div class="type-list">
+              ${businessPreset.documentTypes.map(function (item) {
+                return `<button class="type-pill" onclick="quickDocumentType('${UnganiClientShared.attr(item)}')">${UnganiClientShared.safe(item)}</button>`;
+              }).join("")}
+            </div>
+          </div>
+        </section>
+
+        <section class="document-main-grid">
+          <div class="ungani-card" id="documentFormCard">
+            <div class="ungani-section-title">
+              <div>
+                <h3 id="documentFormTitle">${editingDocumentId ? "Edit Document" : "Add Document"}</h3>
+                <p class="ungani-small">Use business-specific document types so reports and charts make sense.</p>
+              </div>
+
+              <button class="ungani-btn dark" onclick="clearDocumentForm()">Clear</button>
+            </div>
+
+            <form onsubmit="saveDocument(event)">
+              <div class="document-form-grid">
+                <div class="wide">
+                  <label for="documentTitle">Document Title</label>
+                  <input id="documentTitle" placeholder="Example: Client Agreement, Delivery Note, Receipt, License..." required />
+                </div>
+
+                <div>
+                  <label for="documentType">Document Type</label>
+                  <select id="documentType">
+                    ${businessPreset.documentTypes.map(function (item) {
+                      return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+                    }).join("")}
+                  </select>
+                </div>
+
+                <div>
+                  <label for="documentDate">Document Date</label>
+                  <input id="documentDate" type="date" />
+                </div>
+
+                <div>
+                  <label for="documentStatus">Status</label>
+                  <select id="documentStatus">
+                    <option value="active">Active</option>
+                    <option value="uploaded">Uploaded</option>
+                    <option value="pending">Pending</option>
+                    <option value="missing">Missing</option>
+                    <option value="expired">Expired</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="documentFileName">File Name</label>
+                  <input id="documentFileName" placeholder="Example: invoice-001.pdf" />
+                </div>
+
+                <div>
+                  <label for="documentFolder">Folder / Group</label>
+                  <input id="documentFolder" placeholder="Receipts, Agreements, Staff Docs, Client Docs..." />
+                </div>
+
+                <div>
+                  <label for="documentFileUrl">File / Drive Link</label>
+                  <input id="documentFileUrl" type="url" placeholder="https://..." />
+                </div>
+
+                <div>
+                  <label for="documentRelatedPerson">Related Person</label>
+                  <input id="documentRelatedPerson" placeholder="Client, staff, supplier, customer..." />
+                </div>
+
+                <div>
+                  <label for="documentRelatedItem">Related Item / Work</label>
+                  <input id="documentRelatedItem" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)}" />
+                </div>
+
+                <div class="wide">
+                  <label for="documentNotes">Notes</label>
+                  <textarea id="documentNotes" rows="5" placeholder="Add document description, expiry notes, missing info, approval status, or next step..."></textarea>
+                </div>
+              </div>
+
+              <div class="ungani-button-row" style="margin-top:16px;">
+                <button class="ungani-btn gold" type="submit">${editingDocumentId ? "Update Document" : "Save Document"}</button>
+                <button class="ungani-btn dark" type="button" onclick="clearDocumentForm()">Cancel</button>
+              </div>
+            </form>
           </div>
 
           <div class="ungani-card">
             <div class="ungani-section-title">
-              <h3>Document Summary</h3>
+              <div>
+                <h3>Document Guide</h3>
+                <p class="ungani-small">How to keep files organized.</p>
+              </div>
             </div>
 
-            ${renderSummaryPanel(filtered)}
+            <div class="ungani-empty" style="text-align:left;">
+              <h3>Use clear document types</h3>
+              <p>Document types help reports explain what is uploaded, missing, pending, or expired.</p>
+            </div>
+
+            <div style="display:grid;gap:10px;margin-top:12px;">
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Example type</strong>
+                <p class="ungani-small">${UnganiClientShared.safe(businessPreset.documentTypes[0] || "Business Document")}</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>File links</strong>
+                <p class="ungani-small">Paste Google Drive, Dropbox, or file links so the document can be opened later.</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Reports</strong>
+                <p class="ungani-small">Document status helps reports show what is uploaded, pending, missing, or expired.</p>
+              </div>
+            </div>
           </div>
         </section>
 
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Document List</h3>
+              <p class="ungani-small">${filteredRows.length} document record(s) shown.</p>
+            </div>
+
+            <button class="ungani-btn green" onclick="loadDocumentRows()">Refresh</button>
+          </div>
+
+          ${renderDocumentList(filteredRows)}
+        </section>
+
         <p class="ungani-small">
-          Documents Version: Step 305I Shared Layout · ungani.com · info@ungani.com
+          Documents Version: Step 310B-5 Business-Type Document Presets · ungani.com · info@ungani.com
         </p>
       `);
 
-      restoreFilters();
-      fillEditForm();
+      restoreDocumentFilters();
+
+      setTimeout(function () {
+        renderDocumentCharts(typeRows, statusRows, folderRows);
+      }, 150);
     }
 
-    function renderDocumentForm() {
-      return `
-        <form id="documentForm" onsubmit="saveDocument(event)">
-          <div class="ungani-form-grid">
-            <div>
-              <label for="documentTitle">Document Title</label>
-              <input id="documentTitle" required placeholder="Example: Clove Garden A12 Booking Receipt" />
-            </div>
+    async function renderDocumentCharts(typeRows, statusRows, folderRows) {
+      try {
+        if (hasValues(typeRows)) {
+          await UnganiAnalytics.renderHorizontalBarChart("documentTypeChart", typeRows, "Documents");
+        }
 
-            <div>
-              <label for="documentType">Document Type</label>
-              <select id="documentType">
-                <option value="lease agreement">Lease Agreement</option>
-                <option value="sale agreement">Sale Agreement</option>
-                <option value="title document">Title Document</option>
-                <option value="booking form">Booking Form</option>
-                <option value="receipt">Receipt</option>
-                <option value="invoice">Invoice</option>
-                <option value="client document">Client Document</option>
-                <option value="project file">Project File</option>
-                <option value="property photos">Property Photos</option>
-                <option value="marketing file">Marketing File</option>
-                <option value="maintenance file">Maintenance File</option>
-                <option value="agreement">Agreement</option>
-                <option value="general">General</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="category">Category</label>
-              <input id="category" placeholder="Example: Sales / Rentals / Projects" />
-            </div>
-
-            <div>
-              <label for="status">Status</label>
-              <select id="status">
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-                <option value="review">Review</option>
-                <option value="expired">Expired</option>
-                <option value="archived">Archived</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="propertyName">Property Name</label>
-              <input id="propertyName" placeholder="Example: Clove Garden A12" />
-            </div>
-
-            <div>
-              <label for="projectName">Project Name</label>
-              <input id="projectName" placeholder="Example: Clove Garden" />
-            </div>
-
-            <div>
-              <label for="clientName">Client / Tenant / Buyer Name</label>
-              <input id="clientName" placeholder="Example: Kevin Demo Buyer" />
-            </div>
-
-            <div>
-              <label for="agentName">${isRealEstate ? "Agent Name" : "Related Person"}</label>
-              <input id="agentName" placeholder="Example: Brian Otieno" />
-            </div>
-
-            <div>
-              <label for="documentUrl">Document Link</label>
-              <input id="documentUrl" type="url" placeholder="Paste document link here" />
-            </div>
-
-            <div>
-              <label for="driveUrl">Google Drive File Link</label>
-              <input id="driveUrl" type="url" placeholder="Paste Google Drive file link here" />
-            </div>
-
-            <div>
-              <label for="folderUrl">Google Drive Folder Link</label>
-              <input id="folderUrl" type="url" placeholder="Paste Google Drive folder link here" />
-            </div>
-          </div>
-
-          <label for="description">Description</label>
-          <textarea id="description" placeholder="${isRealEstate ? "Add details about the agreement, receipt, title file, client document, or project file..." : "Add details about this document..."}"></textarea>
-
-          <label for="notes">Internal Notes</label>
-          <textarea id="notes" placeholder="Add internal notes, document status, follow-up details, or reminders..."></textarea>
-
-          <div class="ungani-button-row">
-            <button class="ungani-btn green" type="submit">${currentEditId ? "Update Document" : "Add Document"}</button>
-            ${currentEditId ? '<button class="ungani-btn dark" type="button" onclick="cancelEdit()">Cancel</button>' : ""}
-          </div>
-        </form>
-      `;
+        if (hasValues(statusRows)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("documentStatusChart", statusRows);
+        }
+      } catch (error) {
+        console.warn("Document charts warning:", error.message);
+      }
     }
 
     function renderDocumentList(rows) {
-      if (rows.length === 0) {
+      if (!rows || rows.length === 0) {
         return `
           <div class="ungani-empty">
-            <h3>No documents found</h3>
-            <p>Add your first agreement, receipt, invoice, Drive folder, or document record above.</p>
+            <h3>No documents yet</h3>
+            <p>Add your first receipt, agreement, invoice, license, delivery note, or file link.</p>
           </div>
         `;
       }
 
-      return rows.map(function (row) {
-        return renderDocumentCard(row);
-      }).join("");
-    }
-
-    function renderDocumentCard(row) {
-      const title = UnganiClientShared.getValue(row, ["document_title", "title", "file_name"], "Document");
-      const type = UnganiClientShared.getValue(row, ["document_type"], "general");
-      const category = UnganiClientShared.getValue(row, ["category"], "");
-      const status = UnganiClientShared.getValue(row, ["status"], "active");
-      const property = UnganiClientShared.getValue(row, ["property_name"], "");
-      const project = UnganiClientShared.getValue(row, ["project_name"], "");
-      const client = UnganiClientShared.getValue(row, ["client_name"], "");
-      const agent = UnganiClientShared.getValue(row, ["agent_name"], "");
-      const documentUrl = UnganiClientShared.getValue(row, ["document_url"], "");
-      const driveUrl = UnganiClientShared.getValue(row, ["drive_url"], "");
-      const folderUrl = UnganiClientShared.getValue(row, ["folder_url"], "");
-      const description = UnganiClientShared.getValue(row, ["description"], "");
-      const notes = UnganiClientShared.getValue(row, ["notes"], "");
-
       return `
-        <div class="ungani-card" style="box-shadow:none;">
-          <div class="ungani-section-title">
-            <div>
-              <h3>${UnganiClientShared.safe(title)}</h3>
-              <p class="ungani-small">
-                ${UnganiClientShared.safe(type)}
-                ${category ? " · " + UnganiClientShared.safe(category) : ""}
-                ${property ? " · " + UnganiClientShared.safe(property) : ""}
-              </p>
-            </div>
+        <div class="document-list">
+          ${rows.map(function (row) {
+            const title = getDocumentTitle(row);
+            const type = UnganiClientShared.getValue(row, ["document_type", "type"], "Business Document");
+            const status = UnganiClientShared.getValue(row, ["status"], "active");
+            const date = UnganiClientShared.getValue(row, ["document_date", "created_at"], "");
+            const fileName = UnganiClientShared.getValue(row, ["file_name"], "");
+            const fileUrl = UnganiClientShared.getValue(row, ["file_url", "url", "document_url"], "");
+            const folder = UnganiClientShared.getValue(row, ["folder_name", "category"], "");
+            const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
+            const relatedItem = UnganiClientShared.getValue(row, ["related_item"], "");
+            const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
-            <div>
-              ${badge(type, "blue")}
-              ${badge(status, statusColor(status))}
-            </div>
-          </div>
+            return `
+              <div class="document-card">
+                <div class="document-top">
+                  <div class="document-icon">📄</div>
 
-          <section class="ungani-grid">
-            ${miniDetail("Property", property || "N/A")}
-            ${miniDetail("Project", project || "N/A")}
-            ${miniDetail("Client / Buyer / Tenant", client || "N/A")}
-            ${miniDetail(isRealEstate ? "Agent" : "Related Person", agent || "N/A")}
-            ${miniDetail("Created", UnganiClientShared.formatDate(UnganiClientShared.getValue(row, ["created_at"], "")))}
-            ${miniDetail("Status", status || "N/A")}
-          </section>
+                  <div>
+                    <div class="document-head">
+                      <div>
+                        <h3>${UnganiClientShared.safe(title)}</h3>
+                        <p class="ungani-small">${UnganiClientShared.safe(fileName || folder || type)}</p>
+                      </div>
+                      ${statusBadge(status)}
+                    </div>
 
-          <div class="ungani-button-row">
-            ${documentUrl ? `<a class="ungani-btn green" href="${UnganiClientShared.attr(documentUrl)}" target="_blank" rel="noopener">Open Document</a>` : ""}
-            ${driveUrl ? `<a class="ungani-btn blue" href="${UnganiClientShared.attr(driveUrl)}" target="_blank" rel="noopener">Open Drive File</a>` : ""}
-            ${folderUrl ? `<a class="ungani-btn dark" href="${UnganiClientShared.attr(folderUrl)}" target="_blank" rel="noopener">Open Folder</a>` : ""}
-          </div>
+                    <p class="ungani-small" style="margin:10px 0 0;">
+                      ${UnganiClientShared.safe(notes || "No notes added.")}
+                    </p>
 
-          ${description ? `<p class="ungani-small" style="margin-top:12px;"><strong>Description:</strong> ${UnganiClientShared.safe(description)}</p>` : ""}
-          ${notes ? `<p class="ungani-small"><strong>Notes:</strong> ${UnganiClientShared.safe(notes)}</p>` : ""}
+                    <div class="document-meta-grid">
+                      <span class="ungani-badge gold">${UnganiClientShared.safe(type)}</span>
+                      <span class="ungani-badge blue">Date: ${UnganiClientShared.safe(date ? UnganiClientShared.formatDate(date) : "No date")}</span>
+                      ${folder ? `<span class="ungani-badge gold">Folder: ${UnganiClientShared.safe(folder)}</span>` : ""}
+                      ${relatedPerson ? `<span class="ungani-badge green">Person: ${UnganiClientShared.safe(relatedPerson)}</span>` : ""}
+                      ${relatedItem ? `<span class="ungani-badge blue">Related: ${UnganiClientShared.safe(relatedItem)}</span>` : ""}
+                    </div>
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="editDocument('${UnganiClientShared.attr(row.id)}')">Edit</button>
-            <button class="ungani-btn green" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'active')">Active</button>
-            <button class="ungani-btn orange" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'review')">Review</button>
-            <button class="ungani-btn red" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'archived')">Archive</button>
-          </div>
+                    ${fileUrl ? `<p class="ungani-small document-url" style="margin:10px 0 0;">Link: ${UnganiClientShared.safe(fileUrl)}</p>` : ""}
+                  </div>
+                </div>
+
+                <div class="document-actions">
+                  ${fileUrl ? `<a class="ungani-btn small green" href="${UnganiClientShared.attr(fileUrl)}" target="_blank" rel="noopener">Open</a>` : ""}
+                  <button class="ungani-btn small gold" onclick="editDocument('${UnganiClientShared.attr(row.id)}')">Edit</button>
+                  <button class="ungani-btn small red" onclick="deleteDocument('${UnganiClientShared.attr(row.id)}')">Delete</button>
+                </div>
+              </div>
+            `;
+          }).join("")}
         </div>
       `;
     }
 
-    function renderSummaryPanel(rows) {
-      const typeSummary = {};
-      const statusSummary = {};
-
-      rows.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["document_type"], "general")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase();
-
-        typeSummary[type] = (typeSummary[type] || 0) + 1;
-        statusSummary[status] = (statusSummary[status] || 0) + 1;
-      });
-
-      const typeKeys = Object.keys(typeSummary);
-      const statusKeys = Object.keys(statusSummary);
-
-      if (typeKeys.length === 0 && statusKeys.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No summary yet</h3>
-            <p>Summary will appear when documents are added.</p>
-          </div>
-        `;
-      }
-
-      let html = `<h3 style="margin-top:0;color:var(--ungani-text);">By Document Type</h3>`;
-
-      html += typeKeys.map(function (key) {
-        return `
-          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-            <strong>${UnganiClientShared.safe(toTitle(key))}</strong>
-            <p class="ungani-small" style="margin:5px 0 0;">${typeSummary[key]} document(s)</p>
-          </div>
-        `;
-      }).join("");
-
-      html += `<h3 style="color:var(--ungani-text);">By Status</h3>`;
-
-      html += statusKeys.map(function (key) {
-        return `
-          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-            <strong>${UnganiClientShared.safe(toTitle(key))}</strong>
-            <p class="ungani-small" style="margin:5px 0 0;">${statusSummary[key]} document(s)</p>
-          </div>
-        `;
-      }).join("");
-
-      return html;
+    function documentKpi(title, value, subtitle, accent) {
+      return `
+        <div class="document-kpi-card" style="--accent:${UnganiClientShared.attr(accent)};">
+          <span>${UnganiClientShared.safe(title)}</span>
+          <h3>${UnganiClientShared.safe(value)}</h3>
+          <p>${UnganiClientShared.safe(subtitle)}</p>
+        </div>
+      `;
     }
 
-    function calculateSummary() {
-      let agreements = 0;
-      let receiptsInvoices = 0;
-      let driveLinks = 0;
+    function calculateDocumentSummary(rows) {
+      let active = 0;
       let pending = 0;
-      let archived = 0;
+      let attention = 0;
 
-      documents.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["document_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
+      rows.forEach(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase();
 
-        if (type.includes("agreement") || type.includes("lease") || type.includes("sale")) agreements++;
-        if (type.includes("receipt") || type.includes("invoice")) receiptsInvoices++;
-
-        if (
-          UnganiClientShared.getValue(row, ["document_url"], "") ||
-          UnganiClientShared.getValue(row, ["drive_url"], "") ||
-          UnganiClientShared.getValue(row, ["folder_url"], "")
-        ) {
-          driveLinks++;
+        if (status.includes("active") || status.includes("uploaded") || status.includes("completed")) {
+          active++;
         }
 
-        if (status.includes("pending") || status.includes("review")) pending++;
-        if (status.includes("archived")) archived++;
+        if (status.includes("pending") || status.includes("review")) {
+          pending++;
+        }
+
+        if (
+          status.includes("expired") ||
+          status.includes("missing") ||
+          status.includes("cancelled") ||
+          status.includes("failed")
+        ) {
+          attention++;
+        }
       });
 
       return {
-        agreements,
-        receiptsInvoices,
-        driveLinks,
+        total: rows.length,
+        active,
         pending,
-        archived
+        attention
       };
     }
 
-    function filterDocuments() {
-      const filterType = document.getElementById("filterType") ? UnganiClientShared.value("filterType").toLowerCase() : "";
-      const filterStatus = document.getElementById("filterStatus") ? UnganiClientShared.value("filterStatus").toLowerCase() : "";
-      const filterProperty = document.getElementById("filterProperty") ? UnganiClientShared.value("filterProperty").toLowerCase() : "";
-      const query = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
+    function buildTypeRows(rows) {
+      const map = {};
 
-      return documents.filter(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["document_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
-        const propertyProject = [
-          UnganiClientShared.getValue(row, ["property_name"], ""),
-          UnganiClientShared.getValue(row, ["project_name"], "")
-        ].join(" ").toLowerCase();
+      rows.forEach(function (row) {
+        const type = UnganiClientShared.getValue(row, ["document_type", "type"], "Business Document");
+        map[type] = (map[type] || 0) + 1;
+      });
 
-        const haystack = [
-          UnganiClientShared.getValue(row, ["document_title", "title", "file_name"], ""),
-          type,
-          status,
-          propertyProject,
-          UnganiClientShared.getValue(row, ["category"], ""),
-          UnganiClientShared.getValue(row, ["client_name"], ""),
-          UnganiClientShared.getValue(row, ["agent_name"], ""),
-          UnganiClientShared.getValue(row, ["description"], ""),
-          UnganiClientShared.getValue(row, ["notes"], "")
-        ].join(" ").toLowerCase();
+      return UnganiAnalytics.mapToRows(map);
+    }
 
-        if (filterType && type !== filterType) return false;
-        if (filterStatus && status !== filterStatus) return false;
-        if (filterProperty && !propertyProject.includes(filterProperty)) return false;
-        if (query && !haystack.includes(query)) return false;
+    function buildStatusRows(rows) {
+      const map = {};
+
+      rows.forEach(function (row) {
+        const status = UnganiClientShared.getValue(row, ["status"], "active");
+        map[status] = (map[status] || 0) + 1;
+      });
+
+      return UnganiAnalytics.mapToRows(map);
+    }
+
+    function buildFolderRows(rows) {
+      const map = {};
+
+      rows.forEach(function (row) {
+        const folder = UnganiClientShared.getValue(row, ["folder_name", "category"], "No Folder");
+        map[folder] = (map[folder] || 0) + 1;
+      });
+
+      return UnganiAnalytics.mapToRows(map);
+    }
+
+    function getFilteredRows() {
+      const filterType = getStoredOrInput("filterType", "ungani_document_filter_type").toLowerCase();
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_document_filter_status").toLowerCase();
+      const search = getStoredOrInput("filterSearch", "ungani_document_filter_search").toLowerCase();
+
+      return documentRows.filter(function (row) {
+        const type = String(UnganiClientShared.getValue(row, ["document_type", "type"], "business document")).toLowerCase();
+        const status = String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase();
+        const haystack = JSON.stringify(row || {}).toLowerCase();
+
+        if (filterType && !type.includes(filterType)) return false;
+        if (filterStatus && !status.includes(filterStatus)) return false;
+        if (search && !haystack.includes(search)) return false;
 
         return true;
       });
+    }
+
+    function getStoredOrInput(inputId, storageKey) {
+      const el = document.getElementById(inputId);
+
+      if (el) {
+        return String(el.value || "").trim();
+      }
+
+      return String(sessionStorage.getItem(storageKey) || "").trim();
+    }
+
+    function saveDocumentFilters() {
+      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_document_filter_type", UnganiClientShared.value("filterType"));
+      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_document_filter_status", UnganiClientShared.value("filterStatus"));
+      if (document.getElementById("filterSearch")) sessionStorage.setItem("ungani_document_filter_search", UnganiClientShared.value("filterSearch"));
+    }
+
+    function restoreDocumentFilters() {
+      if (document.getElementById("filterType")) document.getElementById("filterType").value = sessionStorage.getItem("ungani_document_filter_type") || "";
+      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_document_filter_status") || "";
+      if (document.getElementById("filterSearch")) document.getElementById("filterSearch").value = sessionStorage.getItem("ungani_document_filter_search") || "";
+    }
+
+    function resetDocumentFilters() {
+      sessionStorage.removeItem("ungani_document_filter_type");
+      sessionStorage.removeItem("ungani_document_filter_status");
+      sessionStorage.removeItem("ungani_document_filter_search");
+      renderDocumentsPage();
+      UnganiClientShared.showToast("Document filters reset ✓");
+    }
+
+    function quickDocumentType(documentType) {
+      scrollToDocumentForm();
+
+      setTimeout(function () {
+        const el = document.getElementById("documentType");
+        if (el) el.value = documentType;
+      }, 150);
+
+      UnganiClientShared.showToast("Document type selected ✓");
+    }
+
+    function scrollToDocumentForm() {
+      const el = document.getElementById("documentFormCard");
+
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
 
     async function saveDocument(event) {
@@ -486,187 +818,141 @@
       const title = UnganiClientShared.value("documentTitle");
 
       if (!title) {
-        alert("Please enter a document title.");
+        UnganiClientShared.showToast("Enter a document title.");
         return;
       }
 
-      const categoryValue = UnganiClientShared.value("category");
-
       const payload = {
-        business_type_key: UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], null),
-        section_key: "documents",
-        category_key: categoryValue ? UnganiClientShared.slugify(categoryValue) : null,
+        tenant_id: currentContext.tenantId,
         document_title: title,
-        title: title,
-        file_name: title,
-        document_type: UnganiClientShared.value("documentType") || "general",
-        category: categoryValue || null,
-        status: UnganiClientShared.value("status") || "active",
-        property_name: UnganiClientShared.value("propertyName") || null,
-        project_name: UnganiClientShared.value("projectName") || null,
-        client_name: UnganiClientShared.value("clientName") || null,
-        agent_name: UnganiClientShared.value("agentName") || null,
-        document_url: UnganiClientShared.value("documentUrl") || null,
-        drive_url: UnganiClientShared.value("driveUrl") || null,
-        folder_url: UnganiClientShared.value("folderUrl") || null,
-        description: UnganiClientShared.value("description") || null,
-        notes: UnganiClientShared.value("notes") || null,
-        updated_at: new Date().toISOString()
+        document_type: UnganiClientShared.value("documentType") || "Business Document",
+        document_date: UnganiClientShared.value("documentDate") || new Date().toISOString().slice(0, 10),
+        status: UnganiClientShared.value("documentStatus") || "active",
+        file_name: UnganiClientShared.value("documentFileName") || null,
+        file_url: UnganiClientShared.value("documentFileUrl") || null,
+        folder_name: UnganiClientShared.value("documentFolder") || null,
+        related_person: UnganiClientShared.value("documentRelatedPerson") || null,
+        related_item: UnganiClientShared.value("documentRelatedItem") || null,
+        notes: UnganiClientShared.value("documentNotes") || null
       };
 
       let response;
 
-      if (currentEditId) {
+      if (editingDocumentId) {
         response = await currentContext.supabaseClient
           .from("documents")
           .update(payload)
-          .eq("id", currentEditId)
+          .eq("id", editingDocumentId)
           .eq("tenant_id", currentContext.tenantId);
       } else {
-        payload.tenant_id = currentContext.tenantId;
-        payload.created_by = currentContext.authUser.id;
-        payload.created_at = new Date().toISOString();
-
         response = await currentContext.supabaseClient
           .from("documents")
-          .insert(payload);
+          .insert([payload]);
       }
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not save document: " + response.error.message);
         return;
       }
 
-      currentEditId = null;
-      UnganiClientShared.showToast("Document saved ✓");
-      await loadDocuments();
-    }
-
-    function fillEditForm() {
-      if (!currentEditId) return;
-
-      const row = documents.find(function (item) {
-        return String(item.id) === String(currentEditId);
-      });
-
-      if (!row) return;
-
-      setValue("documentTitle", UnganiClientShared.getValue(row, ["document_title", "title", "file_name"], ""));
-      setValue("documentType", UnganiClientShared.getValue(row, ["document_type"], "general"));
-      setValue("category", UnganiClientShared.getValue(row, ["category"], ""));
-      setValue("status", UnganiClientShared.getValue(row, ["status"], "active"));
-      setValue("propertyName", UnganiClientShared.getValue(row, ["property_name"], ""));
-      setValue("projectName", UnganiClientShared.getValue(row, ["project_name"], ""));
-      setValue("clientName", UnganiClientShared.getValue(row, ["client_name"], ""));
-      setValue("agentName", UnganiClientShared.getValue(row, ["agent_name"], ""));
-      setValue("documentUrl", UnganiClientShared.getValue(row, ["document_url"], ""));
-      setValue("driveUrl", UnganiClientShared.getValue(row, ["drive_url"], ""));
-      setValue("folderUrl", UnganiClientShared.getValue(row, ["folder_url"], ""));
-      setValue("description", UnganiClientShared.getValue(row, ["description"], ""));
-      setValue("notes", UnganiClientShared.getValue(row, ["notes"], ""));
+      UnganiClientShared.showToast(editingDocumentId ? "Document updated ✓" : "Document added ✓");
+      clearDocumentForm();
+      await loadDocumentRows();
     }
 
     function editDocument(id) {
-      currentEditId = id;
-      renderDocumentsPage();
-      scrollToForm();
+      const row = documentRows.find(function (item) {
+        return String(item.id) === String(id);
+      });
+
+      if (!row) {
+        UnganiClientShared.showToast("Document not found.");
+        return;
+      }
+
+      editingDocumentId = row.id;
+
+      scrollToDocumentForm();
+
+      setTimeout(function () {
+        document.getElementById("documentFormTitle").innerText = "Edit Document";
+        document.getElementById("documentTitle").value = getDocumentTitle(row);
+        document.getElementById("documentType").value = UnganiClientShared.getValue(row, ["document_type", "type"], "");
+        document.getElementById("documentDate").value = String(UnganiClientShared.getValue(row, ["document_date", "created_at"], "")).slice(0, 10);
+        document.getElementById("documentStatus").value = UnganiClientShared.getValue(row, ["status"], "active");
+        document.getElementById("documentFileName").value = UnganiClientShared.getValue(row, ["file_name"], "");
+        document.getElementById("documentFileUrl").value = UnganiClientShared.getValue(row, ["file_url", "url", "document_url"], "");
+        document.getElementById("documentFolder").value = UnganiClientShared.getValue(row, ["folder_name", "category"], "");
+        document.getElementById("documentRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person"], "");
+        document.getElementById("documentRelatedItem").value = UnganiClientShared.getValue(row, ["related_item"], "");
+        document.getElementById("documentNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
+      }, 150);
     }
 
-    function cancelEdit() {
-      currentEditId = null;
-      renderDocumentsPage();
-      UnganiClientShared.showToast("Edit cancelled");
-    }
+    async function deleteDocument(id) {
+      const confirmed = confirm("Delete this document record?");
 
-    async function quickStatus(id, status) {
+      if (!confirmed) return;
+
       const response = await currentContext.supabaseClient
         .from("documents")
-        .update({
-          status: status,
-          updated_at: new Date().toISOString()
-        })
+        .delete()
         .eq("id", id)
         .eq("tenant_id", currentContext.tenantId);
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not delete document: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Status updated ✓");
-      await loadDocuments();
+      UnganiClientShared.showToast("Document deleted ✓");
+      await loadDocumentRows();
     }
 
-    function restoreFilters() {
-      if (document.getElementById("filterType")) document.getElementById("filterType").value = sessionStorage.getItem("ungani_documents_filter_type") || "";
-      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_documents_filter_status") || "";
-      if (document.getElementById("filterProperty")) document.getElementById("filterProperty").value = sessionStorage.getItem("ungani_documents_filter_property") || "";
-      if (document.getElementById("searchBox")) document.getElementById("searchBox").value = sessionStorage.getItem("ungani_documents_search") || "";
+    function clearDocumentForm() {
+      editingDocumentId = null;
+
+      const title = document.getElementById("documentFormTitle");
+      if (title) title.innerText = "Add Document";
+
+      if (document.getElementById("documentTitle")) document.getElementById("documentTitle").value = "";
+      if (document.getElementById("documentType")) document.getElementById("documentType").value = businessPreset.documentTypes[0] || "Business Document";
+      if (document.getElementById("documentDate")) document.getElementById("documentDate").value = "";
+      if (document.getElementById("documentStatus")) document.getElementById("documentStatus").value = "active";
+      if (document.getElementById("documentFileName")) document.getElementById("documentFileName").value = "";
+      if (document.getElementById("documentFileUrl")) document.getElementById("documentFileUrl").value = "";
+      if (document.getElementById("documentFolder")) document.getElementById("documentFolder").value = "";
+      if (document.getElementById("documentRelatedPerson")) document.getElementById("documentRelatedPerson").value = "";
+      if (document.getElementById("documentRelatedItem")) document.getElementById("documentRelatedItem").value = "";
+      if (document.getElementById("documentNotes")) document.getElementById("documentNotes").value = "";
     }
 
-    function saveFilters() {
-      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_documents_filter_type", UnganiClientShared.value("filterType"));
-      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_documents_filter_status", UnganiClientShared.value("filterStatus"));
-      if (document.getElementById("filterProperty")) sessionStorage.setItem("ungani_documents_filter_property", UnganiClientShared.value("filterProperty"));
-      if (document.getElementById("searchBox")) sessionStorage.setItem("ungani_documents_search", UnganiClientShared.value("searchBox"));
+    function getDocumentTitle(row) {
+      return UnganiClientShared.getValue(row, ["document_title", "title", "name", "file_name"], "Document");
     }
 
-    function resetFilters() {
-      sessionStorage.removeItem("ungani_documents_filter_type");
-      sessionStorage.removeItem("ungani_documents_filter_status");
-      sessionStorage.removeItem("ungani_documents_filter_property");
-      sessionStorage.removeItem("ungani_documents_search");
-      renderDocumentsPage();
-      UnganiClientShared.showToast("Filters reset ✓");
-    }
-
-    function badge(text, color) {
-      return `<span class="ungani-badge ${UnganiClientShared.attr(color || "blue")}">${UnganiClientShared.safe(text)}</span>`;
-    }
-
-    function statusColor(status) {
+    function statusBadge(status) {
       const lower = String(status || "").toLowerCase();
 
-      if (lower.includes("active")) return "green";
-      if (lower.includes("pending") || lower.includes("review")) return "orange";
-      if (lower.includes("expired") || lower.includes("archived")) return "red";
-
-      return "blue";
-    }
-
-    function miniDetail(label, value) {
-      return `
-        <div class="ungani-card" style="margin-bottom:0;box-shadow:none;padding:14px;">
-          <p class="ungani-small" style="margin:0 0 5px;">${UnganiClientShared.safe(label)}</p>
-          <strong>${UnganiClientShared.safe(value)}</strong>
-        </div>
-      `;
-    }
-
-    function toTitle(value) {
-      return String(value || "")
-        .replace(/_/g, " ")
-        .replace(/\w\S*/g, function (text) {
-          return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
-        });
-    }
-
-    function setValue(id, value) {
-      const element = document.getElementById(id);
-
-      if (element) {
-        element.value = value === null || value === undefined ? "" : value;
+      if (lower.includes("active") || lower.includes("uploaded") || lower.includes("completed")) {
+        return `<span class="ungani-badge green">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status))}</span>`;
       }
+
+      if (lower.includes("expired") || lower.includes("missing") || lower.includes("cancelled") || lower.includes("failed")) {
+        return `<span class="ungani-badge red">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status))}</span>`;
+      }
+
+      if (lower.includes("pending") || lower.includes("review")) {
+        return `<span class="ungani-badge gold">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status))}</span>`;
+      }
+
+      return `<span class="ungani-badge blue">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status || "active"))}</span>`;
     }
 
-    function scrollToForm() {
-      setTimeout(function () {
-        const card = document.getElementById("documentFormCard");
-
-        if (card) {
-          card.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 100);
+    function hasValues(rows) {
+      return (rows || []).some(function (row) {
+        return Number(row.value || 0) > 0;
+      });
     }
   </script>
 </body>
