@@ -4,24 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>UNGANI OS - Tasks / Follow-ups</title>
+  <title>UNGANI OS - Tasks</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-shared.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
 </head>
 
 <body>
   <script>
     let currentContext = null;
-    let tasks = [];
-    let currentEditId = null;
-    let isRealEstate = false;
+    let businessPreset = null;
+    let taskRows = [];
+    let editingTaskId = null;
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "tasks",
-        pageTitle: "Tasks / Follow-ups",
-        pageSubtitle: "Manage follow-ups, reminders, responsibilities, viewings, document collection, and business tasks.",
+        pageTitle: "Tasks",
+        pageSubtitle: "Manage tasks, follow-ups, reminders, and work progress.",
         onReady: startTasksPage
       });
     });
@@ -29,104 +31,329 @@
     async function startTasksPage(context) {
       currentContext = context;
 
-      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
-      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
+      if (window.UnganiAnalytics) {
+        UnganiAnalytics.injectChartStyles();
+      }
 
-      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+      businessPreset = UnganiPresets.getPreset(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
 
       if (titleEl) {
-        titleEl.innerText = isRealEstate ? "Property Tasks / Follow-ups" : "Tasks / Follow-ups";
+        titleEl.innerText = businessPreset.tasksLabel;
       }
 
       if (subEl) {
-        subEl.innerText = isRealEstate
-          ? "Track property follow-ups, viewing tasks, document collection, rent reminders, project tasks, and agent responsibilities."
-          : "Track business follow-ups, responsibilities, reminders, and operational tasks.";
+        subEl.innerText = "Tasks, follow-ups, reminders, and deadlines for " + businessPreset.name + ".";
       }
 
-      await loadTasks();
+      await loadTaskRows();
     }
 
-    async function loadTasks() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading tasks and follow-ups...");
+    async function loadTaskRows() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading tasks...");
 
       const response = await currentContext.supabaseClient
         .from("tasks")
         .select("*")
         .eq("tenant_id", currentContext.tenantId)
-        .order("due_date", { ascending: true })
         .order("created_at", { ascending: false });
 
       if (response.error) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load tasks", response.error.message);
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load tasks", response.error.message)
+        );
         return;
       }
 
-      tasks = response.data || [];
+      taskRows = response.data || [];
       renderTasksPage();
     }
 
     function renderTasksPage() {
-      const filtered = filterTasks();
-      const summary = calculateSummary();
+      const filteredRows = getFilteredRows();
+      const summary = calculateTaskSummary(filteredRows);
+      const statusRows = buildStatusRows(filteredRows);
+      const priorityRows = buildPriorityRows(filteredRows);
 
       UnganiClientShared.setContent(`
-        <section class="ungani-card ungani-hero">
-          <h2>${isRealEstate ? "Property Follow-ups & Tasks" : "Tasks & Follow-ups"}</h2>
-          <p>
-            ${isRealEstate
-              ? "Use this section for property viewing follow-ups, client calls, agent tasks, document collection, payment reminders, rent reminders, and project deadlines."
-              : "Use this section for business follow-ups, reminders, operational tasks, assignments, and deadlines."
-            }
-          </p>
+        <style>
+          .tasks-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+            gap: 18px;
+            align-items: stretch;
+          }
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="scrollToForm()">${currentEditId ? "Update Task" : "Add Task"}</button>
-            <a class="ungani-btn green" href="my-calendar.html">Calendar</a>
-            <a class="ungani-btn dark" href="my-records.html">Records</a>
+          .tasks-preset-box {
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.09);
+            border-radius: 24px;
+            padding: 18px;
+          }
+
+          .tasks-preset-box h3 {
+            color: white;
+            margin: 0 0 8px;
+          }
+
+          .tasks-preset-box p {
+            color: rgba(255,255,255,0.74);
+            margin: 0;
+            line-height: 1.55;
+          }
+
+          .task-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+          }
+
+          .task-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 8px 11px;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            font-size: 12px;
+            font-weight: 850;
+          }
+
+          .task-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .task-kpi-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            box-shadow: var(--ungani-shadow);
+            padding: 20px;
+            min-height: 140px;
+          }
+
+          .task-kpi-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 5px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent);
+          }
+
+          .task-kpi-card span {
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.055em;
+          }
+
+          .task-kpi-card h3 {
+            margin: 17px 0 8px;
+            font-size: clamp(25px, 3vw, 36px);
+            line-height: 1;
+            letter-spacing: -0.055em;
+          }
+
+          .task-kpi-card p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .task-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .task-form-grid .wide {
+            grid-column: span 3;
+          }
+
+          .task-main-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(320px, 0.52fr);
+            gap: 18px;
+            align-items: start;
+          }
+
+          .task-chart-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+            margin-bottom: 18px;
+            align-items: start;
+          }
+
+          .task-type-section {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+          }
+
+          .type-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+
+          .type-pill {
+            border: 1px solid var(--ungani-border);
+            background: var(--ungani-soft);
+            color: var(--ungani-text);
+            border-radius: 999px;
+            padding: 8px 11px;
+            font-size: 12px;
+            font-weight: 850;
+            cursor: pointer;
+          }
+
+          .type-pill:hover {
+            border-color: rgba(212,166,58,0.65);
+          }
+
+          .task-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          .task-card {
+            border: 1px solid var(--ungani-border);
+            border-radius: 22px;
+            padding: 16px;
+            background: var(--ungani-card);
+            box-shadow: var(--ungani-shadow);
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 14px;
+            align-items: start;
+          }
+
+          .task-card:hover {
+            border-color: rgba(212,166,58,0.55);
+          }
+
+          .task-title-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+          }
+
+          .task-title-row h3 {
+            margin: 0;
+            font-size: 18px;
+          }
+
+          .task-meta-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+          }
+
+          .task-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+          }
+
+          @media (max-width: 1180px) {
+            .tasks-hero-grid,
+            .task-main-grid,
+            .task-chart-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .task-kpi-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 720px) {
+            .task-kpi-grid,
+            .task-form-grid,
+            .task-card {
+              grid-template-columns: 1fr;
+            }
+
+            .task-form-grid .wide {
+              grid-column: span 1;
+            }
+
+            .task-actions {
+              justify-content: flex-start;
+            }
+          }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <div class="tasks-hero-grid">
+            <div>
+              <span class="ungani-badge gold">${UnganiClientShared.safe(businessPreset.name)}</span>
+              <h2 style="font-size:clamp(32px,4vw,52px);line-height:1.02;margin:18px 0 12px;">
+                Tasks that match your business workflow.
+              </h2>
+              <p>
+                Create follow-ups, reminders, operational tasks, deadlines, and work actions using presets for ${UnganiClientShared.safe(businessPreset.name)}.
+              </p>
+
+              <div class="ungani-button-row">
+                <button class="ungani-btn gold" onclick="scrollToTaskForm()">Add Task</button>
+                <button class="ungani-btn green" onclick="loadTaskRows()">Refresh</button>
+                <a class="ungani-btn light" href="my-charts.html">View Charts</a>
+              </div>
+            </div>
+
+            <div class="tasks-preset-box">
+              <h3>Business task preset active</h3>
+              <p>The task types on this page now adapt to the business type selected by the client.</p>
+
+              <div class="task-chip-row">
+                ${businessPreset.taskTypes.slice(0, 6).map(function (item) {
+                  return `<span class="task-chip">${UnganiClientShared.safe(item)}</span>`;
+                }).join("")}
+              </div>
+            </div>
           </div>
         </section>
 
-        <section class="ungani-grid">
-          ${UnganiClientShared.metricCard("Total Tasks", tasks.length, "All saved tasks", "blue")}
-          ${UnganiClientShared.metricCard("Pending", summary.pending, "Tasks still open", summary.pending > 0 ? "orange" : "green")}
-          ${UnganiClientShared.metricCard("Due Today", summary.today, "Tasks due today", summary.today > 0 ? "orange" : "green")}
-          ${UnganiClientShared.metricCard("Overdue", summary.overdue, "Tasks past due date", summary.overdue > 0 ? "red" : "green")}
-          ${UnganiClientShared.metricCard("High Priority", summary.highPriority, "Important tasks", summary.highPriority > 0 ? "red" : "green")}
-          ${UnganiClientShared.metricCard("Completed", summary.completed, "Finished tasks", "green")}
+        <section class="task-kpi-grid">
+          ${taskKpi("Pending", summary.pending, "Tasks not completed", "#D4A63A")}
+          ${taskKpi("In Progress", summary.inProgress, "Work currently moving", "#2563EB")}
+          ${taskKpi("Completed", summary.completed, "Finished tasks", "#16A34A")}
+          ${taskKpi("Overdue", summary.overdue, "Needs attention", summary.overdue > 0 ? "#DC2626" : "#16A34A")}
         </section>
 
         <section class="ungani-card">
           <div class="ungani-section-title">
-            <h3>Filters</h3>
-            <button class="ungani-btn dark" onclick="resetFilters()">Reset Filters</button>
-          </div>
-
-          <div class="ungani-form-grid">
             <div>
-              <label for="filterType">Task Type</label>
-              <select id="filterType" onchange="saveFilters(); renderTasksPage();">
-                <option value="">All Types</option>
-                <option value="follow up">Follow Up</option>
-                <option value="viewing">Viewing</option>
-                <option value="site visit">Site Visit</option>
-                <option value="document collection">Document Collection</option>
-                <option value="payment reminder">Payment Reminder</option>
-                <option value="rent reminder">Rent Reminder</option>
-                <option value="project task">Project Task</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="client call">Client Call</option>
-                <option value="general">General</option>
-              </select>
+              <h3>Filters</h3>
+              <p class="ungani-small">Search and filter this business task view.</p>
             </div>
 
+            <button class="ungani-btn dark" onclick="resetTaskFilters()">Reset Filters</button>
+          </div>
+
+          <div class="task-form-grid">
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveFilters(); renderTasksPage();">
-                <option value="">All Statuses</option>
+              <select id="filterStatus" onchange="saveTaskFilters(); renderTasksPage();">
+                <option value="">All Status</option>
                 <option value="pending">Pending</option>
                 <option value="in progress">In Progress</option>
                 <option value="completed">Completed</option>
@@ -136,8 +363,8 @@
 
             <div>
               <label for="filterPriority">Priority</label>
-              <select id="filterPriority" onchange="saveFilters(); renderTasksPage();">
-                <option value="">All Priorities</option>
+              <select id="filterPriority" onchange="saveTaskFilters(); renderTasksPage();">
+                <option value="">All Priority</option>
                 <option value="low">Low</option>
                 <option value="normal">Normal</option>
                 <option value="high">High</option>
@@ -146,537 +373,579 @@
             </div>
 
             <div>
-              <label for="searchBox">Search</label>
-              <input id="searchBox" placeholder="Search task, property, agent, lead..." oninput="saveFilters(); renderTasksPage();" />
+              <label for="filterSearch">Search</label>
+              <input id="filterSearch" placeholder="Search task, type, assigned person..." oninput="saveTaskFilters(); renderTasksPage();" />
             </div>
           </div>
         </section>
 
-        <section id="taskFormCard" class="ungani-card">
-          <div class="ungani-section-title">
-            <h3>${currentEditId ? "Update Task" : "Add Task"}</h3>
-            ${currentEditId ? '<button class="ungani-btn dark" onclick="cancelEdit()">Cancel Edit</button>' : ""}
+        <section class="task-chart-grid">
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Task Status</h3>
+                <p class="ungani-small">Animated chart showing task progress.</p>
+              </div>
+            </div>
+
+            ${hasValues(statusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="taskStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add tasks to show task status.")}
           </div>
 
-          ${renderTaskForm()}
+          <div class="ungani-card ungani-chart-card">
+            <div class="ungani-chart-head">
+              <div>
+                <h3>Priority Breakdown</h3>
+                <p class="ungani-small">Urgent and high-priority tasks are easy to spot.</p>
+              </div>
+            </div>
+
+            ${hasValues(priorityRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="taskPriorityChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add tasks to show priority breakdown.")}
+          </div>
         </section>
 
-        <section class="ungani-two-col">
+        <section class="task-type-section">
           <div class="ungani-card">
             <div class="ungani-section-title">
               <div>
-                <h3>${isRealEstate ? "Property Tasks / Follow-ups" : "Task Records"}</h3>
-                <p class="ungani-small">${filtered.length} task(s) shown</p>
+                <h3>Task Types</h3>
+                <p class="ungani-small">Quick-fill task types for ${UnganiClientShared.safe(businessPreset.name)}.</p>
               </div>
-
-              <button class="ungani-btn green" onclick="loadTasks()">Refresh</button>
             </div>
 
-            ${renderTaskList(filtered)}
+            <div class="type-list">
+              ${businessPreset.taskTypes.map(function (item) {
+                return `<button class="type-pill" onclick="quickTaskType('${UnganiClientShared.attr(item)}')">${UnganiClientShared.safe(item)}</button>`;
+              }).join("")}
+            </div>
+          </div>
+        </section>
+
+        <section class="task-main-grid">
+          <div class="ungani-card" id="taskFormCard">
+            <div class="ungani-section-title">
+              <div>
+                <h3 id="taskFormTitle">${editingTaskId ? "Edit Task" : "Add Task"}</h3>
+                <p class="ungani-small">Use business-specific task types so reports and charts make sense.</p>
+              </div>
+
+              <button class="ungani-btn dark" onclick="clearTaskForm()">Clear</button>
+            </div>
+
+            <form onsubmit="saveTaskRecord(event)">
+              <div class="task-form-grid">
+                <div class="wide">
+                  <label for="taskTitle">Task Title</label>
+                  <input id="taskTitle" placeholder="Example: Follow up with client, collect document, confirm delivery..." required />
+                </div>
+
+                <div>
+                  <label for="taskType">Task Type</label>
+                  <select id="taskType">
+                    ${businessPreset.taskTypes.map(function (item) {
+                      return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+                    }).join("")}
+                  </select>
+                </div>
+
+                <div>
+                  <label for="taskPriority">Priority</label>
+                  <select id="taskPriority">
+                    <option value="low">Low</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="taskStatus">Status</label>
+                  <select id="taskStatus">
+                    <option value="pending">Pending</option>
+                    <option value="in progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="taskDueDate">Due Date</label>
+                  <input id="taskDueDate" type="date" />
+                </div>
+
+                <div>
+                  <label for="taskAssignedTo">Assigned To</label>
+                  <input id="taskAssignedTo" placeholder="Staff, driver, agent, stylist, manager..." />
+                </div>
+
+                <div>
+                  <label for="taskRelatedPerson">Related Person</label>
+                  <input id="taskRelatedPerson" placeholder="Client, supplier, customer, lead..." />
+                </div>
+
+                <div>
+                  <label for="taskRelatedItem">Related Item / Work</label>
+                  <input id="taskRelatedItem" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)}" />
+                </div>
+
+                <div class="wide">
+                  <label for="taskNotes">Notes</label>
+                  <textarea id="taskNotes" rows="4" placeholder="Add instructions, context, follow-up details, or next steps..."></textarea>
+                </div>
+              </div>
+
+              <div class="ungani-button-row" style="margin-top:16px;">
+                <button class="ungani-btn gold" type="submit">${editingTaskId ? "Update Task" : "Save Task"}</button>
+                <button class="ungani-btn dark" type="button" onclick="clearTaskForm()">Cancel</button>
+              </div>
+            </form>
           </div>
 
           <div class="ungani-card">
             <div class="ungani-section-title">
-              <h3>Task Summary</h3>
+              <div>
+                <h3>Task Guide</h3>
+                <p class="ungani-small">How to keep work organized.</p>
+              </div>
             </div>
 
-            ${renderSummaryPanel(filtered)}
+            <div class="ungani-empty" style="text-align:left;">
+              <h3>Use clear task types</h3>
+              <p>Task types help the Dashboard, Charts, Reports, and Activity Feed explain what is happening in the business.</p>
+            </div>
+
+            <div style="display:grid;gap:10px;margin-top:12px;">
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Example task</strong>
+                <p class="ungani-small">${UnganiClientShared.safe(businessPreset.taskTypes[0] || "Follow-up")}</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Priority rule</strong>
+                <p class="ungani-small">Use red/urgent only for work that truly needs attention.</p>
+              </div>
+
+              <div class="ungani-card" style="box-shadow:none;">
+                <strong>Reports</strong>
+                <p class="ungani-small">Completed, pending, and overdue tasks appear in client reports.</p>
+              </div>
+            </div>
           </div>
         </section>
 
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Task List</h3>
+              <p class="ungani-small">${filteredRows.length} task(s) shown.</p>
+            </div>
+
+            <button class="ungani-btn green" onclick="loadTaskRows()">Refresh</button>
+          </div>
+
+          ${renderTaskList(filteredRows)}
+        </section>
+
         <p class="ungani-small">
-          Tasks Version: Step 305G Shared Layout · ungani.com · info@ungani.com
+          Tasks Version: Step 310B-2 Business-Type Task Presets · ungani.com · info@ungani.com
         </p>
       `);
 
-      restoreFilters();
-      fillEditForm();
+      restoreTaskFilters();
+
+      setTimeout(function () {
+        renderTaskCharts(statusRows, priorityRows);
+      }, 150);
     }
 
-    function renderTaskForm() {
-      return `
-        <form id="taskForm" onsubmit="saveTask(event)">
-          <div class="ungani-form-grid">
-            <div>
-              <label for="taskTitle">Task Title</label>
-              <input id="taskTitle" required placeholder="Example: Follow up with Kevin Demo Buyer" />
-            </div>
+    async function renderTaskCharts(statusRows, priorityRows) {
+      try {
+        if (hasValues(statusRows)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("taskStatusChart", statusRows);
+        }
 
-            <div>
-              <label for="taskType">Task Type</label>
-              <select id="taskType">
-                <option value="follow up">Follow Up</option>
-                <option value="viewing">Viewing</option>
-                <option value="site visit">Site Visit</option>
-                <option value="document collection">Document Collection</option>
-                <option value="payment reminder">Payment Reminder</option>
-                <option value="rent reminder">Rent Reminder</option>
-                <option value="project task">Project Task</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="client call">Client Call</option>
-                <option value="general">General</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="status">Status</label>
-              <select id="status">
-                <option value="pending">Pending</option>
-                <option value="in progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="priority">Priority</label>
-              <select id="priority">
-                <option value="normal">Normal</option>
-                <option value="low">Low</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="dueDate">Due Date</label>
-              <input id="dueDate" type="date" />
-            </div>
-
-            <div>
-              <label for="followUpType">Follow-up Type</label>
-              <input id="followUpType" placeholder="Example: Call / WhatsApp / Visit / Email" />
-            </div>
-
-            <div>
-              <label for="propertyName">Property Name</label>
-              <input id="propertyName" placeholder="Example: Clove Garden A12" />
-            </div>
-
-            <div>
-              <label for="projectName">Project Name</label>
-              <input id="projectName" placeholder="Example: Clove Garden" />
-            </div>
-
-            <div>
-              <label for="leadName">Lead / Client Name</label>
-              <input id="leadName" placeholder="Example: Kevin Demo Buyer" />
-            </div>
-
-            <div>
-              <label for="assignedAgent">${isRealEstate ? "Assigned Agent" : "Assigned Person"}</label>
-              <input id="assignedAgent" placeholder="Example: Brian Otieno" />
-            </div>
-
-            <div>
-              <label for="viewingDate">Viewing / Site Visit Date</label>
-              <input id="viewingDate" type="date" />
-            </div>
-          </div>
-
-          <label for="description">Description</label>
-          <textarea id="description" placeholder="${isRealEstate ? "Add details about the viewing, follow-up, document collection, rent reminder, or project task..." : "Add details about this task..."}"></textarea>
-
-          <label for="notes">Internal Notes</label>
-          <textarea id="notes" placeholder="Add internal notes, next steps, or important details..."></textarea>
-
-          <div class="ungani-button-row">
-            <button class="ungani-btn green" type="submit">${currentEditId ? "Update Task" : "Add Task"}</button>
-            ${currentEditId ? '<button class="ungani-btn dark" type="button" onclick="cancelEdit()">Cancel</button>' : ""}
-          </div>
-        </form>
-      `;
+        if (hasValues(priorityRows)) {
+          await UnganiAnalytics.renderDoughnutStatusChart("taskPriorityChart", priorityRows);
+        }
+      } catch (error) {
+        console.warn("Task charts warning:", error.message);
+      }
     }
 
     function renderTaskList(rows) {
-      if (rows.length === 0) {
+      if (!rows || rows.length === 0) {
         return `
           <div class="ungani-empty">
-            <h3>No tasks found</h3>
-            <p>Add your first task, viewing follow-up, document collection reminder, or project task above.</p>
+            <h3>No tasks yet</h3>
+            <p>Add your first task, follow-up, reminder, or deadline.</p>
           </div>
         `;
       }
 
-      return rows.map(function (row) {
-        return renderTaskCard(row);
-      }).join("");
-    }
-
-    function renderTaskCard(row) {
-      const title = UnganiClientShared.getValue(row, ["task_title", "title", "name"], "Task");
-      const type = UnganiClientShared.getValue(row, ["task_type"], "general");
-      const status = UnganiClientShared.getValue(row, ["status"], "pending");
-      const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
-      const dueDate = UnganiClientShared.getValue(row, ["due_date"], "");
-      const property = UnganiClientShared.getValue(row, ["property_name"], "");
-      const project = UnganiClientShared.getValue(row, ["project_name"], "");
-      const agent = UnganiClientShared.getValue(row, ["assigned_agent"], "");
-      const lead = UnganiClientShared.getValue(row, ["lead_name"], "");
-      const viewingDate = UnganiClientShared.getValue(row, ["viewing_date"], "");
-      const followUpType = UnganiClientShared.getValue(row, ["follow_up_type"], "");
-      const description = UnganiClientShared.getValue(row, ["description"], "");
-      const notes = UnganiClientShared.getValue(row, ["notes"], "");
-
       return `
-        <div class="ungani-card" style="box-shadow:none;">
-          <div class="ungani-section-title">
-            <div>
-              <h3>${UnganiClientShared.safe(title)}</h3>
-              <p class="ungani-small">
-                ${UnganiClientShared.safe(type)}
-                ${property ? " · " + UnganiClientShared.safe(property) : ""}
-                ${lead ? " · " + UnganiClientShared.safe(lead) : ""}
-              </p>
-            </div>
+        <div class="task-list">
+          ${rows.map(function (row) {
+            const title = getTaskTitle(row);
+            const type = UnganiClientShared.getValue(row, ["task_type", "type"], "General Task");
+            const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
+            const status = UnganiClientShared.getValue(row, ["status"], "pending");
+            const due = UnganiClientShared.getValue(row, ["due_date"], "");
+            const assigned = UnganiClientShared.getValue(row, ["assigned_to"], "");
+            const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
+            const relatedItem = UnganiClientShared.getValue(row, ["related_item"], "");
+            const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
-            <div>
-              ${badge(type, "blue")}
-              ${badge(status, statusColor(status))}
-              ${badge(priority, priorityColor(priority))}
-            </div>
-          </div>
+            return `
+              <div class="task-card">
+                <div>
+                  <div class="task-title-row">
+                    ${statusBadge(status, due)}
+                    ${priorityBadge(priority)}
+                    <h3>${UnganiClientShared.safe(title)}</h3>
+                  </div>
 
-          <section class="ungani-grid">
-            ${miniDetail("Due Date", UnganiClientShared.formatDate(dueDate))}
-            ${miniDetail("Property", property || "N/A")}
-            ${miniDetail("Project", project || "N/A")}
-            ${miniDetail("Lead / Client", lead || "N/A")}
-            ${miniDetail(isRealEstate ? "Assigned Agent" : "Assigned Person", agent || "N/A")}
-            ${miniDetail("Viewing / Site Visit", UnganiClientShared.formatDate(viewingDate))}
-            ${miniDetail("Follow-up Type", followUpType || "N/A")}
-          </section>
+                  <p class="ungani-small" style="margin:0;">
+                    ${UnganiClientShared.safe(notes || "No notes added.")}
+                  </p>
 
-          ${description ? `<p class="ungani-small" style="margin-top:12px;"><strong>Description:</strong> ${UnganiClientShared.safe(description)}</p>` : ""}
-          ${notes ? `<p class="ungani-small"><strong>Notes:</strong> ${UnganiClientShared.safe(notes)}</p>` : ""}
+                  <div class="task-meta-grid">
+                    <span class="ungani-badge gold">${UnganiClientShared.safe(type)}</span>
+                    <span class="ungani-badge blue">Due: ${UnganiClientShared.safe(due ? UnganiClientShared.formatDate(due) : "No date")}</span>
+                    ${assigned ? `<span class="ungani-badge green">Assigned: ${UnganiClientShared.safe(assigned)}</span>` : ""}
+                    ${relatedPerson ? `<span class="ungani-badge gold">Person: ${UnganiClientShared.safe(relatedPerson)}</span>` : ""}
+                    ${relatedItem ? `<span class="ungani-badge blue">Related: ${UnganiClientShared.safe(relatedItem)}</span>` : ""}
+                  </div>
+                </div>
 
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="editTask('${UnganiClientShared.attr(row.id)}')">Edit</button>
-            <button class="ungani-btn orange" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'in progress')">In Progress</button>
-            <button class="ungani-btn green" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'completed')">Completed</button>
-            <button class="ungani-btn red" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'cancelled')">Cancelled</button>
-          </div>
+                <div class="task-actions">
+                  ${status.toLowerCase() !== "completed" ? `<button class="ungani-btn small green" onclick="markTaskCompleted('${UnganiClientShared.attr(row.id)}')">Done</button>` : ""}
+                  <button class="ungani-btn small gold" onclick="editTaskRecord('${UnganiClientShared.attr(row.id)}')">Edit</button>
+                  <button class="ungani-btn small red" onclick="deleteTaskRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>
+                </div>
+              </div>
+            `;
+          }).join("")}
         </div>
       `;
     }
 
-    function renderSummaryPanel(rows) {
-      const typeSummary = {};
-      const statusSummary = {};
-
-      rows.forEach(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["task_type"], "general")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
-
-        typeSummary[type] = (typeSummary[type] || 0) + 1;
-        statusSummary[status] = (statusSummary[status] || 0) + 1;
-      });
-
-      const typeKeys = Object.keys(typeSummary);
-      const statusKeys = Object.keys(statusSummary);
-
-      if (typeKeys.length === 0 && statusKeys.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No summary yet</h3>
-            <p>Summary will appear when tasks are added.</p>
-          </div>
-        `;
-      }
-
-      let html = `<h3 style="margin-top:0;color:var(--ungani-text);">By Task Type</h3>`;
-
-      html += typeKeys.map(function (key) {
-        return `
-          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-            <strong>${UnganiClientShared.safe(toTitle(key))}</strong>
-            <p class="ungani-small" style="margin:5px 0 0;">${typeSummary[key]} task(s)</p>
-          </div>
-        `;
-      }).join("");
-
-      html += `<h3 style="color:var(--ungani-text);">By Status</h3>`;
-
-      html += statusKeys.map(function (key) {
-        return `
-          <div class="ungani-card" style="box-shadow:none;margin-bottom:10px;">
-            <strong>${UnganiClientShared.safe(toTitle(key))}</strong>
-            <p class="ungani-small" style="margin:5px 0 0;">${statusSummary[key]} task(s)</p>
-          </div>
-        `;
-      }).join("");
-
-      return html;
+    function taskKpi(title, value, subtitle, accent) {
+      return `
+        <div class="task-kpi-card" style="--accent:${UnganiClientShared.attr(accent)};">
+          <span>${UnganiClientShared.safe(title)}</span>
+          <h3>${UnganiClientShared.safe(value)}</h3>
+          <p>${UnganiClientShared.safe(subtitle)}</p>
+        </div>
+      `;
     }
 
-    function calculateSummary() {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
+    function calculateTaskSummary(rows) {
+      const today = new Date().toISOString().slice(0, 10);
       let pending = 0;
+      let inProgress = 0;
       let completed = 0;
-      let todayCount = 0;
       let overdue = 0;
-      let highPriority = 0;
 
-      tasks.forEach(function (row) {
+      rows.forEach(function (row) {
         const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
-        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
-        const dueValue = UnganiClientShared.getValue(row, ["due_date"], "");
+        const due = String(UnganiClientShared.getValue(row, ["due_date"], "")).slice(0, 10);
 
-        if (status === "completed") completed++;
-        if (status !== "completed" && status !== "cancelled") pending++;
-        if (priority === "high" || priority === "urgent") highPriority++;
+        if (status.includes("completed")) {
+          completed++;
+        } else if (status.includes("progress")) {
+          inProgress++;
+        } else if (!status.includes("cancelled")) {
+          pending++;
+        }
 
-        if (dueValue) {
-          const dueDate = new Date(dueValue);
-          dueDate.setHours(0, 0, 0, 0);
-
-          if (!isNaN(dueDate.getTime())) {
-            if (dueDate.getTime() === today.getTime()) todayCount++;
-            if (dueDate < today && status !== "completed" && status !== "cancelled") overdue++;
-          }
+        if (due && due < today && !status.includes("completed") && !status.includes("cancelled")) {
+          overdue++;
         }
       });
 
-      return {
-        pending: pending,
-        completed: completed,
-        today: todayCount,
-        overdue: overdue,
-        highPriority: highPriority
-      };
+      return { pending, inProgress, completed, overdue };
     }
 
-    function filterTasks() {
-      const filterType = document.getElementById("filterType") ? UnganiClientShared.value("filterType").toLowerCase() : "";
-      const filterStatus = document.getElementById("filterStatus") ? UnganiClientShared.value("filterStatus").toLowerCase() : "";
-      const filterPriority = document.getElementById("filterPriority") ? UnganiClientShared.value("filterPriority").toLowerCase() : "";
-      const query = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
+    function buildStatusRows(rows) {
+      const today = new Date().toISOString().slice(0, 10);
+      const map = {
+        Pending: 0,
+        "In Progress": 0,
+        Completed: 0,
+        Overdue: 0
+      };
 
-      return tasks.filter(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["task_type"], "")).toLowerCase();
-        const status = String(UnganiClientShared.getValue(row, ["status"], "")).toLowerCase();
-        const priority = String(UnganiClientShared.getValue(row, ["priority"], "")).toLowerCase();
+      rows.forEach(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
+        const due = String(UnganiClientShared.getValue(row, ["due_date"], "")).slice(0, 10);
 
-        const haystack = [
-          UnganiClientShared.getValue(row, ["task_title", "title", "name"], ""),
-          type,
-          status,
-          priority,
-          UnganiClientShared.getValue(row, ["property_name"], ""),
-          UnganiClientShared.getValue(row, ["project_name"], ""),
-          UnganiClientShared.getValue(row, ["assigned_agent"], ""),
-          UnganiClientShared.getValue(row, ["lead_name"], ""),
-          UnganiClientShared.getValue(row, ["follow_up_type"], ""),
-          UnganiClientShared.getValue(row, ["description"], ""),
-          UnganiClientShared.getValue(row, ["notes"], "")
-        ].join(" ").toLowerCase();
+        if (due && due < today && !status.includes("completed") && !status.includes("cancelled")) {
+          map.Overdue += 1;
+        }
 
-        if (filterType && type !== filterType) return false;
-        if (filterStatus && status !== filterStatus) return false;
-        if (filterPriority && priority !== filterPriority) return false;
-        if (query && !haystack.includes(query)) return false;
+        if (status.includes("completed")) {
+          map.Completed += 1;
+        } else if (status.includes("progress")) {
+          map["In Progress"] += 1;
+        } else if (!status.includes("cancelled")) {
+          map.Pending += 1;
+        }
+      });
+
+      return UnganiAnalytics.mapToRows(map);
+    }
+
+    function buildPriorityRows(rows) {
+      const map = {};
+
+      rows.forEach(function (row) {
+        const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
+        map[priority] = (map[priority] || 0) + 1;
+      });
+
+      return UnganiAnalytics.mapToRows(map);
+    }
+
+    function getFilteredRows() {
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_task_filter_status").toLowerCase();
+      const filterPriority = getStoredOrInput("filterPriority", "ungani_task_filter_priority").toLowerCase();
+      const search = getStoredOrInput("filterSearch", "ungani_task_filter_search").toLowerCase();
+
+      return taskRows.filter(function (row) {
+        const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
+        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
+        const haystack = JSON.stringify(row || {}).toLowerCase();
+
+        if (filterStatus && !status.includes(filterStatus)) return false;
+        if (filterPriority && !priority.includes(filterPriority)) return false;
+        if (search && !haystack.includes(search)) return false;
 
         return true;
       });
     }
 
-    async function saveTask(event) {
+    function getStoredOrInput(inputId, storageKey) {
+      const el = document.getElementById(inputId);
+
+      if (el) {
+        return String(el.value || "").trim();
+      }
+
+      return String(sessionStorage.getItem(storageKey) || "").trim();
+    }
+
+    function saveTaskFilters() {
+      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_task_filter_status", UnganiClientShared.value("filterStatus"));
+      if (document.getElementById("filterPriority")) sessionStorage.setItem("ungani_task_filter_priority", UnganiClientShared.value("filterPriority"));
+      if (document.getElementById("filterSearch")) sessionStorage.setItem("ungani_task_filter_search", UnganiClientShared.value("filterSearch"));
+    }
+
+    function restoreTaskFilters() {
+      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_task_filter_status") || "";
+      if (document.getElementById("filterPriority")) document.getElementById("filterPriority").value = sessionStorage.getItem("ungani_task_filter_priority") || "";
+      if (document.getElementById("filterSearch")) document.getElementById("filterSearch").value = sessionStorage.getItem("ungani_task_filter_search") || "";
+    }
+
+    function resetTaskFilters() {
+      sessionStorage.removeItem("ungani_task_filter_status");
+      sessionStorage.removeItem("ungani_task_filter_priority");
+      sessionStorage.removeItem("ungani_task_filter_search");
+      renderTasksPage();
+      UnganiClientShared.showToast("Task filters reset ✓");
+    }
+
+    function quickTaskType(taskType) {
+      scrollToTaskForm();
+
+      setTimeout(function () {
+        const el = document.getElementById("taskType");
+        if (el) el.value = taskType;
+      }, 150);
+
+      UnganiClientShared.showToast("Task type selected ✓");
+    }
+
+    function scrollToTaskForm() {
+      const el = document.getElementById("taskFormCard");
+
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    async function saveTaskRecord(event) {
       event.preventDefault();
 
       const title = UnganiClientShared.value("taskTitle");
 
       if (!title) {
-        alert("Please enter a task title.");
+        UnganiClientShared.showToast("Enter a task title.");
         return;
       }
 
       const payload = {
-        business_type_key: UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], null),
-        section_key: "tasks_followups",
+        tenant_id: currentContext.tenantId,
         task_title: title,
-        title: title,
-        name: title,
-        task_type: UnganiClientShared.value("taskType") || "general",
-        status: UnganiClientShared.value("status") || "pending",
-        priority: UnganiClientShared.value("priority") || "normal",
-        due_date: UnganiClientShared.value("dueDate") || null,
-        follow_up_type: UnganiClientShared.value("followUpType") || null,
-        property_name: UnganiClientShared.value("propertyName") || null,
-        project_name: UnganiClientShared.value("projectName") || null,
-        lead_name: UnganiClientShared.value("leadName") || null,
-        assigned_agent: UnganiClientShared.value("assignedAgent") || null,
-        viewing_date: UnganiClientShared.value("viewingDate") || null,
-        description: UnganiClientShared.value("description") || null,
-        notes: UnganiClientShared.value("notes") || null,
-        updated_at: new Date().toISOString()
+        task_type: UnganiClientShared.value("taskType") || "General Task",
+        priority: UnganiClientShared.value("taskPriority") || "normal",
+        status: UnganiClientShared.value("taskStatus") || "pending",
+        due_date: UnganiClientShared.value("taskDueDate") || null,
+        assigned_to: UnganiClientShared.value("taskAssignedTo") || null,
+        related_person: UnganiClientShared.value("taskRelatedPerson") || null,
+        related_item: UnganiClientShared.value("taskRelatedItem") || null,
+        notes: UnganiClientShared.value("taskNotes") || null
       };
 
       let response;
 
-      if (currentEditId) {
+      if (editingTaskId) {
         response = await currentContext.supabaseClient
           .from("tasks")
           .update(payload)
-          .eq("id", currentEditId)
+          .eq("id", editingTaskId)
           .eq("tenant_id", currentContext.tenantId);
       } else {
-        payload.tenant_id = currentContext.tenantId;
-        payload.created_by = currentContext.authUser.id;
-        payload.created_at = new Date().toISOString();
-
         response = await currentContext.supabaseClient
           .from("tasks")
-          .insert(payload);
+          .insert([payload]);
       }
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not save task: " + response.error.message);
         return;
       }
 
-      currentEditId = null;
-      UnganiClientShared.showToast("Task saved ✓");
-      await loadTasks();
+      UnganiClientShared.showToast(editingTaskId ? "Task updated ✓" : "Task added ✓");
+      clearTaskForm();
+      await loadTaskRows();
     }
 
-    function fillEditForm() {
-      if (!currentEditId) return;
-
-      const row = tasks.find(function (item) {
-        return String(item.id) === String(currentEditId);
+    function editTaskRecord(id) {
+      const row = taskRows.find(function (item) {
+        return String(item.id) === String(id);
       });
 
-      if (!row) return;
+      if (!row) {
+        UnganiClientShared.showToast("Task not found.");
+        return;
+      }
 
-      setValue("taskTitle", UnganiClientShared.getValue(row, ["task_title", "title", "name"], ""));
-      setValue("taskType", UnganiClientShared.getValue(row, ["task_type"], "general"));
-      setValue("status", UnganiClientShared.getValue(row, ["status"], "pending"));
-      setValue("priority", UnganiClientShared.getValue(row, ["priority"], "normal"));
-      setValue("dueDate", String(UnganiClientShared.getValue(row, ["due_date"], "")).slice(0, 10));
-      setValue("followUpType", UnganiClientShared.getValue(row, ["follow_up_type"], ""));
-      setValue("propertyName", UnganiClientShared.getValue(row, ["property_name"], ""));
-      setValue("projectName", UnganiClientShared.getValue(row, ["project_name"], ""));
-      setValue("leadName", UnganiClientShared.getValue(row, ["lead_name"], ""));
-      setValue("assignedAgent", UnganiClientShared.getValue(row, ["assigned_agent"], ""));
-      setValue("viewingDate", String(UnganiClientShared.getValue(row, ["viewing_date"], "")).slice(0, 10));
-      setValue("description", UnganiClientShared.getValue(row, ["description"], ""));
-      setValue("notes", UnganiClientShared.getValue(row, ["notes"], ""));
+      editingTaskId = row.id;
+
+      scrollToTaskForm();
+
+      setTimeout(function () {
+        document.getElementById("taskFormTitle").innerText = "Edit Task";
+        document.getElementById("taskTitle").value = getTaskTitle(row);
+        document.getElementById("taskType").value = UnganiClientShared.getValue(row, ["task_type", "type"], "");
+        document.getElementById("taskPriority").value = UnganiClientShared.getValue(row, ["priority"], "normal");
+        document.getElementById("taskStatus").value = UnganiClientShared.getValue(row, ["status"], "pending");
+        document.getElementById("taskDueDate").value = String(UnganiClientShared.getValue(row, ["due_date"], "")).slice(0, 10);
+        document.getElementById("taskAssignedTo").value = UnganiClientShared.getValue(row, ["assigned_to"], "");
+        document.getElementById("taskRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person"], "");
+        document.getElementById("taskRelatedItem").value = UnganiClientShared.getValue(row, ["related_item"], "");
+        document.getElementById("taskNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
+      }, 150);
     }
 
-    function editTask(id) {
-      currentEditId = id;
-      renderTasksPage();
-      scrollToForm();
-    }
-
-    function cancelEdit() {
-      currentEditId = null;
-      renderTasksPage();
-      UnganiClientShared.showToast("Edit cancelled");
-    }
-
-    async function quickStatus(id, status) {
+    async function markTaskCompleted(id) {
       const response = await currentContext.supabaseClient
         .from("tasks")
-        .update({
-          status: status,
-          updated_at: new Date().toISOString()
-        })
+        .update({ status: "completed" })
         .eq("id", id)
         .eq("tenant_id", currentContext.tenantId);
 
       if (response.error) {
-        alert(response.error.message);
+        UnganiClientShared.showToast("Could not update task: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Status updated ✓");
-      await loadTasks();
+      UnganiClientShared.showToast("Task marked completed ✓");
+      await loadTaskRows();
     }
 
-    function restoreFilters() {
-      if (document.getElementById("filterType")) document.getElementById("filterType").value = sessionStorage.getItem("ungani_tasks_filter_type") || "";
-      if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_tasks_filter_status") || "";
-      if (document.getElementById("filterPriority")) document.getElementById("filterPriority").value = sessionStorage.getItem("ungani_tasks_filter_priority") || "";
-      if (document.getElementById("searchBox")) document.getElementById("searchBox").value = sessionStorage.getItem("ungani_tasks_search") || "";
-    }
+    async function deleteTaskRecord(id) {
+      const confirmed = confirm("Delete this task?");
 
-    function saveFilters() {
-      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_tasks_filter_type", UnganiClientShared.value("filterType"));
-      if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_tasks_filter_status", UnganiClientShared.value("filterStatus"));
-      if (document.getElementById("filterPriority")) sessionStorage.setItem("ungani_tasks_filter_priority", UnganiClientShared.value("filterPriority"));
-      if (document.getElementById("searchBox")) sessionStorage.setItem("ungani_tasks_search", UnganiClientShared.value("searchBox"));
-    }
+      if (!confirmed) return;
 
-    function resetFilters() {
-      sessionStorage.removeItem("ungani_tasks_filter_type");
-      sessionStorage.removeItem("ungani_tasks_filter_status");
-      sessionStorage.removeItem("ungani_tasks_filter_priority");
-      sessionStorage.removeItem("ungani_tasks_search");
-      renderTasksPage();
-      UnganiClientShared.showToast("Filters reset ✓");
-    }
+      const response = await currentContext.supabaseClient
+        .from("tasks")
+        .delete()
+        .eq("id", id)
+        .eq("tenant_id", currentContext.tenantId);
 
-    function badge(text, color) {
-      return `<span class="ungani-badge ${UnganiClientShared.attr(color || "blue")}">${UnganiClientShared.safe(text)}</span>`;
-    }
-
-    function statusColor(status) {
-      const lower = String(status || "").toLowerCase();
-
-      if (lower.includes("completed")) return "green";
-      if (lower.includes("progress") || lower.includes("pending")) return "orange";
-      if (lower.includes("cancelled")) return "red";
-
-      return "blue";
-    }
-
-    function priorityColor(priority) {
-      const lower = String(priority || "").toLowerCase();
-
-      if (lower === "urgent" || lower === "high") return "red";
-      if (lower === "normal") return "gold";
-      if (lower === "low") return "blue";
-
-      return "blue";
-    }
-
-    function miniDetail(label, value) {
-      return `
-        <div class="ungani-card" style="margin-bottom:0;box-shadow:none;padding:14px;">
-          <p class="ungani-small" style="margin:0 0 5px;">${UnganiClientShared.safe(label)}</p>
-          <strong>${UnganiClientShared.safe(value)}</strong>
-        </div>
-      `;
-    }
-
-    function toTitle(value) {
-      return String(value || "")
-        .replace(/_/g, " ")
-        .replace(/\w\S*/g, function (text) {
-          return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
-        });
-    }
-
-    function setValue(id, value) {
-      const element = document.getElementById(id);
-
-      if (element) {
-        element.value = value === null || value === undefined ? "" : value;
+      if (response.error) {
+        UnganiClientShared.showToast("Could not delete task: " + response.error.message);
+        return;
       }
+
+      UnganiClientShared.showToast("Task deleted ✓");
+      await loadTaskRows();
     }
 
-    function scrollToForm() {
-      setTimeout(function () {
-        const card = document.getElementById("taskFormCard");
+    function clearTaskForm() {
+      editingTaskId = null;
 
-        if (card) {
-          card.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 100);
+      const title = document.getElementById("taskFormTitle");
+      if (title) title.innerText = "Add Task";
+
+      if (document.getElementById("taskTitle")) document.getElementById("taskTitle").value = "";
+      if (document.getElementById("taskType")) document.getElementById("taskType").value = businessPreset.taskTypes[0] || "General Task";
+      if (document.getElementById("taskPriority")) document.getElementById("taskPriority").value = "normal";
+      if (document.getElementById("taskStatus")) document.getElementById("taskStatus").value = "pending";
+      if (document.getElementById("taskDueDate")) document.getElementById("taskDueDate").value = "";
+      if (document.getElementById("taskAssignedTo")) document.getElementById("taskAssignedTo").value = "";
+      if (document.getElementById("taskRelatedPerson")) document.getElementById("taskRelatedPerson").value = "";
+      if (document.getElementById("taskRelatedItem")) document.getElementById("taskRelatedItem").value = "";
+      if (document.getElementById("taskNotes")) document.getElementById("taskNotes").value = "";
+    }
+
+    function getTaskTitle(row) {
+      return UnganiClientShared.getValue(row, ["task_title", "title", "name"], "Task");
+    }
+
+    function statusBadge(status, dueDate) {
+      const lower = String(status || "").toLowerCase();
+      const due = String(dueDate || "").slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+
+      if (due && due < today && !lower.includes("completed") && !lower.includes("cancelled")) {
+        return `<span class="ungani-badge red">Overdue</span>`;
+      }
+
+      if (lower.includes("completed")) {
+        return `<span class="ungani-badge green">Completed</span>`;
+      }
+
+      if (lower.includes("progress")) {
+        return `<span class="ungani-badge blue">In Progress</span>`;
+      }
+
+      if (lower.includes("cancelled")) {
+        return `<span class="ungani-badge red">Cancelled</span>`;
+      }
+
+      return `<span class="ungani-badge gold">Pending</span>`;
+    }
+
+    function priorityBadge(priority) {
+      const lower = String(priority || "normal").toLowerCase();
+
+      if (lower.includes("urgent") || lower.includes("high")) {
+        return `<span class="ungani-badge red">${UnganiClientShared.safe(UnganiAnalytics.toTitle(priority))}</span>`;
+      }
+
+      if (lower.includes("low")) {
+        return `<span class="ungani-badge blue">Low</span>`;
+      }
+
+      return `<span class="ungani-badge gold">Normal</span>`;
+    }
+
+    function hasValues(rows) {
+      return (rows || []).some(function (row) {
+        return Number(row.value || 0) > 0;
+      });
     }
   </script>
 </body>
