@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Login</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --gray: #E5E7EB;
+      --muted: #64748B;
+      --green: #16A34A;
+      --red: #DC2626;
+      --blue: #2563EB;
+      --shadow: 0 28px 80px rgba(6,28,61,0.18);
+      --border: rgba(6,28,61,0.10);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, Arial, sans-serif;
+      color: var(--navy);
+      background:
+        radial-gradient(circle at top right, rgba(212,166,58,0.28), transparent 34%),
+        linear-gradient(135deg, #061C3D 0%, #092B58 48%, #F5F5F3 48%, #F5F5F3 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .login-shell {
+      width: min(1120px, 100%);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 430px;
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .brand-panel {
+      background:
+        radial-gradient(circle at top right, rgba(212,166,58,0.28), transparent 35%),
+        linear-gradient(135deg, rgba(6,28,61,0.98), rgba(8,40,82,0.94));
+      color: white;
+      border-radius: 34px;
+      padding: 34px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,0.14);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 620px;
+    }
+
+    .brand-top {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-top img {
+      width: 68px;
+      height: 68px;
+      object-fit: contain;
+      background: white;
+      border-radius: 20px;
+      padding: 10px;
+    }
+
+    .brand-top h1 {
+      margin: 0;
+      font-size: 26px;
+      letter-spacing: -0.045em;
+    }
+
+    .brand-top p {
+      margin: 4px 0 0;
+      color: rgba(255,255,255,0.66);
+      font-size: 13px;
+    }
+
+    .brand-panel h2 {
+      margin: 38px 0 14px;
+      font-size: clamp(36px, 5vw, 68px);
+      letter-spacing: -0.07em;
+      line-height: 0.98;
+      color: white;
+    }
+
+    .brand-panel .lead {
+      margin: 0;
+      max-width: 620px;
+      color: rgba(255,255,255,0.76);
+      line-height: 1.62;
+      font-size: 16px;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .feature-card {
+      border: 1px solid rgba(255,255,255,0.13);
+      background: rgba(255,255,255,0.09);
+      border-radius: 22px;
+      padding: 15px;
+    }
+
+    .feature-card strong {
+      display: block;
+      color: white;
+      margin-bottom: 6px;
+    }
+
+    .feature-card span {
+      display: block;
+      color: rgba(255,255,255,0.65);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .login-card {
+      background: rgba(255,255,255,0.96);
+      border: 1px solid var(--border);
+      border-radius: 34px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .login-card h2 {
+      margin: 0 0 8px;
+      font-size: 34px;
+      letter-spacing: -0.055em;
+    }
+
+    .login-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .mode-tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 22px 0;
+      background: var(--offwhite);
+      padding: 8px;
+      border-radius: 22px;
+      border: 1px solid var(--gray);
+    }
+
+    .mode-tab {
+      border: 0;
+      border-radius: 16px;
+      padding: 12px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    .mode-tab.active {
+      background: var(--navy);
+      color: white;
+      box-shadow: 0 12px 30px rgba(6,28,61,0.16);
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 900;
+      margin: 14px 0 7px;
+      color: var(--navy);
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--gray);
+      border-radius: 18px;
+      padding: 14px 15px;
+      font: inherit;
+      outline: none;
+      background: white;
+      color: var(--navy);
+    }
+
+    input:focus {
+      border-color: rgba(212,166,58,0.8);
+      box-shadow: 0 0 0 4px rgba(212,166,58,0.13);
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 13px 16px;
+      font-weight: 950;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: 0.2s;
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .btn.navy {
+      background: var(--navy);
+      color: white;
+    }
+
+    .btn.light {
+      background: white;
+      color: var(--navy);
+      border: 1px solid var(--gray);
+    }
+
+    .btn.red {
+      background: var(--red);
+      color: white;
+    }
+
+    .btn.green {
+      background: var(--green);
+      color: white;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .button-row .btn {
+      flex: 1;
+    }
+
+    .status-box {
+      margin-top: 16px;
+      border-radius: 20px;
+      padding: 14px;
+      background: var(--offwhite);
+      border: 1px solid var(--gray);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      display: none;
+    }
+
+    .status-box.show {
+      display: block;
+    }
+
+    .status-box.error {
+      background: rgba(220,38,38,0.08);
+      border-color: rgba(220,38,38,0.18);
+      color: #991B1B;
+    }
+
+    .status-box.success {
+      background: rgba(22,163,74,0.09);
+      border-color: rgba(22,163,74,0.18);
+      color: #166534;
+    }
+
+    .signed-in-box {
+      display: none;
+      margin-top: 18px;
+      padding: 16px;
+      background: var(--offwhite);
+      border: 1px solid var(--gray);
+      border-radius: 22px;
+    }
+
+    .signed-in-box.show {
+      display: block;
+    }
+
+    .signed-in-box strong {
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .footer a {
+      color: var(--navy);
+      font-weight: 900;
+    }
+
+    @media (max-width: 980px) {
+      body {
+        align-items: flex-start;
+        background: var(--offwhite);
+      }
+
+      .login-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .brand-panel {
+        min-height: auto;
+      }
+    }
+
+    @media (max-width: 560px) {
+      body {
+        padding: 14px;
+      }
+
+      .brand-panel,
+      .login-card {
+        border-radius: 26px;
+        padding: 22px;
+      }
+
+      .feature-grid,
+      .mode-tabs {
+        grid-template-columns: 1fr;
+      }
+
+      .button-row {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="login-shell">
+    <section class="brand-panel">
+      <div>
+        <div class="brand-top">
+          <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
+          <div>
+            <h1>UNGANI OS</h1>
+            <p>Connecting businesses</p>
+          </div>
+        </div>
+
+        <h2>Login to your business workspace.</h2>
+        <p class="lead">
+          Use this page for client login or UNGANI admin login. Registration is now separate, so new clients register clearly and existing users log in clearly.
+        </p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <strong>Client Login</strong>
+            <span>Open your business dashboard, money, tasks, records, documents, calendar, reports, and support.</span>
+          </div>
+
+          <div class="feature-card">
+            <strong>Admin Login</strong>
+            <span>Open UNGANI command center, registrations, clients, support, billing, and admin records.</span>
+          </div>
+
+          <div class="feature-card">
+            <strong>Clean Access</strong>
+            <span>If the wrong account is already signed in, log out first, then sign in with the correct email.</span>
+          </div>
+
+          <div class="feature-card">
+            <strong>New Business</strong>
+            <span>New clients should use registration, not this login form.</span>
+          </div>
+        </div>
+      </div>
+
+      <p style="color:rgba(255,255,255,0.58);font-size:12px;margin:28px 0 0;">
+        ungani.com · info@ungani.com
+      </p>
+    </section>
+
+    <section class="login-card">
+      <h2 id="loginTitle">Client Login</h2>
+      <p id="loginSubtitle">Log in to your UNGANI OS business dashboard.</p>
+
+      <div class="mode-tabs">
+        <button id="clientTab" class="mode-tab active" type="button" onclick="setMode('client')">Client Login</button>
+        <button id="adminTab" class="mode-tab" type="button" onclick="setMode('admin')">Admin Login</button>
+      </div>
+
+      <div id="signedInBox" class="signed-in-box">
+        <strong>Already signed in</strong>
+        <p id="signedInText">You are already signed in.</p>
+
+        <div class="button-row">
+          <button class="btn navy" type="button" onclick="openClient()">Open Client</button>
+          <button class="btn gold" type="button" onclick="openAdmin()">Open Admin</button>
+          <button class="btn red" type="button" onclick="logout()">Logout</button>
+        </div>
+      </div>
+
+      <form id="loginForm" onsubmit="login(event)">
+        <label for="email">Email Address</label>
+        <input id="email" type="email" placeholder="you@example.com" autocomplete="email" required />
+
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="Enter your password" autocomplete="current-password" required />
+
+        <div class="button-row">
+          <button id="loginButton" class="btn gold" type="submit">Login</button>
+        </div>
+      </form>
+
+      <div id="statusBox" class="status-box"></div>
+
+      <div class="button-row">
+        <a class="btn light" href="index.html">Register New Business</a>
+      </div>
+
+      <p class="footer">
+        Login Version: Step 311A-Fix Separate Login Page ·
+        <a href="https://ungani.com" target="_blank" rel="noopener">ungani.com</a>
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentMode = "client";
+    let currentUser = null;
+
+    window.addEventListener("load", initLoginPage);
+
+    async function initLoginPage() {
+      const params = new URLSearchParams(window.location.search);
+      const mode = params.get("mode");
+
+      if (mode === "admin") {
+        setMode("admin");
+      } else {
+        setMode("client");
+      }
+
+      const userResponse = await supabaseClient.auth.getUser();
+      currentUser = userResponse && userResponse.data ? userResponse.data.user : null;
+
+      if (currentUser) {
+        showSignedIn(currentUser);
+      }
+    }
+
+    function setMode(mode) {
+      currentMode = mode === "admin" ? "admin" : "client";
+
+      document.getElementById("clientTab").classList.toggle("active", currentMode === "client");
+      document.getElementById("adminTab").classList.toggle("active", currentMode === "admin");
+
+      if (currentMode === "admin") {
+        document.getElementById("loginTitle").innerText = "Admin Login";
+        document.getElementById("loginSubtitle").innerText = "Log in to the UNGANI OS admin command center.";
+        document.getElementById("loginButton").innerText = "Login as Admin";
+      } else {
+        document.getElementById("loginTitle").innerText = "Client Login";
+        document.getElementById("loginSubtitle").innerText = "Log in to your UNGANI OS business dashboard.";
+        document.getElementById("loginButton").innerText = "Login to Client Dashboard";
+      }
+
+      clearStatus();
+    }
+
+    async function login(event) {
+      event.preventDefault();
+
+      clearStatus();
+
+      const email = value("email");
+      const password = value("password");
+
+      if (!email || !password) {
+        showStatus("Enter your email and password.", "error");
+        return;
+      }
+
+      setLoading(true);
+
+      const response = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      setLoading(false);
+
+      if (response.error) {
+        showStatus(response.error.message, "error");
+        return;
+      }
+
+      currentUser = response.data.user;
+
+      const adminCheck = await checkAdmin();
+
+      if (currentMode === "admin") {
+        if (adminCheck) {
+          showStatus("Admin login successful. Opening command center...", "success");
+          window.location.href = "admin-home.html";
+          return;
+        }
+
+        showSignedIn(currentUser);
+        showStatus(
+          "This email is signed in, but it is not recognized as an UNGANI admin. Log out and use the correct admin email, or add this email in Supabase ungani_admins.",
+          "error"
+        );
+        return;
+      }
+
+      if (adminCheck) {
+        showStatus("This is an admin account. Opening admin command center...", "success");
+        window.location.href = "admin-home.html";
+        return;
+      }
+
+      showStatus("Client login successful. Opening client dashboard...", "success");
+      window.location.href = "client.html";
+    }
+
+    async function checkAdmin() {
+      try {
+        const response = await supabaseClient.rpc("is_ungani_admin");
+
+        if (response.error) {
+          console.warn(response.error.message);
+          return false;
+        }
+
+        return response.data === true;
+      } catch (error) {
+        console.warn(error.message);
+        return false;
+      }
+    }
+
+    async function openAdmin() {
+      clearStatus();
+
+      const adminCheck = await checkAdmin();
+
+      if (adminCheck) {
+        window.location.href = "admin-home.html";
+        return;
+      }
+
+      showStatus("This signed-in account is not an UNGANI admin. Please log out and sign in with the admin email.", "error");
+    }
+
+    function openClient() {
+      window.location.href = "client.html";
+    }
+
+    async function logout() {
+      await supabaseClient.auth.signOut();
+      currentUser = null;
+      document.getElementById("signedInBox").classList.remove("show");
+      document.getElementById("loginForm").style.display = "block";
+      clearStatus();
+      showStatus("Logged out. You can now sign in with the correct account.", "success");
+    }
+
+    function showSignedIn(user) {
+      document.getElementById("signedInBox").classList.add("show");
+      document.getElementById("signedInText").innerText = "Signed in as: " + (user.email || "Unknown email");
+      document.getElementById("loginForm").style.display = "none";
+    }
+
+    function showStatus(message, type) {
+      const box = document.getElementById("statusBox");
+
+      box.innerText = message;
+      box.className = "status-box show " + (type || "");
+    }
+
+    function clearStatus() {
+      const box = document.getElementById("statusBox");
+
+      box.innerText = "";
+      box.className = "status-box";
+    }
+
+    function setLoading(isLoading) {
+      const button = document.getElementById("loginButton");
+
+      button.disabled = isLoading;
+      button.innerText = isLoading ? "Checking..." : (currentMode === "admin" ? "Login as Admin" : "Login to Client Dashboard");
+    }
+
+    function value(id) {
+      const el = document.getElementById(id);
+      return el ? String(el.value || "").trim() : "";
+    }
+  </script>
+</body>
+</html>
