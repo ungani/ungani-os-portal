@@ -25,7 +25,8 @@
     currentPageKey: "",
     currentPageTitle: "UNGANI OS",
     currentPageSubtitle: "",
-    currentTheme: localStorage.getItem("ungani_theme") || localStorage.getItem("ungani_client_theme") || "light"
+    currentTheme: localStorage.getItem("ungani_theme") || localStorage.getItem("ungani_client_theme") || "light",
+    searchTimer: null
   };
 
   injectEarlyBranding();
@@ -314,7 +315,8 @@
         border-radius: 15px;
         color: rgba(255,255,255,0.80);
         margin-bottom: 5px;
-        transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+        border-left: 3px solid transparent;
+        transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
       }
 
       .ungani-nav-link:hover {
@@ -324,9 +326,10 @@
       }
 
       .ungani-nav-link.active {
-        color: #061C3D;
-        background: linear-gradient(135deg, #FFFFFF, #F8E7B5);
-        box-shadow: 0 16px 34px rgba(212,166,58,0.26);
+        color: #FFFFFF;
+        background: rgba(212,166,58,0.14);
+        border-left-color: var(--ungani-gold);
+        box-shadow: inset 0 0 0 1px rgba(212,166,58,0.12);
       }
 
       .ungani-nav-icon {
@@ -341,7 +344,7 @@
       }
 
       .ungani-nav-link.active .ungani-nav-icon {
-        background: rgba(6,28,61,0.08);
+        background: rgba(212,166,58,0.22);
       }
 
       .ungani-sidebar-footer {
@@ -394,21 +397,21 @@
         position: sticky;
         top: 0;
         z-index: 20;
-        background: rgba(245,245,243,0.82);
+        background: rgba(245,245,243,0.86);
         border: 1px solid var(--ungani-border);
         border-radius: 24px;
-        padding: 18px 20px;
+        padding: 16px 18px;
         margin-bottom: 22px;
         backdrop-filter: blur(18px);
         box-shadow: 0 12px 34px rgba(6,28,61,0.08);
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) minmax(320px, 0.95fr) auto;
         align-items: center;
-        justify-content: space-between;
-        gap: 16px;
+        gap: 14px;
       }
 
       html[data-ungani-theme="dark"] .ungani-topbar {
-        background: rgba(6,20,38,0.84);
+        background: rgba(6,20,38,0.86);
       }
 
       .ungani-topbar h2 {
@@ -426,13 +429,139 @@
       .ungani-top-actions {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 9px;
         flex-wrap: wrap;
         justify-content: flex-end;
       }
 
       .ungani-mobile-menu {
         display: none;
+      }
+
+      .ungani-global-search-wrap {
+        position: relative;
+        width: 100%;
+      }
+
+      .ungani-global-search {
+        padding-left: 42px;
+        height: 45px;
+        background: var(--ungani-card);
+        box-shadow: inset 0 0 0 1px rgba(212,166,58,0.04);
+      }
+
+      .ungani-search-icon {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--ungani-muted);
+        pointer-events: none;
+      }
+
+      .ungani-global-results,
+      .ungani-notification-panel,
+      .ungani-quickadd-panel {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        width: min(520px, 92vw);
+        background: var(--ungani-card);
+        border: 1px solid var(--ungani-border);
+        border-radius: 22px;
+        box-shadow: 0 26px 70px rgba(6,28,61,0.24);
+        overflow: hidden;
+        z-index: 80;
+        animation: unganiFadeUp 0.18s ease both;
+      }
+
+      .ungani-global-results {
+        left: 0;
+        right: auto;
+      }
+
+      .ungani-panel-head {
+        padding: 14px 16px;
+        background: var(--ungani-soft);
+        border-bottom: 1px solid var(--ungani-border);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .ungani-panel-body {
+        max-height: 430px;
+        overflow: auto;
+        padding: 10px;
+      }
+
+      .ungani-search-result,
+      .ungani-alert-row {
+        display: block;
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid transparent;
+        transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+      }
+
+      .ungani-search-result:hover,
+      .ungani-alert-row:hover {
+        background: var(--ungani-soft);
+        border-color: var(--ungani-border);
+        transform: translateY(-1px);
+      }
+
+      .ungani-icon-button {
+        position: relative;
+        width: 44px;
+        height: 44px;
+        border: 0;
+        border-radius: 15px;
+        background: var(--ungani-card);
+        color: var(--ungani-text);
+        border: 1px solid var(--ungani-border);
+        cursor: pointer;
+        box-shadow: 0 10px 24px rgba(6,28,61,0.08);
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .ungani-icon-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 32px rgba(6,28,61,0.15);
+      }
+
+      .ungani-bell-count {
+        position: absolute;
+        top: -7px;
+        right: -7px;
+        min-width: 20px;
+        height: 20px;
+        border-radius: 999px;
+        background: var(--ungani-red);
+        color: white;
+        font-size: 11px;
+        font-weight: 900;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 0 6px;
+      }
+
+      .ungani-quickadd-holder,
+      .ungani-bell-holder {
+        position: relative;
+      }
+
+      .ungani-quickadd-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        display: none;
+      }
+
+      body.ungani-quickadd-open .ungani-quickadd-overlay {
+        display: block;
       }
 
       .ungani-content {
@@ -547,15 +676,17 @@
 
       .ungani-metric-label {
         color: var(--ungani-muted);
-        font-size: 13px;
-        font-weight: 800;
+        font-size: 12px;
+        font-weight: 900;
         letter-spacing: 0.04em;
         text-transform: uppercase;
+        line-height: 1.25;
       }
 
       .ungani-metric-icon {
         width: 42px;
         height: 42px;
+        flex: 0 0 42px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -568,11 +699,27 @@
 
       .ungani-metric-value {
         position: relative;
-        font-size: clamp(24px, 3vw, 36px);
-        line-height: 1;
+        max-width: 100%;
+        font-size: clamp(21px, 2vw, 31px);
+        line-height: 1.05;
         margin: 0 0 10px;
-        font-weight: 900;
-        letter-spacing: -0.04em;
+        font-weight: 950;
+        letter-spacing: -0.045em;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .ungani-metric-value.compact {
+        font-size: clamp(25px, 2.4vw, 34px);
+      }
+
+      .ungani-metric-full {
+        display: inline-flex;
+        margin-top: 4px;
+        font-size: 11px;
+        color: var(--ungani-muted);
+        font-weight: 750;
       }
 
       .ungani-metric-subtitle {
@@ -580,11 +727,12 @@
         margin: 0;
         color: var(--ungani-muted);
         font-size: 13px;
+        line-height: 1.45;
       }
 
       .ungani-metric.green .ungani-metric-icon { background: var(--ungani-green); }
       .ungani-metric.gold .ungani-metric-icon { background: var(--ungani-gold); color: var(--ungani-navy); }
-      .ungani-metric.orange .ungani-metric-icon { background: var(--ungani-orange); }
+      .ungani-metric.orange .ungani-metric-icon { background: var(--ungani-gold); color: var(--ungani-navy); }
       .ungani-metric.red .ungani-metric-icon { background: var(--ungani-red); }
       .ungani-metric.blue .ungani-metric-icon { background: var(--ungani-navy); }
 
@@ -682,7 +830,7 @@
 
       .ungani-btn.green { background: var(--ungani-green); }
       .ungani-btn.gold { background: var(--ungani-gold); color: var(--ungani-navy); }
-      .ungani-btn.orange { background: var(--ungani-orange); }
+      .ungani-btn.orange { background: var(--ungani-gold); color: var(--ungani-navy); }
       .ungani-btn.red { background: var(--ungani-red); }
       .ungani-btn.dark { background: #0F172A; color: #FFFFFF; }
       .ungani-btn.light { background: rgba(255,255,255,0.12); color: #FFFFFF; border: 1px solid rgba(255,255,255,0.16); }
@@ -702,14 +850,10 @@
         margin: 2px;
       }
 
-      html[data-ungani-theme="dark"] .ungani-badge {
-        color: white;
-      }
-
       .ungani-badge.blue { background: rgba(6,28,61,0.12); color: var(--ungani-navy); }
       .ungani-badge.gold { background: rgba(212,166,58,0.18); color: #7A5200; }
       .ungani-badge.green { background: rgba(21,128,61,0.15); color: var(--ungani-green); }
-      .ungani-badge.orange { background: rgba(199,119,0,0.16); color: var(--ungani-orange); }
+      .ungani-badge.orange { background: rgba(212,166,58,0.20); color: #7A5200; }
       .ungani-badge.red { background: rgba(185,28,28,0.15); color: var(--ungani-red); }
 
       html[data-ungani-theme="dark"] .ungani-badge.blue,
@@ -769,52 +913,29 @@
         animation: unganiFadeUp 0.28s ease both;
       }
 
-      @keyframes unganiFadeUp {
-        from {
-          opacity: 0;
-          transform: translateY(10px);
-        }
+      .ungani-bottom-nav {
+        display: none;
+      }
 
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      @keyframes unganiFadeUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
       }
 
       @keyframes unganiLoadingSlide {
-        0% {
-          transform: translateX(-110%);
-        }
-
-        100% {
-          transform: translateX(260%);
-        }
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(260%); }
       }
 
       @keyframes unganiToastIn {
-        from {
-          opacity: 0;
-          transform: translateY(12px);
-        }
-
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
       }
 
       @keyframes unganiPulse {
-        0% {
-          box-shadow: 0 0 0 0 rgba(21,128,61,0.50);
-        }
-
-        70% {
-          box-shadow: 0 0 0 10px rgba(21,128,61,0);
-        }
-
-        100% {
-          box-shadow: 0 0 0 0 rgba(21,128,61,0);
-        }
+        0% { box-shadow: 0 0 0 0 rgba(21,128,61,0.50); }
+        70% { box-shadow: 0 0 0 10px rgba(21,128,61,0); }
+        100% { box-shadow: 0 0 0 0 rgba(21,128,61,0); }
       }
 
       @media (max-width: 1180px) {
@@ -825,9 +946,21 @@
         .ungani-two-col {
           grid-template-columns: 1fr;
         }
+
+        .ungani-topbar {
+          grid-template-columns: 1fr;
+        }
+
+        .ungani-top-actions {
+          justify-content: flex-start;
+        }
       }
 
       @media (max-width: 860px) {
+        body {
+          padding-bottom: 74px;
+        }
+
         .ungani-app-shell {
           grid-template-columns: 1fr;
         }
@@ -846,12 +979,21 @@
           transform: translateX(0);
         }
 
+        body.ungani-sidebar-open::after {
+          content: "";
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.38);
+          z-index: 25;
+        }
+
         .ungani-mobile-menu {
           display: inline-flex;
         }
 
         .ungani-main {
           padding: 14px;
+          padding-bottom: 90px;
         }
 
         .ungani-topbar {
@@ -864,17 +1006,63 @@
         .ungani-form-grid {
           grid-template-columns: 1fr;
         }
+
+        .ungani-global-results,
+        .ungani-notification-panel,
+        .ungani-quickadd-panel {
+          position: fixed;
+          left: 12px;
+          right: 12px;
+          top: 90px;
+          width: auto;
+          max-height: calc(100vh - 130px);
+        }
+
+        .ungani-bottom-nav {
+          position: fixed;
+          left: 10px;
+          right: 10px;
+          bottom: 10px;
+          height: 62px;
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 6px;
+          padding: 7px;
+          border-radius: 22px;
+          background: rgba(6,28,61,0.95);
+          border: 1px solid rgba(255,255,255,0.13);
+          box-shadow: 0 20px 60px rgba(0,0,0,0.28);
+          backdrop-filter: blur(18px);
+          z-index: 60;
+        }
+
+        .ungani-bottom-nav a,
+        .ungani-bottom-nav button {
+          border: 0;
+          background: transparent;
+          color: rgba(255,255,255,0.72);
+          border-radius: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-direction: column;
+          gap: 2px;
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .ungani-bottom-nav a.active {
+          background: rgba(212,166,58,0.18);
+          color: white;
+        }
+
+        .ungani-bottom-nav span {
+          font-size: 18px;
+          line-height: 1;
+        }
       }
 
       @media (max-width: 560px) {
-        .ungani-topbar {
-          flex-direction: column;
-        }
-
-        .ungani-top-actions {
-          justify-content: flex-start;
-        }
-
         .ungani-card {
           padding: 16px;
           border-radius: 20px;
@@ -882,6 +1070,19 @@
 
         .ungani-section-title {
           flex-direction: column;
+        }
+
+        .ungani-metric {
+          min-height: 128px;
+        }
+
+        .ungani-metric-value {
+          font-size: clamp(21px, 7vw, 29px);
+        }
+
+        .ungani-btn {
+          width: auto;
+          min-height: 42px;
         }
       }
     `;
@@ -938,6 +1139,8 @@
       await loadSavedSettings();
 
       renderShell(config);
+      loadNotificationBadge();
+
       const context = makeContext();
 
       if (typeof config.onReady === "function") {
@@ -1082,6 +1285,8 @@
 
     document.body.className = "ungani-shell-fade";
     document.body.innerHTML = `
+      <div class="ungani-quickadd-overlay" onclick="UnganiClientShared.closeQuickAdd()"></div>
+
       <div class="ungani-app-shell" id="unganiAppShell">
         <aside class="ungani-sidebar">
           <a class="ungani-brand" href="client.html">
@@ -1109,7 +1314,7 @@
             </div>
 
             <p style="font-size:11px;color:rgba(255,255,255,0.52);line-height:1.5;margin:14px 2px 0;">
-              Client Shared Version: Step 308A Premium Styling
+              Client Shared Version: Step 308A-2 Global UX Fix
             </p>
           </div>
         </aside>
@@ -1121,14 +1326,34 @@
               <p>${safe(pageSubtitle)}</p>
             </div>
 
+            <div class="ungani-global-search-wrap">
+              <span class="ungani-search-icon">⌕</span>
+              <input
+                id="unganiGlobalSearch"
+                class="ungani-global-search"
+                placeholder="Search properties, tasks, leads, documents..."
+                autocomplete="off"
+                oninput="UnganiClientShared.handleGlobalSearchInput()"
+                onfocus="UnganiClientShared.handleGlobalSearchInput()"
+              />
+              <div id="unganiGlobalResults" class="ungani-global-results" style="display:none;"></div>
+            </div>
+
             <div class="ungani-top-actions">
-              <div class="ungani-top-mini">
-                <span class="ungani-pulse-dot"></span>
-                Live workspace
-              </div>
               <button class="ungani-btn dark ungani-mobile-menu" type="button" onclick="UnganiClientShared.toggleSidebar()">Menu</button>
-              <a class="ungani-btn" href="client.html">Dashboard</a>
-              <a class="ungani-btn green" href="reports.html">Reports</a>
+
+              <div class="ungani-bell-holder">
+                <button id="unganiBellBtn" class="ungani-icon-button" type="button" onclick="UnganiClientShared.toggleNotifications()" title="Notifications">
+                  🔔
+                  <span id="unganiBellCount" class="ungani-bell-count">0</span>
+                </button>
+                <div id="unganiNotificationPanel" class="ungani-notification-panel" style="display:none;"></div>
+              </div>
+
+              <div class="ungani-quickadd-holder">
+                <button class="ungani-btn gold" type="button" onclick="UnganiClientShared.openQuickAdd()">＋ Quick Add</button>
+                <div id="unganiQuickAddPanel" class="ungani-quickadd-panel" style="display:none;"></div>
+              </div>
             </div>
           </header>
 
@@ -1137,6 +1362,8 @@
           </div>
         </main>
       </div>
+
+      ${renderBottomNav()}
     `;
 
     state.shellEl = document.getElementById("unganiAppShell");
@@ -1203,6 +1430,30 @@
         </div>
       `;
     }).join("");
+  }
+
+  function renderBottomNav() {
+    const items = [
+      ["dashboard", "client.html", "🏠", "Home"],
+      ["items", "my-items.html", "🏷️", "Items"],
+      ["money", "my-money.html", "💰", "Money"],
+      ["tasks", "my-tasks.html", "✅", "Tasks"],
+      ["menu", "#", "☰", "Menu"]
+    ];
+
+    return `
+      <nav class="ungani-bottom-nav">
+        ${items.map(function (item) {
+          if (item[0] === "menu") {
+            return `<button type="button" onclick="UnganiClientShared.toggleSidebar()"><span>${safe(item[2])}</span>${safe(item[3])}</button>`;
+          }
+
+          const active = item[0] === state.currentPageKey ? "active" : "";
+
+          return `<a class="${active}" href="${attr(item[1])}"><span>${safe(item[2])}</span>${safe(item[3])}</a>`;
+        }).join("")}
+      </nav>
+    `;
   }
 
   async function loadUserProfile(authUser) {
@@ -1388,16 +1639,22 @@
   }
 
   function metricCard(title, valueText, subtitle, color, href) {
-    const selectedColor = color || "blue";
-    const icon = metricIcon(title);
+    const selectedColor = normalizeMetricColor(title, color || "blue");
+    const icon = metricIcon(title, selectedColor);
+    const display = compactMetricValue(title, valueText);
+    const cardTitle = display.fullValue && display.fullValue !== display.displayValue
+      ? "Full value: " + display.fullValue
+      : String(valueText || "");
+
     const card = `
-      <div class="ungani-card ungani-metric ${attr(selectedColor)} ${href ? "clickable" : ""}">
+      <div class="ungani-card ungani-metric ${attr(selectedColor)} ${href ? "clickable" : ""}" title="${attr(cardTitle)}">
         <div class="ungani-metric-top">
           <div class="ungani-metric-label">${safe(title)}</div>
           <div class="ungani-metric-icon">${safe(icon)}</div>
         </div>
 
-        <h3 class="ungani-metric-value">${safe(valueText)}</h3>
+        <h3 class="ungani-metric-value ${display.isCompact ? "compact" : ""}">${safe(display.displayValue)}</h3>
+        ${display.isCompact ? `<span class="ungani-metric-full">${safe(display.fullValue)}</span>` : ""}
         <p class="ungani-metric-subtitle">${safe(subtitle || "")}</p>
       </div>
     `;
@@ -1409,11 +1666,100 @@
     return card;
   }
 
-  function metricIcon(title) {
+  function normalizeMetricColor(title, color) {
+    const lower = String(title || "").toLowerCase();
+
+    if (lower.includes("urgent") || lower.includes("overdue") || lower.includes("failed") || lower.includes("high")) return "red";
+    if (lower.includes("income") || lower.includes("balance") || lower.includes("resolved") || lower.includes("completed")) return "green";
+    if (lower.includes("expense") || lower.includes("pending") || lower.includes("open")) return "gold";
+
+    if (color === "orange") return "gold";
+
+    return color || "blue";
+  }
+
+  function compactMetricValue(title, valueText) {
+    const original = String(valueText === null || valueText === undefined ? "" : valueText);
+    const lower = String(title + " " + original).toLowerCase();
+    const isMoney = lower.includes("ksh") || lower.includes("kes") || lower.includes("money") || lower.includes("income") || lower.includes("expense") || lower.includes("balance") || lower.includes("amount");
+
+    if (!isMoney) {
+      return {
+        displayValue: original,
+        fullValue: original,
+        isCompact: false
+      };
+    }
+
+    const amount = parseMoneyNumber(original);
+
+    if (!isNaN(amount) && Math.abs(amount) >= 100000) {
+      return {
+        displayValue: "Ksh " + compactNumber(amount),
+        fullValue: formatKES(amount),
+        isCompact: true
+      };
+    }
+
+    if (original.length > 15 && !isNaN(amount)) {
+      return {
+        displayValue: formatKES(amount),
+        fullValue: formatKES(amount),
+        isCompact: false
+      };
+    }
+
+    return {
+      displayValue: original,
+      fullValue: original,
+      isCompact: false
+    };
+  }
+
+  function parseMoneyNumber(valueText) {
+    const cleaned = String(valueText || "")
+      .replace(/[^\d.-]/g, "")
+      .trim();
+
+    if (!cleaned) return NaN;
+
+    return Number(cleaned);
+  }
+
+  function compactNumber(amount) {
+    const sign = amount < 0 ? "-" : "";
+    const absolute = Math.abs(Number(amount || 0));
+
+    if (absolute >= 1000000000) {
+      return sign + trimDecimal(absolute / 1000000000) + "B";
+    }
+
+    if (absolute >= 1000000) {
+      return sign + trimDecimal(absolute / 1000000) + "M";
+    }
+
+    if (absolute >= 1000) {
+      return sign + trimDecimal(absolute / 1000) + "K";
+    }
+
+    return sign + absolute.toLocaleString("en-KE");
+  }
+
+  function trimDecimal(valueNumber) {
+    const rounded = Math.round(valueNumber * 10) / 10;
+
+    if (Number.isInteger(rounded)) {
+      return String(rounded);
+    }
+
+    return String(rounded);
+  }
+
+  function metricIcon(title, color) {
     const lower = String(title || "").toLowerCase();
 
     if (lower.includes("money") || lower.includes("income") || lower.includes("expense") || lower.includes("balance")) return "💰";
-    if (lower.includes("task") || lower.includes("pending")) return "✅";
+    if (lower.includes("task") || lower.includes("pending")) return color === "red" ? "⚠️" : "✅";
     if (lower.includes("people") || lower.includes("agent") || lower.includes("lead")) return "👥";
     if (lower.includes("document")) return "📄";
     if (lower.includes("calendar") || lower.includes("event")) return "📅";
@@ -1423,6 +1769,553 @@
     if (lower.includes("report")) return "📑";
 
     return "◆";
+  }
+
+  async function handleGlobalSearchInput() {
+    const input = document.getElementById("unganiGlobalSearch");
+    const panel = document.getElementById("unganiGlobalResults");
+
+    if (!input || !panel) return;
+
+    const query = String(input.value || "").trim();
+
+    clearTimeout(state.searchTimer);
+
+    if (query.length < 2) {
+      panel.style.display = "none";
+      panel.innerHTML = "";
+      return;
+    }
+
+    panel.style.display = "block";
+    panel.innerHTML = `
+      <div class="ungani-panel-head">
+        <strong>Search</strong>
+        <span class="ungani-small">Searching...</span>
+      </div>
+      <div class="ungani-panel-body">
+        ${loadingCard("Searching workspace...")}
+      </div>
+    `;
+
+    state.searchTimer = setTimeout(async function () {
+      const results = await runGlobalSearch(query);
+      renderGlobalSearchResults(query, results);
+    }, 260);
+  }
+
+  async function runGlobalSearch(query) {
+    const tables = [
+      {
+        table: "business_items",
+        label: "Property / Item",
+        href: "my-items.html",
+        titleFields: ["property_name", "item_name", "name", "title"],
+        detailFields: ["property_status", "item_status", "status", "project_name", "property_location"]
+      },
+      {
+        table: "tasks",
+        label: "Task",
+        href: "my-tasks.html",
+        titleFields: ["task_title", "title", "name"],
+        detailFields: ["status", "priority", "property_name", "project_name", "lead_name"]
+      },
+      {
+        table: "client_people",
+        label: "Person / Lead",
+        href: "my-people.html",
+        titleFields: ["full_name", "name"],
+        detailFields: ["person_type", "relationship_status", "lead_status", "property_of_interest"]
+      },
+      {
+        table: "documents",
+        label: "Document",
+        href: "my-documents.html",
+        titleFields: ["document_title", "title", "file_name"],
+        detailFields: ["document_type", "status", "property_name", "project_name"]
+      },
+      {
+        table: "business_records",
+        label: "Record",
+        href: "my-records.html",
+        titleFields: ["record_title", "title", "name"],
+        detailFields: ["record_type", "status", "property_name", "project_name", "assigned_agent"]
+      }
+    ];
+
+    const results = [];
+    const queryLower = query.toLowerCase();
+
+    for (const config of tables) {
+      try {
+        const response = await state.supabaseClient
+          .from(config.table)
+          .select("*")
+          .eq("tenant_id", state.tenantId)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (response.error) continue;
+
+        (response.data || []).forEach(function (row) {
+          const haystack = JSON.stringify(row || {}).toLowerCase();
+
+          if (haystack.includes(queryLower)) {
+            results.push({
+              label: config.label,
+              href: config.href,
+              title: getValue(row, config.titleFields, config.label),
+              detail: config.detailFields.map(function (field) {
+                return getValue(row, [field], "");
+              }).filter(Boolean).slice(0, 3).join(" · ")
+            });
+          }
+        });
+      } catch (error) {
+        console.warn("Search skipped:", config.table, error.message);
+      }
+    }
+
+    return results.slice(0, 12);
+  }
+
+  function renderGlobalSearchResults(query, results) {
+    const panel = document.getElementById("unganiGlobalResults");
+
+    if (!panel) return;
+
+    if (!results.length) {
+      panel.innerHTML = `
+        <div class="ungani-panel-head">
+          <strong>Search Results</strong>
+          <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeGlobalSearch()">Close</button>
+        </div>
+        <div class="ungani-panel-body">
+          <div class="ungani-empty">
+            <h3>No results found</h3>
+            <p>No matching properties, tasks, leads, documents, or records for "${safe(query)}".</p>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    panel.innerHTML = `
+      <div class="ungani-panel-head">
+        <strong>Search Results</strong>
+        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeGlobalSearch()">Close</button>
+      </div>
+
+      <div class="ungani-panel-body">
+        ${results.map(function (item) {
+          return `
+            <a class="ungani-search-result" href="${attr(item.href)}">
+              <span class="ungani-badge gold">${safe(item.label)}</span>
+              <h3 style="font-size:15px;margin:8px 0 4px;">${safe(item.title)}</h3>
+              <p class="ungani-small" style="margin:0;">${safe(item.detail || "Open section")}</p>
+            </a>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  function closeGlobalSearch() {
+    const panel = document.getElementById("unganiGlobalResults");
+
+    if (panel) {
+      panel.style.display = "none";
+      panel.innerHTML = "";
+    }
+  }
+
+  async function loadNotificationBadge() {
+    const countEl = document.getElementById("unganiBellCount");
+
+    if (!countEl || !state.supabaseClient || !state.tenantId) return;
+
+    const items = await getNotificationItems();
+    const count = items.length;
+
+    countEl.textContent = String(count);
+    countEl.style.display = count > 0 ? "inline-flex" : "none";
+  }
+
+  async function toggleNotifications() {
+    const panel = document.getElementById("unganiNotificationPanel");
+
+    if (!panel) return;
+
+    closeGlobalSearch();
+    closeQuickAdd();
+
+    if (panel.style.display === "block") {
+      panel.style.display = "none";
+      return;
+    }
+
+    panel.style.display = "block";
+    panel.innerHTML = `
+      <div class="ungani-panel-head">
+        <strong>Notifications</strong>
+        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.toggleNotifications()">Close</button>
+      </div>
+      <div class="ungani-panel-body">${loadingCard("Loading notifications...")}</div>
+    `;
+
+    const items = await getNotificationItems();
+
+    panel.innerHTML = `
+      <div class="ungani-panel-head">
+        <strong>Notifications</strong>
+        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.toggleNotifications()">Close</button>
+      </div>
+
+      <div class="ungani-panel-body">
+        ${items.length === 0 ? `
+          <div class="ungani-empty">
+            <h3>No urgent alerts</h3>
+            <p>Task reminders, unread notices, support items, and UNGANI replies will appear here.</p>
+          </div>
+        ` : items.map(function (item) {
+          return `
+            <a class="ungani-alert-row" href="${attr(item.href)}">
+              <span class="ungani-badge ${attr(item.color)}">${safe(item.type)}</span>
+              <h3 style="font-size:15px;margin:8px 0 4px;">${safe(item.title)}</h3>
+              <p class="ungani-small" style="margin:0;">${safe(item.detail)}</p>
+            </a>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  async function getNotificationItems() {
+    const items = [];
+    const today = todayISO();
+
+    try {
+      const tasks = await state.supabaseClient
+        .from("tasks")
+        .select("*")
+        .eq("tenant_id", state.tenantId)
+        .lte("due_date", today)
+        .limit(10);
+
+      if (!tasks.error) {
+        (tasks.data || []).forEach(function (row) {
+          const status = String(getValue(row, ["status"], "")).toLowerCase();
+
+          if (!status.includes("completed") && !status.includes("cancelled")) {
+            items.push({
+              type: "Task Due",
+              color: "red",
+              title: getValue(row, ["task_title", "title", "name"], "Task due"),
+              detail: "Due " + formatDate(getValue(row, ["due_date"], "")),
+              href: "my-tasks.html"
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.warn("Task notifications skipped:", error.message);
+    }
+
+    try {
+      const support = await state.supabaseClient
+        .from("support_issues")
+        .select("*")
+        .eq("tenant_id", state.tenantId)
+        .in("status", ["open", "in progress"])
+        .limit(10);
+
+      if (!support.error) {
+        (support.data || []).forEach(function (row) {
+          items.push({
+            type: "Support",
+            color: "gold",
+            title: getValue(row, ["issue_title", "subject"], "Open support issue"),
+            detail: getValue(row, ["priority"], "normal") + " priority",
+            href: "my-support.html"
+          });
+        });
+      }
+    } catch (error) {
+      console.warn("Support notifications skipped:", error.message);
+    }
+
+    try {
+      const notices = await state.supabaseClient
+        .from("client_notices")
+        .select("*")
+        .eq("tenant_id", state.tenantId)
+        .eq("status", "unread")
+        .limit(10);
+
+      if (!notices.error) {
+        (notices.data || []).forEach(function (row) {
+          items.push({
+            type: "Notice",
+            color: "gold",
+            title: getValue(row, ["notice_title", "title"], "Unread notice"),
+            detail: getValue(row, ["message", "description"], "Unread client notice"),
+            href: "my-notices.html"
+          });
+        });
+      }
+    } catch (error) {
+      console.warn("Notice notifications skipped:", error.message);
+    }
+
+    try {
+      const chat = await state.supabaseClient
+        .from("admin_client_messages")
+        .select("*")
+        .eq("tenant_id", state.tenantId)
+        .neq("sender_role", "client")
+        .eq("is_read", false)
+        .limit(10);
+
+      if (!chat.error) {
+        (chat.data || []).forEach(function (row) {
+          items.push({
+            type: "UNGANI Reply",
+            color: "green",
+            title: "New message from UNGANI",
+            detail: shortText(getValue(row, ["message_body", "message", "body"], ""), 80),
+            href: "my-chat.html"
+          });
+        });
+      }
+    } catch (error) {
+      console.warn("Chat notifications skipped:", error.message);
+    }
+
+    return items.slice(0, 20);
+  }
+
+  function openQuickAdd() {
+    const panel = document.getElementById("unganiQuickAddPanel");
+
+    if (!panel) return;
+
+    closeGlobalSearch();
+
+    const notificationPanel = document.getElementById("unganiNotificationPanel");
+
+    if (notificationPanel) {
+      notificationPanel.style.display = "none";
+    }
+
+    document.body.classList.add("ungani-quickadd-open");
+    panel.style.display = "block";
+    panel.innerHTML = renderQuickAddPanel("income");
+  }
+
+  function closeQuickAdd() {
+    const panel = document.getElementById("unganiQuickAddPanel");
+
+    document.body.classList.remove("ungani-quickadd-open");
+
+    if (panel) {
+      panel.style.display = "none";
+      panel.innerHTML = "";
+    }
+  }
+
+  function changeQuickAddType() {
+    const selectedType = value("unganiQuickAddType") || "income";
+    const panel = document.getElementById("unganiQuickAddPanel");
+
+    if (panel) {
+      panel.innerHTML = renderQuickAddPanel(selectedType);
+    }
+  }
+
+  function renderQuickAddPanel(selectedType) {
+    return `
+      <div class="ungani-panel-head">
+        <strong>Quick Add</strong>
+        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeQuickAdd()">Close</button>
+      </div>
+
+      <div class="ungani-panel-body">
+        <form onsubmit="UnganiClientShared.saveQuickAdd(event)">
+          <label for="unganiQuickAddType">Add Type</label>
+          <select id="unganiQuickAddType" onchange="UnganiClientShared.changeQuickAddType()">
+            <option value="income" ${selectedType === "income" ? "selected" : ""}>Sale / Income</option>
+            <option value="expense" ${selectedType === "expense" ? "selected" : ""}>Expense</option>
+            <option value="task" ${selectedType === "task" ? "selected" : ""}>Task / Follow-up</option>
+            <option value="property" ${selectedType === "property" ? "selected" : ""}>Property / Item</option>
+          </select>
+
+          ${renderQuickAddFields(selectedType)}
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn green" type="submit">Save</button>
+            <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeQuickAdd()">Cancel</button>
+          </div>
+        </form>
+      </div>
+    `;
+  }
+
+  function renderQuickAddFields(type) {
+    if (type === "income" || type === "expense") {
+      return `
+        <label for="unganiQuickTitle">Category / Title</label>
+        <input id="unganiQuickTitle" required placeholder="${type === "income" ? "Property Sale / Rental Income" : "Agent Commission / Maintenance"}" />
+
+        <label for="unganiQuickAmount">Amount</label>
+        <input id="unganiQuickAmount" type="number" min="0" step="1" required placeholder="Amount in Ksh" />
+
+        <label for="unganiQuickRelated">Related Property / Person</label>
+        <input id="unganiQuickRelated" placeholder="Optional property, client, agent, or supplier" />
+
+        <label for="unganiQuickDescription">Description</label>
+        <textarea id="unganiQuickDescription" placeholder="Short note..."></textarea>
+      `;
+    }
+
+    if (type === "task") {
+      return `
+        <label for="unganiQuickTitle">Task Title</label>
+        <input id="unganiQuickTitle" required placeholder="Follow up with client after viewing" />
+
+        <label for="unganiQuickDueDate">Due Date</label>
+        <input id="unganiQuickDueDate" type="date" />
+
+        <label for="unganiQuickPriority">Priority</label>
+        <select id="unganiQuickPriority">
+          <option value="normal">Normal</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+          <option value="low">Low</option>
+        </select>
+
+        <label for="unganiQuickDescription">Description</label>
+        <textarea id="unganiQuickDescription" placeholder="Short task details..."></textarea>
+      `;
+    }
+
+    return `
+      <label for="unganiQuickTitle">Property / Item Name</label>
+      <input id="unganiQuickTitle" required placeholder="Clove Garden A12" />
+
+      <label for="unganiQuickAmount">Price / Value</label>
+      <input id="unganiQuickAmount" type="number" min="0" step="1" placeholder="Amount in Ksh" />
+
+      <label for="unganiQuickRelated">Location / Project</label>
+      <input id="unganiQuickRelated" placeholder="Nyali, Mombasa / Clove Garden" />
+
+      <label for="unganiQuickStatus">Status</label>
+      <select id="unganiQuickStatus">
+        <option value="available">Available</option>
+        <option value="reserved">Reserved</option>
+        <option value="under negotiation">Under Negotiation</option>
+        <option value="sold">Sold</option>
+        <option value="rented">Rented</option>
+      </select>
+
+      <label for="unganiQuickDescription">Notes</label>
+      <textarea id="unganiQuickDescription" placeholder="Short property/item note..."></textarea>
+    `;
+  }
+
+  async function saveQuickAdd(event) {
+    event.preventDefault();
+
+    const type = value("unganiQuickAddType") || "income";
+    const title = value("unganiQuickTitle");
+    const amount = Number(value("unganiQuickAmount") || 0);
+    const related = value("unganiQuickRelated");
+    const description = value("unganiQuickDescription");
+
+    if (!title) {
+      alert("Please enter a title.");
+      return;
+    }
+
+    let response;
+
+    if (type === "income" || type === "expense") {
+      response = await state.supabaseClient
+        .from("transactions")
+        .insert({
+          tenant_id: state.tenantId,
+          business_type_key: getValue(state.tenant, ["business_type_key"], null),
+          section_key: "money_records",
+          transaction_type: type,
+          type: type,
+          category: title,
+          category_name: title,
+          amount: amount,
+          transaction_date: todayISO(),
+          related_person: related || null,
+          property_name: related || null,
+          description: description || null,
+          status: "completed",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+    } else if (type === "task") {
+      response = await state.supabaseClient
+        .from("tasks")
+        .insert({
+          tenant_id: state.tenantId,
+          business_type_key: getValue(state.tenant, ["business_type_key"], null),
+          section_key: "tasks_followups",
+          task_title: title,
+          title: title,
+          name: title,
+          task_type: "follow up",
+          priority: value("unganiQuickPriority") || "normal",
+          status: "pending",
+          due_date: value("unganiQuickDueDate") || null,
+          description: description || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+    } else {
+      response = await state.supabaseClient
+        .from("business_items")
+        .insert({
+          tenant_id: state.tenantId,
+          business_type_key: getValue(state.tenant, ["business_type_key"], null),
+          section_key: "properties_listings",
+          item_name: title,
+          name: title,
+          title: title,
+          property_name: title,
+          item_type: "property",
+          type: "property",
+          item_category: "property",
+          category: "property",
+          property_price: amount || null,
+          property_location: related || null,
+          project_name: related || null,
+          listing_type: "sale",
+          item_status: value("unganiQuickStatus") || "available",
+          status: value("unganiQuickStatus") || "available",
+          property_status: value("unganiQuickStatus") || "available",
+          notes: description || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+    }
+
+    if (response.error) {
+      alert(response.error.message);
+      return;
+    }
+
+    closeQuickAdd();
+    showToast("Quick add saved ✓");
+    loadNotificationBadge();
+
+    setTimeout(function () {
+      window.location.reload();
+    }, 450);
   }
 
   function applyTheme(theme) {
@@ -1544,13 +2437,11 @@
     const amount = Number(value || 0);
 
     try {
-      return new Intl.NumberFormat("en-KE", {
-        style: "currency",
-        currency: "KES",
+      return "Ksh " + new Intl.NumberFormat("en-KE", {
         maximumFractionDigits: 0
       }).format(amount);
     } catch (error) {
-      return "KES " + amount.toLocaleString();
+      return "Ksh " + amount.toLocaleString();
     }
   }
 
@@ -1623,6 +2514,15 @@
     return safe(valueText);
   }
 
+  function shortText(valueText, limit) {
+    const text = String(valueText || "");
+    const max = Number(limit || 80);
+
+    if (text.length <= max) return text;
+
+    return text.slice(0, max) + "...";
+  }
+
   function exposeGlobals() {
     window.UnganiClientShared = {
       initPage,
@@ -1647,6 +2547,13 @@
       signInFromForm,
       getTenantName,
       getBusinessTypeLabel,
+      handleGlobalSearchInput,
+      closeGlobalSearch,
+      toggleNotifications,
+      openQuickAdd,
+      closeQuickAdd,
+      changeQuickAddType,
+      saveQuickAdd,
       getCurrentUserId: function () {
         return state.authUser ? state.authUser.id : null;
       },
