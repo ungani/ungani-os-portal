@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>My Billing | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --radius: 20px;
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: var(--radius);
+      padding: 26px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 850px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .summary-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 17px;
+      padding: 15px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 7px;
+    }
+
+    .summary-card strong {
+      color: #FFFFFF;
+      font-size: 23px;
+    }
+
+    .panel {
+      margin-top: 20px;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filter-select,
+    .search-input {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 13px;
+      font-size: 13px;
+      outline: none;
+      background: var(--panel);
+      color: var(--text);
+      min-height: 40px;
+    }
+
+    .filter-select option {
+      background: var(--navy);
+      color: #FFFFFF;
+    }
+
+    html[data-theme="light"] .filter-select option {
+      background: #FFFFFF;
+      color: #111827;
+    }
+
+    .search-input {
+      width: 240px;
+      max-width: 100%;
+    }
+
+    .search-input::placeholder {
+      color: rgba(184, 195, 214, 0.8);
+    }
+
+    html[data-theme="light"] .search-input::placeholder {
+      color: rgba(107, 114, 128, 0.8);
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 920px;
+    }
+
+    th,
+    td {
+      padding: 14px 13px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      background: rgba(3, 18, 39, 0.58);
+      color: var(--gold);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    html[data-theme="light"] th {
+      background: #F9FAFB;
+    }
+
+    td {
+      color: var(--text-soft);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .status-badge,
+    .package-chip {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .package-chip {
+      background: rgba(212, 166, 58, 0.16);
+      color: var(--gold);
+      border: 1px solid rgba(212, 166, 58, 0.28);
+    }
+
+    .status-paid,
+    .status-waived {
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .status-pending {
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .status-partial,
+    .status-overdue {
+      color: var(--warning-text);
+      background: var(--warning-bg);
+    }
+
+    .status-cancelled {
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .notice,
+    .empty,
+    .loading,
+    .error {
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 880px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .filters {
+        width: 100%;
+      }
+
+      .search-input,
+      .filter-select {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .brand img {
+        width: 42px;
+        height: 42px;
+      }
+
+      .top-btn {
+        font-size: 12px;
+        padding: 9px 11px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>My Billing</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="top-btn" href="my-package.html">My Package</a>
+      <a class="top-btn" href="my-account-status.html">Account Status</a>
+      <a class="top-btn" href="my-support.html">Support</a>
+      <a class="top-btn gold" href="client.html">Back to Dashboard</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero">
+      <h1>My Billing</h1>
+      <p>
+        View your UNGANI OS billing records, payment status, due dates, and payment references.
+        This page is read-only for clients.
+      </p>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <label>Total Records</label>
+          <strong id="totalCount">0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Total Paid</label>
+          <strong id="paidTotal">KSh 0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Pending</label>
+          <strong id="pendingCount">0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Overdue</label>
+          <strong id="overdueCount">0</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Payment Records</h2>
+
+        <div class="filters">
+          <input
+            id="searchInput"
+            class="search-input"
+            type="search"
+            placeholder="Search package, ref, method..."
+            oninput="renderPayments()"
+          />
+
+          <select id="statusFilter" class="filter-select" onchange="renderPayments()">
+            <option value="all">All statuses</option>
+            <option value="paid">Paid</option>
+            <option value="pending">Pending</option>
+            <option value="partial">Partial</option>
+            <option value="overdue">Overdue</option>
+            <option value="waived">Waived</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+
+          <select id="packageFilter" class="filter-select" onchange="renderPayments()">
+            <option value="all">All packages</option>
+            <option value="starter">Starter</option>
+            <option value="growth">Growth</option>
+            <option value="business">Business</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="loadingBox" class="loading">
+        <span class="spinner"></span>
+        <span>Loading billing records...</span>
+      </div>
+
+      <div id="errorBox" class="error" style="display: none;"></div>
+
+      <div id="emptyBox" class="empty" style="display: none;">
+        No billing records found yet. If you recently made a payment, please contact UNGANI support for confirmation.
+      </div>
+
+      <div id="tableWrap" class="table-wrap" style="display: none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Package</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th>Billing Period</th>
+              <th>Payment Details</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="paymentsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let allPayments = [];
+
+    document.addEventListener("DOMContentLoaded", () => {
+      applyExistingThemeSetting();
+      loadPayments();
+    });
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
+
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+
+        if (htmlTheme === "light" || htmlTheme === "dark") {
+          foundTheme = htmlTheme;
+        }
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    async function loadPayments() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const emptyBox = document.getElementById("emptyBox");
+      const tableWrap = document.getElementById("tableWrap");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      emptyBox.style.display = "none";
+      tableWrap.style.display = "none";
+
+      try {
+        const { data, error } = await supabaseClient.rpc("get_my_ungani_payments");
+
+        if (error) throw error;
+
+        allPayments = Array.isArray(data) ? data : [];
+
+        updateSummaryCounts();
+        renderPayments();
+
+        loadingBox.style.display = "none";
+
+        if (!allPayments.length) {
+          emptyBox.style.display = "block";
+        } else {
+          tableWrap.style.display = "block";
+        }
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent =
+          "Unable to load your billing records. Please refresh or contact UNGANI support. " +
+          getErrorMessage(error);
+      }
+    }
+
+    function updateSummaryCounts() {
+      const total = allPayments.length;
+
+      const paidTotal = allPayments
+        .filter(item => normalize(item.payment_status) === "paid" || normalize(item.payment_status) === "waived")
+        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+      const pending = allPayments.filter(item => normalize(item.payment_status) === "pending").length;
+      const overdue = allPayments.filter(item => normalize(item.payment_status) === "overdue").length;
+
+      document.getElementById("totalCount").textContent = total;
+      document.getElementById("paidTotal").textContent = "KSh " + paidTotal.toLocaleString("en-KE");
+      document.getElementById("pendingCount").textContent = pending;
+      document.getElementById("overdueCount").textContent = overdue;
+    }
+
+    function renderPayments() {
+      const body = document.getElementById("paymentsBody");
+      const emptyBox = document.getElementById("emptyBox");
+      const tableWrap = document.getElementById("tableWrap");
+
+      const statusFilter = document.getElementById("statusFilter").value;
+      const packageFilter = document.getElementById("packageFilter").value;
+      const searchTerm = document.getElementById("searchInput").value.trim().toLowerCase();
+
+      let filtered = [...allPayments];
+
+      if (statusFilter !== "all") {
+        filtered = filtered.filter(item => normalize(item.payment_status) === statusFilter);
+      }
+
+      if (packageFilter !== "all") {
+        filtered = filtered.filter(item => normalize(item.package_key) === packageFilter);
+      }
+
+      if (searchTerm) {
+        filtered = filtered.filter(item => {
+          const combined = [
+            item.package_key,
+            item.amount,
+            item.currency,
+            item.payment_status,
+            item.payment_method,
+            item.payment_reference,
+            item.notes
+          ].filter(Boolean).join(" ").toLowerCase();
+
+          return combined.includes(searchTerm);
+        });
+      }
+
+      body.innerHTML = "";
+
+      if (!filtered.length) {
+        tableWrap.style.display = "none";
+        emptyBox.style.display = "block";
+        emptyBox.textContent = "No billing records match your filters.";
+        return;
+      }
+
+      emptyBox.style.display = "none";
+      tableWrap.style.display = "block";
+
+      filtered.forEach(item => {
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+          <td>
+            <span class="package-chip">${escapeHtml(titleCase(item.package_key || "starter"))}</span>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(formatMoney(item.amount, item.currency))}</strong>
+          </td>
+
+          <td>
+            <span class="status-badge ${getStatusClass(item.payment_status)}">
+              ${escapeHtml(titleCase(item.payment_status || "pending"))}
+            </span>
+          </td>
+
+          <td>
+            <div class="muted"><strong>Start:</strong> ${escapeHtml(formatDate(item.billing_period_start))}</div>
+            <div class="muted"><strong>End:</strong> ${escapeHtml(formatDate(item.billing_period_end))}</div>
+            <div class="muted"><strong>Due:</strong> ${escapeHtml(formatDate(item.due_date))}</div>
+            <div class="muted"><strong>Paid:</strong> ${escapeHtml(formatDateTime(item.paid_at))}</div>
+          </td>
+
+          <td>
+            <div class="muted"><strong>Method:</strong> ${escapeHtml(item.payment_method || "—")}</div>
+            <div class="muted"><strong>Reference:</strong> ${escapeHtml(item.payment_reference || "—")}</div>
+            <div class="muted"><strong>Created:</strong> ${escapeHtml(formatDateTime(item.created_at))}</div>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(item.notes || "No notes.")}</div>
+          </td>
+        `;
+
+        body.appendChild(row);
+      });
+    }
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function titleCase(value) {
+      if (!value) return "—";
+
+      return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function getStatusClass(status) {
+      const clean = normalize(status);
+
+      if (clean === "paid") return "status-paid";
+      if (clean === "partial") return "status-partial";
+      if (clean === "overdue") return "status-overdue";
+      if (clean === "waived") return "status-waived";
+      if (clean === "cancelled" || clean === "canceled") return "status-cancelled";
+
+      return "status-pending";
+    }
+
+    function formatMoney(amount, currency) {
+      const numberValue = Number(amount || 0);
+      const currencyValue = currency || "KES";
+
+      if (currencyValue === "USD") {
+        return "USD " + numberValue.toLocaleString("en-US", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2
+        });
+      }
+
+      return "KSh " + numberValue.toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function formatDate(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleDateString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
+
+      try {
+        return JSON.stringify(error);
+      } catch (e) {
+        return String(error);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
