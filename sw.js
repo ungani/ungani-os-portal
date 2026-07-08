@@ -1,4 +1,4 @@
-const CACHE_NAME = "ungani-os-pwa-cache-v4";
+const CACHE_NAME = "ungani-os-pwa-cache-v5";
 
 const CORE_ASSETS = [
   "/",
@@ -6,11 +6,15 @@ const CORE_ASSETS = [
   "/login.html",
   "/client.html",
   "/admin-home.html",
+  "/admin-notifications.html",
+  "/client-notifications.html",
   "/manifest.json",
   "/ungani-logo.png"
 ];
 
-const PAGE_ASSETS = [
+const CLIENT_PAGE_ASSETS = [
+  "/client.html",
+  "/client-notifications.html",
   "/my-profile.html",
   "/my-overview.html",
   "/my-charts.html",
@@ -27,10 +31,13 @@ const PAGE_ASSETS = [
   "/my-chat.html",
   "/my-team-chat.html",
   "/reports.html",
-  "/print-report.html",
+  "/print-report.html"
+];
 
-  "/admin.html",
+const ADMIN_PAGE_ASSETS = [
   "/admin-home.html",
+  "/admin-notifications.html",
+  "/admin.html",
   "/admin-charts.html",
   "/admin-calendar.html",
   "/admin-profiles.html",
@@ -64,26 +71,34 @@ self.addEventListener("install", function (event) {
 
   event.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
-      return cache.addAll([...CORE_ASSETS, ...PAGE_ASSETS, ...SCRIPT_ASSETS]);
+      return cache.addAll([
+        ...CORE_ASSETS,
+        ...CLIENT_PAGE_ASSETS,
+        ...ADMIN_PAGE_ASSETS,
+        ...SCRIPT_ASSETS
+      ]);
     })
   );
 });
 
 self.addEventListener("activate", function (event) {
   event.waitUntil(
-    caches.keys().then(function (keys) {
-      return Promise.all(
-        keys
-          .filter(function (key) {
-            return key !== CACHE_NAME;
-          })
-          .map(function (key) {
-            return caches.delete(key);
-          })
-      );
-    }).then(function () {
-      return self.clients.claim();
-    })
+    caches
+      .keys()
+      .then(function (keys) {
+        return Promise.all(
+          keys
+            .filter(function (key) {
+              return key !== CACHE_NAME;
+            })
+            .map(function (key) {
+              return caches.delete(key);
+            })
+        );
+      })
+      .then(function () {
+        return self.clients.claim();
+      })
   );
 });
 
@@ -130,7 +145,9 @@ self.addEventListener("fetch", function (event) {
 
 async function networkFirstPage(request) {
   try {
-    const freshResponse = await fetch(request);
+    const freshResponse = await fetch(request, {
+      cache: "no-store"
+    });
 
     const cache = await caches.open(CACHE_NAME);
     cache.put(request, freshResponse.clone());
