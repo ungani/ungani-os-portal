@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Subscriptions | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="ungani-logo.png" type="image/png" />
+  <link rel="apple-touch-icon" href="ungani-logo.png" />
+
+  <meta name="theme-color" content="#061C3D" />
+  <meta name="apple-mobile-web-app-title" content="UNGANI OS" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --softgray: #E5E7EB;
+      --muted: #64748B;
+      --danger: #DC2626;
+      --success: #16A34A;
+      --warning: #F59E0B;
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 18px 45px rgba(6, 28, 61, 0.10);
+      --radius: 22px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--navy);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font-family: inherit;
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+    }
+
+    .sidebar {
+      background: var(--navy);
+      color: var(--white);
+      padding: 22px 18px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 8px 22px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+      margin-bottom: 18px;
+    }
+
+    .brand img {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      background: var(--white);
+      border-radius: 14px;
+      padding: 7px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.68);
+    }
+
+    .nav-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255, 255, 255, 0.48);
+      margin: 18px 8px 8px;
+      font-weight: 900;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 12px;
+      border-radius: 14px;
+      color: rgba(255, 255, 255, 0.84);
+      font-size: 14px;
+      font-weight: 800;
+      margin-bottom: 5px;
+      cursor: pointer;
+      border: 0;
+      width: 100%;
+      background: transparent;
+      text-align: left;
+    }
+
+    .nav-link:hover,
+    .nav-link.active {
+      background: rgba(212, 166, 58, 0.18);
+      color: var(--white);
+    }
+
+    .main {
+      min-width: 0;
+      padding: 28px;
+    }
+
+    .mobile-topbar {
+      display: none;
+      background: var(--navy);
+      color: var(--white);
+      padding: 14px 16px;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .mobile-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .mobile-brand img {
+      width: 38px;
+      height: 38px;
+      object-fit: contain;
+      background: var(--white);
+      border-radius: 12px;
+      padding: 5px;
+    }
+
+    .mobile-brand strong {
+      display: block;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .mobile-brand span {
+      display: block;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.66);
+      white-space: nowrap;
+    }
+
+    .mobile-menu-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--white);
+      border-radius: 12px;
+      min-width: 42px;
+      height: 42px;
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    .mobile-drawer-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.56);
+      z-index: 50;
+    }
+
+    .mobile-drawer-overlay.open {
+      display: block;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 20px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--gold);
+      font-weight: 950;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .page-header h2 {
+      margin: 0;
+      font-size: clamp(25px, 3vw, 38px);
+      letter-spacing: -0.04em;
+      color: var(--navy);
+    }
+
+    .page-header p {
+      margin: 9px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 840px;
+      font-size: 14px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 14px;
+      padding: 11px 14px;
+      font-size: 13px;
+      font-weight: 950;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .btn-navy {
+      background: var(--navy);
+      color: var(--white);
+    }
+
+    .btn-soft {
+      background: rgba(6, 28, 61, 0.08);
+      color: var(--navy);
+    }
+
+    .btn-danger {
+      background: rgba(220, 38, 38, 0.1);
+      color: var(--danger);
+    }
+
+    .btn-success {
+      background: rgba(22, 163, 74, 0.12);
+      color: var(--success);
+    }
+
+    .safe-note {
+      background: rgba(6, 28, 61, 0.06);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px 16px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 18px;
+    }
+
+    .safe-note strong {
+      color: var(--navy);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      min-height: 118px;
+    }
+
+    .stat-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .stat-card strong {
+      display: block;
+      margin-top: 10px;
+      font-size: 30px;
+      letter-spacing: -0.04em;
+    }
+
+    .stat-card small {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .packages-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .package-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .package-card h3 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--navy);
+    }
+
+    .package-card .price {
+      margin-top: 10px;
+      font-size: 24px;
+      font-weight: 950;
+      letter-spacing: -0.04em;
+    }
+
+    .package-card p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .package-card ul {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .board {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .board-top {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .filters {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      border: 1px solid var(--border);
+      background: var(--white);
+      color: var(--navy);
+      padding: 9px 11px;
+      border-radius: 999px;
+      font-weight: 950;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .filter-btn.active {
+      background: var(--navy);
+      color: var(--white);
+      border-color: var(--navy);
+    }
+
+    .search-box {
+      min-width: 260px;
+      border: 1px solid var(--border);
+      background: var(--offwhite);
+      border-radius: 14px;
+      padding: 11px 12px;
+      color: var(--navy);
+      font-weight: 750;
+      outline: none;
+    }
+
+    .client-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .client-row {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 18px;
+    }
+
+    .client-row:last-child {
+      border-bottom: 0;
+    }
+
+    .client-main h3 {
+      margin: 0;
+      font-size: 17px;
+      color: var(--navy);
+    }
+
+    .client-main p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .client-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 11px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 10px;
+      font-weight: 950;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      width: fit-content;
+    }
+
+    .badge-trial {
+      background: rgba(212, 166, 58, 0.18);
+      color: #8A6200;
+    }
+
+    .badge-active {
+      background: rgba(22, 163, 74, 0.12);
+      color: var(--success);
+    }
+
+    .badge-suspended {
+      background: rgba(245, 158, 11, 0.14);
+      color: #9A5A00;
+    }
+
+    .badge-cancelled {
+      background: rgba(220, 38, 38, 0.1);
+      color: var(--danger);
+    }
+
+    .badge-soft {
+      background: rgba(6, 28, 61, 0.08);
+      color: var(--navy);
+    }
+
+    .edit-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 11px;
+      font-weight: 950;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--offwhite);
+      border-radius: 13px;
+      padding: 10px 11px;
+      font-size: 13px;
+      color: var(--navy);
+      outline: none;
+      font-weight: 800;
+    }
+
+    .field textarea {
+      min-height: 74px;
+      resize: vertical;
+    }
+
+    .field-full {
+      grid-column: 1 / -1;
+    }
+
+    .row-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 11px;
+      justify-content: flex-end;
+    }
+
+    .empty-state {
+      padding: 42px 18px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .empty-state strong {
+      display: block;
+      color: var(--navy);
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .status-line {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    @media (max-width: 1180px) {
+      .app-shell {
+        display: block;
+      }
+
+      .mobile-topbar {
+        display: flex;
+      }
+
+      .sidebar {
+        position: fixed;
+        left: -310px;
+        top: 0;
+        bottom: 0;
+        width: 290px;
+        height: 100vh;
+        z-index: 60;
+        transition: left 0.22s ease;
+      }
+
+      .sidebar.open {
+        left: 0;
+      }
+
+      .main {
+        padding: 18px 14px 28px;
+      }
+
+      .page-header {
+        display: block;
+      }
+
+      .header-actions {
+        margin-top: 14px;
+        justify-content: flex-start;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .packages-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .client-row {
+        grid-template-columns: 1fr;
+      }
+
+      .edit-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .board-top {
+        align-items: stretch;
+      }
+
+      .search-box {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .row-actions {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .stats-grid,
+      .packages-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .btn {
+        width: 100%;
+      }
+
+      .filters {
+        width: 100%;
+      }
+
+      .filter-btn {
+        flex: 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="mobile-topbar">
+    <div class="mobile-brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div>
+        <strong>UNGANI Admin</strong>
+        <span>Subscriptions</span>
+      </div>
+    </div>
+    <button class="mobile-menu-btn" onclick="openMobileMenu()">☰</button>
+  </div>
+
+  <div class="mobile-drawer-overlay" id="drawerOverlay" onclick="closeMobileMenu()"></div>
+
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" />
+        <div>
+          <h1>UNGANI OS</h1>
+          <p>Admin Control</p>
+        </div>
+      </div>
+
+      <div class="nav-section-title">Main</div>
+      <a class="nav-link" href="admin-home.html">Dashboard</a>
+      <a class="nav-link" href="admin-notifications.html">Notifications</a>
+      <a class="nav-link" href="admin.html">Registrations</a>
+      <a class="nav-link" href="admin-profiles.html">Clients</a>
+      <a class="nav-link active" href="admin-subscriptions.html">Subscriptions</a>
+      <a class="nav-link" href="support.html">Support</a>
+      <a class="nav-link" href="billing.html">Billing</a>
+
+      <div class="nav-section-title">Operations</div>
+      <a class="nav-link" href="admin-money.html">Money</a>
+      <a class="nav-link" href="admin-items.html">Items / Assets</a>
+      <a class="nav-link" href="admin-people.html">People</a>
+      <a class="nav-link" href="admin-records.html">Records</a>
+      <a class="nav-link" href="admin-tasks.html">Tasks</a>
+      <a class="nav-link" href="admin-documents.html">Documents</a>
+      <a class="nav-link" href="admin-calendar.html">Calendar</a>
+      <a class="nav-link" href="admin-chat.html">Admin Chat</a>
+      <a class="nav-link" href="notices.html">Notices</a>
+
+      <div class="nav-section-title">Reports</div>
+      <a class="nav-link" href="admin-charts.html">Charts</a>
+      <a class="nav-link" href="admin-reports.html">Reports</a>
+      <a class="nav-link" href="admin-health.html">Client Health</a>
+      <a class="nav-link" href="users.html">Users</a>
+      <a class="nav-link" href="admin-settings.html">Settings</a>
+
+      <div class="nav-section-title">Account</div>
+      <button class="nav-link" onclick="logout()">Logout</button>
+    </aside>
+
+    <main class="main">
+      <section class="page-header">
+        <div>
+          <p class="eyebrow">UNGANI SaaS Control</p>
+          <h2>Subscriptions & Packages</h2>
+          <p>
+            Manage each client’s package, trial status, payment status, user limit, and account access.
+            This page is admin-only and does not open client dashboards.
+          </p>
+        </div>
+
+        <div class="header-actions">
+          <button class="btn btn-soft" onclick="loadAll()">Refresh</button>
+          <a class="btn btn-primary" href="admin-profiles.html">Client Profiles</a>
+          <a class="btn btn-navy" href="billing.html">Billing</a>
+        </div>
+      </section>
+
+      <div class="safe-note">
+        <strong>Safe change:</strong>
+        This page manages subscription records only. It does not change dashboard colors, business categories, client records, or client private workspaces.
+      </div>
+
+      <section class="stats-grid">
+        <div class="stat-card">
+          <span>Total Clients</span>
+          <strong id="totalClients">0</strong>
+          <small>All tenants currently loaded.</small>
+        </div>
+
+        <div class="stat-card">
+          <span>Trial</span>
+          <strong id="trialCount">0</strong>
+          <small>Clients still on trial access.</small>
+        </div>
+
+        <div class="stat-card">
+          <span>Active</span>
+          <strong id="activeCount">0</strong>
+          <small>Clients currently active.</small>
+        </div>
+
+        <div class="stat-card">
+          <span>Payment Attention</span>
+          <strong id="paymentAttentionCount">0</strong>
+          <small>Pending, overdue, or partial payment.</small>
+        </div>
+
+        <div class="stat-card">
+          <span>Suspended</span>
+          <strong id="suspendedCount">0</strong>
+          <small>Clients with suspended access.</small>
+        </div>
+      </section>
+
+      <section class="packages-grid" id="packagesGrid">
+        <div class="empty-state">
+          <strong>Loading packages...</strong>
+          Checking UNGANI package catalog.
+        </div>
+      </section>
+
+      <section class="board">
+        <div class="board-top">
+          <div class="filters">
+            <button class="filter-btn active" id="filterAll" onclick="setFilter('all')">All</button>
+            <button class="filter-btn" id="filterTrial" onclick="setFilter('trial')">Trial</button>
+            <button class="filter-btn" id="filterActive" onclick="setFilter('active')">Active</button>
+            <button class="filter-btn" id="filterPayment" onclick="setFilter('payment')">Payment</button>
+            <button class="filter-btn" id="filterSuspended" onclick="setFilter('suspended')">Suspended</button>
+          </div>
+
+          <input
+            class="search-box"
+            id="searchInput"
+            type="search"
+            placeholder="Search business, email, package..."
+            oninput="renderClients()"
+          />
+        </div>
+
+        <div class="client-list" id="clientList">
+          <div class="empty-state">
+            <strong>Loading clients...</strong>
+            Checking subscriptions and client accounts.
+          </div>
+        </div>
+      </section>
+
+      <p class="status-line">
+        Admin Subscriptions Version: Step SaaS-2 · ungani.com · info@ungani.com
+      </p>
+    </main>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUser = null;
+    let packages = [];
+    let tenants = [];
+    let subscriptions = [];
+    let users = [];
+    let mergedClients = [];
+    let activeFilter = "all";
+
+    function openMobileMenu() {
+      document.getElementById("sidebar").classList.add("open");
+      document.getElementById("drawerOverlay").classList.add("open");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeMobileMenu() {
+      document.getElementById("sidebar").classList.remove("open");
+      document.getElementById("drawerOverlay").classList.remove("open");
+      document.body.style.overflow = "";
+    }
+
+    function cleanText(value) {
+      return String(value || "").trim();
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replaceAll("\n", " ");
+    }
+
+    function formatMoney(value) {
+      const number = Number(value || 0);
+
+      if (!number) {
+        return "Custom";
+      }
+
+      try {
+        return "KSh " + number.toLocaleString("en-KE", {
+          maximumFractionDigits: 0
+        });
+      } catch (error) {
+        return "KSh " + number;
+      }
+    }
+
+    function formatDate(value) {
+      if (!value) return "Not set";
+
+      try {
+        return new Date(value).toLocaleDateString([], {
+          year: "numeric",
+          month: "short",
+          day: "numeric"
+        });
+      } catch (error) {
+        return "Not set";
+      }
+    }
+
+    function dateInputValue(value) {
+      if (!value) return "";
+
+      try {
+        const date = new Date(value);
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, "0");
+        const dd = String(date.getDate()).padStart(2, "0");
+
+        return `${yyyy}-${mm}-${dd}`;
+      } catch (error) {
+        return "";
+      }
+    }
+
+    function daysLeft(value) {
+      if (!value) return 0;
+
+      const now = new Date();
+      const end = new Date(value);
+      const diff = end.getTime() - now.getTime();
+
+      return Math.max(Math.ceil(diff / 86400000), 0);
+    }
+
+    function statusBadge(status) {
+      const value = String(status || "trial").toLowerCase();
+
+      if (value === "active") return `<span class="badge badge-active">Active</span>`;
+      if (value === "suspended") return `<span class="badge badge-suspended">Suspended</span>`;
+      if (value === "cancelled") return `<span class="badge badge-cancelled">Cancelled</span>`;
+
+      return `<span class="badge badge-trial">Trial</span>`;
+    }
+
+    function paymentBadge(status) {
+      const value = String(status || "trial").toLowerCase();
+
+      if (value === "paid") return `<span class="badge badge-active">Paid</span>`;
+      if (value === "overdue") return `<span class="badge badge-cancelled">Overdue</span>`;
+      if (value === "pending" || value === "partial") return `<span class="badge badge-suspended">${escapeHtml(value)}</span>`;
+      if (value === "waived") return `<span class="badge badge-soft">Waived</span>`;
+      if (value === "cancelled") return `<span class="badge badge-cancelled">Cancelled</span>`;
+
+      return `<span class="badge badge-trial">Trial</span>`;
+    }
+
+    function userLimitText(limit) {
+      if (limit === null || limit === undefined || limit === "") {
+        return "Custom";
+      }
+
+      return String(limit);
+    }
+
+    async function requireAdmin() {
+      const sessionResult = await supabaseClient.auth.getSession();
+      const session = sessionResult.data && sessionResult.data.session;
+
+      if (!session || !session.user) {
+        window.location.href = "login.html?mode=admin";
+        return false;
+      }
+
+      currentUser = session.user;
+
+      const adminResult = await supabaseClient.rpc("is_ungani_admin");
+
+      if (adminResult.error || adminResult.data !== true) {
+        alert("Admin access only. Please log in using an authorized UNGANI admin account.");
+        await supabaseClient.auth.signOut();
+        window.location.href = "login.html?mode=admin";
+        return false;
+      }
+
+      return true;
+    }
+
+    async function safeSelect(tableName, builder) {
+      try {
+        let query = supabaseClient.from(tableName).select("*");
+
+        if (typeof builder === "function") {
+          query = builder(query);
+        }
+
+        const result = await query;
+
+        if (result.error) {
+          return {
+            data: [],
+            error: result.error.message
+          };
+        }
+
+        return {
+          data: result.data || [],
+          error: ""
+        };
+      } catch (error) {
+        return {
+          data: [],
+          error: error.message || "Could not load data."
+        };
+      }
+    }
+
+    async function loadPackages() {
+      const result = await safeSelect("ungani_packages", function (query) {
+        return query.order("sort_order", { ascending: true });
+      });
+
+      packages = result.data || [];
+
+      renderPackages();
+    }
+
+    async function loadClientsAndSubscriptions() {
+      const tenantsResult = await safeSelect("tenants", function (query) {
+        return query.order("created_at", { ascending: false }).limit(500);
+      });
+
+      const subscriptionsResult = await safeSelect("ungani_subscriptions", function (query) {
+        return query.order("updated_at", { ascending: false }).limit(500);
+      });
+
+      const usersResult = await safeSelect("users", function (query) {
+        return query.limit(2000);
+      });
+
+      tenants = tenantsResult.data || [];
+      subscriptions = subscriptionsResult.data || [];
+      users = usersResult.data || [];
+
+      mergeClientData();
+      updateStats();
+      renderClients();
+    }
+
+    function mergeClientData() {
+      const subscriptionByTenant = new Map();
+      const userCountByTenant = new Map();
+
+      subscriptions.forEach(function (sub) {
+        subscriptionByTenant.set(sub.tenant_id, sub);
+      });
+
+      users.forEach(function (user) {
+        const tenantId = user.tenant_id;
+
+        if (!tenantId) return;
+
+        userCountByTenant.set(tenantId, (userCountByTenant.get(tenantId) || 0) + 1);
+      });
+
+      mergedClients = tenants.map(function (tenant) {
+        const sub = subscriptionByTenant.get(tenant.id) || {};
+        const packageKey = sub.package_key || tenant.package_key || "starter";
+        const selectedPackage = packages.find(function (pkg) {
+          return pkg.package_key === packageKey;
+        }) || {};
+
+        return {
+          tenant: tenant,
+          subscription: sub,
+          tenant_id: tenant.id,
+          business_name: cleanText(tenant.business_name || tenant.company_name || tenant.name || "Unnamed business"),
+          email: cleanText(tenant.email || tenant.business_email || tenant.contact_email || "No email"),
+          phone: cleanText(tenant.phone || tenant.phone_number || tenant.contact_phone || "No phone"),
+          business_type: cleanText(tenant.business_type || tenant.business_type_key || tenant.industry || "General business"),
+          package_key: packageKey,
+          package_name: sub.package_name || selectedPackage.package_name || "Starter",
+          monthly_price_ksh: sub.monthly_price_ksh ?? selectedPackage.monthly_price_ksh ?? 5000,
+          onboarding_fee_ksh: sub.onboarding_fee_ksh ?? selectedPackage.onboarding_fee_ksh ?? 7500,
+          user_limit: sub.user_limit ?? tenant.user_limit ?? selectedPackage.user_limit ?? 2,
+          current_users: userCountByTenant.get(tenant.id) || 0,
+          subscription_status: sub.subscription_status || tenant.subscription_status || "trial",
+          payment_status: sub.payment_status || tenant.payment_status || "trial",
+          trial_start_at: sub.trial_start_at || tenant.trial_start_at || "",
+          trial_end_at: sub.trial_end_at || tenant.trial_end_at || "",
+          notes: sub.notes || ""
+        };
+      });
+    }
+
+    function renderPackages() {
+      const grid = document.getElementById("packagesGrid");
+
+      if (!packages.length) {
+        grid.innerHTML = `
+          <div class="empty-state">
+            <strong>No packages found</strong>
+            Run Step SaaS-1 again if the package catalog is missing.
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = packages.map(function (pkg) {
+        const features = Array.isArray(pkg.features) ? pkg.features : [];
+
+        return `
+          <div class="package-card">
+            <h3>${escapeHtml(pkg.package_name)}</h3>
+            <div class="price">${escapeHtml(formatMoney(pkg.monthly_price_ksh))}</div>
+            <p>
+              Onboarding: <strong>${escapeHtml(formatMoney(pkg.onboarding_fee_ksh))}</strong><br>
+              Users: <strong>${escapeHtml(userLimitText(pkg.user_limit))}</strong>
+            </p>
+            <p>${escapeHtml(pkg.description || "")}</p>
+            <ul>
+              ${features.slice(0, 5).map(function (feature) {
+                return `<li>${escapeHtml(feature)}</li>`;
+              }).join("")}
+            </ul>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function updateStats() {
+      const total = mergedClients.length;
+      const trial = mergedClients.filter(function (client) {
+        return String(client.subscription_status).toLowerCase() === "trial";
+      }).length;
+      const active = mergedClients.filter(function (client) {
+        return String(client.subscription_status).toLowerCase() === "active";
+      }).length;
+      const suspended = mergedClients.filter(function (client) {
+        return String(client.subscription_status).toLowerCase() === "suspended";
+      }).length;
+      const paymentAttention = mergedClients.filter(function (client) {
+        const status = String(client.payment_status).toLowerCase();
+        return status === "pending" || status === "overdue" || status === "partial";
+      }).length;
+
+      document.getElementById("totalClients").textContent = total;
+      document.getElementById("trialCount").textContent = trial;
+      document.getElementById("activeCount").textContent = active;
+      document.getElementById("paymentAttentionCount").textContent = paymentAttention;
+      document.getElementById("suspendedCount").textContent = suspended;
+    }
+
+    function setFilter(filter) {
+      activeFilter = filter;
+
+      ["All", "Trial", "Active", "Payment", "Suspended"].forEach(function (name) {
+        const button = document.getElementById("filter" + name);
+        if (button) button.classList.remove("active");
+      });
+
+      const activeButton = document.getElementById(
+        "filter" + filter.charAt(0).toUpperCase() + filter.slice(1)
+      );
+
+      if (activeButton) {
+        activeButton.classList.add("active");
+      }
+
+      renderClients();
+    }
+
+    function getFilteredClients() {
+      const search = String(document.getElementById("searchInput").value || "").toLowerCase();
+
+      return mergedClients.filter(function (client) {
+        const subscriptionStatus = String(client.subscription_status || "").toLowerCase();
+        const paymentStatus = String(client.payment_status || "").toLowerCase();
+
+        if (activeFilter === "trial" && subscriptionStatus !== "trial") return false;
+        if (activeFilter === "active" && subscriptionStatus !== "active") return false;
+        if (activeFilter === "suspended" && subscriptionStatus !== "suspended") return false;
+        if (
+          activeFilter === "payment" &&
+          paymentStatus !== "pending" &&
+          paymentStatus !== "overdue" &&
+          paymentStatus !== "partial"
+        ) {
+          return false;
+        }
+
+        if (!search) return true;
+
+        const haystack = [
+          client.business_name,
+          client.email,
+          client.phone,
+          client.business_type,
+          client.package_key,
+          client.package_name,
+          client.subscription_status,
+          client.payment_status
+        ].join(" ").toLowerCase();
+
+        return haystack.includes(search);
+      });
+    }
+
+    function packageOptions(selectedKey) {
+      return packages.map(function (pkg) {
+        const selected = pkg.package_key === selectedKey ? "selected" : "";
+
+        return `
+          <option value="${escapeAttr(pkg.package_key)}" ${selected}>
+            ${escapeHtml(pkg.package_name)} — ${escapeHtml(formatMoney(pkg.monthly_price_ksh))}
+          </option>
+        `;
+      }).join("");
+    }
+
+    function renderClients() {
+      const list = document.getElementById("clientList");
+      const rows = getFilteredClients();
+
+      if (!rows.length) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <strong>No clients found</strong>
+            Try changing the filter or search term.
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = rows.map(function (client) {
+        const tenantId = client.tenant_id;
+        const trialDays = daysLeft(client.trial_end_at);
+        const userLimit = userLimitText(client.user_limit);
+        const userText = client.current_users + " / " + userLimit;
+
+        return `
+          <article class="client-row">
+            <div class="client-main">
+              <h3>${escapeHtml(client.business_name)}</h3>
+              <p>${escapeHtml(client.email)} · ${escapeHtml(client.phone)}</p>
+              <p>${escapeHtml(client.business_type)}</p>
+
+              <div class="client-meta">
+                ${statusBadge(client.subscription_status)}
+                ${paymentBadge(client.payment_status)}
+                <span class="badge badge-soft">${escapeHtml(client.package_name)}</span>
+                <span class="badge badge-soft">Users: ${escapeHtml(userText)}</span>
+                <span class="badge badge-soft">Trial left: ${trialDays} days</span>
+              </div>
+
+              <p>
+                Monthly: <strong>${escapeHtml(formatMoney(client.monthly_price_ksh))}</strong><br>
+                Onboarding: <strong>${escapeHtml(formatMoney(client.onboarding_fee_ksh))}</strong><br>
+                Trial ends: <strong>${escapeHtml(formatDate(client.trial_end_at))}</strong>
+              </p>
+            </div>
+
+            <div>
+              <div class="edit-grid">
+                <div class="field">
+                  <label>Package</label>
+                  <select id="package_${tenantId}">
+                    ${packageOptions(client.package_key)}
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label>Account Status</label>
+                  <select id="subscription_status_${tenantId}">
+                    <option value="trial" ${client.subscription_status === "trial" ? "selected" : ""}>Trial</option>
+                    <option value="active" ${client.subscription_status === "active" ? "selected" : ""}>Active</option>
+                    <option value="suspended" ${client.subscription_status === "suspended" ? "selected" : ""}>Suspended</option>
+                    <option value="cancelled" ${client.subscription_status === "cancelled" ? "selected" : ""}>Cancelled</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label>Payment Status</label>
+                  <select id="payment_status_${tenantId}">
+                    <option value="trial" ${client.payment_status === "trial" ? "selected" : ""}>Trial</option>
+                    <option value="pending" ${client.payment_status === "pending" ? "selected" : ""}>Pending</option>
+                    <option value="paid" ${client.payment_status === "paid" ? "selected" : ""}>Paid</option>
+                    <option value="overdue" ${client.payment_status === "overdue" ? "selected" : ""}>Overdue</option>
+                    <option value="partial" ${client.payment_status === "partial" ? "selected" : ""}>Partial</option>
+                    <option value="waived" ${client.payment_status === "waived" ? "selected" : ""}>Waived</option>
+                    <option value="cancelled" ${client.payment_status === "cancelled" ? "selected" : ""}>Cancelled</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label>Trial End Date</label>
+                  <input id="trial_end_${tenantId}" type="date" value="${escapeAttr(dateInputValue(client.trial_end_at))}" />
+                </div>
+
+                <div class="field field-full">
+                  <label>Admin Notes</label>
+                  <textarea id="notes_${tenantId}" placeholder="Internal subscription note...">${escapeHtml(client.notes)}</textarea>
+                </div>
+              </div>
+
+              <div class="row-actions">
+                <button class="btn btn-success" onclick="quickUpdate('${tenantId}', 'active', 'paid')">Activate / Paid</button>
+                <button class="btn btn-soft" onclick="quickUpdate('${tenantId}', 'trial', 'trial')">Set Trial</button>
+                <button class="btn btn-danger" onclick="quickUpdate('${tenantId}', 'suspended', 'overdue')">Suspend</button>
+                <button class="btn btn-primary" onclick="saveSubscription('${tenantId}')">Save Changes</button>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    async function saveSubscription(tenantId) {
+      const packageKey = document.getElementById("package_" + tenantId).value;
+      const subscriptionStatus = document.getElementById("subscription_status_" + tenantId).value;
+      const paymentStatus = document.getElementById("payment_status_" + tenantId).value;
+      const trialEndValue = document.getElementById("trial_end_" + tenantId).value;
+      const notes = document.getElementById("notes_" + tenantId).value;
+
+      const trialEndAt = trialEndValue ? trialEndValue + "T23:59:59+03:00" : null;
+
+      const result = await supabaseClient.rpc("admin_update_ungani_subscription", {
+        p_tenant_id: tenantId,
+        p_package_key: packageKey,
+        p_subscription_status: subscriptionStatus,
+        p_payment_status: paymentStatus,
+        p_trial_end_at: trialEndAt,
+        p_notes: notes || null
+      });
+
+      if (result.error) {
+        alert("Could not save subscription: " + result.error.message);
+        return;
+      }
+
+      alert("Subscription updated successfully.");
+      await loadAll();
+    }
+
+    async function quickUpdate(tenantId, subscriptionStatus, paymentStatus) {
+      document.getElementById("subscription_status_" + tenantId).value = subscriptionStatus;
+      document.getElementById("payment_status_" + tenantId).value = paymentStatus;
+
+      await saveSubscription(tenantId);
+    }
+
+    async function loadAll() {
+      document.getElementById("clientList").innerHTML = `
+        <div class="empty-state">
+          <strong>Loading clients...</strong>
+          Checking subscriptions and client accounts.
+        </div>
+      `;
+
+      await loadPackages();
+      await loadClientsAndSubscriptions();
+    }
+
+    async function logout() {
+      await supabaseClient.auth.signOut();
+      window.location.href = "login.html?mode=admin";
+    }
+
+    async function init() {
+      const allowed = await requireAdmin();
+
+      if (!allowed) return;
+
+      await loadAll();
+    }
+
+    init();
+  </script>
+</body>
+</html>
