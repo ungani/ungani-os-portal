@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>My Account Status | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --off-white: #F5F5F3;
+      --white: #FFFFFF;
+      --soft-gray: #E5E7EB;
+      --text-dark: #111827;
+      --text-muted: #6B7280;
+      --green: #16A34A;
+      --red: #DC2626;
+      --orange: #EA580C;
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--off-white);
+      color: var(--text-dark);
+    }
+
+    .page {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      background: var(--navy);
+      color: var(--white);
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: var(--white);
+      border-radius: 12px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+      min-width: 0;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: var(--soft-gray);
+      white-space: nowrap;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--white);
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+
+    .top-btn:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 26px 18px 40px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, var(--navy), #092A59);
+      color: var(--white);
+      border-radius: var(--radius);
+      padding: 26px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -80px;
+      top: -80px;
+      width: 220px;
+      height: 220px;
+      background: rgba(212, 166, 58, 0.18);
+      border-radius: 50%;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      letter-spacing: 0.2px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--soft-gray);
+      max-width: 760px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .status-strip {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--white);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    .pill.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .grid {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(6, 28, 61, 0.08);
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      color: var(--navy);
+      font-size: 20px;
+    }
+
+    .card p {
+      color: var(--text-muted);
+      line-height: 1.55;
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .info-box {
+      background: var(--off-white);
+      border: 1px solid var(--soft-gray);
+      border-radius: 14px;
+      padding: 14px;
+      min-height: 86px;
+    }
+
+    .info-box label {
+      display: block;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 8px;
+    }
+
+    .info-box strong {
+      display: block;
+      color: var(--navy);
+      font-size: 18px;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .info-box span {
+      display: block;
+      margin-top: 4px;
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      width: fit-content;
+    }
+
+    .status-allowed {
+      color: #166534;
+      background: #DCFCE7;
+    }
+
+    .status-warning {
+      color: #92400E;
+      background: #FEF3C7;
+    }
+
+    .status-blocked {
+      color: #991B1B;
+      background: #FEE2E2;
+    }
+
+    .notice {
+      margin-top: 18px;
+      border-radius: 16px;
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.55;
+      border: 1px solid var(--soft-gray);
+      background: var(--white);
+      color: var(--text-dark);
+      box-shadow: var(--shadow);
+    }
+
+    .notice strong {
+      color: var(--navy);
+    }
+
+    .notice.success {
+      background: #F0FDF4;
+      border-color: #BBF7D0;
+    }
+
+    .notice.warning {
+      background: #FFFBEB;
+      border-color: #FDE68A;
+    }
+
+    .notice.danger {
+      background: #FEF2F2;
+      border-color: #FECACA;
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .action-btn {
+      width: 100%;
+      border: none;
+      border-radius: 14px;
+      padding: 13px 14px;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      text-align: center;
+      font-size: 14px;
+      transition: 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .action-btn.primary {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .action-btn.secondary {
+      background: var(--navy);
+      color: var(--white);
+    }
+
+    .action-btn.light {
+      background: var(--off-white);
+      color: var(--navy);
+      border: 1px solid var(--soft-gray);
+    }
+
+    .action-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(6, 28, 61, 0.12);
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--navy);
+      font-weight: 800;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid var(--soft-gray);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 840px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .top-actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        padding: 22px;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .brand img {
+        width: 42px;
+        height: 42px;
+      }
+
+      .brand-text strong {
+        font-size: 16px;
+      }
+
+      .brand-text span {
+        font-size: 12px;
+      }
+
+      .top-btn {
+        padding: 9px 11px;
+        font-size: 12px;
+      }
+
+      .card {
+        padding: 16px;
+      }
+
+      .info-box strong {
+        font-size: 16px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" />
+        <div class="brand-text">
+          <strong>UNGANI OS</strong>
+          <span>My Account Status</span>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <a class="top-btn" href="client-notifications.html">Notifications</a>
+        <a class="top-btn" href="my-package.html">My Package</a>
+        <a class="top-btn gold" href="client.html">Back to Dashboard</a>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="hero">
+        <div class="hero-content">
+          <h1>My Account Status</h1>
+          <p>
+            View your UNGANI OS access status, subscription status, trial days,
+            and account messages. This page is read-only for clients.
+          </p>
+
+          <div class="status-strip">
+            <span class="pill gold" id="heroAccess">Checking access...</span>
+            <span class="pill" id="heroPackage">Checking package...</span>
+            <span class="pill" id="heroPayment">Checking payment...</span>
+          </div>
+        </div>
+      </section>
+
+      <div id="loadingBox" class="notice">
+        <div class="loading">
+          <span class="spinner"></span>
+          <span>Loading account status...</span>
+        </div>
+      </div>
+
+      <div id="errorBox" class="notice danger hidden">
+        <strong>Unable to load account status.</strong>
+        <div id="errorText" style="margin-top: 6px;"></div>
+      </div>
+
+      <section id="statusArea" class="grid hidden">
+        <div class="card">
+          <h2>Access Overview</h2>
+          <p>
+            UNGANI controls account activation, suspension, package status, and payment status
+            from the admin side. Clients can view status but cannot edit it.
+          </p>
+
+          <div id="mainNotice" class="notice">
+            <strong>Status:</strong>
+            <span id="mainMessage">Checking...</span>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-box">
+              <label>Access Level</label>
+              <strong>
+                <span id="accessLevel" class="status-badge status-warning">—</span>
+              </strong>
+              <span id="accessAllowedText">Checking workspace access...</span>
+            </div>
+
+            <div class="info-box">
+              <label>Package</label>
+              <strong id="packageKey">—</strong>
+              <span>Current package key.</span>
+            </div>
+
+            <div class="info-box">
+              <label>Subscription Status</label>
+              <strong id="subscriptionStatus">—</strong>
+              <span>Account status managed by UNGANI admin.</span>
+            </div>
+
+            <div class="info-box">
+              <label>Payment Status</label>
+              <strong id="paymentStatus">—</strong>
+              <span>Payment status managed by UNGANI admin.</span>
+            </div>
+
+            <div class="info-box">
+              <label>Trial Start Date</label>
+              <strong id="trialStart">—</strong>
+              <span>Start date of the 7-day trial.</span>
+            </div>
+
+            <div class="info-box">
+              <label>Trial End Date</label>
+              <strong id="trialEnd">—</strong>
+              <span id="daysLeftText">Days left: —</span>
+            </div>
+          </div>
+        </div>
+
+        <aside class="card">
+          <h2>Account Actions</h2>
+          <p>
+            Use these actions if your trial is ending, your account is suspended,
+            or your payment/package needs review.
+          </p>
+
+          <div class="actions">
+            <a class="action-btn primary" href="my-package.html">
+              View My Package
+            </a>
+
+            <a class="action-btn secondary" href="my-support.html">
+              Contact UNGANI Support
+            </a>
+
+            <a class="action-btn light" href="mailto:info@ungani.com">
+              Email info@ungani.com
+            </a>
+
+            <a class="action-btn light" href="client.html">
+              Back to Dashboard
+            </a>
+          </div>
+
+          <div class="notice warning">
+            <strong>Important:</strong>
+            This page does not change your package, payment status, or access status.
+            Those changes are handled by UNGANI admin.
+          </div>
+        </aside>
+      </section>
+
+      <div class="footer">
+        UNGANI OS · ungani.com · info@ungani.com
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadAccountStatus();
+      showStoredAccessMessage();
+    });
+
+    async function loadAccountStatus() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const errorText = document.getElementById("errorText");
+      const statusArea = document.getElementById("statusArea");
+
+      loadingBox.classList.remove("hidden");
+      errorBox.classList.add("hidden");
+      statusArea.classList.add("hidden");
+
+      try {
+        const { data, error } = await supabaseClient.rpc("get_my_ungani_access_status");
+
+        if (error) {
+          throw error;
+        }
+
+        const status = extractFirstRow(data);
+
+        if (!status) {
+          throw new Error("No account status record was found.");
+        }
+
+        renderStatus(status);
+
+        loadingBox.classList.add("hidden");
+        statusArea.classList.remove("hidden");
+      } catch (error) {
+        loadingBox.classList.add("hidden");
+        errorBox.classList.remove("hidden");
+
+        errorText.textContent =
+          error && error.message
+            ? error.message
+            : "Please go back to your dashboard and try again. If the issue continues, contact UNGANI support.";
+      }
+    }
+
+    function renderStatus(status) {
+      const accessAllowed = status.access_allowed === true;
+      const accessLevel = normalize(status.access_level || "warning");
+      const message = status.access_message || "Account status needs review.";
+
+      document.getElementById("heroAccess").textContent =
+        accessAllowed ? "Access: Allowed" : "Access: Blocked";
+
+      document.getElementById("heroPackage").textContent =
+        "Package: " + titleCase(status.package_key || "starter");
+
+      document.getElementById("heroPayment").textContent =
+        "Payment: " + titleCase(status.payment_status || "pending");
+
+      document.getElementById("packageKey").textContent =
+        titleCase(status.package_key || "starter");
+
+      document.getElementById("subscriptionStatus").textContent =
+        titleCase(status.subscription_status || "trial");
+
+      document.getElementById("paymentStatus").textContent =
+        titleCase(status.payment_status || "pending");
+
+      document.getElementById("trialStart").textContent =
+        formatDate(status.trial_start_at);
+
+      document.getElementById("trialEnd").textContent =
+        formatDate(status.trial_end_at);
+
+      if (status.days_left === null || status.days_left === undefined) {
+        document.getElementById("daysLeftText").textContent = "Days left: —";
+      } else if (Number(status.days_left) > 1) {
+        document.getElementById("daysLeftText").textContent =
+          "Days left: " + Number(status.days_left) + " days";
+      } else if (Number(status.days_left) === 1) {
+        document.getElementById("daysLeftText").textContent = "Days left: 1 day";
+      } else if (Number(status.days_left) === 0) {
+        document.getElementById("daysLeftText").textContent = "Trial ends today";
+      } else {
+        document.getElementById("daysLeftText").textContent = "Trial has ended";
+      }
+
+      const accessLevelEl = document.getElementById("accessLevel");
+      accessLevelEl.className = "status-badge";
+
+      if (!accessAllowed || accessLevel === "blocked") {
+        accessLevelEl.classList.add("status-blocked");
+        accessLevelEl.textContent = "Blocked";
+        document.getElementById("accessAllowedText").textContent =
+          "Workspace access is currently blocked.";
+      } else if (accessLevel === "warning") {
+        accessLevelEl.classList.add("status-warning");
+        accessLevelEl.textContent = "Warning";
+        document.getElementById("accessAllowedText").textContent =
+          "Workspace access is allowed, but your account needs attention.";
+      } else {
+        accessLevelEl.classList.add("status-allowed");
+        accessLevelEl.textContent = "Allowed";
+        document.getElementById("accessAllowedText").textContent =
+          "Workspace access is currently allowed.";
+      }
+
+      const mainNotice = document.getElementById("mainNotice");
+      const mainMessage = document.getElementById("mainMessage");
+
+      mainNotice.className = "notice";
+
+      if (!accessAllowed || accessLevel === "blocked") {
+        mainNotice.classList.add("danger");
+      } else if (accessLevel === "warning") {
+        mainNotice.classList.add("warning");
+      } else {
+        mainNotice.classList.add("success");
+      }
+
+      mainMessage.textContent = message;
+    }
+
+    function showStoredAccessMessage() {
+      try {
+        const storedMessage = localStorage.getItem("ungani_account_access_message");
+
+        if (storedMessage) {
+          localStorage.removeItem("ungani_account_access_message");
+        }
+      } catch (error) {
+        return;
+      }
+    }
+
+    function extractFirstRow(data) {
+      if (!data) return null;
+
+      if (Array.isArray(data)) {
+        return data.length ? data[0] : null;
+      }
+
+      return data;
+    }
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function titleCase(value) {
+      if (!value) return "—";
+
+      return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function formatDate(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return "—";
+      }
+
+      return date.toLocaleDateString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
