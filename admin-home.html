@@ -128,7 +128,14 @@
       font-size: 11px;
     }
 
-    .hamburger {
+    .mobile-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .hamburger,
+    .bell-btn {
       width: 44px;
       height: 44px;
       border: 1px solid rgba(255,255,255,0.18);
@@ -138,12 +145,36 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      font-size: 22px;
       cursor: pointer;
       flex: 0 0 auto;
+      position: relative;
     }
 
-    .drawer-overlay {
+    .bell-dot {
+      position: absolute;
+      top: -5px;
+      right: -5px;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--gold);
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 950;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(6,28,61,0.97);
+    }
+
+    .bell-dot.show {
+      display: inline-flex;
+    }
+
+    .drawer-overlay,
+    .notification-overlay {
       display: none;
       position: fixed;
       inset: 0;
@@ -154,7 +185,8 @@
       transition: 0.2s ease;
     }
 
-    .drawer-overlay.open {
+    .drawer-overlay.open,
+    .notification-overlay.open {
       opacity: 1;
       pointer-events: auto;
     }
@@ -728,6 +760,87 @@
       color: var(--text-soft);
     }
 
+    .notification-panel {
+      position: fixed;
+      right: 22px;
+      top: 84px;
+      width: min(420px, calc(100vw - 28px));
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+      background: var(--card-solid);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      box-shadow: 0 30px 90px rgba(0,0,0,0.35);
+      z-index: 120;
+      display: none;
+      padding: 18px;
+    }
+
+    .notification-panel.open {
+      display: block;
+    }
+
+    .notification-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .notification-head h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 22px;
+      letter-spacing: -0.04em;
+    }
+
+    .notification-head p {
+      margin: 4px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    .notification-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .notification-item {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      border-radius: 18px;
+      padding: 13px;
+    }
+
+    .notification-item.unread {
+      border-color: rgba(212,166,58,0.45);
+      background: rgba(212,166,58,0.10);
+    }
+
+    .notification-item strong {
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .notification-item p {
+      margin: 0;
+      color: var(--text-soft);
+      line-height: 1.45;
+      font-size: 12px;
+    }
+
+    .notification-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     @media (max-width: 1180px) {
       body {
         background: var(--page-bg);
@@ -737,7 +850,8 @@
         display: block;
       }
 
-      .drawer-overlay {
+      .drawer-overlay,
+      .notification-overlay {
         display: block;
       }
 
@@ -902,6 +1016,14 @@
         grid-column: 2;
         justify-self: start;
       }
+
+      .notification-panel {
+        top: 74px;
+        left: 12px;
+        right: 12px;
+        width: auto;
+        max-height: calc(100vh - 96px);
+      }
     }
 
     @media (max-width: 520px) {
@@ -913,10 +1035,7 @@
         font-size: 25px;
       }
 
-      .quick-actions {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
+      .quick-actions,
       .kpi-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -976,11 +1095,37 @@
         </div>
       </div>
 
-      <button class="hamburger" type="button" onclick="openSidebar()" aria-label="Open menu">☰</button>
+      <div class="mobile-actions">
+        <button class="bell-btn" type="button" onclick="toggleNotifications()" aria-label="Open notifications">
+          🔔
+          <span id="mobileNotificationCount" class="bell-dot">0</span>
+        </button>
+        <button class="hamburger" type="button" onclick="openSidebar()" aria-label="Open menu">☰</button>
+      </div>
     </div>
   </header>
 
   <div id="drawerOverlay" class="drawer-overlay" onclick="closeSidebar()"></div>
+  <div id="notificationOverlay" class="notification-overlay" onclick="closeNotifications()"></div>
+
+  <div id="notificationPanel" class="notification-panel">
+    <div class="notification-head">
+      <div>
+        <h3>Admin Notifications</h3>
+        <p id="notificationSubtext">Recent UNGANI OS admin updates.</p>
+      </div>
+      <button class="btn small light" type="button" onclick="closeNotifications()">Close</button>
+    </div>
+
+    <div class="top-actions" style="justify-content:flex-start;margin-bottom:12px;">
+      <button class="btn small gold" type="button" onclick="markAllNotificationsRead()">Mark all read</button>
+      <button class="btn small navy" type="button" onclick="loadNotifications()">Refresh</button>
+    </div>
+
+    <div id="notificationList" class="notification-list">
+      <div class="empty">No notifications loaded yet.</div>
+    </div>
+  </div>
 
   <div class="app-shell">
     <aside id="sidebar" class="sidebar">
@@ -1031,6 +1176,10 @@
         </div>
 
         <div class="top-actions">
+          <button class="btn light" type="button" onclick="toggleNotifications()">
+            🔔 Notifications
+            <span id="desktopNotificationCount" class="status gold" style="display:none;">0</span>
+          </button>
           <button class="btn light" onclick="toggleTheme()" id="themeButton">Dark Mode</button>
           <button class="btn light" onclick="loadAdminData()">Refresh</button>
           <a class="btn gold" href="admin.html">Review Registrations</a>
@@ -1049,6 +1198,7 @@
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     let currentUser = null;
+    let notifications = [];
 
     let adminData = {
       tenants: [],
@@ -1068,6 +1218,7 @@
     window.addEventListener("load", initAdminDashboard);
 
     function openSidebar() {
+      closeNotifications();
       document.getElementById("sidebar").classList.add("open");
       document.getElementById("drawerOverlay").classList.add("open");
       document.body.style.overflow = "hidden";
@@ -1076,6 +1227,30 @@
     function closeSidebar() {
       document.getElementById("sidebar").classList.remove("open");
       document.getElementById("drawerOverlay").classList.remove("open");
+      document.body.style.overflow = "";
+    }
+
+    function toggleNotifications() {
+      closeSidebar();
+
+      const panel = document.getElementById("notificationPanel");
+      const overlay = document.getElementById("notificationOverlay");
+
+      const isOpen = panel.classList.contains("open");
+
+      if (isOpen) {
+        closeNotifications();
+      } else {
+        panel.classList.add("open");
+        overlay.classList.add("open");
+        document.body.style.overflow = "hidden";
+        renderNotifications();
+      }
+    }
+
+    function closeNotifications() {
+      document.getElementById("notificationPanel").classList.remove("open");
+      document.getElementById("notificationOverlay").classList.remove("open");
       document.body.style.overflow = "";
     }
 
@@ -1097,7 +1272,10 @@
         return;
       }
 
-      await loadAdminData();
+      await Promise.all([
+        loadAdminData(),
+        loadNotifications()
+      ]);
     }
 
     async function loadAdminData() {
@@ -1134,6 +1312,155 @@
       renderAdminDashboard();
     }
 
+    async function loadNotifications() {
+      try {
+        const response = await supabaseClient
+          .from("ungani_notifications")
+          .select("*")
+          .or("target_type.eq.admin,target_type.eq.all")
+          .order("created_at", { ascending: false })
+          .limit(60);
+
+        if (response.error) {
+          console.warn("notifications", response.error.message);
+          notifications = [];
+        } else {
+          notifications = response.data || [];
+        }
+
+        updateNotificationCounts();
+        renderNotifications();
+      } catch (error) {
+        console.warn("notifications", error.message);
+        notifications = [];
+        updateNotificationCounts();
+      }
+    }
+
+    async function markAllNotificationsRead() {
+      const unreadIds = notifications
+        .filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read")
+        .map(row => row.id)
+        .filter(Boolean);
+
+      if (unreadIds.length === 0) {
+        renderNotifications();
+        return;
+      }
+
+      try {
+        const response = await supabaseClient
+          .from("ungani_notifications")
+          .update({
+            status: "read",
+            read_at: new Date().toISOString()
+          })
+          .in("id", unreadIds);
+
+        if (response.error) {
+          console.warn(response.error.message);
+        }
+
+        await loadNotifications();
+      } catch (error) {
+        console.warn(error.message);
+      }
+    }
+
+    async function markNotificationRead(id) {
+      if (!id) return;
+
+      try {
+        await supabaseClient
+          .from("ungani_notifications")
+          .update({
+            status: "read",
+            read_at: new Date().toISOString()
+          })
+          .eq("id", id);
+
+        await loadNotifications();
+      } catch (error) {
+        console.warn(error.message);
+      }
+    }
+
+    function updateNotificationCounts() {
+      const unread = notifications.filter(row => {
+        return String(getValue(row, ["status"], "")).toLowerCase() !== "read";
+      }).length;
+
+      const mobileCount = document.getElementById("mobileNotificationCount");
+      const desktopCount = document.getElementById("desktopNotificationCount");
+      const subtext = document.getElementById("notificationSubtext");
+
+      if (mobileCount) {
+        mobileCount.innerText = unread > 99 ? "99+" : String(unread);
+        mobileCount.classList.toggle("show", unread > 0);
+      }
+
+      if (desktopCount) {
+        desktopCount.innerText = unread > 99 ? "99+" : String(unread);
+        desktopCount.style.display = unread > 0 ? "inline-flex" : "none";
+      }
+
+      if (subtext) {
+        subtext.innerText = unread > 0
+          ? unread + " unread admin notification(s)."
+          : "No unread admin notifications.";
+      }
+    }
+
+    function renderNotifications() {
+      const box = document.getElementById("notificationList");
+
+      if (!box) return;
+
+      if (!notifications || notifications.length === 0) {
+        box.innerHTML = `<div class="empty">No admin notifications yet.</div>`;
+        updateNotificationCounts();
+        return;
+      }
+
+      box.innerHTML = notifications.map(row => {
+        const isUnread = String(getValue(row, ["status"], "")).toLowerCase() !== "read";
+        const actionUrl = getValue(row, ["action_url"], "");
+        const actionLabel = getValue(row, ["action_label"], "Open");
+        const priority = String(getValue(row, ["priority"], "normal")).toLowerCase();
+
+        return `
+          <div class="notification-item ${isUnread ? "unread" : ""}">
+            <div class="notification-meta">
+              <strong>${safe(getValue(row, ["title"], "Notification"))}</strong>
+              ${priorityBadge(priority)}
+            </div>
+            <p>${safe(getValue(row, ["message"], ""))}</p>
+            <div class="notification-meta">
+              <p>${safe(formatDate(getValue(row, ["created_at"], "")))}</p>
+              <div class="top-actions">
+                ${isUnread ? `<button class="btn small light" type="button" onclick="markNotificationRead('${attr(row.id)}')">Mark read</button>` : ""}
+                ${actionUrl ? `<a class="btn small gold" href="${attr(actionUrl)}">${safe(actionLabel)}</a>` : ""}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      updateNotificationCounts();
+    }
+
+    function priorityBadge(priority) {
+      if (priority.includes("urgent") || priority.includes("high")) {
+        return `<span class="status red">High</span>`;
+      }
+
+      if (priority.includes("low")) {
+        return `<span class="status blue">Low</span>`;
+      }
+
+      return `<span class="status gold">Normal</span>`;
+    }
+
     async function safeSelect(tableName, limitCount) {
       try {
         let response = await supabaseClient
@@ -1163,10 +1490,11 @@
 
     function renderAdminDashboard() {
       const summary = buildSummary();
-      const attention = buildAttentionQueue();
       const recent = buildRecentActivity();
       const health = buildClientHealth();
       const businessTypes = buildBusinessTypeRows();
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const attentionTotal = summary.attentionTotal + unreadNotifications;
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -1184,17 +1512,17 @@
               <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
                 <a class="btn gold" href="admin.html">Approvals</a>
                 <a class="btn green" href="support.html">Support</a>
-                <a class="btn light" href="admin-chat.html">Chat</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
               </div>
             </div>
 
             <div class="hero-mini">
               <h4>Today / Attention</h4>
               <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)")}
                 ${todayItem("📝", "Pending approvals", summary.pendingRegistrations, "registration(s)")}
                 ${todayItem("💬", "Open support", summary.openSupport, summary.urgentSupport + " urgent")}
                 ${todayItem("⏰", "Overdue tasks", summary.overdueTasks, "client task(s)")}
-                ${todayItem("📅", "Overdue calendar", summary.overdueEvents, "activity/activity(s)")}
               </div>
             </div>
           </div>
@@ -1211,7 +1539,7 @@
           ${kpiCard("Clients", summary.totalClients, summary.activeClients + " active · " + summary.trialClients + " trial", "#2563EB")}
           ${kpiCard("Pending", summary.pendingRegistrations, "Registrations to review", summary.pendingRegistrations > 0 ? "#D4A63A" : "#16A34A")}
           ${kpiCard("Support", summary.openSupport, summary.urgentSupport + " urgent/high priority", summary.openSupport > 0 ? "#DC2626" : "#16A34A")}
-          ${kpiCard("Attention", summary.attentionTotal, "Admin action items", summary.attentionTotal > 0 ? "#DC2626" : "#16A34A")}
+          ${kpiCard("Attention", attentionTotal, "Admin action items", attentionTotal > 0 ? "#DC2626" : "#16A34A")}
         </section>
 
         <section class="grid-3">
@@ -1309,11 +1637,12 @@
         </section>
 
         <p class="footer">
-          Admin Home Version: Step Mobile-2C Short Mobile Admin Dashboard · ungani.com · info@ungani.com
+          Admin Home Version: Step Notifications-1C Admin Notification Bell · ungani.com · info@ungani.com
         </p>
       `;
 
       updateThemeButton();
+      updateNotificationCounts();
     }
 
     function buildSummary() {
@@ -1399,39 +1728,6 @@
         label: key,
         value: map[key]
       })).sort((a, b) => b.value - a.value).slice(0, 8);
-    }
-
-    function buildAttentionQueue() {
-      const rows = [];
-
-      (adminData.registrations || []).forEach(row => {
-        const status = statusText(row);
-
-        if (!status || status.includes("pending") || status.includes("new") || status.includes("submitted")) {
-          rows.push({
-            icon: "📝",
-            title: getValue(row, ["business_name", "company_name", "name"], "Pending registration"),
-            text: "Registration waiting for approval.",
-            date: getValue(row, ["created_at"], ""),
-            href: "admin.html"
-          });
-        }
-      });
-
-      (adminData.support || []).forEach(row => {
-        if (!isClosed(row)) {
-          rows.push({
-            icon: "💬",
-            title: getValue(row, ["issue_title", "subject", "title"], "Open support issue"),
-            text: getValue(row, ["priority", "status"], "Open support"),
-            date: getValue(row, ["created_at", "updated_at"], ""),
-            href: "support.html"
-          });
-        }
-      });
-
-      rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-      return rows.slice(0, 8);
     }
 
     function buildRecentActivity() {
@@ -1660,7 +1956,7 @@
             <a class="btn gold" href="login.html?mode=admin">Go to Admin Login</a>
           </div>
 
-          <p class="footer">Admin Home Version: Step Mobile-2C Short Mobile Admin Dashboard · ungani.com · info@ungani.com</p>
+          <p class="footer">Admin Home Version: Step Notifications-1C Admin Notification Bell · ungani.com · info@ungani.com</p>
         </div>
       `;
     }
