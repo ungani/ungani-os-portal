@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Billing Reminder History | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 900px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .summary-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 17px;
+      padding: 15px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 7px;
+    }
+
+    .summary-card strong {
+      color: #FFFFFF;
+      font-size: 22px;
+    }
+
+    .panel {
+      margin-top: 20px;
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filter-select,
+    .search-input {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 13px;
+      font-size: 13px;
+      outline: none;
+      background: var(--panel);
+      color: var(--text);
+      min-height: 40px;
+    }
+
+    .filter-select option {
+      background: var(--navy);
+      color: #FFFFFF;
+    }
+
+    html[data-theme="light"] .filter-select option {
+      background: #FFFFFF;
+      color: #111827;
+    }
+
+    .search-input {
+      width: 260px;
+      max-width: 100%;
+    }
+
+    .search-input::placeholder {
+      color: rgba(184, 195, 214, 0.8);
+    }
+
+    html[data-theme="light"] .search-input::placeholder {
+      color: rgba(107, 114, 128, 0.8);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 880px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 13px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--gold);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.4px;
+      background: rgba(3, 18, 39, 0.42);
+      white-space: nowrap;
+    }
+
+    html[data-theme="light"] th {
+      background: #F9FAFB;
+    }
+
+    td {
+      color: var(--text-soft);
+    }
+
+    .badge {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .badge-success {
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .badge-warning {
+      color: var(--warning-text);
+      background: var(--warning-bg);
+    }
+
+    .badge-danger {
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .badge-info {
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .loading,
+    .empty,
+    .error {
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 880px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .filters,
+      .search-input,
+      .filter-select {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .top-btn {
+        font-size: 12px;
+        padding: 9px 11px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>Billing Reminder History</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="top-btn" href="admin-billing.html">Billing</a>
+      <a class="top-btn" href="admin-billing-automation.html">Automation</a>
+      <a class="top-btn" href="admin-subscriptions.html">Subscriptions</a>
+      <a class="top-btn gold" href="admin-home.html">Back to Admin</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero">
+      <h1>Billing Reminder History</h1>
+      <p>
+        View automatic billing reminders created by UNGANI OS. This helps admin confirm whether clients received due-date and overdue reminders.
+      </p>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <label>Total Logs</label>
+          <strong id="totalLogs">0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Sent</label>
+          <strong id="sentLogs">0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Overdue</label>
+          <strong id="overdueLogs">0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Today</label>
+          <strong id="todayLogs">0</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Reminder Logs</h2>
+
+        <div class="filters">
+          <input
+            id="searchInput"
+            class="search-input"
+            type="search"
+            placeholder="Search payment or tenant..."
+            oninput="renderLogs()"
+          />
+
+          <select id="typeFilter" class="filter-select" onchange="renderLogs()">
+            <option value="all">All types</option>
+            <option value="due_in_3_days">Due in 3 days</option>
+            <option value="due_tomorrow">Due tomorrow</option>
+            <option value="due_today">Due today</option>
+            <option value="overdue">Overdue</option>
+          </select>
+
+          <select id="sentFilter" class="filter-select" onchange="renderLogs()">
+            <option value="all">All delivery</option>
+            <option value="sent">Sent</option>
+            <option value="not_sent">Not sent</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="loadingBox" class="loading">
+        <span class="spinner"></span>
+        <span>Loading reminder history...</span>
+      </div>
+
+      <div id="errorBox" class="error" style="display: none;"></div>
+
+      <div id="emptyBox" class="empty" style="display: none;">
+        No billing reminder logs found yet.
+      </div>
+
+      <div id="tableWrap" class="table-wrap" style="display: none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Reminder Type</th>
+              <th>Payment ID</th>
+              <th>Tenant ID</th>
+              <th>Reminder Date</th>
+              <th>Notification</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="logsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let allLogs = [];
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+      await checkAdminAccess();
+      await loadLogs();
+    });
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
+
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+
+        if (htmlTheme === "light" || htmlTheme === "dark") {
+          foundTheme = htmlTheme;
+        }
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    async function checkAdminAccess() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (!sessionData || !sessionData.session) {
+        window.location.href = "login.html";
+        return;
+      }
+
+      const { data, error } = await supabaseClient.rpc("is_ungani_admin");
+
+      if (error) throw error;
+
+      if (data !== true) {
+        document.body.innerHTML = `
+          <main class="content">
+            <section class="panel">
+              <div class="error">Access denied. This page is for UNGANI admin only.</div>
+            </section>
+          </main>
+        `;
+        throw new Error("Access denied");
+      }
+    }
+
+    async function loadLogs() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const emptyBox = document.getElementById("emptyBox");
+      const tableWrap = document.getElementById("tableWrap");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      emptyBox.style.display = "none";
+      tableWrap.style.display = "none";
+
+      try {
+        const { data, error } = await supabaseClient
+          .from("ungani_billing_reminder_logs")
+          .select("id,payment_id,tenant_id,reminder_type,reminder_date,notification_sent,created_at")
+          .order("created_at", { ascending: false })
+          .limit(300);
+
+        if (error) throw error;
+
+        allLogs = Array.isArray(data) ? data : [];
+
+        updateSummary();
+        renderLogs();
+
+        loadingBox.style.display = "none";
+
+        if (!allLogs.length) {
+          emptyBox.style.display = "block";
+        } else {
+          tableWrap.style.display = "block";
+        }
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent =
+          "Unable to load billing reminder history. " + getErrorMessage(error);
+      }
+    }
+
+    function updateSummary() {
+      const today = new Date().toISOString().slice(0, 10);
+
+      document.getElementById("totalLogs").textContent = allLogs.length;
+      document.getElementById("sentLogs").textContent =
+        allLogs.filter(log => log.notification_sent === true).length;
+      document.getElementById("overdueLogs").textContent =
+        allLogs.filter(log => normalize(log.reminder_type) === "overdue").length;
+      document.getElementById("todayLogs").textContent =
+        allLogs.filter(log => String(log.reminder_date || "") === today).length;
+    }
+
+    function renderLogs() {
+      const body = document.getElementById("logsBody");
+      const emptyBox = document.getElementById("emptyBox");
+      const tableWrap = document.getElementById("tableWrap");
+
+      const typeFilter = document.getElementById("typeFilter").value;
+      const sentFilter = document.getElementById("sentFilter").value;
+      const searchTerm = document.getElementById("searchInput").value.trim().toLowerCase();
+
+      let filtered = [...allLogs];
+
+      if (typeFilter !== "all") {
+        filtered = filtered.filter(log => normalize(log.reminder_type) === typeFilter);
+      }
+
+      if (sentFilter === "sent") {
+        filtered = filtered.filter(log => log.notification_sent === true);
+      }
+
+      if (sentFilter === "not_sent") {
+        filtered = filtered.filter(log => log.notification_sent !== true);
+      }
+
+      if (searchTerm) {
+        filtered = filtered.filter(log => {
+          const combined = [
+            log.payment_id,
+            log.tenant_id,
+            log.reminder_type,
+            log.reminder_date,
+            log.created_at
+          ].filter(Boolean).join(" ").toLowerCase();
+
+          return combined.includes(searchTerm);
+        });
+      }
+
+      body.innerHTML = "";
+
+      if (!filtered.length) {
+        tableWrap.style.display = "none";
+        emptyBox.style.display = "block";
+        emptyBox.textContent = "No reminder logs match your filters.";
+        return;
+      }
+
+      emptyBox.style.display = "none";
+      tableWrap.style.display = "block";
+
+      filtered.forEach(log => {
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+          <td>
+            <span class="badge ${getReminderClass(log.reminder_type)}">
+              ${escapeHtml(titleCase(log.reminder_type || "Reminder"))}
+            </span>
+          </td>
+          <td class="muted">${escapeHtml(shortId(log.payment_id))}</td>
+          <td class="muted">${escapeHtml(shortId(log.tenant_id))}</td>
+          <td>${escapeHtml(formatDate(log.reminder_date))}</td>
+          <td>
+            <span class="badge ${log.notification_sent ? "badge-success" : "badge-danger"}">
+              ${log.notification_sent ? "Sent" : "Not Sent"}
+            </span>
+          </td>
+          <td class="muted">${escapeHtml(formatDateTime(log.created_at))}</td>
+        `;
+
+        body.appendChild(row);
+      });
+    }
+
+    function getReminderClass(type) {
+      const clean = normalize(type);
+
+      if (clean === "overdue") return "badge-warning";
+      if (clean === "due_today") return "badge-danger";
+      if (clean === "due_tomorrow") return "badge-info";
+      if (clean === "due_in_3_days") return "badge-success";
+
+      return "badge-info";
+    }
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function titleCase(value) {
+      return String(value || "")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function shortId(value) {
+      if (!value) return "—";
+
+      const text = String(value);
+
+      if (text.length <= 12) return text;
+
+      return text.slice(0, 8) + "...";
+    }
+
+    function formatDate(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleDateString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
+
+      try {
+        return JSON.stringify(error);
+      } catch (e) {
+        return String(error);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
