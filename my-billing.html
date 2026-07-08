@@ -71,6 +71,7 @@
 
     html[data-theme="light"] body {
       background: var(--bg);
+      color: var(--text);
     }
 
     .topbar {
@@ -265,7 +266,7 @@
     }
 
     .search-input {
-      width: 240px;
+      width: 260px;
       max-width: 100%;
     }
 
@@ -285,7 +286,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 920px;
+      min-width: 980px;
     }
 
     th,
@@ -313,6 +314,18 @@
 
     td {
       color: var(--text-soft);
+    }
+
+    .invoice-chip {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(212, 166, 58, 0.16);
+      border: 1px solid rgba(212, 166, 58, 0.28);
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
     }
 
     .muted {
@@ -360,7 +373,6 @@
       background: var(--danger-bg);
     }
 
-    .notice,
     .empty,
     .loading,
     .error {
@@ -472,7 +484,7 @@
     <section class="hero">
       <h1>My Billing</h1>
       <p>
-        View your UNGANI OS billing records, payment status, due dates, and payment references.
+        View your UNGANI OS invoices, billing records, payment status, due dates, and payment references.
         This page is read-only for clients.
       </p>
 
@@ -498,14 +510,14 @@
 
     <section class="panel">
       <div class="panel-head">
-        <h2>Payment Records</h2>
+        <h2>Invoice & Payment Records</h2>
 
         <div class="filters">
           <input
             id="searchInput"
             class="search-input"
             type="search"
-            placeholder="Search package, ref, method..."
+            placeholder="Search invoice, package, ref..."
             oninput="renderPayments()"
           />
 
@@ -544,6 +556,7 @@
         <table>
           <thead>
             <tr>
+              <th>Invoice</th>
               <th>Package</th>
               <th>Amount</th>
               <th>Status</th>
@@ -695,6 +708,7 @@
       if (searchTerm) {
         filtered = filtered.filter(item => {
           const combined = [
+            item.invoice_number,
             item.package_key,
             item.amount,
             item.currency,
@@ -724,6 +738,11 @@
         const row = document.createElement("tr");
 
         row.innerHTML = `
+          <td>
+            <span class="invoice-chip">${escapeHtml(item.invoice_number || "Pending")}</span>
+            <div class="muted">Record: ${escapeHtml(shortId(item.id))}</div>
+          </td>
+
           <td>
             <span class="package-chip">${escapeHtml(titleCase(item.package_key || "starter"))}</span>
           </td>
@@ -829,6 +848,16 @@
         hour: "2-digit",
         minute: "2-digit"
       });
+    }
+
+    function shortId(value) {
+      if (!value) return "—";
+
+      const text = String(value);
+
+      if (text.length <= 12) return text;
+
+      return text.slice(0, 8) + "...";
     }
 
     function getErrorMessage(error) {
