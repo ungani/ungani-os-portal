@@ -6,7 +6,20 @@
 
   <title>UNGANI OS - Login</title>
 
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/ungani-logo.png" />
+  <link rel="icon" href="/ungani-logo.png" type="image/png" />
+
+  <meta name="theme-color" content="#061C3D" />
+  <meta name="background-color" content="#020617" />
+  <meta name="application-name" content="UNGANI OS" />
+  <meta name="apple-mobile-web-app-title" content="UNGANI OS" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
 
   <style>
     :root {
@@ -19,6 +32,7 @@
       --green: #16A34A;
       --red: #DC2626;
       --blue: #2563EB;
+      --dark: #020617;
       --shadow: 0 28px 80px rgba(6,28,61,0.18);
       --border: rgba(6,28,61,0.10);
     }
@@ -310,6 +324,31 @@
       margin-bottom: 5px;
     }
 
+    .install-box {
+      display: none;
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 22px;
+      background: #061C3D;
+      color: white;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .install-box.show {
+      display: block;
+    }
+
+    .install-box strong {
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .install-box p {
+      color: rgba(255,255,255,0.74);
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
     .footer {
       margin-top: 20px;
       text-align: center;
@@ -374,7 +413,7 @@
 
         <h2>Login to your business workspace.</h2>
         <p class="lead">
-          Use this page for client login or UNGANI admin login. Registration is now separate, so new clients register clearly and existing users log in clearly.
+          Use this page for client login or UNGANI admin login. UNGANI OS can also be installed on your phone home screen for faster access.
         </p>
 
         <div class="feature-grid">
@@ -389,13 +428,13 @@
           </div>
 
           <div class="feature-card">
-            <strong>Clean Access</strong>
-            <span>If the wrong account is already signed in, log out first, then sign in with the correct email.</span>
+            <strong>Installable App</strong>
+            <span>Add UNGANI OS to your phone home screen and open it in standalone app mode.</span>
           </div>
 
           <div class="feature-card">
-            <strong>New Business</strong>
-            <span>New clients should use registration, not this login form.</span>
+            <strong>Offline Access</strong>
+            <span>Key pages can open from cache. Live business data still needs internet connection.</span>
           </div>
         </div>
       </div>
@@ -439,12 +478,18 @@
 
       <div id="statusBox" class="status-box"></div>
 
+      <div id="installBox" class="install-box">
+        <strong>Install UNGANI OS</strong>
+        <p id="installText">Add UNGANI OS to your phone home screen for faster access.</p>
+        <button class="btn gold" type="button" onclick="installApp()">Install App</button>
+      </div>
+
       <div class="button-row">
         <a class="btn light" href="index.html">Register New Business</a>
       </div>
 
       <p class="footer">
-        Login Version: Step 311A-Fix Separate Login Page ·
+        Login Version: Step PWA-4A Installable Login ·
         <a href="https://ungani.com" target="_blank" rel="noopener">ungani.com</a>
       </p>
     </section>
@@ -460,6 +505,7 @@
     let currentUser = null;
 
     window.addEventListener("load", initLoginPage);
+    document.addEventListener("ungani:pwa-install-ready", showInstallBox);
 
     async function initLoginPage() {
       const params = new URLSearchParams(window.location.search);
@@ -477,6 +523,8 @@
       if (currentUser) {
         showSignedIn(currentUser);
       }
+
+      setupInstallBox();
     }
 
     function setMode(mode) {
@@ -626,6 +674,58 @@
     function value(id) {
       const el = document.getElementById(id);
       return el ? String(el.value || "").trim() : "";
+    }
+
+    function setupInstallBox() {
+      if (window.UnganiPWA && window.UnganiPWA.isStandalone && window.UnganiPWA.isStandalone()) {
+        return;
+      }
+
+      const userAgent = navigator.userAgent || "";
+
+      if (/iphone|ipad|ipod/i.test(userAgent)) {
+        const box = document.getElementById("installBox");
+        const text = document.getElementById("installText");
+
+        if (box && text) {
+          text.innerText = "On iPhone Safari: tap Share, then tap Add to Home Screen.";
+          box.classList.add("show");
+        }
+      }
+    }
+
+    function showInstallBox() {
+      if (window.UnganiPWA && window.UnganiPWA.isStandalone && window.UnganiPWA.isStandalone()) {
+        return;
+      }
+
+      const box = document.getElementById("installBox");
+      const text = document.getElementById("installText");
+
+      if (box && text) {
+        text.innerText = "Add UNGANI OS to your phone home screen for faster access.";
+        box.classList.add("show");
+      }
+    }
+
+    async function installApp() {
+      if (window.UnganiPWA && window.UnganiPWA.promptInstall) {
+        const accepted = await window.UnganiPWA.promptInstall();
+
+        if (accepted) {
+          showStatus("UNGANI OS installation started.", "success");
+        } else {
+          showStatus("Installation was not completed. You can install later from the browser menu.", "error");
+        }
+
+        return;
+      }
+
+      const instructions = window.UnganiPWA && window.UnganiPWA.getInstallInstructions
+        ? window.UnganiPWA.getInstallInstructions()
+        : "Use your browser menu to add this app to your home screen.";
+
+      showStatus(instructions, "success");
     }
   </script>
 </body>
