@@ -155,19 +155,19 @@
     style.textContent = `
       .ungani-clickable-card {
         cursor: pointer !important;
-        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease !important;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease !important;
       }
 
       .ungani-clickable-card:hover {
         transform: translateY(-2px) !important;
-        border-color: rgba(212, 166, 58, 0.42) !important;
+        border-color: rgba(212, 166, 58, 0.46) !important;
       }
 
       .ungani-clickable-card:active {
         transform: translateY(0) !important;
       }
 
-      .ungani-click-hint {
+      .ungani-clickable-card .ungani-click-hint {
         margin-top: 10px;
         color: #D4A63A;
         font-size: 11px;
@@ -175,8 +175,12 @@
         letter-spacing: 0.02em;
       }
 
+      .ungani-notification-card {
+        cursor: pointer !important;
+      }
+
       @media (max-width: 1180px) {
-        .ungani-click-hint {
+        .ungani-clickable-card .ungani-click-hint {
           display: none;
         }
       }
@@ -202,26 +206,57 @@
     return path.endsWith("/client.html") || path.includes("client.html");
   }
 
+  function isDashboardPage() {
+    return isAdminPage() || isClientPage();
+  }
+
+  function openNotificationPanel() {
+    if (typeof window.toggleNotifications === "function") {
+      window.toggleNotifications();
+      return true;
+    }
+
+    const panel = document.getElementById("notificationPanel");
+    const overlay = document.getElementById("notificationOverlay");
+
+    if (panel) {
+      panel.classList.add("open");
+      if (overlay) overlay.classList.add("open");
+      document.body.style.overflow = "hidden";
+      return true;
+    }
+
+    return false;
+  }
+
   function routeForAdminCard(text) {
     const value = cleanText(text);
 
-    if (value.includes("pending") || value.includes("approval") || value.includes("registration")) {
+    if (value.includes("notification") || value.includes("unread update")) {
+      return "__notifications__";
+    }
+
+    if (value.includes("pending approval") || value.includes("approval") || value.includes("registration") || value.includes("pending registrations")) {
       return "admin.html";
     }
 
-    if (value.includes("client") || value.includes("profiles") || value.includes("active") || value.includes("trial")) {
+    if (value.includes("client") || value.includes("profiles") || value.includes("active clients") || value.includes("trial clients")) {
       return "admin-profiles.html";
     }
 
-    if (value.includes("support") || value.includes("issue") || value.includes("urgent") || value.includes("chat")) {
+    if (value.includes("support") || value.includes("issue") || value.includes("urgent") || value.includes("high priority")) {
       return "support.html";
     }
 
-    if (value.includes("billing") || value.includes("payment") || value.includes("package")) {
+    if (value.includes("chat") || value.includes("message")) {
+      return "admin-chat.html";
+    }
+
+    if (value.includes("billing") || value.includes("payment") || value.includes("package") || value.includes("payments")) {
       return "billing.html";
     }
 
-    if (value.includes("money") || value.includes("income") || value.includes("expense")) {
+    if (value.includes("money") || value.includes("income") || value.includes("expense") || value.includes("client money")) {
       return "admin-money.html";
     }
 
@@ -233,11 +268,11 @@
       return "admin-documents.html";
     }
 
-    if (value.includes("calendar") || value.includes("event")) {
+    if (value.includes("calendar") || value.includes("event") || value.includes("activity")) {
       return "admin-calendar.html";
     }
 
-    if (value.includes("record")) {
+    if (value.includes("record") || value.includes("business record")) {
       return "admin-records.html";
     }
 
@@ -245,7 +280,7 @@
       return "admin-items.html";
     }
 
-    if (value.includes("people") || value.includes("user") || value.includes("access")) {
+    if (value.includes("people") || value.includes("user") || value.includes("access") || value.includes("staff")) {
       return "admin-people.html";
     }
 
@@ -257,8 +292,8 @@
       return "admin-health.html";
     }
 
-    if (value.includes("notification")) {
-      return "";
+    if (value.includes("business type") || value.includes("industries")) {
+      return "admin-profiles.html";
     }
 
     return "";
@@ -267,27 +302,35 @@
   function routeForClientCard(text) {
     const value = cleanText(text);
 
-    if (value.includes("income") || value.includes("expense") || value.includes("balance") || value.includes("money") || value.includes("petty")) {
+    if (value.includes("notification") || value.includes("unread update")) {
+      return "__notifications__";
+    }
+
+    if (value.includes("income") || value.includes("expense") || value.includes("balance") || value.includes("money") || value.includes("petty") || value.includes("recorded income") || value.includes("recorded expenses")) {
       return "my-money.html";
     }
 
-    if (value.includes("task") || value.includes("follow") || value.includes("overdue") || value.includes("pending")) {
+    if (value.includes("task") || value.includes("follow") || value.includes("overdue") || value.includes("pending") || value.includes("due follow")) {
       return "my-tasks.html";
     }
 
-    if (value.includes("record") || value.includes("business update")) {
+    if (value.includes("record") || value.includes("business update") || value.includes("business records")) {
       return "my-records.html";
     }
 
-    if (value.includes("support") || value.includes("issue")) {
+    if (value.includes("support") || value.includes("issue") || value.includes("open issue")) {
       return "my-support.html";
     }
 
-    if (value.includes("chat") || value.includes("message")) {
+    if (value.includes("chat") || value.includes("message") || value.includes("admin chat")) {
       return "my-chat.html";
     }
 
-    if (value.includes("calendar") || value.includes("event") || value.includes("viewing")) {
+    if (value.includes("team chat")) {
+      return "my-team-chat.html";
+    }
+
+    if (value.includes("calendar") || value.includes("event") || value.includes("viewing") || value.includes("today")) {
       return "my-calendar.html";
     }
 
@@ -295,24 +338,20 @@
       return "my-documents.html";
     }
 
-    if (value.includes("item") || value.includes("asset") || value.includes("stock") || value.includes("property")) {
+    if (value.includes("item") || value.includes("asset") || value.includes("stock") || value.includes("property") || value.includes("properties")) {
       return "my-items.html";
     }
 
-    if (value.includes("people") || value.includes("staff") || value.includes("supplier") || value.includes("client") || value.includes("lead")) {
+    if (value.includes("people") || value.includes("staff") || value.includes("supplier") || value.includes("client") || value.includes("lead") || value.includes("agents") || value.includes("tenants") || value.includes("buyers")) {
       return "my-people.html";
     }
 
-    if (value.includes("report")) {
+    if (value.includes("report") || value.includes("summary")) {
       return "reports.html";
     }
 
-    if (value.includes("attention")) {
+    if (value.includes("attention") || value.includes("needs action")) {
       return "my-tasks.html";
-    }
-
-    if (value.includes("notification")) {
-      return "";
     }
 
     return "";
@@ -331,11 +370,33 @@
       return true;
     }
 
+    if (card.closest && card.closest(".sidebar")) {
+      return true;
+    }
+
     if (card.closest && card.closest(".notification-panel")) {
       return true;
     }
 
+    if (card.closest && card.closest("form")) {
+      return true;
+    }
+
     return false;
+  }
+
+  function getRouteForCard(card) {
+    const text = card.innerText || "";
+
+    if (isAdminPage()) {
+      return routeForAdminCard(text);
+    }
+
+    if (isClientPage()) {
+      return routeForClientCard(text);
+    }
+
+    return "";
   }
 
   function makeCardClickable(card, href) {
@@ -348,19 +409,30 @@
     card.classList.add("ungani-clickable-card");
     card.setAttribute("role", "link");
     card.setAttribute("tabindex", "0");
-    card.setAttribute("title", "Open " + href.replace(".html", "").replace(/[-_]/g, " "));
+
+    if (href === "__notifications__") {
+      card.classList.add("ungani-notification-card");
+      card.setAttribute("title", "Open notifications");
+    } else {
+      card.setAttribute("title", "Open " + href.replace(".html", "").replace(/[-_]/g, " "));
+    }
 
     const hasHint = card.querySelector(".ungani-click-hint");
 
-    if (!hasHint && card.classList.contains("kpi-card")) {
+    if (!hasHint && (card.classList.contains("kpi-card") || card.classList.contains("today-item"))) {
       const hint = document.createElement("div");
       hint.className = "ungani-click-hint";
-      hint.textContent = "Click to open";
+      hint.textContent = href === "__notifications__" ? "Click to view" : "Click to open";
       card.appendChild(hint);
     }
 
     card.addEventListener("click", function (event) {
       if (event.target && event.target.closest && event.target.closest("a, button, input, select, textarea")) {
+        return;
+      }
+
+      if (href === "__notifications__") {
+        openNotificationPanel();
         return;
       }
 
@@ -370,29 +442,42 @@
     card.addEventListener("keydown", function (event) {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
+
+        if (href === "__notifications__") {
+          openNotificationPanel();
+          return;
+        }
+
         window.location.href = href;
       }
     });
   }
 
   function enhanceClickableCards() {
-    if (!isAdminPage() && !isClientPage()) {
+    if (!isDashboardPage()) {
       return;
     }
 
     injectClickableCardStyles();
 
-    const cards = Array.from(
-      document.querySelectorAll(".kpi-card, .today-item, .summary-row, .card")
-    );
+    const selectors = [
+      ".kpi-card",
+      ".today-item",
+      ".summary-row",
+      ".activity-item",
+      ".quick-action",
+      ".hero-mini",
+      ".card"
+    ];
+
+    const cards = Array.from(document.querySelectorAll(selectors.join(", ")));
 
     cards.forEach(function (card) {
       if (shouldIgnoreCard(card)) {
         return;
       }
 
-      const text = card.innerText || "";
-      const href = isAdminPage() ? routeForAdminCard(text) : routeForClientCard(text);
+      const href = getRouteForCard(card);
 
       if (href) {
         makeCardClickable(card, href);
@@ -401,7 +486,7 @@
   }
 
   function setupClickableCardsObserver() {
-    if (!isAdminPage() && !isClientPage()) {
+    if (!isDashboardPage()) {
       return;
     }
 
