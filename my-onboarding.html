@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Onboarding | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 880px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .progress-wrap {
+      margin-top: 18px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 17px;
+      padding: 15px;
+    }
+
+    .progress-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      color: #FFFFFF;
+      font-weight: 900;
+      margin-bottom: 10px;
+    }
+
+    .progress-bar {
+      height: 13px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--gold);
+      border-radius: 999px;
+      transition: width 0.3s ease;
+    }
+
+    .panel {
+      margin-top: 20px;
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .checklist {
+      display: grid;
+      gap: 12px;
+    }
+
+    .item {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 14px;
+      align-items: center;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 15px;
+    }
+
+    .item input {
+      width: 20px;
+      height: 20px;
+      accent-color: var(--gold);
+      cursor: pointer;
+    }
+
+    .item strong {
+      color: var(--text);
+      display: block;
+      margin-bottom: 5px;
+      font-size: 15px;
+    }
+
+    .item span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      display: block;
+    }
+
+    .item.done {
+      border-color: rgba(34, 197, 94, 0.32);
+    }
+
+    .main-btn,
+    .ghost-btn {
+      border: none;
+      border-radius: 999px;
+      padding: 9px 12px;
+      font-size: 12px;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .main-btn {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .ghost-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    html[data-theme="light"] .ghost-btn {
+      background: #FFFFFF;
+      color: var(--navy);
+    }
+
+    .loading,
+    .error {
+      margin-top: 20px;
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .message {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 16px;
+      line-height: 1.55;
+      display: none;
+    }
+
+    .message.success {
+      display: block;
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .message.error {
+      display: block;
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 680px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .top-btn {
+        font-size: 12px;
+        padding: 9px 11px;
+      }
+
+      .item {
+        grid-template-columns: auto 1fr;
+      }
+
+      .item a {
+        grid-column: 2;
+        width: fit-content;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>Client Onboarding</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="top-btn" href="my-settings.html">Settings</a>
+      <a class="top-btn" href="my-reports.html">Reports</a>
+      <a class="top-btn gold" href="client.html">Back to Dashboard</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero">
+      <h1>Getting Started</h1>
+      <p>
+        Use this checklist to set up your UNGANI OS workspace step by step.
+        You can tick items as you complete them and return anytime.
+      </p>
+
+      <div class="progress-wrap">
+        <div class="progress-top">
+          <span>Setup Progress</span>
+          <span id="progressText">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+      </div>
+    </section>
+
+    <div id="loadingBox" class="loading">
+      <span class="spinner"></span>
+      <span>Loading onboarding checklist...</span>
+    </div>
+
+    <div id="errorBox" class="error" style="display: none;"></div>
+
+    <section id="checklistPanel" class="panel" style="display: none;">
+      <div class="panel-head">
+        <h2>Client Setup Checklist</h2>
+      </div>
+
+      <div class="panel-body">
+        <div id="messageBox" class="message"></div>
+        <div id="checklist" class="checklist"></div>
+      </div>
+    </section>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const checklistItems = [
+      {
+        key: "review_settings",
+        title: "Review your business settings",
+        desc: "Confirm your business profile, account status, package, billing, reports, and branch options.",
+        link: "my-settings.html",
+        button: "Open Settings"
+      },
+      {
+        key: "check_package",
+        title: "Check your package",
+        desc: "Review your plan, user limit, trial status, and upgrade options.",
+        link: "my-package.html",
+        button: "View Package"
+      },
+      {
+        key: "check_billing",
+        title: "Review billing",
+        desc: "View invoices, receipts, and payment proof area.",
+        link: "my-billing.html",
+        button: "Open Billing"
+      },
+      {
+        key: "add_money",
+        title: "Add your first money record",
+        desc: "Record sales, income, expenses, or petty cash so reports can start showing value.",
+        link: "my-money.html",
+        button: "Open Money"
+      },
+      {
+        key: "add_task",
+        title: "Add your first task",
+        desc: "Create a follow-up, reminder, or operational task.",
+        link: "my-tasks.html",
+        button: "Open Tasks"
+      },
+      {
+        key: "add_item",
+        title: "Add your first item or asset",
+        desc: "Add stock, equipment, vehicle, machine, or business asset records.",
+        link: "my-items.html",
+        button: "Open Items"
+      },
+      {
+        key: "add_record",
+        title: "Add a business record",
+        desc: "Save important operational notes, client records, supplier notes, or business details.",
+        link: "my-records.html",
+        button: "Open Records"
+      },
+      {
+        key: "upload_document",
+        title: "Upload a document",
+        desc: "Keep important files in your workspace for easy reference.",
+        link: "my-documents.html",
+        button: "Open Documents"
+      },
+      {
+        key: "view_reports",
+        title: "View your reports",
+        desc: "Check your money, task, item, document, and support insights.",
+        link: "my-reports.html",
+        button: "Open Reports"
+      },
+      {
+        key: "know_support",
+        title: "Know where to get support",
+        desc: "Use support when something needs admin attention.",
+        link: "my-support.html",
+        button: "Open Support"
+      }
+    ];
+
+    let progressMap = {};
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+      await checkClientSession();
+      await loadProgress();
+    });
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
+
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+
+        if (htmlTheme === "light" || htmlTheme === "dark") {
+          foundTheme = htmlTheme;
+        }
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    async function checkClientSession() {
+      const { data } = await supabaseClient.auth.getSession();
+
+      if (!data || !data.session) {
+        window.location.href = "login.html?redirect=my-onboarding.html";
+      }
+    }
+
+    async function loadProgress() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const checklistPanel = document.getElementById("checklistPanel");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      checklistPanel.style.display = "none";
+
+      try {
+        const { data, error } = await supabaseClient.rpc("get_my_ungani_onboarding_progress");
+
+        if (error) throw error;
+
+        if (!data || data.ok !== true) {
+          throw new Error((data && data.message) || "Unable to load onboarding progress.");
+        }
+
+        progressMap = {};
+
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        items.forEach(item => {
+          progressMap[item.checklist_key] = item.is_done === true;
+        });
+
+        renderChecklist();
+
+        loadingBox.style.display = "none";
+        checklistPanel.style.display = "block";
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent = "Unable to load onboarding. " + getErrorMessage(error);
+      }
+    }
+
+    function renderChecklist() {
+      const box = document.getElementById("checklist");
+      box.innerHTML = "";
+
+      checklistItems.forEach(item => {
+        const isDone = progressMap[item.key] === true;
+
+        const row = document.createElement("div");
+        row.className = "item" + (isDone ? " done" : "");
+
+        row.innerHTML = `
+          <input
+            type="checkbox"
+            ${isDone ? "checked" : ""}
+            onchange="toggleProgress('${escapeJs(item.key)}', this.checked)"
+            aria-label="${escapeHtml(item.title)}"
+          />
+
+          <div>
+            <strong>${escapeHtml(item.title)}</strong>
+            <span>${escapeHtml(item.desc)}</span>
+          </div>
+
+          <a class="ghost-btn" href="${escapeHtml(item.link)}">${escapeHtml(item.button)}</a>
+        `;
+
+        box.appendChild(row);
+      });
+
+      updateProgressBar();
+    }
+
+    async function toggleProgress(key, isDone) {
+      const oldValue = progressMap[key];
+
+      progressMap[key] = isDone;
+      renderChecklist();
+
+      try {
+        const { error } = await supabaseClient.rpc("set_my_ungani_onboarding_progress", {
+          p_checklist_key: key,
+          p_is_done: isDone
+        });
+
+        if (error) throw error;
+
+        showMessage("Checklist updated.", "success");
+      } catch (error) {
+        progressMap[key] = oldValue;
+        renderChecklist();
+        showMessage("Unable to update checklist. " + getErrorMessage(error), "error");
+      }
+    }
+
+    function updateProgressBar() {
+      const total = checklistItems.length;
+      const completed = checklistItems.filter(item => progressMap[item.key] === true).length;
+      const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+      document.getElementById("progressText").textContent = percent + "%";
+      document.getElementById("progressFill").style.width = percent + "%";
+    }
+
+    function showMessage(message, type) {
+      const box = document.getElementById("messageBox");
+      box.className = "message " + type;
+      box.textContent = message;
+
+      setTimeout(() => {
+        box.className = "message";
+        box.textContent = "";
+      }, 3000);
+    }
+
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
+
+      try {
+        return JSON.stringify(error);
+      } catch (e) {
+        return String(error);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeJs(value) {
+      return String(value ?? "")
+        .replaceAll("\\", "\\\\")
+        .replaceAll("'", "\\'")
+        .replaceAll('"', '\\"');
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
