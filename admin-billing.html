@@ -315,7 +315,8 @@
     .small-btn,
     .invoice-btn,
     .proof-open-btn,
-    .proof-review-btn {
+    .proof-review-btn,
+    .accept-paid-btn {
       border: none;
       border-radius: 999px;
       padding: 11px 15px;
@@ -334,6 +335,12 @@
       background: var(--gold);
       color: var(--navy);
       box-shadow: 0 12px 24px rgba(212, 166, 58, 0.18);
+    }
+
+    .accept-paid-btn {
+      background: var(--success-bg);
+      color: var(--success-text);
+      border: 1px solid rgba(22, 101, 52, 0.28);
     }
 
     .ghost-btn,
@@ -358,7 +365,8 @@
     .small-btn,
     .invoice-btn,
     .proof-open-btn,
-    .proof-review-btn {
+    .proof-review-btn,
+    .accept-paid-btn {
       padding: 8px 10px;
       font-size: 12px;
     }
@@ -584,7 +592,7 @@
 
     .modal {
       width: 100%;
-      max-width: 560px;
+      max-width: 620px;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 22px;
@@ -670,6 +678,17 @@
       background: var(--info-bg);
     }
 
+    .review-help {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 15px;
+      background: rgba(212, 166, 58, 0.12);
+      border: 1px solid rgba(212, 166, 58, 0.24);
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
     @media (max-width: 980px) {
       .form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -735,7 +754,7 @@
       <h1>Admin Billing</h1>
       <p>
         Record, update, track UNGANI OS billing, and review client payment proofs.
-        Accepted payment proofs can then be matched with the billing record and marked as paid.
+        Use Accept & Mark Paid after confirming the proof matches the payment.
       </p>
 
       <div class="summary-grid">
@@ -966,10 +985,26 @@
         <label for="reviewAdminNote">Admin Note</label>
         <textarea id="reviewAdminNote" placeholder="Example: Proof accepted. Payment matched with M-Pesa reference..."></textarea>
 
+        <label for="acceptPaymentMethod">Payment Method for Accept & Mark Paid</label>
+        <input id="acceptPaymentMethod" type="text" placeholder="Example: M-Pesa, Bank Transfer, Cash..." />
+
+        <label for="acceptPaymentReference">Payment Reference for Accept & Mark Paid</label>
+        <input id="acceptPaymentReference" type="text" placeholder="Example: M-Pesa code, bank slip ref..." />
+
+        <div class="review-help">
+          Use <strong>Save Review</strong> when you only want to update proof status.
+          Use <strong>Accept & Mark Paid</strong> only after confirming the proof is correct.
+        </div>
+
         <div class="modal-actions">
           <button id="saveReviewButton" class="main-btn" type="button" onclick="saveProofReview()">
             Save Review
           </button>
+
+          <button id="acceptPaidButton" class="accept-paid-btn" type="button" onclick="acceptProofAndMarkPaid()">
+            Accept & Mark Paid
+          </button>
+
           <button class="ghost-btn" type="button" onclick="closeProofReviewModal()">Cancel</button>
         </div>
 
@@ -1523,6 +1558,8 @@
 
       document.getElementById("reviewProofStatus").value = normalize(proof.proof_status || "submitted");
       document.getElementById("reviewAdminNote").value = proof.admin_note || "";
+      document.getElementById("acceptPaymentMethod").value = "";
+      document.getElementById("acceptPaymentReference").value = "";
       showProofReviewMessage("", "");
 
       document.getElementById("proofReviewModalBackdrop").style.display = "flex";
@@ -1568,6 +1605,55 @@
       } finally {
         button.disabled = false;
         button.textContent = "Save Review";
+      }
+    }
+
+    async function acceptProofAndMarkPaid() {
+      const button = document.getElementById("acceptPaidButton");
+
+      try {
+        if (!selectedProofForReview) {
+          throw new Error("No proof selected.");
+        }
+
+        const confirmed = confirm(
+          "Accept this payment proof and mark the related invoice as PAID? This will turn the invoice into a receipt."
+        );
+
+        if (!confirmed) return;
+
+        const adminNote =
+          document.getElementById("reviewAdminNote").value ||
+          "Payment proof accepted and payment marked as paid.";
+
+        const paymentMethod = document.getElementById("acceptPaymentMethod").value || null;
+        const paymentReference = document.getElementById("acceptPaymentReference").value || null;
+
+        button.disabled = true;
+        button.textContent = "Processing...";
+        showProofReviewMessage("Accepting proof and marking payment as paid...", "info");
+
+        const { error } = await supabaseClient.rpc("admin_accept_ungani_payment_proof_and_mark_paid", {
+          p_proof_id: selectedProofForReview.id,
+          p_admin_note: adminNote,
+          p_payment_method: paymentMethod,
+          p_payment_reference: paymentReference
+        });
+
+        if (error) throw error;
+
+        showProofReviewMessage("Proof accepted and payment marked as paid successfully.", "success");
+
+        await loadPaymentsAndProofs();
+
+        setTimeout(() => {
+          closeProofReviewModal();
+        }, 900);
+      } catch (error) {
+        showProofReviewMessage("Unable to accept proof and mark paid. " + getErrorMessage(error), "error");
+      } finally {
+        button.disabled = false;
+        button.textContent = "Accept & Mark Paid";
       }
     }
 
