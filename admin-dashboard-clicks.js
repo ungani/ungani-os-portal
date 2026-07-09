@@ -1,71 +1,90 @@
 (function () {
-  const adminRoutes = [
+  const routes = [
     {
-      keywords: ["pending registration", "registrations", "new registration", "approve", "reject"],
-      href: "admin.html"
+      href: "admin-health.html",
+      keywords: ["system health", "business health", "health", "errors", "warnings", "system status"]
     },
     {
-      keywords: ["approved clients", "clients", "client status", "active clients", "trial clients"],
-      href: "admin.html"
+      href: "support.html",
+      keywords: ["support issues", "client support", "support", "urgent issue", "issues"]
     },
     {
-      keywords: ["support", "issue", "urgent issue", "client support"],
-      href: "support.html"
+      href: "admin-billing.html",
+      keywords: ["billing", "payments", "payment", "invoices", "unpaid", "paid"]
     },
     {
-      keywords: ["billing", "payment", "invoice", "paid", "unpaid", "proof"],
-      href: "admin-billing.html"
+      href: "admin-payment-proofs.html",
+      keywords: ["payment proofs", "proofs", "proof upload", "uploaded proof"]
     },
     {
-      keywords: ["payment proof", "proofs", "upload proof"],
-      href: "admin-payment-proofs.html"
+      href: "admin-reports.html",
+      keywords: ["reports", "reporting", "insights", "overview", "activity"]
     },
     {
-      keywords: ["report", "reports", "insight", "overview", "activity"],
-      href: "admin-reports.html"
+      href: "admin-onboarding.html",
+      keywords: ["onboarding", "setup progress", "checklist"]
     },
     {
-      keywords: ["subscription", "package", "plan"],
-      href: "admin-subscriptions.html"
+      href: "admin-branches.html",
+      keywords: ["branches", "branch", "multi branch", "locations"]
     },
     {
-      keywords: ["upgrade", "upgrade request"],
-      href: "admin-upgrade-requests.html"
+      href: "admin-subscriptions.html",
+      keywords: ["subscriptions", "subscription", "packages", "package", "plans", "plan"]
     },
     {
-      keywords: ["onboarding", "setup progress", "checklist"],
-      href: "admin-onboarding.html"
+      href: "admin-upgrade-requests.html",
+      keywords: ["upgrade requests", "upgrade request", "upgrades", "upgrade"]
     },
     {
-      keywords: ["branch", "branches", "multi branch"],
-      href: "admin-branches.html"
+      href: "admin-email-queue.html",
+      keywords: ["email queue", "emails", "queued email", "mail queue"]
     },
     {
-      keywords: ["health", "system health", "error", "warning"],
-      href: "admin-health.html"
-    },
-    {
-      keywords: ["email", "email queue", "queued email"],
-      href: "admin-email-queue.html"
+      href: "admin.html",
+      keywords: ["pending registrations", "pending registration", "registrations", "registration approval", "approved clients", "clients"]
     }
   ];
 
+  const cardSelectors = [
+    ".kpi-card",
+    ".summary-card",
+    ".stat-card",
+    ".metric-card",
+    ".dashboard-card",
+    ".quick-action",
+    ".tile",
+    ".panel",
+    ".card",
+    "[class*='kpi']",
+    "[class*='summary']",
+    "[class*='stat']",
+    "[class*='metric']",
+    "[class*='dashboard-card']"
+  ];
+
   window.addEventListener("load", function () {
+    runSoon();
+  });
+
+  function runSoon() {
     setTimeout(makeAdminCardsClickable, 300);
     setTimeout(makeAdminCardsClickable, 1200);
     setTimeout(makeAdminCardsClickable, 2500);
-  });
+  }
 
   function makeAdminCardsClickable() {
-    const candidates = getCardCandidates();
+    const candidates = getSafeCardCandidates();
 
     candidates.forEach(function (el) {
       if (!el || el.dataset.adminClickReady === "true") return;
 
-      const text = normalizeText(el.innerText || el.textContent || "");
+      const text = getCleanText(el);
+
       if (!text) return;
 
-      const route = findRoute(text);
+      const route = findBestRoute(text);
+
       if (!route) return;
 
       el.dataset.adminClickReady = "true";
@@ -78,6 +97,9 @@
         if (event.target.closest("a, button, input, select, textarea, label")) {
           return;
         }
+
+        event.preventDefault();
+        event.stopPropagation();
 
         window.location.href = route.href;
       });
@@ -96,60 +118,108 @@
     });
   }
 
-  function getCardCandidates() {
-    const selectors = [
-      ".card",
-      ".kpi-card",
-      ".quick-action",
-      ".summary-card",
-      ".stat-card",
-      ".metric-card",
-      ".dashboard-card",
-      ".tile",
-      ".box",
-      ".panel",
-      "[class*='card']",
-      "[class*='stat']",
-      "[class*='metric']",
-      "[class*='summary']"
-    ];
+  function getSafeCardCandidates() {
+    const all = [];
 
-    const nodes = [];
-
-    selectors.forEach(function (selector) {
+    cardSelectors.forEach(function (selector) {
       document.querySelectorAll(selector).forEach(function (el) {
-        if (!nodes.includes(el)) nodes.push(el);
+        if (!all.includes(el)) {
+          all.push(el);
+        }
       });
     });
 
-    return nodes.filter(function (el) {
-      const rect = el.getBoundingClientRect();
-
-      if (rect.width < 120 || rect.height < 60) return false;
+    return all.filter(function (el) {
+      if (!isVisibleBox(el)) return false;
       if (el.closest("#unganiAdminQuickMenu")) return false;
       if (el.closest("#unganiAdminModeBadge")) return false;
 
-      return true;
+      /*
+        Important:
+        Skip large parent cards/containers that contain smaller cards.
+        This prevents one big parent area from sending every click to admin.html.
+      */
+      if (containsAnotherCard(el)) return false;
+
+      const text = getCleanText(el);
+
+      if (!text) return false;
+
+      /*
+        Skip very large text containers because they usually contain the whole dashboard.
+      */
+      if (text.length > 420) return false;
+
+      return !!findBestRoute(text);
     });
   }
 
-  function findRoute(text) {
-    for (let i = 0; i < adminRoutes.length; i++) {
-      const route = adminRoutes[i];
+  function containsAnotherCard(el) {
+    for (let i = 0; i < cardSelectors.length; i++) {
+      const selector = cardSelectors[i];
+      const children = el.querySelectorAll(selector);
 
-      for (let j = 0; j < route.keywords.length; j++) {
-        if (text.includes(route.keywords[j])) {
-          return route;
+      for (let j = 0; j < children.length; j++) {
+        if (children[j] !== el && isVisibleBox(children[j])) {
+          return true;
         }
       }
     }
 
-    return null;
+    return false;
+  }
+
+  function isVisibleBox(el) {
+    const rect = el.getBoundingClientRect();
+
+    if (rect.width < 100 || rect.height < 50) return false;
+
+    const style = window.getComputedStyle(el);
+
+    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+      return false;
+    }
+
+    return true;
+  }
+
+  function findBestRoute(text) {
+    const clean = normalizeText(text);
+    let best = null;
+    let bestScore = 0;
+
+    routes.forEach(function (route) {
+      let score = 0;
+
+      route.keywords.forEach(function (keyword) {
+        const key = normalizeText(keyword);
+
+        if (clean === key) {
+          score += 100;
+        } else if (clean.includes(key)) {
+          score += 20 + key.length;
+        }
+      });
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = route;
+      }
+    });
+
+    if (bestScore <= 0) return null;
+
+    return best;
+  }
+
+  function getCleanText(el) {
+    return normalizeText(el.innerText || el.textContent || "");
   }
 
   function normalizeText(value) {
     return String(value || "")
       .toLowerCase()
+      .replace(/[^\w\s/-]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
   }
