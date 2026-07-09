@@ -1,9 +1,10 @@
 (function () {
   const CLIENT_GUARD_SCRIPT_SRC = "client-access-guard.js";
+  const ADMIN_GUARD_SCRIPT_SRC = "admin-access-guard.js";
 
   document.addEventListener("DOMContentLoaded", function () {
     registerUnganiServiceWorker();
-    loadUnganiClientAccessGuard();
+    loadUnganiSecurityGuards();
   });
 
   function registerUnganiServiceWorker() {
@@ -23,49 +24,72 @@
     });
   }
 
-  function loadUnganiClientAccessGuard() {
+  function loadUnganiSecurityGuards() {
     const pageName = getCurrentPageName();
 
-    if (!shouldLoadClientGuard(pageName)) {
+    if (shouldLoadAdminGuard(pageName)) {
+      loadScriptOnce(ADMIN_GUARD_SCRIPT_SRC, function () {
+        if (window.initUnganiAdminAccessGuard) {
+          window.initUnganiAdminAccessGuard();
+        }
+      });
+
       return;
     }
 
-    if (window.initUnganiClientAccessGuard) {
-      window.initUnganiClientAccessGuard();
-      return;
+    if (shouldLoadClientGuard(pageName)) {
+      loadScriptOnce(CLIENT_GUARD_SCRIPT_SRC, function () {
+        if (window.initUnganiClientAccessGuard) {
+          window.initUnganiClientAccessGuard();
+        }
+      });
     }
+  }
 
-    if (document.querySelector('script[src="' + CLIENT_GUARD_SCRIPT_SRC + '"]')) {
-      waitForClientGuardScript();
+  function loadScriptOnce(src, callback) {
+    const existing = document.querySelector('script[src="' + src + '"]');
+
+    if (existing) {
+      waitForScriptReady(src, callback);
       return;
     }
 
     const script = document.createElement("script");
-    script.src = CLIENT_GUARD_SCRIPT_SRC;
+    script.src = src;
     script.defer = true;
 
     script.onload = function () {
-      if (window.initUnganiClientAccessGuard) {
-        window.initUnganiClientAccessGuard();
-      }
+      callback();
     };
 
     script.onerror = function () {
-      console.warn("UNGANI client access guard script failed to load.");
+      console.warn("UNGANI security guard script failed to load:", src);
     };
 
     document.body.appendChild(script);
   }
 
-  function waitForClientGuardScript() {
+  function waitForScriptReady(src, callback) {
     let attempts = 0;
 
     const timer = setInterval(function () {
       attempts += 1;
 
-      if (window.initUnganiClientAccessGuard) {
+      if (
+        src === CLIENT_GUARD_SCRIPT_SRC &&
+        window.initUnganiClientAccessGuard
+      ) {
         clearInterval(timer);
-        window.initUnganiClientAccessGuard();
+        callback();
+        return;
+      }
+
+      if (
+        src === ADMIN_GUARD_SCRIPT_SRC &&
+        window.initUnganiAdminAccessGuard
+      ) {
+        clearInterval(timer);
+        callback();
         return;
       }
 
@@ -75,22 +99,13 @@
     }, 250);
   }
 
-  function shouldLoadClientGuard(pageName) {
-    const publicPages = [
-      "index.html",
-      "login.html",
-      "register.html",
-      "signup.html",
-      "forgot-password.html",
-      "reset-password.html"
-    ];
-
-    if (publicPages.includes(pageName)) {
+  function shouldLoadAdminGuard(pageName) {
+    if (isPublicPage(pageName)) {
       return false;
     }
 
     if (pageName.startsWith("admin")) {
-      return false;
+      return true;
     }
 
     if (
@@ -99,6 +114,18 @@
       pageName === "admin-notifications.html" ||
       pageName === "admin-home.html"
     ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function shouldLoadClientGuard(pageName) {
+    if (isPublicPage(pageName)) {
+      return false;
+    }
+
+    if (shouldLoadAdminGuard(pageName)) {
       return false;
     }
 
@@ -112,6 +139,19 @@
     }
 
     return false;
+  }
+
+  function isPublicPage(pageName) {
+    const publicPages = [
+      "index.html",
+      "login.html",
+      "register.html",
+      "signup.html",
+      "forgot-password.html",
+      "reset-password.html"
+    ];
+
+    return publicPages.includes(pageName);
   }
 
   function getCurrentPageName() {
