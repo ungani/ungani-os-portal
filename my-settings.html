@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>My Settings | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 920px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .summary-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 17px;
+      padding: 15px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 7px;
+    }
+
+    .summary-card strong {
+      color: #FFFFFF;
+      font-size: 22px;
+      display: block;
+    }
+
+    .summary-card span {
+      margin-top: 8px;
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .grid {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel.full {
+      margin-top: 20px;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .info-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .info-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .info-row label {
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .info-row span {
+      color: var(--text-soft);
+      text-align: right;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .link-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .link-card {
+      text-decoration: none;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 18px;
+      padding: 16px;
+      min-height: 118px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform 0.18s ease, border-color 0.18s ease;
+    }
+
+    .link-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(212, 166, 58, 0.45);
+    }
+
+    .link-card strong {
+      display: block;
+      color: var(--text);
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .link-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .chip {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .chip.success {
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .chip.warning {
+      color: var(--warning-text);
+      background: var(--warning-bg);
+    }
+
+    .chip.info {
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .chip.danger {
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .chip.gold {
+      color: var(--gold);
+      background: rgba(212, 166, 58, 0.16);
+      border: 1px solid rgba(212, 166, 58, 0.28);
+    }
+
+    .loading,
+    .empty,
+    .error {
+      margin-top: 20px;
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 980px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .summary-grid,
+      .link-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .summary-grid,
+      .link-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .top-btn {
+        font-size: 12px;
+        padding: 9px 11px;
+      }
+
+      .info-row {
+        flex-direction: column;
+      }
+
+      .info-row span {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>Client Settings</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="top-btn" href="my-package.html">Package</a>
+      <a class="top-btn" href="my-billing.html">Billing</a>
+      <a class="top-btn gold" href="client.html">Back to Dashboard</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero">
+      <h1>My Settings</h1>
+      <p>
+        Review your business profile, package, billing, reports, branch settings, and account status in one place.
+      </p>
+
+      <div id="summaryGrid" class="summary-grid" style="display: none;">
+        <div class="summary-card">
+          <label>Business</label>
+          <strong id="businessName">—</strong>
+          <span id="businessType">—</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Package</label>
+          <strong id="packageName">—</strong>
+          <span id="packageStatus">—</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Branch Mode</label>
+          <strong id="branchMode">—</strong>
+          <span id="branchCount">—</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Attention</label>
+          <strong id="attentionCount">0</strong>
+          <span>Pending tasks, support, payments, and upgrade requests.</span>
+        </div>
+      </div>
+    </section>
+
+    <div id="loadingBox" class="loading">
+      <span class="spinner"></span>
+      <span>Loading settings...</span>
+    </div>
+
+    <div id="errorBox" class="error" style="display: none;"></div>
+
+    <div id="settingsContent" style="display: none;">
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Business Profile</h2>
+          </div>
+
+          <div class="panel-body">
+            <div class="info-list">
+              <div class="info-row">
+                <label>Business Name</label>
+                <span id="profileBusinessName">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Contact Name</label>
+                <span id="profileContactName">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Email</label>
+                <span id="profileEmail">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Phone</label>
+                <span id="profilePhone">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Location</label>
+                <span id="profileLocation">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Registration</label>
+                <span id="profileRegistration">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Account Status</h2>
+          </div>
+
+          <div class="panel-body">
+            <div class="info-list">
+              <div class="info-row">
+                <label>Workspace</label>
+                <span id="tenantId">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Access</label>
+                <span id="accessStatus">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Payment Items</label>
+                <span id="pendingPayments">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Open Support</label>
+                <span id="openSupport">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Pending Tasks</label>
+                <span id="pendingTasks">—</span>
+              </div>
+
+              <div class="info-row">
+                <label>Upgrade Requests</label>
+                <span id="pendingUpgrades">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel full">
+        <div class="panel-head">
+          <h2>Quick Settings & Tools</h2>
+        </div>
+
+        <div class="panel-body">
+          <div class="link-grid">
+            <a class="link-card" href="my-package.html">
+              <div>
+                <strong>Package</strong>
+                <span>View your plan, limits, trial, and upgrade options.</span>
+              </div>
+              <span class="chip gold">Open</span>
+            </a>
+
+            <a class="link-card" href="my-billing.html">
+              <div>
+                <strong>Billing</strong>
+                <span>View invoices, receipts, and upload payment proof.</span>
+              </div>
+              <span class="chip gold">Open</span>
+            </a>
+
+            <a class="link-card" href="my-branches.html">
+              <div>
+                <strong>Branches</strong>
+                <span>Manage branch records if multi-branch is enabled.</span>
+              </div>
+              <span class="chip gold">Open</span>
+            </a>
+
+            <a class="link-card" href="my-reports.html">
+              <div>
+                <strong>Reports</strong>
+                <span>See money, tasks, items, and business insights.</span>
+              </div>
+              <span class="chip gold">Open</span>
+            </a>
+
+            <a class="link-card" href="my-account-status.html">
+              <div>
+                <strong>Account Status</strong>
+                <span>Check account access, trial, payment, and restrictions.</span>
+              </div>
+              <span class="chip gold">Open</span>
+            </a>
+
+            <a class="link-card" href="client-notifications.html">
+              <div>
+                <strong>Notifications</strong>
+                <span>Review system, billing, support, and account notices.</span>
+              </div>
+              <span class="chip gold">Open</span>
+            </a>
+
+            <a class="link-card" href="my-support.html">
+              <div>
+                <strong>Support</strong>
+                <span>Send an issue to UNGANI support.</span>
+              </div>
+              <span class="chip gold">Open</span>
+            </a>
+
+            <a class="link-card" href="my-documents.html">
+              <div>
+                <strong>Documents</strong>
+                <span>Open your business documents area.</span>
+              </div>
+              <span class="chip gold">Open</span>
+            </a>
+
+            <a class="link-card" href="client.html">
+              <div>
+                <strong>Dashboard</strong>
+                <span>Return to your main client workspace.</span>
+              </div>
+              <span class="chip gold">Open</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+      await checkClientSession();
+      await loadSettings();
+    });
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
+
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+
+        if (htmlTheme === "light" || htmlTheme === "dark") {
+          foundTheme = htmlTheme;
+        }
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    async function checkClientSession() {
+      const { data } = await supabaseClient.auth.getSession();
+
+      if (!data || !data.session) {
+        window.location.href = "login.html?redirect=my-settings.html";
+      }
+    }
+
+    async function loadSettings() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const settingsContent = document.getElementById("settingsContent");
+      const summaryGrid = document.getElementById("summaryGrid");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      settingsContent.style.display = "none";
+      summaryGrid.style.display = "none";
+
+      try {
+        const { data, error } = await supabaseClient.rpc("get_my_ungani_settings_summary");
+
+        if (error) throw error;
+
+        if (!data || data.ok !== true) {
+          throw new Error((data && data.message) || "Unable to load settings.");
+        }
+
+        renderSettings(data);
+
+        loadingBox.style.display = "none";
+        summaryGrid.style.display = "grid";
+        settingsContent.style.display = "block";
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent = "Unable to load settings. " + getErrorMessage(error);
+      }
+    }
+
+    function renderSettings(data) {
+      const business = data.business || {};
+      const packageData = data.package || {};
+      const access = data.access || {};
+      const branch = data.branch || {};
+      const counts = data.quick_counts || {};
+
+      const businessName = business.business_name || "My Business";
+      const businessType = business.business_type || "Business operations";
+      const packageKey = packageData.package_key || packageData.current_package || packageData.plan || "starter";
+
+      const branchEnabled = branch.multi_branch_enabled === true;
+      const branchTotal = Number(branch.branch_count || 0);
+
+      const attentionTotal =
+        Number(counts.open_support_count || 0) +
+        Number(counts.pending_task_count || 0) +
+        Number(counts.pending_payment_count || 0) +
+        Number(counts.pending_upgrade_count || 0);
+
+      document.getElementById("businessName").textContent = businessName;
+      document.getElementById("businessType").textContent = businessType;
+
+      document.getElementById("packageName").textContent = titleCase(packageKey);
+      document.getElementById("packageStatus").textContent =
+        "Subscription: " + titleCase(packageData.subscription_status || packageData.status || "active");
+
+      document.getElementById("branchMode").textContent = branchEnabled ? "Enabled" : "Single Location";
+      document.getElementById("branchCount").textContent = branchTotal + " branch record(s)";
+
+      document.getElementById("attentionCount").textContent = attentionTotal.toLocaleString("en-KE");
+
+      document.getElementById("profileBusinessName").textContent = businessName;
+      document.getElementById("profileContactName").textContent = business.contact_name || "—";
+      document.getElementById("profileEmail").textContent = business.contact_email || data.email || "—";
+      document.getElementById("profilePhone").textContent = business.contact_phone || "—";
+      document.getElementById("profileLocation").textContent = business.business_location || "—";
+      document.getElementById("profileRegistration").innerHTML =
+        `<span class="chip ${getStatusClass(business.registration_status)}">${escapeHtml(titleCase(business.registration_status || "Approved"))}</span>`;
+
+      document.getElementById("tenantId").textContent = shortId(data.tenant_id);
+      document.getElementById("accessStatus").innerHTML =
+        `<span class="chip ${getStatusClass(access.access_status || access.status || "active")}">${escapeHtml(titleCase(access.access_status || access.status || "Active"))}</span>`;
+
+      document.getElementById("pendingPayments").textContent =
+        Number(counts.pending_payment_count || 0).toLocaleString("en-KE");
+
+      document.getElementById("openSupport").textContent =
+        Number(counts.open_support_count || 0).toLocaleString("en-KE");
+
+      document.getElementById("pendingTasks").textContent =
+        Number(counts.pending_task_count || 0).toLocaleString("en-KE");
+
+      document.getElementById("pendingUpgrades").textContent =
+        Number(counts.pending_upgrade_count || 0).toLocaleString("en-KE");
+    }
+
+    function getStatusClass(status) {
+      const clean = normalize(status);
+
+      if (["approved", "active", "trial", "enabled", "accepted", "paid", "open"].includes(clean)) {
+        return "success";
+      }
+
+      if (["pending", "submitted", "review", "under_review", "overdue", "partial"].includes(clean)) {
+        return "warning";
+      }
+
+      if (["rejected", "suspended", "cancelled", "canceled", "blocked", "closed"].includes(clean)) {
+        return "danger";
+      }
+
+      return "info";
+    }
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function titleCase(value) {
+      if (!value) return "—";
+
+      return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function shortId(value) {
+      if (!value) return "—";
+
+      const text = String(value);
+
+      if (text.length <= 12) return text;
+
+      return text.slice(0, 8) + "...";
+    }
+
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
+
+      try {
+        return JSON.stringify(error);
+      } catch (e) {
+        return String(error);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
