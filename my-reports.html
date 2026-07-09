@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>My Reports | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 960px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .hero-actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .summary-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 17px;
+      padding: 15px;
+      min-height: 112px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 8px;
+    }
+
+    .summary-card strong {
+      color: #FFFFFF;
+      font-size: 25px;
+      line-height: 1.2;
+      display: block;
+    }
+
+    .summary-card span {
+      margin-top: 8px;
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .main-grid {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: 1.18fr 0.82fr;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel.full {
+      margin-top: 20px;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 17px;
+      padding: 15px;
+    }
+
+    .metric-box label {
+      display: block;
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 8px;
+    }
+
+    .metric-box strong {
+      font-size: 23px;
+      color: var(--text);
+      display: block;
+    }
+
+    .metric-box span {
+      margin-top: 7px;
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .insight-box {
+      background: rgba(212, 166, 58, 0.12);
+      border: 1px solid rgba(212, 166, 58, 0.24);
+      border-radius: 18px;
+      padding: 16px;
+      margin-top: 14px;
+      color: var(--text-soft);
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .insight-box strong {
+      color: var(--gold);
+    }
+
+    .chart-list {
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: minmax(150px, 0.9fr) minmax(120px, 1.1fr) auto;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .bar-label {
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.3;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bar-track {
+      height: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    html[data-theme="light"] .bar-track {
+      background: #EEF2F7;
+    }
+
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--gold);
+      border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+
+    .bar-value {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 780px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 13px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--gold);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.4px;
+      background: rgba(3, 18, 39, 0.42);
+      white-space: nowrap;
+    }
+
+    html[data-theme="light"] th {
+      background: #F9FAFB;
+    }
+
+    td {
+      color: var(--text-soft);
+    }
+
+    .chip {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .chip.gold {
+      background: rgba(212, 166, 58, 0.16);
+      color: var(--gold);
+      border: 1px solid rgba(212, 166, 58, 0.28);
+    }
+
+    .chip.success {
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .chip.warning {
+      color: var(--warning-text);
+      background: var(--warning-bg);
+    }
+
+    .chip.info {
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .chip.danger {
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .main-btn,
+    .ghost-btn {
+      border: none;
+      border-radius: 999px;
+      padding: 11px 15px;
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .main-btn {
+      background: var(--gold);
+      color: var(--navy);
+      box-shadow: 0 12px 24px rgba(212, 166, 58, 0.18);
+    }
+
+    .ghost-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    html[data-theme="light"] .ghost-btn {
+      background: #FFFFFF;
+      color: var(--navy);
+    }
+
+    .loading,
+    .empty,
+    .error {
+      margin-top: 20px;
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media print {
+      body {
+        background: #FFFFFF;
+        color: #111827;
+      }
+
+      .topbar,
+      .hero-actions,
+      .footer,
+      .ghost-btn,
+      .main-btn {
+        display: none !important;
+      }
+
+      .content {
+        max-width: 100%;
+        padding: 0;
+      }
+
+      .hero,
+      .panel,
+      .summary-card,
+      .metric-box {
+        box-shadow: none;
+        border: 1px solid #D1D5DB;
+        background: #FFFFFF;
+        color: #111827;
+      }
+
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 1050px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .summary-grid,
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .bar-row {
+        grid-template-columns: 1fr;
+        gap: 7px;
+      }
+
+      .bar-value {
+        text-align: left;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .top-btn {
+        font-size: 12px;
+        padding: 9px 11px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>Business Reports</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="top-btn" href="my-money.html">Money</a>
+      <a class="top-btn" href="my-tasks.html">Tasks</a>
+      <a class="top-btn" href="my-items.html">Items</a>
+      <a class="top-btn gold" href="client.html">Back to Dashboard</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero">
+      <h1>My Business Reports</h1>
+      <p>
+        See how your business is performing from one place. Track money movement, tasks, items/assets,
+        documents, business records, and support activity using your existing UNGANI OS records.
+      </p>
+
+      <div class="hero-actions">
+        <button class="main-btn" type="button" onclick="loadReports()">Refresh Report</button>
+        <button class="ghost-btn" type="button" onclick="window.print()">Print / Save PDF</button>
+      </div>
+
+      <div class="summary-grid" id="summaryGrid" style="display: none;">
+        <div class="summary-card">
+          <label>Total Income</label>
+          <strong id="incomeTotal">KSh 0</strong>
+          <span>Money recorded as income, sales, revenue, service fees, deposits, or similar categories.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Total Expenses</label>
+          <strong id="expenseTotal">KSh 0</strong>
+          <span>Money recorded as expenses, costs, maintenance, commissions, marketing, petty cash, or similar categories.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Net Balance</label>
+          <strong id="netBalance">KSh 0</strong>
+          <span>Income minus expenses from the available business records.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Transactions</label>
+          <strong id="transactionCount">0</strong>
+          <span>All money records captured in the workspace.</span>
+        </div>
+      </div>
+    </section>
+
+    <div id="loadingBox" class="loading">
+      <span class="spinner"></span>
+      <span>Loading business reports...</span>
+    </div>
+
+    <div id="errorBox" class="error" style="display: none;"></div>
+
+    <div id="reportContent" style="display: none;">
+      <section class="main-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Operations Summary</h2>
+          </div>
+
+          <div class="panel-body">
+            <div class="metric-grid">
+              <div class="metric-box">
+                <label>Tasks</label>
+                <strong id="taskTotal">0</strong>
+                <span id="taskDetail">Pending: 0 · Completed: 0</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Items / Assets / Stock</label>
+                <strong id="itemTotal">0</strong>
+                <span id="itemDetail">Active: 0</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Business Records</label>
+                <strong id="recordTotal">0</strong>
+                <span>Saved business notes, activities, and operational records.</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Documents</label>
+                <strong id="documentTotal">0</strong>
+                <span>Files and documents uploaded to the workspace.</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Support Issues</label>
+                <strong id="supportTotal">0</strong>
+                <span id="supportDetail">Open: 0</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Generated</label>
+                <strong id="generatedTime">—</strong>
+                <span>Latest report refresh time.</span>
+              </div>
+            </div>
+
+            <div class="insight-box" id="smartInsight">
+              <strong>Business Insight:</strong>
+              Your report will show here after loading your business records.
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Money by Category</h2>
+          </div>
+
+          <div class="panel-body">
+            <div id="categoryChart" class="chart-list"></div>
+            <div id="categoryEmpty" class="empty" style="display: none; margin-top: 0;">
+              No category data found yet.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel full">
+        <div class="panel-head">
+          <h2>Recent Money Records</h2>
+          <a class="ghost-btn" href="my-money.html">Open Money Records</a>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Status</th>
+                <th>Amount</th>
+                <th>Description</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="recentTransactionsBody"></tbody>
+          </table>
+        </div>
+
+        <div id="recentEmpty" class="empty" style="display: none; margin: 18px;">
+          No recent money records found yet.
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentReport = null;
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+      await checkClientSession();
+      await loadReports();
+    });
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
+
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+
+        if (htmlTheme === "light" || htmlTheme === "dark") {
+          foundTheme = htmlTheme;
+        }
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    async function checkClientSession() {
+      const { data } = await supabaseClient.auth.getSession();
+
+      if (!data || !data.session) {
+        window.location.href = "login.html?redirect=my-reports.html";
+      }
+    }
+
+    async function loadReports() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const reportContent = document.getElementById("reportContent");
+      const summaryGrid = document.getElementById("summaryGrid");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      reportContent.style.display = "none";
+      summaryGrid.style.display = "none";
+
+      try {
+        const { data, error } = await supabaseClient.rpc("get_my_ungani_business_insights");
+
+        if (error) throw error;
+
+        currentReport = data || {};
+
+        if (currentReport.ok !== true) {
+          throw new Error(currentReport.message || "Unable to load business insights.");
+        }
+
+        renderReport(currentReport);
+
+        loadingBox.style.display = "none";
+        summaryGrid.style.display = "grid";
+        reportContent.style.display = "block";
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent = "Unable to load reports. " + getErrorMessage(error);
+      }
+    }
+
+    function renderReport(report) {
+      const summary = report.summary || {};
+      const moneyByCategory = Array.isArray(report.money_by_category) ? report.money_by_category : [];
+      const recentTransactions = Array.isArray(report.recent_transactions) ? report.recent_transactions : [];
+
+      document.getElementById("incomeTotal").textContent = formatMoney(summary.income_total);
+      document.getElementById("expenseTotal").textContent = formatMoney(summary.expense_total);
+      document.getElementById("netBalance").textContent = formatMoney(summary.net_balance);
+      document.getElementById("transactionCount").textContent = Number(summary.total_transactions || 0).toLocaleString("en-KE");
+
+      document.getElementById("taskTotal").textContent = Number(summary.total_tasks || 0).toLocaleString("en-KE");
+      document.getElementById("taskDetail").textContent =
+        "Pending: " + Number(summary.pending_tasks || 0).toLocaleString("en-KE") +
+        " · Completed: " + Number(summary.completed_tasks || 0).toLocaleString("en-KE");
+
+      document.getElementById("itemTotal").textContent = Number(summary.total_items || 0).toLocaleString("en-KE");
+      document.getElementById("itemDetail").textContent =
+        "Active: " + Number(summary.active_items || 0).toLocaleString("en-KE");
+
+      document.getElementById("recordTotal").textContent = Number(summary.total_records || 0).toLocaleString("en-KE");
+      document.getElementById("documentTotal").textContent = Number(summary.total_documents || 0).toLocaleString("en-KE");
+
+      document.getElementById("supportTotal").textContent = Number(summary.total_support_issues || 0).toLocaleString("en-KE");
+      document.getElementById("supportDetail").textContent =
+        "Open: " + Number(summary.open_support_issues || 0).toLocaleString("en-KE");
+
+      document.getElementById("generatedTime").textContent = formatShortDateTime(report.generated_at);
+
+      renderSmartInsight(summary);
+      renderCategoryChart(moneyByCategory);
+      renderRecentTransactions(recentTransactions);
+    }
+
+    function renderSmartInsight(summary) {
+      const income = Number(summary.income_total || 0);
+      const expenses = Number(summary.expense_total || 0);
+      const net = Number(summary.net_balance || 0);
+      const pendingTasks = Number(summary.pending_tasks || 0);
+      const openSupport = Number(summary.open_support_issues || 0);
+      const totalTransactions = Number(summary.total_transactions || 0);
+
+      let insight = "";
+
+      if (totalTransactions === 0) {
+        insight =
+          "Start by recording sales/income and expenses in My Money. Once records are added, this report will show your business position automatically.";
+      } else if (net > 0 && pendingTasks === 0 && openSupport === 0) {
+        insight =
+          "Your business records show a positive balance and no pending tasks or open support issues. Keep updating records regularly to maintain visibility.";
+      } else if (net > 0) {
+        insight =
+          "Your business records currently show a positive balance. Review pending tasks and open support issues so operations stay on track.";
+      } else if (expenses > income && expenses > 0) {
+        insight =
+          "Expenses are currently higher than income in the available records. Review the top expense categories and check if any costs need follow-up.";
+      } else {
+        insight =
+          "Your report is active. Continue updating money, tasks, items, and records so UNGANI OS can give you clearer business visibility.";
+      }
+
+      document.getElementById("smartInsight").innerHTML =
+        "<strong>Business Insight:</strong> " + escapeHtml(insight);
+    }
+
+    function renderCategoryChart(items) {
+      const chart = document.getElementById("categoryChart");
+      const empty = document.getElementById("categoryEmpty");
+
+      chart.innerHTML = "";
+
+      if (!items.length) {
+        empty.style.display = "block";
+        return;
+      }
+
+      empty.style.display = "none";
+
+      const maxAmount = Math.max(
+        ...items.map(item => Math.abs(Number(item.total_amount || 0))),
+        1
+      );
+
+      items.forEach(item => {
+        const amount = Number(item.total_amount || 0);
+        const percent = Math.max(4, Math.min(100, Math.abs(amount) / maxAmount * 100));
+        const category = item.category || "Uncategorized";
+        const status = item.status || "unknown";
+
+        const row = document.createElement("div");
+        row.className = "bar-row";
+
+        row.innerHTML = `
+          <div class="bar-label" title="${escapeHtml(category)}">
+            ${escapeHtml(category)}
+            <div class="muted">${escapeHtml(titleCase(status))} · ${Number(item.record_count || 0)} record(s)</div>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width: ${percent}%;"></div>
+          </div>
+          <div class="bar-value">${escapeHtml(formatMoney(amount))}</div>
+        `;
+
+        chart.appendChild(row);
+      });
+    }
+
+    function renderRecentTransactions(items) {
+      const body = document.getElementById("recentTransactionsBody");
+      const empty = document.getElementById("recentEmpty");
+
+      body.innerHTML = "";
+
+      if (!items.length) {
+        empty.style.display = "block";
+        return;
+      }
+
+      empty.style.display = "none";
+
+      items.forEach(item => {
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+          <td>
+            <span class="chip gold">${escapeHtml(item.category || "Uncategorized")}</span>
+          </td>
+          <td>
+            <span class="chip ${getStatusChipClass(item.status)}">${escapeHtml(titleCase(item.status || "unknown"))}</span>
+          </td>
+          <td>
+            <strong>${escapeHtml(formatMoney(item.amount))}</strong>
+          </td>
+          <td>
+            <div class="muted">${escapeHtml(item.description || "No description.")}</div>
+          </td>
+          <td>
+            <div class="muted">${escapeHtml(formatDate(item.transaction_date || item.created_at))}</div>
+          </td>
+        `;
+
+        body.appendChild(row);
+      });
+    }
+
+    function getStatusChipClass(status) {
+      const clean = normalize(status);
+
+      if (["completed", "paid", "done", "approved", "active"].includes(clean)) {
+        return "success";
+      }
+
+      if (["pending", "open", "review", "in_progress", "in progress"].includes(clean)) {
+        return "warning";
+      }
+
+      if (["cancelled", "canceled", "rejected", "failed"].includes(clean)) {
+        return "danger";
+      }
+
+      return "info";
+    }
+
+    function formatMoney(value) {
+      const amount = Number(value || 0);
+
+      return "KSh " + amount.toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function formatDate(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleDateString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    }
+
+    function formatShortDateTime(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleString("en-KE", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function titleCase(value) {
+      if (!value) return "—";
+
+      return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
+
+      try {
+        return JSON.stringify(error);
+      } catch (e) {
+        return String(error);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
