@@ -1,9 +1,47 @@
 (function () {
-  const UNGANI_BUILD_VERSION = "admin-clicks-fix-14p-20260710";
+  const UNGANI_BUILD_VERSION = "portal-separation-14s-20260710";
 
+  setPortalModeFromUrl();
   loadUiPolish();
   registerServiceWorker();
   loadAccessGuards();
+
+  function setPortalModeFromUrl() {
+    const page = getCurrentPage();
+    const params = new URLSearchParams(window.location.search || "");
+    const mode = String(params.get("mode") || "").toLowerCase();
+
+    if (mode === "staff") {
+      localStorage.setItem("ungani_portal_mode", "staff");
+      return;
+    }
+
+    if (mode === "client" || mode === "owner") {
+      localStorage.setItem("ungani_portal_mode", "client");
+      return;
+    }
+
+    if (mode === "admin") {
+      localStorage.setItem("ungani_portal_mode", "admin");
+      return;
+    }
+
+    if (page === "staff-login.html") {
+      localStorage.setItem("ungani_portal_mode", "staff");
+      return;
+    }
+
+    if (page === "login.html") {
+      if (!localStorage.getItem("ungani_portal_mode")) {
+        localStorage.setItem("ungani_portal_mode", "client");
+      }
+      return;
+    }
+
+    if (page.startsWith("admin") || page === "support.html") {
+      localStorage.setItem("ungani_portal_mode", "admin");
+    }
+  }
 
   function loadUiPolish() {
     if (document.querySelector('link[href^="ungani-ui-polish.css"]')) return;
@@ -26,6 +64,7 @@
 
   function loadAccessGuards() {
     const page = getCurrentPage();
+    const portalMode = String(localStorage.getItem("ungani_portal_mode") || "").toLowerCase();
 
     const publicPages = [
       "index.html",
@@ -86,8 +125,11 @@
 
     if (clientPages.includes(page)) {
       loadScriptOnce("client-access-guard.js");
-      loadScriptOnce("staff-permission-guard.js");
-      loadScriptOnce("staff-visibility-filter.js");
+
+      if (portalMode === "staff") {
+        loadScriptOnce("staff-permission-guard.js");
+        loadScriptOnce("staff-visibility-filter.js");
+      }
     }
   }
 
