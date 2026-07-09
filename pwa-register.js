@@ -1,14 +1,16 @@
 (function () {
+  const UNGANI_BUILD_VERSION = "staff-final-14m-20260710";
+
   loadUiPolish();
   registerServiceWorker();
   loadAccessGuards();
 
   function loadUiPolish() {
-    if (document.querySelector('link[href="ungani-ui-polish.css"]')) return;
+    if (document.querySelector('link[href^="ungani-ui-polish.css"]')) return;
 
     const link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "ungani-ui-polish.css";
+    link.href = "ungani-ui-polish.css?v=" + UNGANI_BUILD_VERSION;
     document.head.appendChild(link);
   }
 
@@ -96,12 +98,14 @@
   function loadScriptOnce(src) {
     if (!src) return;
 
-    if (document.querySelector('script[src="' + src + '"]')) {
+    const baseSrc = src.split("?")[0];
+
+    if (document.querySelector('script[src^="' + baseSrc + '"]')) {
       return;
     }
 
     const script = document.createElement("script");
-    script.src = src;
+    script.src = baseSrc + "?v=" + UNGANI_BUILD_VERSION;
     script.defer = true;
     document.head.appendChild(script);
   }
