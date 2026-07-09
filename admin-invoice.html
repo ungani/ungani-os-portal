@@ -264,6 +264,18 @@
       font-size: 13px;
     }
 
+    .status-note {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(212, 166, 58, 0.28);
+      background: rgba(212, 166, 58, 0.12);
+      color: #F5F5F3;
+      line-height: 1.55;
+      font-size: 13px;
+      max-width: 360px;
+    }
+
     .invoice-body {
       padding: 26px;
     }
@@ -471,6 +483,10 @@
       .invoice-title h2 {
         font-size: 24px;
       }
+
+      .status-note {
+        max-width: 100%;
+      }
     }
 
     @media print {
@@ -517,6 +533,12 @@
         box-shadow: none !important;
       }
 
+      .status-note {
+        background: #F5F5F3 !important;
+        color: #111827 !important;
+        border-color: #E5E7EB !important;
+      }
+
       .info-box,
       .notes-box,
       .total-card,
@@ -559,7 +581,7 @@
     </div>
 
     <div class="top-actions">
-      <button class="top-btn" onclick="window.print()">Print Invoice</button>
+      <button class="top-btn" onclick="window.print()">Print / Save PDF</button>
       <a class="top-btn" href="admin-billing.html">Admin Billing</a>
       <a class="top-btn gold" href="admin-home.html">Back to Admin</a>
     </div>
@@ -587,9 +609,10 @@
         </div>
 
         <div class="invoice-title">
-          <h2>INVOICE</h2>
+          <h2 id="documentTitle">INVOICE</h2>
           <strong id="invoiceNumber">—</strong>
           <span id="invoiceCreated">—</span>
+          <div id="statusNote" class="status-note">—</div>
         </div>
       </div>
 
@@ -604,7 +627,7 @@
           </div>
 
           <div class="info-box">
-            <label>Invoice Details</label>
+            <label>Document Details</label>
             <p>
               Status: <span id="invoiceStatus"></span><br />
               Due Date: <strong id="dueDate">—</strong><br />
@@ -643,7 +666,7 @@
               <strong>—</strong>
             </div>
             <div class="total-line">
-              <span>Total</span>
+              <span id="totalLabel">Total Due</span>
               <strong id="totalAmount">—</strong>
             </div>
           </div>
@@ -662,7 +685,7 @@
 
       <div class="invoice-footer">
         <strong>UNGANI OS Admin Invoice View.</strong><br />
-        This invoice is generated from UNGANI OS billing records. Client privacy remains protected through separate client billing pages.
+        This document is generated from UNGANI OS billing records. Client privacy remains protected through separate client billing pages.
       </div>
     </section>
 
@@ -815,8 +838,13 @@
       const packageName = titleCase(invoice.package_key || "starter");
       const status = titleCase(invoice.payment_status || "pending");
       const clientName = clientNameMap[invoice.tenant_id] || `Client ${shortId(invoice.tenant_id)}`;
+      const documentMeta = getDocumentMeta(invoice.payment_status);
 
-      document.title = `${invoice.invoice_number || "Admin Invoice"} | UNGANI OS`;
+      document.title = `${documentMeta.title} ${invoice.invoice_number || ""} | UNGANI OS`;
+
+      document.getElementById("documentTitle").textContent = documentMeta.title;
+      document.getElementById("statusNote").textContent = documentMeta.note;
+      document.getElementById("totalLabel").textContent = documentMeta.totalLabel;
 
       document.getElementById("invoiceNumber").textContent = invoice.invoice_number || "Pending";
       document.getElementById("invoiceCreated").textContent = "Created: " + formatDateTime(invoice.created_at);
@@ -852,6 +880,56 @@
       `;
 
       document.getElementById("notesText").textContent = invoice.notes || "No notes.";
+    }
+
+    function getDocumentMeta(status) {
+      const clean = normalize(status);
+
+      if (clean === "paid") {
+        return {
+          title: "RECEIPT",
+          totalLabel: "Total Paid",
+          note: "This document confirms that this UNGANI OS billing record has been marked as paid."
+        };
+      }
+
+      if (clean === "waived") {
+        return {
+          title: "WAIVED INVOICE",
+          totalLabel: "Amount Waived",
+          note: "This invoice has been waived by UNGANI. No payment is required for this billing record."
+        };
+      }
+
+      if (clean === "cancelled" || clean === "canceled") {
+        return {
+          title: "CANCELLED INVOICE",
+          totalLabel: "Cancelled Amount",
+          note: "This invoice has been cancelled and is no longer payable."
+        };
+      }
+
+      if (clean === "partial") {
+        return {
+          title: "PARTIAL PAYMENT INVOICE",
+          totalLabel: "Total Amount",
+          note: "This invoice has been partially paid. Check the payment details and remaining balance if applicable."
+        };
+      }
+
+      if (clean === "overdue") {
+        return {
+          title: "OVERDUE INVOICE",
+          totalLabel: "Total Due",
+          note: "This invoice is overdue. Follow up with the client or update the payment status once settled."
+        };
+      }
+
+      return {
+        title: "INVOICE",
+        totalLabel: "Total Due",
+        note: "This invoice is pending payment."
+      };
     }
 
     function normalize(value) {
