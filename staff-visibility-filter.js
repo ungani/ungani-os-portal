@@ -21,46 +21,42 @@
     "my-package.html": "package",
     "my-branches.html": "branches",
     "my-team-access.html": "settings",
+    "my-settings.html": "settings",
     "client-notifications.html": "notifications",
     "my-tools.html": "tools",
     "my-onboarding.html": "tools",
     "my-account-status.html": "tools"
   };
 
-  const alwaysVisiblePages = [
+  const staffAlwaysVisiblePages = [
     "client.html",
     "client-notifications.html",
     "my-tools.html",
     "my-account-status.html",
-    "staff-login.html",
-    "login.html"
+    "staff-login.html"
   ];
 
-  window.addEventListener("load", function () {
-    setTimeout(runStaffVisibilityFilter, 650);
-    setTimeout(runStaffVisibilityFilter, 1600);
-    setTimeout(runStaffVisibilityFilter, 3000);
-  });
+  let cachedAccess = null;
+  let observerStarted = false;
+
+  runSoon();
+  document.addEventListener("DOMContentLoaded", runSoon);
+  window.addEventListener("load", runSoon);
+
+  function runSoon() {
+    setTimeout(runStaffVisibilityFilter, 50);
+    setTimeout(runStaffVisibilityFilter, 400);
+    setTimeout(runStaffVisibilityFilter, 1200);
+    setTimeout(runStaffVisibilityFilter, 2500);
+  }
 
   async function runStaffVisibilityFilter() {
     try {
       if (!window.supabase) return;
 
-      const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      const access = cachedAccess || await getStaffAccess();
 
-      const userResponse = await supabaseClient.auth.getUser();
-      const user = userResponse && userResponse.data ? userResponse.data.user : null;
-
-      if (!user) return;
-
-      const response = await supabaseClient.rpc("get_my_ungani_staff_access");
-
-      if (response.error) {
-        console.warn("Staff visibility filter:", response.error.message);
-        return;
-      }
-
-      const access = response.data || {};
+      if (!access) return;
 
       if (access.is_owner === true) {
         document.body.setAttribute("data-ungani-role", "owner");
@@ -74,9 +70,48 @@
       hideRestrictedLinks(permissions);
       hideRestrictedDashboardCards(permissions);
       addStaffModeBadge(access);
+      startObserver();
+
     } catch (error) {
       console.warn("Staff visibility filter:", error.message);
     }
+  }
+
+  async function getStaffAccess() {
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const userResponse = await supabaseClient.auth.getUser();
+    const user = userResponse && userResponse.data ? userResponse.data.user : null;
+
+    if (!user) return null;
+
+    const response = await supabaseClient.rpc("get_my_ungani_staff_access");
+
+    if (response.error) {
+      console.warn("Staff visibility filter:", response.error.message);
+      return null;
+    }
+
+    cachedAccess = response.data || {};
+    return cachedAccess;
+  }
+
+  function startObserver() {
+    if (observerStarted) return;
+    observerStarted = true;
+
+    const observer = new MutationObserver(function () {
+      if (!cachedAccess || cachedAccess.is_owner === true) return;
+
+      const permissions = cachedAccess.permissions || {};
+      hideRestrictedLinks(permissions);
+      hideRestrictedDashboardCards(permissions);
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
   }
 
   function hideRestrictedLinks(permissions) {
@@ -84,13 +119,11 @@
 
     links.forEach(function (link) {
       const page = getPageFromHref(link.getAttribute("href"));
-
       if (!page) return;
 
-      if (alwaysVisiblePages.includes(page)) return;
+      if (staffAlwaysVisiblePages.includes(page)) return;
 
       const section = hrefSectionMap[page];
-
       if (!section) return;
 
       if (canView(permissions, section)) return;
@@ -101,16 +134,16 @@
 
   function hideRestrictedDashboardCards(permissions) {
     Object.keys(hrefSectionMap).forEach(function (page) {
-      if (alwaysVisiblePages.includes(page)) return;
+      if (staffAlwaysVisiblePages.includes(page)) return;
 
       const section = hrefSectionMap[page];
-
       if (!section || canView(permissions, section)) return;
 
       const selectors = [
         `a[href="${page}"]`,
         `a[href="./${page}"]`,
-        `a[href="/${page}"]`
+        `a[href="/${page}"]`,
+        `a[href*="${page}"]`
       ];
 
       selectors.forEach(function (selector) {
@@ -152,16 +185,12 @@
 
   function canView(permissions, section) {
     if (!section) return true;
-
     const permission = permissions[section] || {};
-
     return permission.view === true;
   }
 
   function getPageFromHref(href) {
-    if (!href) return "";
-
-    if (href.startsWith("#")) return "";
+    if (!href || href.startsWith("#")) return "";
 
     try {
       const url = new URL(href, window.location.origin);
@@ -176,6 +205,8 @@
 
     element.setAttribute("data-staff-hidden", "true");
     element.style.display = "none";
+    element.style.visibility = "hidden";
+    element.style.pointerEvents = "none";
   }
 
   function escapeHtml(value) {
