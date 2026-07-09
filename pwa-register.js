@@ -27,7 +27,8 @@
 
     const publicPages = [
       "index.html",
-      "login.html"
+      "login.html",
+      "staff-login.html"
     ];
 
     const adminPages = [
@@ -82,6 +83,7 @@
     if (clientPages.includes(page)) {
       loadScriptOnce("client-access-guard.js");
       loadScriptOnce("staff-permission-guard.js");
+      loadScriptOnce("staff-visibility-filter.js");
     }
   }
 
