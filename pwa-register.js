@@ -1,5 +1,5 @@
 (function () {
-  const UNGANI_BUILD_VERSION = "admin-clicks-14o-20260710";
+  const UNGANI_BUILD_VERSION = "admin-clicks-fix-14p-20260710";
 
   loadUiPolish();
   registerServiceWorker();
