@@ -1,374 +1,130 @@
 (function () {
-  const APP_NAME = "UNGANI OS";
-  const THEME_COLOR = "#061C3D";
-  const ICON_PATH = "/ungani-logo.png";
-  const MANIFEST_PATH = "/manifest.json";
-  const SERVICE_WORKER_PATH = "/sw.js";
+  const ALERT_SCRIPT_SRC = "notification-alerts.js";
 
-  let deferredInstallPrompt = null;
+  document.addEventListener("DOMContentLoaded", function () {
+    registerUnganiServiceWorker();
+    loadUnganiNotificationAlerts();
+  });
 
-  function addOrUpdateMeta(name, content) {
-    let meta = document.querySelector(`meta[name="${name}"]`);
-
-    if (!meta) {
-      meta = document.createElement("meta");
-      meta.setAttribute("name", name);
-      document.head.appendChild(meta);
+  function registerUnganiServiceWorker() {
+    if (!("serviceWorker" in navigator)) {
+      return;
     }
 
-    meta.setAttribute("content", content);
+    window.addEventListener("load", function () {
+      navigator.serviceWorker
+        .register("sw.js")
+        .then(function (registration) {
+          console.log("UNGANI OS service worker registered:", registration.scope);
+        })
+        .catch(function (error) {
+          console.warn("UNGANI OS service worker registration failed:", error);
+        });
+    });
   }
 
-  function addOrUpdateLink(rel, href, type) {
-    let link = document.querySelector(`link[rel="${rel}"]`);
+  function loadUnganiNotificationAlerts() {
+    const pageName = getCurrentPageName();
 
-    if (!link) {
-      link = document.createElement("link");
-      link.setAttribute("rel", rel);
-      document.head.appendChild(link);
+    if (shouldSkipNotificationAlerts(pageName)) {
+      return;
     }
 
-    link.setAttribute("href", href);
+    const userType = detectUserType(pageName);
 
-    if (type) {
-      link.setAttribute("type", type);
+    if (!userType) {
+      return;
     }
-  }
 
-  function setupPwaHeadTags() {
-    addOrUpdateLink("manifest", MANIFEST_PATH);
-    addOrUpdateLink("apple-touch-icon", ICON_PATH);
-    addOrUpdateLink("icon", ICON_PATH, "image/png");
-
-    addOrUpdateMeta("application-name", APP_NAME);
-    addOrUpdateMeta("apple-mobile-web-app-title", APP_NAME);
-    addOrUpdateMeta("apple-mobile-web-app-capable", "yes");
-    addOrUpdateMeta("apple-mobile-web-app-status-bar-style", "black-translucent");
-    addOrUpdateMeta("mobile-web-app-capable", "yes");
-    addOrUpdateMeta("theme-color", THEME_COLOR);
-    addOrUpdateMeta("msapplication-TileColor", THEME_COLOR);
-    addOrUpdateMeta("msapplication-TileImage", ICON_PATH);
-  }
-
-  async function registerServiceWorker() {
-    if (!("serviceWorker" in navigator)) return;
-
-    try {
-      const registration = await navigator.serviceWorker.register(SERVICE_WORKER_PATH, {
-        scope: "/"
+    if (window.initUnganiNotificationAlerts) {
+      window.initUnganiNotificationAlerts({
+        userType: userType
       });
-
-      if (registration && registration.update) {
-        registration.update().catch(function () {});
-      }
-    } catch (error) {
-      console.warn("UNGANI PWA service worker registration failed:", error.message);
-    }
-  }
-
-  function setupInstallPrompt() {
-    window.addEventListener("beforeinstallprompt", function (event) {
-      event.preventDefault();
-      deferredInstallPrompt = event;
-
-      window.UnganiPWA.canInstall = true;
-
-      document.dispatchEvent(
-        new CustomEvent("ungani:pwa-install-ready", {
-          detail: { canInstall: true }
-        })
-      );
-    });
-
-    window.addEventListener("appinstalled", function () {
-      deferredInstallPrompt = null;
-      window.UnganiPWA.canInstall = false;
-
-      document.dispatchEvent(
-        new CustomEvent("ungani:pwa-installed", {
-          detail: { installed: true }
-        })
-      );
-    });
-  }
-
-  function isStandalone() {
-    return (
-      window.matchMedia("(display-mode: standalone)").matches ||
-      window.navigator.standalone === true
-    );
-  }
-
-  function getInstallInstructions() {
-    const userAgent = navigator.userAgent || "";
-
-    if (/iphone|ipad|ipod/i.test(userAgent)) {
-      return "On iPhone Safari: tap Share, then Add to Home Screen.";
-    }
-
-    if (/android/i.test(userAgent)) {
-      return "On Android Chrome: tap the browser menu, then Install app or Add to Home screen.";
-    }
-
-    return "On desktop Chrome or Edge: open the browser menu, then choose Install UNGANI OS.";
-  }
-
-  async function promptInstall() {
-    if (!deferredInstallPrompt) return false;
-
-    deferredInstallPrompt.prompt();
-
-    const choice = await deferredInstallPrompt.userChoice;
-    const accepted = choice && choice.outcome === "accepted";
-
-    deferredInstallPrompt = null;
-    window.UnganiPWA.canInstall = false;
-
-    return accepted;
-  }
-
-  window.UnganiPWA = window.UnganiPWA || {};
-  window.UnganiPWA.canInstall = false;
-  window.UnganiPWA.promptInstall = promptInstall;
-  window.UnganiPWA.isStandalone = isStandalone;
-  window.UnganiPWA.getInstallInstructions = getInstallInstructions;
-
-  setupPwaHeadTags();
-  setupInstallPrompt();
-  registerServiceWorker();
-
-  function isAdminPage() {
-    return window.location.pathname.toLowerCase().includes("admin-home.html");
-  }
-
-  function isClientPage() {
-    const path = window.location.pathname.toLowerCase();
-    return path.endsWith("/client.html") || path.includes("client.html");
-  }
-
-  function isDashboardPage() {
-    return isAdminPage() || isClientPage();
-  }
-
-  function cleanText(value) {
-    return String(value || "")
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  function injectClickableStyles() {
-    if (document.getElementById("ungani-clickable-v3-style")) return;
-
-    const style = document.createElement("style");
-    style.id = "ungani-clickable-v3-style";
-    style.textContent = `
-      .ungani-clickable-card {
-        cursor: pointer !important;
-        transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease !important;
-      }
-
-      .ungani-clickable-card:hover {
-        transform: translateY(-2px) !important;
-        border-color: rgba(212, 166, 58, 0.48) !important;
-      }
-
-      .ungani-clickable-card:active {
-        transform: translateY(0) !important;
-      }
-
-      .ungani-click-hint {
-        display: inline-flex;
-        margin-top: 10px;
-        font-size: 11px;
-        font-weight: 950;
-        color: #D4A63A;
-      }
-
-      @media (max-width: 1180px) {
-        .ungani-click-hint {
-          display: none;
-        }
-      }
-    `;
-
-    document.head.appendChild(style);
-  }
-
-  function openNotifications() {
-    if (typeof window.toggleNotifications === "function") {
-      window.toggleNotifications();
       return;
     }
 
-    const panel = document.getElementById("notificationPanel");
-    const overlay = document.getElementById("notificationOverlay");
-
-    if (panel) panel.classList.add("open");
-    if (overlay) overlay.classList.add("open");
-
-    document.body.style.overflow = "hidden";
-  }
-
-  function adminRouteFromText(text) {
-    const value = cleanText(text);
-
-    if (value.includes("notification") || value.includes("unread")) return "__notifications__";
-    if (value.includes("approval") || value.includes("registration") || value.includes("pending")) return "admin.html";
-    if (value.includes("client") || value.includes("profiles") || value.includes("active") || value.includes("trial")) return "admin-profiles.html";
-    if (value.includes("support") || value.includes("urgent") || value.includes("issue")) return "support.html";
-    if (value.includes("chat") || value.includes("message")) return "admin-chat.html";
-    if (value.includes("billing") || value.includes("payment") || value.includes("package")) return "billing.html";
-    if (value.includes("money") || value.includes("income") || value.includes("expense")) return "admin-money.html";
-    if (value.includes("task") || value.includes("overdue") || value.includes("follow")) return "admin-tasks.html";
-    if (value.includes("document") || value.includes("file")) return "admin-documents.html";
-    if (value.includes("calendar") || value.includes("event") || value.includes("activity")) return "admin-calendar.html";
-    if (value.includes("record")) return "admin-records.html";
-    if (value.includes("item") || value.includes("asset") || value.includes("stock")) return "admin-items.html";
-    if (value.includes("people") || value.includes("user") || value.includes("access") || value.includes("staff")) return "admin-people.html";
-    if (value.includes("report")) return "admin-reports.html";
-    if (value.includes("health") || value.includes("attention") || value.includes("no money") || value.includes("no tasks") || value.includes("no documents")) return "admin-health.html";
-    if (value.includes("business type") || value.includes("industries")) return "admin-profiles.html";
-
-    return "";
-  }
-
-  function clientRouteFromText(text) {
-    const value = cleanText(text);
-
-    if (value.includes("notification") || value.includes("unread")) return "__notifications__";
-    if (value.includes("income") || value.includes("expense") || value.includes("balance") || value.includes("money") || value.includes("petty")) return "my-money.html";
-    if (value.includes("task") || value.includes("follow") || value.includes("overdue") || value.includes("pending") || value.includes("due")) return "my-tasks.html";
-    if (value.includes("record") || value.includes("business update")) return "my-records.html";
-    if (value.includes("support") || value.includes("issue")) return "my-support.html";
-    if (value.includes("chat") || value.includes("message")) return "my-chat.html";
-    if (value.includes("team")) return "my-team-chat.html";
-    if (value.includes("calendar") || value.includes("event") || value.includes("today") || value.includes("upcoming") || value.includes("viewing")) return "my-calendar.html";
-    if (value.includes("document") || value.includes("file")) return "my-documents.html";
-    if (value.includes("item") || value.includes("asset") || value.includes("stock") || value.includes("property") || value.includes("properties")) return "my-items.html";
-    if (value.includes("people") || value.includes("staff") || value.includes("supplier") || value.includes("client") || value.includes("lead") || value.includes("agent") || value.includes("tenant") || value.includes("buyer")) return "my-people.html";
-    if (value.includes("report") || value.includes("summary")) return "reports.html";
-    if (value.includes("attention") || value.includes("needs action")) return "my-tasks.html";
-
-    return "";
-  }
-
-  function routeFromCard(card) {
-    const text = card ? card.innerText || "" : "";
-
-    if (isAdminPage()) return adminRouteFromText(text);
-    if (isClientPage()) return clientRouteFromText(text);
-
-    return "";
-  }
-
-  function shouldSkip(card) {
-    if (!card) return true;
-    if (card.dataset.unganiClickV3 === "yes") return true;
-    if (card.closest(".sidebar")) return true;
-    if (card.closest(".notification-panel")) return true;
-    if (card.closest("form")) return true;
-    if (card.tagName && card.tagName.toLowerCase() === "a") return true;
-
-    return false;
-  }
-
-  function makeClickable(card, route) {
-    if (!card || !route) return;
-
-    card.dataset.unganiClickV3 = "yes";
-    card.dataset.unganiRoute = route;
-    card.classList.add("ungani-clickable-card");
-    card.setAttribute("role", "link");
-    card.setAttribute("tabindex", "0");
-
-    if (!card.querySelector(".ungani-click-hint") && (card.classList.contains("kpi-card") || card.classList.contains("today-item"))) {
-      const hint = document.createElement("div");
-      hint.className = "ungani-click-hint";
-      hint.textContent = route === "__notifications__" ? "Click to view" : "Click to open";
-      card.appendChild(hint);
-    }
-
-    card.addEventListener("click", function (event) {
-      if (event.target.closest("a, button, input, select, textarea")) return;
-
-      if (route === "__notifications__") {
-        openNotifications();
-        return;
-      }
-
-      window.location.href = route;
-    });
-
-    card.addEventListener("keydown", function (event) {
-      if (event.key !== "Enter" && event.key !== " ") return;
-
-      event.preventDefault();
-
-      if (route === "__notifications__") {
-        openNotifications();
-        return;
-      }
-
-      window.location.href = route;
-    });
-  }
-
-  function enhanceCards() {
-    if (!isDashboardPage()) return;
-
-    injectClickableStyles();
-
-    const cards = Array.from(
-      document.querySelectorAll(
-        ".kpi-card, .today-item, .summary-row, .activity-item, .card, .hero-mini"
-      )
-    );
-
-    cards.forEach(function (card) {
-      if (shouldSkip(card)) return;
-
-      const route = routeFromCard(card);
-
-      if (route) {
-        makeClickable(card, route);
-      }
-    });
-  }
-
-  function initClickableDashboard() {
-    if (!isDashboardPage()) return;
-
-    function runSoon() {
-      setTimeout(enhanceCards, 250);
-      setTimeout(enhanceCards, 900);
-      setTimeout(enhanceCards, 1800);
-    }
-
-    runSoon();
-
-    const observer = new MutationObserver(function () {
-      runSoon();
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-  }
-
-  function runWhenBodyReady() {
-    if (!document.body) {
-      setTimeout(runWhenBodyReady, 80);
+    if (document.querySelector('script[src="' + ALERT_SCRIPT_SRC + '"]')) {
+      waitForAlertScript(userType);
       return;
     }
 
-    initClickableDashboard();
+    const script = document.createElement("script");
+    script.src = ALERT_SCRIPT_SRC;
+    script.defer = true;
+
+    script.onload = function () {
+      if (window.initUnganiNotificationAlerts) {
+        window.initUnganiNotificationAlerts({
+          userType: userType
+        });
+      }
+    };
+
+    script.onerror = function () {
+      console.warn("UNGANI notification alert script failed to load.");
+    };
+
+    document.body.appendChild(script);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", runWhenBodyReady);
-  } else {
-    runWhenBodyReady();
+  function waitForAlertScript(userType) {
+    let attempts = 0;
+
+    const timer = setInterval(function () {
+      attempts += 1;
+
+      if (window.initUnganiNotificationAlerts) {
+        clearInterval(timer);
+        window.initUnganiNotificationAlerts({
+          userType: userType
+        });
+        return;
+      }
+
+      if (attempts >= 20) {
+        clearInterval(timer);
+      }
+    }, 250);
+  }
+
+  function getCurrentPageName() {
+    const path = window.location.pathname || "";
+    const clean = path.split("/").pop() || "index.html";
+
+    return clean.toLowerCase();
+  }
+
+  function detectUserType(pageName) {
+    if (
+      pageName.startsWith("admin") ||
+      pageName === "support.html" ||
+      pageName === "billing.html"
+    ) {
+      return "admin";
+    }
+
+    if (
+      pageName.startsWith("my-") ||
+      pageName.startsWith("client") ||
+      pageName === "client.html" ||
+      pageName === "client-notifications.html"
+    ) {
+      return "client";
+    }
+
+    return null;
+  }
+
+  function shouldSkipNotificationAlerts(pageName) {
+    const skipPages = [
+      "index.html",
+      "login.html",
+      "register.html",
+      "forgot-password.html",
+      "reset-password.html",
+      "signup.html"
+    ];
+
+    return skipPages.includes(pageName);
   }
 })();
