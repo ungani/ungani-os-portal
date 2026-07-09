@@ -30,10 +30,18 @@
 
   const exemptPages = [
     "login.html",
-    "index.html"
+    "index.html",
+    "staff-login.html"
   ];
 
-  window.addEventListener("load", runStaffPermissionGuard);
+  runSoon();
+  document.addEventListener("DOMContentLoaded", runSoon);
+  window.addEventListener("load", runSoon);
+
+  function runSoon() {
+    setTimeout(runStaffPermissionGuard, 20);
+    setTimeout(runStaffPermissionGuard, 300);
+  }
 
   async function runStaffPermissionGuard() {
     try {
@@ -116,11 +124,11 @@
             margin-bottom:16px;
           ">🔐</div>
 
-          <h1 style="margin:0;font-size:34px;letter-spacing:-0.05em;">Access Restricted</h1>
+          <h1 style="margin:0;font-size:34px;letter-spacing:-0.05em;">Staff Access Restricted</h1>
 
           <p style="color:rgba(255,255,255,0.72);line-height:1.55;margin:12px 0 0;">
-            Your account does not have permission to open this section.
-            Please contact the business owner to request access.
+            This section is not assigned to your staff account.
+            Please ask the business owner to update your access if you need this section.
           </p>
 
           <p style="color:#FFE8A3;font-weight:900;margin:16px 0 0;">
@@ -128,7 +136,7 @@
           </p>
 
           <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:22px;">
-            <a href="client.html" style="
+            <a href="client.html?mode=staff" style="
               display:inline-flex;
               align-items:center;
               justify-content:center;
@@ -138,9 +146,9 @@
               color:#061C3D;
               text-decoration:none;
               font-weight:950;
-            ">Back to Dashboard</a>
+            ">Back to Staff Dashboard</a>
 
-            <a href="my-tools.html" style="
+            <a href="staff-login.html" style="
               display:inline-flex;
               align-items:center;
               justify-content:center;
@@ -151,7 +159,7 @@
               border:1px solid rgba(255,255,255,0.16);
               text-decoration:none;
               font-weight:950;
-            ">My Tools</a>
+            ">Staff Login</a>
           </div>
         </div>
       </div>
