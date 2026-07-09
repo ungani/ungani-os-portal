@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Admin Invoice | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .loading,
+    .error {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 22px;
+      color: var(--muted);
+      box-shadow: var(--shadow);
+      line-height: 1.6;
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .invoice-shell {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: none;
+    }
+
+    .invoice-head {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.98), rgba(6, 28, 61, 0.98)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 35%);
+      color: #FFFFFF;
+      padding: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .invoice-brand {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .invoice-brand img {
+      width: 66px;
+      height: 66px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 18px;
+      padding: 7px;
+    }
+
+    .invoice-brand h1 {
+      margin: 0 0 5px;
+      font-size: 26px;
+      letter-spacing: 0.3px;
+    }
+
+    .invoice-brand p {
+      margin: 0;
+      color: #B8C3D6;
+      line-height: 1.45;
+      font-size: 13px;
+    }
+
+    .invoice-title {
+      text-align: right;
+    }
+
+    .invoice-title h2 {
+      margin: 0 0 8px;
+      color: var(--gold);
+      font-size: 28px;
+      letter-spacing: 0.8px;
+    }
+
+    .invoice-title strong {
+      display: block;
+      font-size: 16px;
+      color: #FFFFFF;
+    }
+
+    .invoice-title span {
+      color: #B8C3D6;
+      font-size: 13px;
+    }
+
+    .invoice-body {
+      padding: 26px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .info-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+    }
+
+    .info-box label {
+      display: block;
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 8px;
+    }
+
+    .info-box p {
+      margin: 0;
+      color: var(--text-soft);
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .invoice-table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      margin-top: 12px;
+    }
+
+    .invoice-table th,
+    .invoice-table td {
+      padding: 15px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      color: var(--text-soft);
+      font-size: 14px;
+    }
+
+    .invoice-table th {
+      color: var(--gold);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.4px;
+      background: rgba(3, 18, 39, 0.42);
+    }
+
+    html[data-theme="light"] .invoice-table th {
+      background: #F9FAFB;
+    }
+
+    .invoice-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .total-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 18px;
+    }
+
+    .total-card {
+      width: 340px;
+      max-width: 100%;
+      background: var(--panel);
+      border: 1px solid rgba(212, 166, 58, 0.28);
+      border-radius: 18px;
+      padding: 18px;
+    }
+
+    .total-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-soft);
+      font-size: 14px;
+    }
+
+    .total-line:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+      color: var(--gold);
+      font-size: 20px;
+      font-weight: 900;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .status-paid,
+    .status-waived {
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .status-pending {
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .status-partial,
+    .status-overdue {
+      color: var(--warning-text);
+      background: var(--warning-bg);
+    }
+
+    .status-cancelled {
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .notes-box {
+      margin-top: 18px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+    }
+
+    .notes-box label {
+      display: block;
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 8px;
+    }
+
+    .notes-box p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 13px;
+    }
+
+    .invoice-footer {
+      padding: 20px 26px 26px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+      border-top: 1px solid var(--border);
+    }
+
+    .invoice-footer strong {
+      color: var(--gold);
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 720px) {
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .invoice-title {
+        text-align: left;
+      }
+
+      .invoice-head,
+      .invoice-body,
+      .invoice-footer {
+        padding: 20px;
+      }
+
+      .invoice-brand img {
+        width: 58px;
+        height: 58px;
+      }
+
+      .invoice-brand h1 {
+        font-size: 22px;
+      }
+
+      .invoice-title h2 {
+        font-size: 24px;
+      }
+    }
+
+    @media print {
+      html,
+      body {
+        background: #FFFFFF !important;
+        color: #111827 !important;
+      }
+
+      .topbar,
+      .footer {
+        display: none !important;
+      }
+
+      .content {
+        max-width: 100%;
+        padding: 0;
+      }
+
+      .invoice-shell {
+        display: block !important;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        background: #FFFFFF !important;
+        color: #111827 !important;
+      }
+
+      .invoice-head {
+        background: #061C3D !important;
+        color: #FFFFFF !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .invoice-body,
+      .invoice-footer,
+      .info-box,
+      .notes-box,
+      .total-card,
+      .invoice-table {
+        background: #FFFFFF !important;
+        color: #111827 !important;
+        box-shadow: none !important;
+      }
+
+      .info-box,
+      .notes-box,
+      .total-card,
+      .invoice-table,
+      .invoice-table th,
+      .invoice-table td {
+        border-color: #E5E7EB !important;
+      }
+
+      .invoice-table th {
+        background: #F9FAFB !important;
+        color: #061C3D !important;
+      }
+
+      .info-box p,
+      .notes-box p,
+      .invoice-table td,
+      .total-line,
+      .invoice-footer {
+        color: #111827 !important;
+      }
+
+      .info-box label,
+      .notes-box label,
+      .total-line:last-child {
+        color: #D4A63A !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>Admin Invoice View</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <button class="top-btn" onclick="window.print()">Print Invoice</button>
+      <a class="top-btn" href="admin-billing.html">Admin Billing</a>
+      <a class="top-btn gold" href="admin-home.html">Back to Admin</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <div id="loadingBox" class="loading">
+      <span class="spinner"></span>
+      <span>Loading invoice...</span>
+    </div>
+
+    <div id="errorBox" class="error" style="display: none;"></div>
+
+    <section id="invoiceShell" class="invoice-shell">
+      <div class="invoice-head">
+        <div class="invoice-brand">
+          <img src="ungani-logo.png" alt="UNGANI Logo" />
+          <div>
+            <h1>UNGANI</h1>
+            <p>
+              Business operations support system<br />
+              ungani.com · info@ungani.com
+            </p>
+          </div>
+        </div>
+
+        <div class="invoice-title">
+          <h2>INVOICE</h2>
+          <strong id="invoiceNumber">—</strong>
+          <span id="invoiceCreated">—</span>
+        </div>
+      </div>
+
+      <div class="invoice-body">
+        <div class="info-grid">
+          <div class="info-box">
+            <label>Invoice To</label>
+            <p id="invoiceTo">
+              Client Account<br />
+              UNGANI OS Workspace
+            </p>
+          </div>
+
+          <div class="info-box">
+            <label>Invoice Details</label>
+            <p>
+              Status: <span id="invoiceStatus"></span><br />
+              Due Date: <strong id="dueDate">—</strong><br />
+              Paid Date: <strong id="paidDate">—</strong>
+            </p>
+          </div>
+        </div>
+
+        <table class="invoice-table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th>Billing Period</th>
+              <th>Package</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td id="description">UNGANI OS subscription billing</td>
+              <td id="billingPeriod">—</td>
+              <td id="packageName">—</td>
+              <td id="lineAmount">—</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="total-row">
+          <div class="total-card">
+            <div class="total-line">
+              <span>Subtotal</span>
+              <strong id="subtotal">—</strong>
+            </div>
+            <div class="total-line">
+              <span>Tax / VAT</span>
+              <strong>—</strong>
+            </div>
+            <div class="total-line">
+              <span>Total</span>
+              <strong id="totalAmount">—</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="notes-box">
+          <label>Payment Details</label>
+          <p id="paymentDetails">—</p>
+        </div>
+
+        <div class="notes-box">
+          <label>Admin Notes</label>
+          <p id="notesText">—</p>
+        </div>
+      </div>
+
+      <div class="invoice-footer">
+        <strong>UNGANI OS Admin Invoice View.</strong><br />
+        This invoice is generated from UNGANI OS billing records. Client privacy remains protected through separate client billing pages.
+      </div>
+    </section>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let clientNameMap = {};
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+      await loadInvoice();
+    });
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
+
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+
+        if (htmlTheme === "light" || htmlTheme === "dark") {
+          foundTheme = htmlTheme;
+        }
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    async function loadInvoice() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const invoiceShell = document.getElementById("invoiceShell");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      invoiceShell.style.display = "none";
+
+      try {
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+
+        if (!sessionData || !sessionData.session) {
+          window.location.href = "login.html";
+          return;
+        }
+
+        const { data: isAdmin, error: adminError } = await supabaseClient.rpc("is_ungani_admin");
+
+        if (adminError) throw adminError;
+
+        if (isAdmin !== true) {
+          throw new Error("Access denied. This invoice page is for UNGANI admin only.");
+        }
+
+        await loadClientNames();
+
+        const params = new URLSearchParams(window.location.search);
+        const paymentId = params.get("id");
+        const invoiceNumber = params.get("invoice");
+
+        const { data, error } = await supabaseClient.rpc("admin_get_ungani_payments");
+
+        if (error) throw error;
+
+        const payments = Array.isArray(data) ? data : [];
+
+        let invoice = null;
+
+        if (paymentId) {
+          invoice = payments.find(item => String(item.id) === String(paymentId));
+        }
+
+        if (!invoice && invoiceNumber) {
+          invoice = payments.find(item => String(item.invoice_number) === String(invoiceNumber));
+        }
+
+        if (!invoice) {
+          throw new Error("Invoice not found. Open this page from Admin Billing using a valid invoice record.");
+        }
+
+        renderInvoice(invoice);
+
+        loadingBox.style.display = "none";
+        invoiceShell.style.display = "block";
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent = "Unable to load admin invoice. " + getErrorMessage(error);
+      }
+    }
+
+    async function loadClientNames() {
+      clientNameMap = {};
+
+      try {
+        const { data, error } = await supabaseClient.rpc("admin_get_ungani_billing_clients");
+
+        if (error) throw error;
+
+        const clients = Array.isArray(data) ? data : [];
+
+        clients.forEach(client => {
+          clientNameMap[client.tenant_id] =
+            client.display_name || `Client ${shortId(client.tenant_id)}`;
+        });
+      } catch (error) {
+        clientNameMap = {};
+      }
+    }
+
+    function renderInvoice(invoice) {
+      const amount = formatMoney(invoice.amount, invoice.currency);
+      const packageName = titleCase(invoice.package_key || "starter");
+      const status = titleCase(invoice.payment_status || "pending");
+      const clientName = clientNameMap[invoice.tenant_id] || `Client ${shortId(invoice.tenant_id)}`;
+
+      document.title = `${invoice.invoice_number || "Admin Invoice"} | UNGANI OS`;
+
+      document.getElementById("invoiceNumber").textContent = invoice.invoice_number || "Pending";
+      document.getElementById("invoiceCreated").textContent = "Created: " + formatDateTime(invoice.created_at);
+
+      document.getElementById("invoiceTo").innerHTML = `
+        ${escapeHtml(clientName)}<br />
+        UNGANI OS Workspace<br />
+        Tenant: ${escapeHtml(shortId(invoice.tenant_id))}
+      `;
+
+      document.getElementById("invoiceStatus").innerHTML =
+        `<span class="status-badge ${getStatusClass(invoice.payment_status)}">${escapeHtml(status)}</span>`;
+
+      document.getElementById("dueDate").textContent = formatDate(invoice.due_date);
+      document.getElementById("paidDate").textContent = formatDateTime(invoice.paid_at);
+
+      document.getElementById("description").textContent =
+        `UNGANI OS ${packageName} package subscription`;
+
+      document.getElementById("billingPeriod").textContent =
+        `${formatDate(invoice.billing_period_start)} - ${formatDate(invoice.billing_period_end)}`;
+
+      document.getElementById("packageName").textContent = packageName;
+      document.getElementById("lineAmount").textContent = amount;
+      document.getElementById("subtotal").textContent = amount;
+      document.getElementById("totalAmount").textContent = amount;
+
+      document.getElementById("paymentDetails").innerHTML = `
+        Method: <strong>${escapeHtml(invoice.payment_method || "—")}</strong><br />
+        Reference: <strong>${escapeHtml(invoice.payment_reference || "—")}</strong><br />
+        Currency: <strong>${escapeHtml(invoice.currency || "KES")}</strong><br />
+        Payment Record: <strong>${escapeHtml(shortId(invoice.id))}</strong>
+      `;
+
+      document.getElementById("notesText").textContent = invoice.notes || "No notes.";
+    }
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function titleCase(value) {
+      if (!value) return "—";
+
+      return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function getStatusClass(status) {
+      const clean = normalize(status);
+
+      if (clean === "paid") return "status-paid";
+      if (clean === "partial") return "status-partial";
+      if (clean === "overdue") return "status-overdue";
+      if (clean === "waived") return "status-waived";
+      if (clean === "cancelled" || clean === "canceled") return "status-cancelled";
+
+      return "status-pending";
+    }
+
+    function formatMoney(amount, currency) {
+      const numberValue = Number(amount || 0);
+      const currencyValue = currency || "KES";
+
+      if (currencyValue === "USD") {
+        return "USD " + numberValue.toLocaleString("en-US", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2
+        });
+      }
+
+      return "KSh " + numberValue.toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function formatDate(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleDateString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function shortId(value) {
+      if (!value) return "—";
+
+      const text = String(value);
+
+      if (text.length <= 12) return text;
+
+      return text.slice(0, 8) + "...";
+    }
+
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
+
+      try {
+        return JSON.stringify(error);
+      } catch (e) {
+        return String(error);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
