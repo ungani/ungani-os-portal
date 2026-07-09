@@ -1,6 +1,16 @@
 (function () {
+  loadUiPolish();
   registerServiceWorker();
   loadAccessGuards();
+
+  function loadUiPolish() {
+    if (document.querySelector('link[href="ungani-ui-polish.css"]')) return;
+
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "ungani-ui-polish.css";
+    document.head.appendChild(link);
+  }
 
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
