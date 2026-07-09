@@ -1,0 +1,1965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Admin Command Center</title>
+
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/ungani-logo.png" />
+  <link rel="icon" href="/ungani-logo.png" type="image/png" />
+
+  <meta name="theme-color" content="#061C3D" />
+  <meta name="background-color" content="#020617" />
+  <meta name="application-name" content="UNGANI OS" />
+  <meta name="apple-mobile-web-app-title" content="UNGANI OS" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --gray: #E5E7EB;
+      --muted: #64748B;
+      --green: #16A34A;
+      --blue: #2563EB;
+      --red: #DC2626;
+      --orange: #F97316;
+
+      --page-bg:
+        radial-gradient(circle at top right, rgba(212,166,58,0.20), transparent 32%),
+        linear-gradient(135deg, #061C3D 0%, #092B58 44%, #F5F5F3 44%, #F5F5F3 100%);
+
+      --text: #061C3D;
+      --text-soft: #64748B;
+      --card: rgba(255,255,255,0.96);
+      --card-solid: #FFFFFF;
+      --soft: #F8FAFC;
+      --border: rgba(6,28,61,0.10);
+      --table-border: #E5E7EB;
+      --shadow: 0 24px 70px rgba(6,28,61,0.13);
+    }
+
+    body[data-theme="dark"] {
+      --page-bg:
+        radial-gradient(circle at top right, rgba(212,166,58,0.14), transparent 32%),
+        linear-gradient(135deg, #020617 0%, #061C3D 52%, #0F172A 100%);
+
+      --text: #F8FAFC;
+      --text-soft: #CBD5E1;
+      --card: rgba(15,23,42,0.90);
+      --card-solid: #0F172A;
+      --soft: rgba(255,255,255,0.06);
+      --border: rgba(255,255,255,0.12);
+      --table-border: rgba(255,255,255,0.12);
+      --shadow: 0 24px 70px rgba(0,0,0,0.38);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, Arial, sans-serif;
+      background: var(--page-bg);
+      color: var(--text);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .mobile-header {
+      display: none;
+      position: sticky;
+      top: 0;
+      z-index: 80;
+      background: rgba(6,28,61,0.97);
+      color: white;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(18px);
+      padding: 11px 14px;
+    }
+
+    .mobile-header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .mobile-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .mobile-brand img {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+      background: white;
+      border-radius: 13px;
+      padding: 6px;
+      flex: 0 0 auto;
+    }
+
+    .mobile-brand strong {
+      display: block;
+      font-size: 15px;
+      letter-spacing: -0.035em;
+    }
+
+    .mobile-brand span {
+      display: block;
+      color: rgba(255,255,255,0.65);
+      font-size: 11px;
+    }
+
+    .mobile-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .hamburger,
+    .bell-btn {
+      width: 44px;
+      height: 44px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border-radius: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      cursor: pointer;
+      flex: 0 0 auto;
+      position: relative;
+    }
+
+    .bell-dot {
+      position: absolute;
+      top: -5px;
+      right: -5px;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--gold);
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 950;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(6,28,61,0.97);
+    }
+
+    .bell-dot.show {
+      display: inline-flex;
+    }
+
+    .drawer-overlay,
+    .notification-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(2,6,23,0.62);
+      z-index: 90;
+      opacity: 0;
+      pointer-events: none;
+      transition: 0.2s ease;
+    }
+
+    .drawer-overlay.open,
+    .notification-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 285px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background: rgba(6,28,61,0.97);
+      color: white;
+      padding: 24px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid rgba(255,255,255,0.12);
+      z-index: 100;
+    }
+
+    .sidebar-close {
+      display: none;
+      width: 100%;
+      margin-bottom: 16px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border-radius: 16px;
+      padding: 12px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .brand img {
+      width: 54px;
+      height: 54px;
+      object-fit: contain;
+      background: white;
+      border-radius: 16px;
+      padding: 8px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -0.04em;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      color: rgba(255,255,255,0.68);
+      font-size: 12px;
+    }
+
+    .nav-section-title {
+      margin: 22px 0 8px;
+      color: rgba(255,255,255,0.48);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 13px;
+      border-radius: 16px;
+      color: rgba(255,255,255,0.82);
+      font-size: 14px;
+      font-weight: 750;
+      margin-bottom: 6px;
+      transition: 0.2s;
+    }
+
+    .nav-link:hover,
+    .nav-link.active {
+      background: rgba(212,166,58,0.16);
+      color: white;
+    }
+
+    .nav-pill {
+      font-size: 11px;
+      background: rgba(255,255,255,0.12);
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.75);
+    }
+
+    .main {
+      min-width: 0;
+      padding: 24px;
+      max-width: 1500px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 20px;
+      color: white;
+    }
+
+    .topbar h2 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 48px);
+      letter-spacing: -0.055em;
+      line-height: 1.02;
+    }
+
+    .topbar p {
+      margin: 8px 0 0;
+      color: rgba(255,255,255,0.72);
+      max-width: 760px;
+      line-height: 1.5;
+    }
+
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 15px;
+      font-weight: 900;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: 0.2s;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .btn.navy {
+      background: var(--navy);
+      color: white;
+    }
+
+    body[data-theme="dark"] .btn.navy {
+      background: rgba(255,255,255,0.10);
+      border: 1px solid rgba(255,255,255,0.14);
+      color: white;
+    }
+
+    .btn.light {
+      background: white;
+      color: var(--navy);
+      border: 1px solid rgba(6,28,61,0.08);
+    }
+
+    body[data-theme="dark"] .btn.light {
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.14);
+    }
+
+    .btn.green {
+      background: var(--green);
+      color: white;
+    }
+
+    .btn.red {
+      background: var(--red);
+      color: white;
+    }
+
+    .btn.small {
+      padding: 8px 11px;
+      font-size: 12px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at top right, rgba(212,166,58,0.25), transparent 35%),
+        linear-gradient(135deg, rgba(6,28,61,0.98), rgba(9,43,88,0.94));
+      color: white;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 30px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.18fr) minmax(300px, 0.82fr);
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .hero h3 {
+      margin: 14px 0 10px;
+      font-size: clamp(32px, 4vw, 58px);
+      letter-spacing: -0.065em;
+      line-height: 1;
+      color: white;
+    }
+
+    .hero p {
+      margin: 0;
+      color: rgba(255,255,255,0.74);
+      line-height: 1.58;
+    }
+
+    .hero-mini {
+      background: rgba(255,255,255,0.09);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 24px;
+      padding: 18px;
+    }
+
+    .hero-mini h4 {
+      margin: 0 0 12px;
+      color: white;
+      font-size: 18px;
+    }
+
+    .today-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .today-item {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.09);
+      border: 1px solid rgba(255,255,255,0.10);
+    }
+
+    .today-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(212,166,58,0.18);
+    }
+
+    .today-item strong {
+      display: block;
+      color: white;
+      font-size: 13px;
+    }
+
+    .today-item small {
+      display: block;
+      color: rgba(255,255,255,0.62);
+      margin-top: 2px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 950;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.10);
+      color: white;
+    }
+
+    .badge.gold {
+      background: rgba(212,166,58,0.16);
+      color: #FFE8A3;
+    }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .quick-action {
+      background: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: 22px;
+      padding: 16px;
+      display: grid;
+      gap: 8px;
+      transition: 0.2s;
+    }
+
+    .quick-action:hover {
+      transform: translateY(-2px);
+    }
+
+    .quick-action span {
+      font-size: 22px;
+    }
+
+    .quick-action strong {
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .quick-action small {
+      color: var(--text-soft);
+      line-height: 1.35;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 24px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      min-height: 136px;
+    }
+
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 18px;
+      bottom: 18px;
+      width: 5px;
+      border-radius: 0 999px 999px 0;
+      background: var(--accent);
+    }
+
+    .kpi-card span {
+      color: var(--text-soft);
+      font-size: 12px;
+      font-weight: 950;
+      text-transform: uppercase;
+      letter-spacing: 0.055em;
+    }
+
+    .kpi-card h3 {
+      margin: 17px 0 8px;
+      font-size: clamp(26px, 3vw, 38px);
+      line-height: 1;
+      letter-spacing: -0.055em;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    .kpi-card p {
+      margin: 0;
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+
+    .section-title h3 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -0.04em;
+      color: var(--text);
+    }
+
+    .section-title p {
+      margin: 5px 0 0;
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .summary-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid var(--table-border);
+      padding: 12px 0;
+    }
+
+    .summary-row:last-child {
+      border-bottom: 0;
+    }
+
+    .summary-row strong {
+      display: block;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .summary-row p {
+      margin: 4px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .summary-value {
+      font-weight: 950;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .activity-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .activity-item {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      padding: 13px;
+      border: 1px solid var(--border);
+      background: var(--card-solid);
+      border-radius: 20px;
+    }
+
+    .activity-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 16px;
+      background: var(--soft);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .activity-item strong {
+      display: block;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .activity-item p {
+      margin: 4px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .status {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: 11px;
+      font-weight: 950;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .status.green {
+      background: rgba(22,163,74,0.12);
+      color: #22C55E;
+      border-color: rgba(22,163,74,0.18);
+    }
+
+    .status.gold {
+      background: rgba(212,166,58,0.14);
+      color: #D4A63A;
+      border-color: rgba(212,166,58,0.22);
+    }
+
+    .status.blue {
+      background: rgba(37,99,235,0.11);
+      color: #60A5FA;
+      border-color: rgba(37,99,235,0.16);
+    }
+
+    .status.red {
+      background: rgba(220,38,38,0.10);
+      color: #F87171;
+      border-color: rgba(220,38,38,0.16);
+    }
+
+    .empty {
+      text-align: center;
+      padding: 30px 16px;
+      border-radius: 22px;
+      background: var(--soft);
+      border: 1px dashed var(--border);
+      color: var(--text-soft);
+    }
+
+    .footer {
+      color: var(--text-soft);
+      font-size: 12px;
+      margin: 18px 0 4px;
+    }
+
+    .loading {
+      background: var(--card);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 30px;
+      color: var(--text-soft);
+    }
+
+    .notification-panel {
+      position: fixed;
+      right: 22px;
+      top: 84px;
+      width: min(420px, calc(100vw - 28px));
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+      background: var(--card-solid);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      box-shadow: 0 30px 90px rgba(0,0,0,0.35);
+      z-index: 120;
+      display: none;
+      padding: 18px;
+    }
+
+    .notification-panel.open {
+      display: block;
+    }
+
+    .notification-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .notification-head h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 22px;
+      letter-spacing: -0.04em;
+    }
+
+    .notification-head p {
+      margin: 4px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    .notification-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .notification-item {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      border-radius: 18px;
+      padding: 13px;
+    }
+
+    .notification-item.unread {
+      border-color: rgba(212,166,58,0.45);
+      background: rgba(212,166,58,0.10);
+    }
+
+    .notification-item strong {
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .notification-item p {
+      margin: 0;
+      color: var(--text-soft);
+      line-height: 1.45;
+      font-size: 12px;
+    }
+
+    .notification-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 1180px) {
+      body {
+        background: var(--page-bg);
+      }
+
+      .mobile-header {
+        display: block;
+      }
+
+      .drawer-overlay,
+      .notification-overlay {
+        display: block;
+      }
+
+      .app-shell {
+        display: block;
+        min-height: auto;
+      }
+
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: min(86vw, 315px);
+        height: 100vh;
+        transform: translateX(-105%);
+        transition: transform 0.22s ease;
+        box-shadow: 18px 0 60px rgba(0,0,0,0.38);
+      }
+
+      .sidebar.open {
+        transform: translateX(0);
+      }
+
+      .sidebar-close {
+        display: block;
+      }
+
+      .main {
+        padding: 14px;
+        max-width: none;
+      }
+
+      .topbar {
+        display: none;
+      }
+
+      .hero {
+        border-radius: 24px;
+        padding: 18px;
+        margin-bottom: 12px;
+      }
+
+      .hero-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h3 {
+        font-size: 28px;
+        letter-spacing: -0.05em;
+        margin: 10px 0 8px;
+      }
+
+      .hero p {
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .desktop-only {
+        display: none !important;
+      }
+
+      .hero-mini {
+        padding: 14px;
+        border-radius: 20px;
+      }
+
+      .hero-mini h4 {
+        font-size: 16px;
+        margin-bottom: 10px;
+      }
+
+      .today-item {
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+        padding: 9px;
+      }
+
+      .today-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+      }
+
+      .quick-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .quick-action {
+        padding: 13px;
+        border-radius: 18px;
+      }
+
+      .quick-action span {
+        font-size: 19px;
+      }
+
+      .quick-action small {
+        display: none;
+      }
+
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .kpi-card {
+        min-height: 112px;
+        padding: 15px;
+        border-radius: 18px;
+      }
+
+      .kpi-card h3 {
+        font-size: 24px;
+        margin: 12px 0 6px;
+      }
+
+      .kpi-card p {
+        font-size: 12px;
+      }
+
+      .grid-2,
+      .grid-3 {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .mobile-hide {
+        display: none !important;
+      }
+
+      .card {
+        border-radius: 20px;
+        padding: 16px;
+      }
+
+      .section-title h3 {
+        font-size: 19px;
+      }
+
+      .section-title p {
+        font-size: 12px;
+      }
+
+      .top-actions {
+        justify-content: flex-start;
+      }
+
+      .top-actions .btn {
+        flex: 1;
+      }
+
+      .activity-item {
+        grid-template-columns: 38px minmax(0, 1fr);
+      }
+
+      .activity-item .btn,
+      .activity-item .status {
+        grid-column: 2;
+        justify-self: start;
+      }
+
+      .notification-panel {
+        top: 74px;
+        left: 12px;
+        right: 12px;
+        width: auto;
+        max-height: calc(100vh - 96px);
+      }
+    }
+
+    @media (max-width: 520px) {
+      .main {
+        padding: 12px;
+      }
+
+      .hero h3 {
+        font-size: 25px;
+      }
+
+      .quick-actions,
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .summary-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <script>
+    (function applySavedThemeEarly() {
+      const keys = [
+        "ungani_admin_theme",
+        "ungani_theme",
+        "ungani_appearance",
+        "appearance",
+        "theme",
+        "color_mode",
+        "ungani_mode"
+      ];
+
+      let theme = "";
+
+      for (let i = 0; i < keys.length; i++) {
+        theme =
+          localStorage.getItem(keys[i]) ||
+          sessionStorage.getItem(keys[i]) ||
+          theme;
+
+        if (theme) break;
+      }
+
+      theme = String(theme || "").toLowerCase();
+
+      if (theme.includes("dark")) {
+        document.body.setAttribute("data-theme", "dark");
+      } else if (theme.includes("light")) {
+        document.body.setAttribute("data-theme", "light");
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.body.setAttribute("data-theme", "dark");
+      } else {
+        document.body.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+
+  <header class="mobile-header">
+    <div class="mobile-header-inner">
+      <div class="mobile-brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
+        <div>
+          <strong>UNGANI Admin</strong>
+          <span>Command Center</span>
+        </div>
+      </div>
+
+      <div class="mobile-actions">
+        <button class="bell-btn" type="button" onclick="toggleNotifications()" aria-label="Open notifications">
+          🔔
+          <span id="mobileNotificationCount" class="bell-dot">0</span>
+        </button>
+        <button class="hamburger" type="button" onclick="openSidebar()" aria-label="Open menu">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="drawerOverlay" class="drawer-overlay" onclick="closeSidebar()"></div>
+  <div id="notificationOverlay" class="notification-overlay" onclick="closeNotifications()"></div>
+
+  <div id="notificationPanel" class="notification-panel">
+    <div class="notification-head">
+      <div>
+        <h3>Admin Notifications</h3>
+        <p id="notificationSubtext">Recent UNGANI OS admin updates.</p>
+      </div>
+      <button class="btn small light" type="button" onclick="closeNotifications()">Close</button>
+    </div>
+
+    <div class="top-actions" style="justify-content:flex-start;margin-bottom:12px;">
+      <button class="btn small gold" type="button" onclick="markAllNotificationsRead()">Mark all read</button>
+      <button class="btn small navy" type="button" onclick="loadNotifications()">Refresh</button>
+    </div>
+
+    <div id="notificationList" class="notification-list">
+      <div class="empty">No notifications loaded yet.</div>
+    </div>
+  </div>
+
+  <div class="app-shell">
+    <aside id="sidebar" class="sidebar">
+      <button class="sidebar-close" type="button" onclick="closeSidebar()">Close Menu</button>
+
+      <div class="brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
+        <div>
+          <h1>UNGANI OS</h1>
+          <p>Admin Command Center</p>
+        </div>
+      </div>
+
+      <div class="nav-section-title">Command</div>
+      <a class="nav-link active" href="admin-home.html">Command Center <span class="nav-pill">Home</span></a>
+      <a class="nav-link" href="admin.html">Registrations</a>
+      <a class="nav-link" href="admin-profiles.html">Client Profiles</a>
+      <a class="nav-link" href="users.html">Users & Access</a>
+
+      <div class="nav-section-title">Client Records</div>
+      <a class="nav-link" href="admin-money.html">Money Records</a>
+      <a class="nav-link" href="admin-items.html">Items / Assets</a>
+      <a class="nav-link" href="admin-people.html">People</a>
+      <a class="nav-link" href="admin-records.html">Business Records</a>
+      <a class="nav-link" href="admin-tasks.html">Tasks</a>
+      <a class="nav-link" href="admin-documents.html">Documents</a>
+      <a class="nav-link" href="admin-calendar.html">Calendar</a>
+
+      <div class="nav-section-title">Support</div>
+      <a class="nav-link" href="support.html">Support Issues</a>
+      <a class="nav-link" href="admin-chat.html">Client Chat</a>
+      <a class="nav-link" href="notices.html">Notices</a>
+      <a class="nav-link" href="billing.html">Billing</a>
+
+      <div class="nav-section-title">System</div>
+      <a class="nav-link" href="admin-charts.html">Admin Charts</a>
+      <a class="nav-link" href="admin-reports.html">Admin Reports</a>
+      <a class="nav-link" href="admin-health.html">System Health</a>
+      <a class="nav-link" href="admin-settings.html">Settings</a>
+      <a class="nav-link" href="#" onclick="logout(); return false;">Logout</a>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h2>Admin Command Center</h2>
+          <p>Manage clients, registrations, support, billing, records, and system attention areas across UNGANI OS.</p>
+        </div>
+
+        <div class="top-actions">
+          <button class="btn light" type="button" onclick="toggleNotifications()">
+            🔔 Notifications
+            <span id="desktopNotificationCount" class="status gold" style="display:none;">0</span>
+          </button>
+          <button class="btn light" onclick="toggleTheme()" id="themeButton">Dark Mode</button>
+          <button class="btn light" onclick="loadAdminData()">Refresh</button>
+          <a class="btn gold" href="admin.html">Review Registrations</a>
+          <button class="btn red" onclick="logout()">Logout</button>
+        </div>
+      </div>
+
+      <div id="content" class="loading">Loading admin command center...</div>
+    </main>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUser = null;
+    let notifications = [];
+
+    let adminData = {
+      tenants: [],
+      registrations: [],
+      users: [],
+      support: [],
+      transactions: [],
+      tasks: [],
+      documents: [],
+      items: [],
+      people: [],
+      records: [],
+      events: [],
+      payments: []
+    };
+
+    window.addEventListener("load", initAdminDashboard);
+
+    function openSidebar() {
+      closeNotifications();
+      document.getElementById("sidebar").classList.add("open");
+      document.getElementById("drawerOverlay").classList.add("open");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeSidebar() {
+      document.getElementById("sidebar").classList.remove("open");
+      document.getElementById("drawerOverlay").classList.remove("open");
+      document.body.style.overflow = "";
+    }
+
+    function toggleNotifications() {
+      closeSidebar();
+
+      const panel = document.getElementById("notificationPanel");
+      const overlay = document.getElementById("notificationOverlay");
+
+      const isOpen = panel.classList.contains("open");
+
+      if (isOpen) {
+        closeNotifications();
+      } else {
+        panel.classList.add("open");
+        overlay.classList.add("open");
+        document.body.style.overflow = "hidden";
+        renderNotifications();
+      }
+    }
+
+    function closeNotifications() {
+      document.getElementById("notificationPanel").classList.remove("open");
+      document.getElementById("notificationOverlay").classList.remove("open");
+      document.body.style.overflow = "";
+    }
+
+    async function initAdminDashboard() {
+      updateThemeButton();
+
+      const userResponse = await supabaseClient.auth.getUser();
+      currentUser = userResponse && userResponse.data ? userResponse.data.user : null;
+
+      if (!currentUser) {
+        showAccessMessage("Please log in first.", "Use the admin login page to open your UNGANI OS admin command center.");
+        return;
+      }
+
+      const adminCheck = await supabaseClient.rpc("is_ungani_admin");
+
+      if (adminCheck.error || adminCheck.data !== true) {
+        showAccessMessage("Admin access required.", "This page is only available to UNGANI admin users.");
+        return;
+      }
+
+      await Promise.all([
+        loadAdminData(),
+        loadNotifications()
+      ]);
+    }
+
+    async function loadAdminData() {
+      document.getElementById("content").innerHTML = `<div class="loading">Refreshing admin command center...</div>`;
+
+      const responses = await Promise.all([
+        safeSelect("tenants", 500),
+        safeSelect("registrations", 500),
+        safeSelect("users", 500),
+        safeSelect("support_issues", 500),
+        safeSelect("transactions", 700),
+        safeSelect("tasks", 700),
+        safeSelect("documents", 700),
+        safeSelect("business_items", 700),
+        safeSelect("client_people", 700),
+        safeSelect("business_records", 700),
+        safeSelect("business_events", 700),
+        safeSelect("payments", 500)
+      ]);
+
+      adminData.tenants = responses[0];
+      adminData.registrations = responses[1];
+      adminData.users = responses[2];
+      adminData.support = responses[3];
+      adminData.transactions = responses[4];
+      adminData.tasks = responses[5];
+      adminData.documents = responses[6];
+      adminData.items = responses[7];
+      adminData.people = responses[8];
+      adminData.records = responses[9];
+      adminData.events = responses[10];
+      adminData.payments = responses[11];
+
+      renderAdminDashboard();
+    }
+
+    async function loadNotifications() {
+      try {
+        const response = await supabaseClient
+          .from("ungani_notifications")
+          .select("*")
+          .or("target_type.eq.admin,target_type.eq.all")
+          .order("created_at", { ascending: false })
+          .limit(60);
+
+        if (response.error) {
+          console.warn("notifications", response.error.message);
+          notifications = [];
+        } else {
+          notifications = response.data || [];
+        }
+
+        updateNotificationCounts();
+        renderNotifications();
+      } catch (error) {
+        console.warn("notifications", error.message);
+        notifications = [];
+        updateNotificationCounts();
+      }
+    }
+
+    async function markAllNotificationsRead() {
+      const unreadIds = notifications
+        .filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read")
+        .map(row => row.id)
+        .filter(Boolean);
+
+      if (unreadIds.length === 0) {
+        renderNotifications();
+        return;
+      }
+
+      try {
+        const response = await supabaseClient
+          .from("ungani_notifications")
+          .update({
+            status: "read",
+            read_at: new Date().toISOString()
+          })
+          .in("id", unreadIds);
+
+        if (response.error) {
+          console.warn(response.error.message);
+        }
+
+        await loadNotifications();
+      } catch (error) {
+        console.warn(error.message);
+      }
+    }
+
+    async function markNotificationRead(id) {
+      if (!id) return;
+
+      try {
+        await supabaseClient
+          .from("ungani_notifications")
+          .update({
+            status: "read",
+            read_at: new Date().toISOString()
+          })
+          .eq("id", id);
+
+        await loadNotifications();
+      } catch (error) {
+        console.warn(error.message);
+      }
+    }
+
+    function updateNotificationCounts() {
+      const unread = notifications.filter(row => {
+        return String(getValue(row, ["status"], "")).toLowerCase() !== "read";
+      }).length;
+
+      const mobileCount = document.getElementById("mobileNotificationCount");
+      const desktopCount = document.getElementById("desktopNotificationCount");
+      const subtext = document.getElementById("notificationSubtext");
+
+      if (mobileCount) {
+        mobileCount.innerText = unread > 99 ? "99+" : String(unread);
+        mobileCount.classList.toggle("show", unread > 0);
+      }
+
+      if (desktopCount) {
+        desktopCount.innerText = unread > 99 ? "99+" : String(unread);
+        desktopCount.style.display = unread > 0 ? "inline-flex" : "none";
+      }
+
+      if (subtext) {
+        subtext.innerText = unread > 0
+          ? unread + " unread admin notification(s)."
+          : "No unread admin notifications.";
+      }
+    }
+
+    function renderNotifications() {
+      const box = document.getElementById("notificationList");
+
+      if (!box) return;
+
+      if (!notifications || notifications.length === 0) {
+        box.innerHTML = `<div class="empty">No admin notifications yet.</div>`;
+        updateNotificationCounts();
+        return;
+      }
+
+      box.innerHTML = notifications.map(row => {
+        const isUnread = String(getValue(row, ["status"], "")).toLowerCase() !== "read";
+        const actionUrl = getValue(row, ["action_url"], "");
+        const actionLabel = getValue(row, ["action_label"], "Open");
+        const priority = String(getValue(row, ["priority"], "normal")).toLowerCase();
+
+        return `
+          <div class="notification-item ${isUnread ? "unread" : ""}">
+            <div class="notification-meta">
+              <strong>${safe(getValue(row, ["title"], "Notification"))}</strong>
+              ${priorityBadge(priority)}
+            </div>
+            <p>${safe(getValue(row, ["message"], ""))}</p>
+            <div class="notification-meta">
+              <p>${safe(formatDate(getValue(row, ["created_at"], "")))}</p>
+              <div class="top-actions">
+                ${isUnread ? `<button class="btn small light" type="button" onclick="markNotificationRead('${attr(row.id)}')">Mark read</button>` : ""}
+                ${actionUrl ? `<a class="btn small gold" href="${attr(actionUrl)}">${safe(actionLabel)}</a>` : ""}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      updateNotificationCounts();
+    }
+
+    function priorityBadge(priority) {
+      if (priority.includes("urgent") || priority.includes("high")) {
+        return `<span class="status red">High</span>`;
+      }
+
+      if (priority.includes("low")) {
+        return `<span class="status blue">Low</span>`;
+      }
+
+      return `<span class="status gold">Normal</span>`;
+    }
+
+    async function safeSelect(tableName, limitCount) {
+      try {
+        let response = await supabaseClient
+          .from(tableName)
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(limitCount || 500);
+
+        if (response.error) {
+          response = await supabaseClient
+            .from(tableName)
+            .select("*")
+            .limit(limitCount || 500);
+        }
+
+        if (response.error) {
+          console.warn(tableName, response.error.message);
+          return [];
+        }
+
+        return response.data || [];
+      } catch (error) {
+        console.warn(tableName, error.message);
+        return [];
+      }
+    }
+
+    function renderAdminDashboard() {
+      const summary = buildSummary();
+      const recent = buildRecentActivity();
+      const health = buildClientHealth();
+      const businessTypes = buildBusinessTypeRows();
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const attentionTotal = summary.attentionTotal + unreadNotifications;
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div>
+              <span class="badge gold">UNGANI Admin</span>
+              <h3>${safe(getGreeting())}, Command Center</h3>
+              <p class="desktop-only">
+                This is the main UNGANI admin control screen. Use it to see what needs attention first, then open the menu for full client records, billing, support, reports, and system settings.
+              </p>
+              <p class="mobile-only">
+                Admin summary for today. Use ☰ for all sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="admin.html">Approvals</a>
+                <a class="btn green" href="support.html">Support</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)")}
+                ${todayItem("📝", "Pending approvals", summary.pendingRegistrations, "registration(s)")}
+                ${todayItem("💬", "Open support", summary.openSupport, summary.urgentSupport + " urgent")}
+                ${todayItem("⏰", "Overdue tasks", summary.overdueTasks, "client task(s)")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("📝", "Approvals", "Review new registrations", "admin.html")}
+          ${quickAction("💬", "Support", "Open client issues", "support.html")}
+          ${quickAction("👥", "Clients", "Client profiles", "admin-profiles.html")}
+          ${quickAction("💳", "Billing", "Packages and payments", "billing.html")}
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("Clients", summary.totalClients, summary.activeClients + " active · " + summary.trialClients + " trial", "#2563EB")}
+          ${kpiCard("Pending", summary.pendingRegistrations, "Registrations to review", summary.pendingRegistrations > 0 ? "#D4A63A" : "#16A34A")}
+          ${kpiCard("Support", summary.openSupport, summary.urgentSupport + " urgent/high priority", summary.openSupport > 0 ? "#DC2626" : "#16A34A")}
+          ${kpiCard("Attention", attentionTotal, "Admin action items", attentionTotal > 0 ? "#DC2626" : "#16A34A")}
+        </section>
+
+        <section class="grid-3">
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Approvals</h3>
+                <p>New businesses waiting for review.</p>
+              </div>
+              <a class="btn small gold" href="admin.html">Open</a>
+            </div>
+
+            <div class="summary-list">
+              ${summaryRow("Pending Registrations", summary.pendingRegistrations, "Needs approval or rejection")}
+              ${summaryRow("Trial Clients", summary.trialClients, "Trial accounts")}
+              ${summaryRow("Active Clients", summary.activeClients, "Approved active accounts")}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Support</h3>
+                <p>Client issues and admin follow-ups.</p>
+              </div>
+              <a class="btn small gold" href="support.html">Open</a>
+            </div>
+
+            <div class="summary-list">
+              ${summaryRow("Open Issues", summary.openSupport, "Needs response")}
+              ${summaryRow("Urgent / High", summary.urgentSupport, "Priority support")}
+              ${summaryRow("Resolved", summary.resolvedSupport, "Closed issues")}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Client Health</h3>
+                <p>Clients that may need setup help.</p>
+              </div>
+              <a class="btn small gold" href="admin-health.html">Open</a>
+            </div>
+
+            <div class="summary-list">
+              ${summaryRow("No Money Records", health.noMoney, "May need onboarding")}
+              ${summaryRow("No Tasks", health.noTasks, "No follow-up usage")}
+              ${summaryRow("No Documents", health.noDocs, "No files added")}
+            </div>
+          </div>
+        </section>
+
+        <section class="grid-2 mobile-hide">
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Business Types</h3>
+                <p>Industries currently using UNGANI OS.</p>
+              </div>
+              <a class="btn small gold" href="admin-profiles.html">Profiles</a>
+            </div>
+
+            <div class="summary-list">
+              ${renderBusinessTypes(businessTypes)}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Recent Admin Activity</h3>
+                <p>Latest movement across support, tasks, records, documents, and calendar.</p>
+              </div>
+              <a class="btn small gold" href="admin-reports.html">Reports</a>
+            </div>
+
+            ${renderRecentActivity(recent)}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Open Full Admin Sections</h3>
+              <p>Use these shortcuts or tap the ☰ menu on mobile.</p>
+            </div>
+          </div>
+
+          <div class="quick-actions" style="margin-bottom:0;">
+            ${quickAction("💰", "Money", "Client money records", "admin-money.html")}
+            ${quickAction("✅", "Tasks", "Client tasks", "admin-tasks.html")}
+            ${quickAction("📄", "Documents", "Client files", "admin-documents.html")}
+            ${quickAction("📊", "Reports", "Admin reports", "admin-reports.html")}
+          </div>
+        </section>
+
+        <p class="footer">
+          Admin Home Version: Step Notifications-1C Admin Notification Bell · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+    }
+
+    function buildSummary() {
+      const today = new Date().toISOString().slice(0, 10);
+
+      const tenants = adminData.tenants || [];
+      const registrations = adminData.registrations || [];
+      const support = adminData.support || [];
+      const tasks = adminData.tasks || [];
+      const documents = adminData.documents || [];
+      const events = adminData.events || [];
+
+      const pendingRegistrations = registrations.filter(row => {
+        const status = statusText(row);
+        return !status || status.includes("pending") || status.includes("new") || status.includes("submitted");
+      }).length;
+
+      const openSupport = support.filter(row => !isClosed(row)).length;
+      const resolvedSupport = support.filter(row => isClosed(row)).length;
+
+      const urgentSupport = support.filter(row => {
+        const priority = String(getValue(row, ["priority"], "")).toLowerCase();
+        return priority.includes("urgent") || priority.includes("high");
+      }).length;
+
+      const overdueTasks = tasks.filter(row => {
+        const due = String(getValue(row, ["due_date"], "")).slice(0, 10);
+        const status = statusText(row);
+        return due && due < today && !status.includes("completed") && !status.includes("cancelled");
+      }).length;
+
+      const overdueEvents = events.filter(row => {
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(row);
+        return date && date < today && !status.includes("completed") && !status.includes("cancelled");
+      }).length;
+
+      const documentAttention = documents.filter(row => {
+        const status = statusText(row);
+        return status.includes("missing") || status.includes("expired") || status.includes("pending") || status.includes("review");
+      }).length;
+
+      return {
+        totalClients: tenants.length,
+        activeClients: tenants.filter(row => statusText(row).includes("active")).length,
+        trialClients: tenants.filter(row => statusText(row).includes("trial")).length,
+        pendingRegistrations,
+        openSupport,
+        resolvedSupport,
+        urgentSupport,
+        overdueTasks,
+        overdueEvents,
+        documentAttention,
+        attentionTotal: pendingRegistrations + openSupport + urgentSupport + overdueTasks + overdueEvents + documentAttention
+      };
+    }
+
+    function buildClientHealth() {
+      const tenantIds = (adminData.tenants || []).map(row => String(getTenantId(row))).filter(Boolean);
+
+      const noMoney = tenantIds.filter(id => !(adminData.transactions || []).some(row => String(getValue(row, ["tenant_id"], "")) === id)).length;
+      const noTasks = tenantIds.filter(id => !(adminData.tasks || []).some(row => String(getValue(row, ["tenant_id"], "")) === id)).length;
+      const noDocs = tenantIds.filter(id => !(adminData.documents || []).some(row => String(getValue(row, ["tenant_id"], "")) === id)).length;
+      const noPeople = tenantIds.filter(id => !(adminData.people || []).some(row => String(getValue(row, ["tenant_id"], "")) === id)).length;
+
+      return {
+        noMoney,
+        noTasks,
+        noDocs,
+        noPeople
+      };
+    }
+
+    function buildBusinessTypeRows() {
+      const map = {};
+
+      (adminData.tenants || []).forEach(row => {
+        const type = businessTypeText(row) || "General Business";
+        map[type] = (map[type] || 0) + 1;
+      });
+
+      return Object.keys(map).map(key => ({
+        label: key,
+        value: map[key]
+      })).sort((a, b) => b.value - a.value).slice(0, 8);
+    }
+
+    function buildRecentActivity() {
+      const rows = [];
+
+      addActivity(rows, adminData.registrations, "Registration", "📝", ["business_name", "company_name", "name"], ["status"], "admin.html");
+      addActivity(rows, adminData.support, "Support", "💬", ["issue_title", "subject", "title"], ["status", "priority"], "support.html");
+      addActivity(rows, adminData.tasks, "Task", "✅", ["task_title", "title", "name"], ["status", "priority"], "admin-tasks.html");
+      addActivity(rows, adminData.records, "Record", "🗂️", ["record_title", "title", "name"], ["status", "record_type"], "admin-records.html");
+      addActivity(rows, adminData.documents, "Document", "📄", ["document_title", "title", "file_name", "name"], ["status", "document_type"], "admin-documents.html");
+
+      rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+      return rows.slice(0, 10);
+    }
+
+    function addActivity(output, rows, section, icon, titleFields, statusFields, href) {
+      (rows || []).slice(0, 8).forEach(row => {
+        output.push({
+          section,
+          icon,
+          title: getValue(row, titleFields, section),
+          text: getValue(row, statusFields, "Updated"),
+          date: getValue(row, ["created_at", "updated_at", "due_date", "event_date", "document_date"], ""),
+          href
+        });
+      });
+    }
+
+    function todayItem(icon, title, value, subtitle) {
+      return `
+        <div class="today-item">
+          <div class="today-icon">${safe(icon)}</div>
+          <div>
+            <strong>${safe(title)}</strong>
+            <small>${safe(subtitle)}</small>
+          </div>
+          <span class="badge gold">${safe(value)}</span>
+        </div>
+      `;
+    }
+
+    function quickAction(icon, title, subtitle, href) {
+      return `
+        <a class="quick-action" href="${attr(href)}">
+          <span>${safe(icon)}</span>
+          <strong>${safe(title)}</strong>
+          <small>${safe(subtitle)}</small>
+        </a>
+      `;
+    }
+
+    function kpiCard(title, value, subtitle, accent) {
+      return `
+        <div class="kpi-card" style="--accent:${attr(accent)};">
+          <span>${safe(title)}</span>
+          <h3>${safe(value)}</h3>
+          <p>${safe(subtitle)}</p>
+        </div>
+      `;
+    }
+
+    function summaryRow(label, value, sub) {
+      return `
+        <div class="summary-row">
+          <div>
+            <strong>${safe(label)}</strong>
+            <p>${safe(sub || "")}</p>
+          </div>
+          <div class="summary-value">${safe(value)}</div>
+        </div>
+      `;
+    }
+
+    function renderBusinessTypes(rows) {
+      if (!rows || rows.length === 0) {
+        return `<div class="empty">No business types found yet.</div>`;
+      }
+
+      return rows.map(row => summaryRow(toTitle(row.label), row.value, "client(s)")).join("");
+    }
+
+    function renderRecentActivity(rows) {
+      if (!rows || rows.length === 0) {
+        return `<div class="empty">No recent admin activity yet.</div>`;
+      }
+
+      return `
+        <div class="activity-list">
+          ${rows.slice(0, 8).map(row => `
+            <div class="activity-item">
+              <div class="activity-icon">${safe(row.icon)}</div>
+              <div>
+                <strong>${safe(row.title)}</strong>
+                <p>${safe(row.section)} · ${safe(row.text)}</p>
+                <p>${safe(row.date ? formatDate(row.date) : "No date")}</p>
+              </div>
+              <a class="btn small navy" href="${attr(row.href)}">Open</a>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function getTenantId(row) {
+      return getValue(row, ["id", "tenant_id"], "");
+    }
+
+    function businessTypeText(row) {
+      return getValue(row, ["business_type", "business_type_key", "business_category", "industry", "sector"], "General Business");
+    }
+
+    function statusText(row) {
+      return String(getValue(row, ["status", "account_status", "client_status"], "")).toLowerCase();
+    }
+
+    function isClosed(row) {
+      const status = statusText(row);
+
+      return status.includes("resolved") || status.includes("closed") || status.includes("completed") || status.includes("cancelled");
+    }
+
+    function getGreeting() {
+      const hour = new Date().getHours();
+
+      if (hour < 12) return "Good morning";
+      if (hour < 17) return "Good afternoon";
+
+      return "Good evening";
+    }
+
+    function toggleTheme() {
+      const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      const next = current === "dark" ? "light" : "dark";
+
+      document.body.setAttribute("data-theme", next);
+
+      localStorage.setItem("ungani_admin_theme", next);
+      localStorage.setItem("ungani_theme", next);
+      localStorage.setItem("ungani_appearance", next);
+      localStorage.setItem("theme", next);
+
+      updateThemeButton();
+    }
+
+    function updateThemeButton() {
+      const button = document.getElementById("themeButton");
+      const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+
+      if (button) {
+        button.innerText = current === "dark" ? "Light Mode" : "Dark Mode";
+      }
+    }
+
+    function getValue(obj, fields, fallback) {
+      if (!obj) return fallback === undefined ? "" : fallback;
+
+      for (let i = 0; i < fields.length; i++) {
+        const key = fields[i];
+
+        if (
+          Object.prototype.hasOwnProperty.call(obj, key) &&
+          obj[key] !== null &&
+          obj[key] !== undefined &&
+          obj[key] !== ""
+        ) {
+          return obj[key];
+        }
+      }
+
+      return fallback === undefined ? "" : fallback;
+    }
+
+    function safe(value) {
+      return String(value === null || value === undefined ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function attr(value) {
+      return safe(value);
+    }
+
+    function toTitle(value) {
+      return String(value || "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\w\S*/g, function (txt) {
+          return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+        });
+    }
+
+    function formatDate(value) {
+      if (!value) return "";
+
+      const date = new Date(value);
+
+      if (isNaN(date.getTime())) return String(value).slice(0, 10);
+
+      return date.toLocaleDateString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit"
+      });
+    }
+
+    async function logout() {
+      await supabaseClient.auth.signOut();
+      window.location.href = "login.html?mode=admin";
+    }
+
+    function showAccessMessage(title, message) {
+      document.getElementById("content").innerHTML = `
+        <div class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(title)}</h3>
+              <p>${safe(message)}</p>
+            </div>
+          </div>
+
+          <div class="top-actions" style="justify-content:flex-start;">
+            <a class="btn gold" href="login.html?mode=admin">Go to Admin Login</a>
+          </div>
+
+          <p class="footer">Admin Home Version: Step Notifications-1C Admin Notification Bell · ungani.com · info@ungani.com</p>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>
