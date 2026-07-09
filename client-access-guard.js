@@ -78,6 +78,52 @@
         return;
       }
 
+      const approvalResponse = await supabaseClient.rpc("get_my_ungani_approval_status");
+
+      if (approvalResponse.error) {
+        console.warn("UNGANI approval check failed:", approvalResponse.error);
+
+        showAccessBlockedScreen({
+          title: "Approval Check Failed",
+          message:
+            "UNGANI OS could not confirm your registration approval status.",
+          detail:
+            "Please refresh the page. If this continues, contact UNGANI support.",
+          actionText: "Back to Login",
+          actionUrl: "login.html"
+        });
+
+        return;
+      }
+
+      const approval = normalizeApprovalResponse(approvalResponse.data);
+
+      if (approval.approval_allowed !== true) {
+        if (CLIENT_STATUS_ALLOWED_PAGES.includes(pageName)) {
+          showAccessWarningBanner({
+            title: "Approval Notice",
+            message:
+              approval.message ||
+              "Your account is not fully approved yet. Some workspace features may be restricted."
+          });
+
+          return;
+        }
+
+        showAccessBlockedScreen({
+          title: "Approval Required",
+          message:
+            "Your UNGANI OS workspace is not open yet because your account is still waiting for approval.",
+          detail:
+            approval.message ||
+            "Please wait for UNGANI admin approval before using the workspace.",
+          actionText: "Back to Login",
+          actionUrl: "login.html"
+        });
+
+        return;
+      }
+
       const accessResponse = await supabaseClient.rpc("get_my_ungani_access_status");
 
       if (accessResponse.error) {
@@ -104,7 +150,12 @@
       }
 
       if (CLIENT_STATUS_ALLOWED_PAGES.includes(pageName)) {
-        showAccessWarningBanner(access);
+        showAccessWarningBanner({
+          title: "Account Notice",
+          message:
+            "Your account status may restrict some workspace features. You can still view account, package, billing, and notifications."
+        });
+
         return;
       }
 
@@ -188,6 +239,28 @@
     return false;
   }
 
+  function normalizeApprovalResponse(data) {
+    if (!data) {
+      return {
+        approval_checked: false,
+        approval_allowed: true,
+        message:
+          "No approval record found. Existing subscription access rules will apply."
+      };
+    }
+
+    if (Array.isArray(data)) {
+      return data[0] || {
+        approval_checked: false,
+        approval_allowed: true,
+        message:
+          "No approval record found. Existing subscription access rules will apply."
+      };
+    }
+
+    return data;
+  }
+
   function normalizeAccessResponse(data) {
     if (!data) {
       return {
@@ -206,22 +279,21 @@
     return data;
   }
 
-  function showAccessWarningBanner(access) {
+  function showAccessWarningBanner(options) {
     if (document.getElementById("unganiAccessWarningBanner")) return;
+
+    const title = options && options.title ? options.title : "Account Notice";
+    const message =
+      options && options.message
+        ? options.message
+        : "Some workspace features may be restricted.";
 
     const banner = document.createElement("div");
     banner.id = "unganiAccessWarningBanner";
 
-    const statusText =
-      access.subscription_status ||
-      access.account_status ||
-      access.payment_status ||
-      "restricted";
-
     banner.innerHTML = `
-      <strong>Account Notice:</strong>
-      Your account status is currently ${escapeHtml(titleCase(statusText))}.
-      Some workspace features may be restricted.
+      <strong>${escapeHtml(title)}:</strong>
+      ${escapeHtml(message)}
     `;
 
     banner.style.cssText = `
