@@ -1,5 +1,5 @@
 (function () {
-  const UNGANI_BUILD_VERSION = "staff-final-14m-20260710";
+  const UNGANI_BUILD_VERSION = "admin-polish-14n-20260710";
 
   loadUiPolish();
   registerServiceWorker();
@@ -79,6 +79,7 @@
 
     if (adminPages.includes(page)) {
       loadScriptOnce("admin-access-guard.js");
+      loadScriptOnce("admin-ui-polish.js");
       return;
     }
 
