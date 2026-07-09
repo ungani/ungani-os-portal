@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>My Branches | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 920px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .summary-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 17px;
+      padding: 15px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 7px;
+    }
+
+    .summary-card strong {
+      color: #FFFFFF;
+      font-size: 23px;
+      display: block;
+      line-height: 1.2;
+    }
+
+    .summary-card span {
+      display: block;
+      margin-top: 8px;
+      color: #B8C3D6;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .panel {
+      margin-top: 20px;
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .notice {
+      padding: 15px;
+      border-radius: 17px;
+      border: 1px solid rgba(212, 166, 58, 0.24);
+      background: rgba(212, 166, 58, 0.12);
+      color: var(--text-soft);
+      line-height: 1.6;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .notice strong {
+      color: var(--gold);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 12px;
+      align-items: end;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    label {
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    input,
+    select {
+      width: 100%;
+      min-height: 42px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      padding: 11px 12px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    input::placeholder {
+      color: rgba(184, 195, 214, 0.75);
+    }
+
+    html[data-theme="light"] input::placeholder {
+      color: rgba(107, 114, 128, 0.75);
+    }
+
+    .main-btn,
+    .ghost-btn,
+    .danger-btn,
+    .small-btn {
+      border: none;
+      border-radius: 999px;
+      padding: 11px 15px;
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .main-btn {
+      background: var(--gold);
+      color: var(--navy);
+      box-shadow: 0 12px 24px rgba(212, 166, 58, 0.18);
+    }
+
+    .ghost-btn,
+    .small-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    html[data-theme="light"] .ghost-btn,
+    html[data-theme="light"] .small-btn {
+      background: #FFFFFF;
+      color: var(--navy);
+    }
+
+    .danger-btn {
+      background: var(--danger-bg);
+      color: var(--danger-text);
+      border: 1px solid rgba(153, 27, 27, 0.22);
+    }
+
+    .small-btn,
+    .danger-btn {
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 880px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 13px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--gold);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.4px;
+      background: rgba(3, 18, 39, 0.42);
+      white-space: nowrap;
+    }
+
+    html[data-theme="light"] th {
+      background: #F9FAFB;
+    }
+
+    td {
+      color: var(--text-soft);
+    }
+
+    .chip {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .chip.active {
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .chip.closed {
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .chip.info {
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .chip.warning {
+      color: var(--warning-text);
+      background: var(--warning-bg);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .action-stack {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .loading,
+    .empty,
+    .error {
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .message {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 16px;
+      line-height: 1.55;
+      display: none;
+    }
+
+    .message.success {
+      display: block;
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .message.error {
+      display: block;
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .message.info {
+      display: block;
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 820px) {
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .top-btn {
+        font-size: 12px;
+        padding: 9px 11px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>Branch Settings</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="top-btn" href="my-package.html">Package</a>
+      <a class="top-btn" href="my-reports.html">Reports</a>
+      <a class="top-btn gold" href="client.html">Back to Dashboard</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero">
+      <h1>My Branches</h1>
+      <p>
+        Manage business branches when multi-branch mode is enabled for your UNGANI OS account.
+        Single-location businesses continue using UNGANI OS exactly as normal.
+      </p>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <label>Multi-Branch Mode</label>
+          <strong id="multiBranchStatus">Checking...</strong>
+          <span id="multiBranchDetail">Loading package and branch status.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Package</label>
+          <strong id="packageKey">—</strong>
+          <span id="packageDetail">Package feature status.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Branches</label>
+          <strong id="branchCount">0</strong>
+          <span>Active and closed branch records for this workspace.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Add Branch</h2>
+      </div>
+
+      <div class="panel-body">
+        <div id="disabledNotice" class="notice" style="display: none;">
+          <strong>Multi-branch is not enabled yet.</strong><br />
+          This account is currently operating as a single-location workspace.
+          To activate branch management, upgrade to Business/Custom package or contact UNGANI admin.
+        </div>
+
+        <form id="branchForm" onsubmit="createBranch(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="branchName">Branch Name</label>
+              <input id="branchName" type="text" placeholder="Example: Nyali Branch" required />
+            </div>
+
+            <div class="form-group">
+              <label for="branchLocation">Location</label>
+              <input id="branchLocation" type="text" placeholder="Example: Nyali, Mombasa" />
+            </div>
+
+            <button id="createButton" class="main-btn" type="submit">
+              Add Branch
+            </button>
+          </div>
+
+          <div id="messageBox" class="message"></div>
+        </form>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Branch List</h2>
+        <button class="ghost-btn" type="button" onclick="loadBranchStatus()">Refresh</button>
+      </div>
+
+      <div id="loadingBox" class="loading">
+        <span class="spinner"></span>
+        <span>Loading branches...</span>
+      </div>
+
+      <div id="errorBox" class="error" style="display: none;"></div>
+
+      <div id="emptyBox" class="empty" style="display: none;">
+        No branches have been added yet.
+      </div>
+
+      <div id="tableWrap" class="table-wrap" style="display: none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Branch</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="branchesBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let branchStatus = null;
+    let branches = [];
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+      await checkClientSession();
+      await loadBranchStatus();
+    });
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
+
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+
+        if (htmlTheme === "light" || htmlTheme === "dark") {
+          foundTheme = htmlTheme;
+        }
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    async function checkClientSession() {
+      const { data } = await supabaseClient.auth.getSession();
+
+      if (!data || !data.session) {
+        window.location.href = "login.html?redirect=my-branches.html";
+      }
+    }
+
+    async function loadBranchStatus() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const emptyBox = document.getElementById("emptyBox");
+      const tableWrap = document.getElementById("tableWrap");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      emptyBox.style.display = "none";
+      tableWrap.style.display = "none";
+
+      try {
+        const { data, error } = await supabaseClient.rpc("get_my_ungani_multi_branch_status");
+
+        if (error) throw error;
+
+        branchStatus = data || {};
+        branches = Array.isArray(branchStatus.branches) ? branchStatus.branches : [];
+
+        renderStatus();
+        renderBranches();
+
+        loadingBox.style.display = "none";
+
+        if (!branches.length) {
+          emptyBox.style.display = "block";
+        } else {
+          tableWrap.style.display = "block";
+        }
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent = "Unable to load branches. " + getErrorMessage(error);
+      }
+    }
+
+    function renderStatus() {
+      const enabled = branchStatus && branchStatus.multi_branch_enabled === true;
+      const packageIncluded = branchStatus && branchStatus.package_multi_branch_included === true;
+      const subscriptionEnabled = branchStatus && branchStatus.subscription_multi_branch_enabled === true;
+
+      document.getElementById("multiBranchStatus").textContent = enabled ? "Enabled" : "Single Location";
+      document.getElementById("multiBranchDetail").textContent = enabled
+        ? "Branch management is active for this workspace."
+        : "Branch management is hidden from normal records until enabled.";
+
+      document.getElementById("packageKey").textContent = titleCase(branchStatus.package_key || "starter");
+
+      if (packageIncluded) {
+        document.getElementById("packageDetail").textContent = "Your package includes multi-branch support.";
+      } else if (subscriptionEnabled) {
+        document.getElementById("packageDetail").textContent = "UNGANI admin has enabled multi-branch for this account.";
+      } else {
+        document.getElementById("packageDetail").textContent = "Upgrade to Business/Custom or request activation.";
+      }
+
+      document.getElementById("branchCount").textContent = Number(branches.length || 0).toLocaleString("en-KE");
+
+      document.getElementById("disabledNotice").style.display = enabled ? "none" : "block";
+      document.getElementById("branchName").disabled = !enabled;
+      document.getElementById("branchLocation").disabled = !enabled;
+      document.getElementById("createButton").disabled = !enabled;
+    }
+
+    function renderBranches() {
+      const body = document.getElementById("branchesBody");
+
+      body.innerHTML = "";
+
+      branches.forEach(branch => {
+        const row = document.createElement("tr");
+        const status = normalize(branch.status || "active");
+
+        row.innerHTML = `
+          <td>
+            <strong>${escapeHtml(branch.branch_name || "Branch")}</strong>
+            <div class="muted">ID: ${escapeHtml(shortId(branch.id))}</div>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(branch.location || "No location added.")}</div>
+          </td>
+
+          <td>
+            <span class="chip ${escapeHtml(status)}">${escapeHtml(titleCase(status))}</span>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(formatDateTime(branch.created_at))}</div>
+          </td>
+
+          <td>
+            <div class="action-stack">
+              ${
+                status === "active"
+                  ? `<button class="danger-btn" type="button" onclick="updateBranchStatus('${escapeJs(branch.id)}', 'closed')">Close</button>`
+                  : `<button class="small-btn" type="button" onclick="updateBranchStatus('${escapeJs(branch.id)}', 'active')">Reactivate</button>`
+              }
+            </div>
+          </td>
+        `;
+
+        body.appendChild(row);
+      });
+    }
+
+    async function createBranch(event) {
+      event.preventDefault();
+
+      const button = document.getElementById("createButton");
+
+      try {
+        const branchName = document.getElementById("branchName").value.trim();
+        const branchLocation = document.getElementById("branchLocation").value.trim();
+
+        if (!branchName) {
+          throw new Error("Branch name is required.");
+        }
+
+        button.disabled = true;
+        button.textContent = "Adding...";
+
+        const { error } = await supabaseClient.rpc("create_ungani_branch", {
+          p_branch_name: branchName,
+          p_location: branchLocation || null
+        });
+
+        if (error) throw error;
+
+        document.getElementById("branchForm").reset();
+        showMessage("Branch added successfully.", "success");
+
+        await loadBranchStatus();
+      } catch (error) {
+        showMessage("Unable to add branch. " + getErrorMessage(error), "error");
+      } finally {
+        button.disabled = branchStatus && branchStatus.multi_branch_enabled !== true;
+        button.textContent = "Add Branch";
+      }
+    }
+
+    async function updateBranchStatus(branchId, status) {
+      const confirmed = confirm(
+        status === "closed"
+          ? "Close this branch? Existing records will remain saved."
+          : "Reactivate this branch?"
+      );
+
+      if (!confirmed) return;
+
+      try {
+        const { error } = await supabaseClient.rpc("update_ungani_branch", {
+          p_branch_id: branchId,
+          p_branch_name: null,
+          p_location: null,
+          p_status: status
+        });
+
+        if (error) throw error;
+
+        showMessage("Branch updated successfully.", "success");
+        await loadBranchStatus();
+      } catch (error) {
+        showMessage("Unable to update branch. " + getErrorMessage(error), "error");
+      }
+    }
+
+    function showMessage(message, type) {
+      const box = document.getElementById("messageBox");
+      box.className = "message " + type;
+      box.textContent = message;
+
+      setTimeout(() => {
+        box.className = "message";
+        box.textContent = "";
+      }, 5000);
+    }
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function titleCase(value) {
+      if (!value) return "—";
+
+      return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function shortId(value) {
+      if (!value) return "—";
+
+      const text = String(value);
+
+      if (text.length <= 12) return text;
+
+      return text.slice(0, 8) + "...";
+    }
+
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
+
+      try {
+        return JSON.stringify(error);
+      } catch (e) {
+        return String(error);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeJs(value) {
+      return String(value ?? "")
+        .replaceAll("\\", "\\\\")
+        .replaceAll("'", "\\'")
+        .replaceAll('"', '\\"');
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
