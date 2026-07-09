@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>My Tools | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 900px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .grid {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      text-decoration: none;
+      color: var(--text);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 18px;
+      min-height: 145px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform 0.18s ease, border-color 0.18s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(212, 166, 58, 0.45);
+    }
+
+    .card strong {
+      display: block;
+      color: var(--text);
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .card span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .chip {
+      margin-top: 16px;
+      width: fit-content;
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      color: var(--gold);
+      background: rgba(212, 166, 58, 0.16);
+      border: 1px solid rgba(212, 166, 58, 0.28);
+    }
+
+    .loading,
+    .error {
+      margin-top: 20px;
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .loading {
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 920px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .top-btn {
+        font-size: 12px;
+        padding: 9px 11px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>My Tools</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="top-btn" href="my-settings.html">Settings</a>
+      <a class="top-btn" href="my-onboarding.html">Onboarding</a>
+      <a class="top-btn gold" href="client.html">Back to Dashboard</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero">
+      <h1>My Tools</h1>
+      <p>
+        Open your main UNGANI OS tools from one place. This page does not change your dashboard or existing records.
+      </p>
+    </section>
+
+    <div id="loadingBox" class="loading">Checking account access...</div>
+    <div id="errorBox" class="error" style="display: none;"></div>
+
+    <section id="toolsGrid" class="grid" style="display: none;">
+      <a class="card" href="my-onboarding.html">
+        <div>
+          <strong>Onboarding</strong>
+          <span>Follow the setup checklist and track your progress.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-settings.html">
+        <div>
+          <strong>Settings</strong>
+          <span>Review your business profile, package, account, billing, and branch status.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-reports.html">
+        <div>
+          <strong>Reports</strong>
+          <span>View business insights from money, tasks, items, records, documents, and support.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-billing.html">
+        <div>
+          <strong>Billing</strong>
+          <span>View invoices, receipts, payments, and upload payment proof.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-package.html">
+        <div>
+          <strong>Package</strong>
+          <span>Check your plan, trial, user limit, and upgrade options.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-branches.html">
+        <div>
+          <strong>Branches</strong>
+          <span>Manage branch records if multi-branch mode is enabled.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-money.html">
+        <div>
+          <strong>Money</strong>
+          <span>Add and review income, sales, expenses, and petty cash records.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-tasks.html">
+        <div>
+          <strong>Tasks</strong>
+          <span>Manage follow-ups, reminders, and operational tasks.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-items.html">
+        <div>
+          <strong>Items / Assets</strong>
+          <span>Track stock, assets, equipment, machines, vehicles, or business items.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-records.html">
+        <div>
+          <strong>Business Records</strong>
+          <span>Save business notes, supplier details, client records, and operational information.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-documents.html">
+        <div>
+          <strong>Documents</strong>
+          <span>Open your document storage and file records area.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-support.html">
+        <div>
+          <strong>Support</strong>
+          <span>Send support issues to UNGANI admin without leaving your client workspace.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="client-notifications.html">
+        <div>
+          <strong>Notifications</strong>
+          <span>Review system, billing, support, and account notices.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="my-account-status.html">
+        <div>
+          <strong>Account Status</strong>
+          <span>Check account access, approval, trial, billing, and restriction status.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+
+      <a class="card" href="client.html">
+        <div>
+          <strong>Dashboard</strong>
+          <span>Return to your main client dashboard.</span>
+        </div>
+        <span class="chip">Open</span>
+      </a>
+    </section>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+      await checkClientAccess();
+    });
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
+
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    async function checkClientAccess() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const toolsGrid = document.getElementById("toolsGrid");
+
+      try {
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+
+        if (!sessionData || !sessionData.session) {
+          window.location.href = "login.html?redirect=my-tools.html";
+          return;
+        }
+
+        loadingBox.style.display = "none";
+        toolsGrid.style.display = "grid";
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent = error.message || "Unable to verify account access.";
+      }
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
