@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Team Access</title>
+
+  <link rel="icon" href="/ungani-logo.png" type="image/png" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --muted: #64748B;
+      --green: #16A34A;
+      --red: #DC2626;
+      --blue: #2563EB;
+
+      --page-bg:
+        radial-gradient(circle at top right, rgba(212,166,58,0.20), transparent 32%),
+        linear-gradient(135deg, #061C3D 0%, #092B58 44%, #F5F5F3 44%, #F5F5F3 100%);
+
+      --text: #061C3D;
+      --text-soft: #64748B;
+      --card: rgba(255,255,255,0.96);
+      --card-solid: #FFFFFF;
+      --soft: #F8FAFC;
+      --border: rgba(6,28,61,0.10);
+      --shadow: 0 24px 70px rgba(6,28,61,0.13);
+      --input-bg: #FFFFFF;
+      --input-text: #061C3D;
+    }
+
+    body[data-theme="dark"] {
+      --page-bg:
+        radial-gradient(circle at top right, rgba(212,166,58,0.14), transparent 32%),
+        linear-gradient(135deg, #020617 0%, #061C3D 52%, #0F172A 100%);
+
+      --text: #F8FAFC;
+      --text-soft: #CBD5E1;
+      --card: rgba(15,23,42,0.92);
+      --card-solid: #0F172A;
+      --soft: rgba(255,255,255,0.06);
+      --border: rgba(255,255,255,0.12);
+      --shadow: 0 24px 70px rgba(0,0,0,0.38);
+      --input-bg: rgba(255,255,255,0.08);
+      --input-text: #F8FAFC;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, Arial, sans-serif;
+      background: var(--page-bg);
+      color: var(--text);
+      padding: 24px;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .wrap {
+      width: min(1280px, 100%);
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 18px;
+      color: white;
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1;
+      letter-spacing: -0.06em;
+    }
+
+    .topbar p {
+      margin: 8px 0 0;
+      color: rgba(255,255,255,0.72);
+      max-width: 760px;
+      line-height: 1.5;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 15px;
+      font-weight: 900;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: 0.2s;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .btn.navy {
+      background: var(--navy);
+      color: white;
+    }
+
+    .btn.light {
+      background: white;
+      color: var(--navy);
+      border: 1px solid rgba(6,28,61,0.08);
+    }
+
+    body[data-theme="dark"] .btn.light,
+    body[data-theme="dark"] .btn.navy {
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.14);
+    }
+
+    .btn.red {
+      background: var(--red);
+      color: white;
+    }
+
+    .btn.small {
+      padding: 8px 11px;
+      font-size: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 410px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.04em;
+      color: var(--text);
+    }
+
+    .card p {
+      color: var(--text-soft);
+      line-height: 1.45;
+      font-size: 13px;
+      margin: 6px 0 0;
+    }
+
+    .form {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 950;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    input,
+    select {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--input-bg);
+      color: var(--input-text);
+      border-radius: 16px;
+      padding: 12px 13px;
+      outline: none;
+      font-size: 14px;
+    }
+
+    .notice {
+      padding: 13px;
+      border-radius: 18px;
+      background: rgba(212,166,58,0.12);
+      border: 1px solid rgba(212,166,58,0.25);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.45;
+      margin-top: 14px;
+    }
+
+    .member-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .member-card {
+      border: 1px solid var(--border);
+      background: var(--card-solid);
+      border-radius: 22px;
+      padding: 15px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .member-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .member-head strong {
+      display: block;
+      color: var(--text);
+      font-size: 16px;
+    }
+
+    .member-head small {
+      display: block;
+      color: var(--text-soft);
+      margin-top: 3px;
+      line-height: 1.35;
+    }
+
+    .badge {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: 11px;
+      font-weight: 950;
+      border: 1px solid rgba(212,166,58,0.22);
+      background: rgba(212,166,58,0.14);
+      color: var(--gold);
+      white-space: nowrap;
+    }
+
+    .perm-grid {
+      display: grid;
+      gap: 9px;
+    }
+
+    .perm-row {
+      display: grid;
+      grid-template-columns: minmax(130px, 1fr) repeat(4, 72px);
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      border-radius: 16px;
+      padding: 10px;
+    }
+
+    .perm-title {
+      color: var(--text);
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    .check {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--text-soft);
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .check input {
+      width: 16px;
+      height: 16px;
+      padding: 0;
+    }
+
+    .empty,
+    .loading {
+      padding: 24px;
+      border-radius: 20px;
+      background: var(--soft);
+      border: 1px dashed var(--border);
+      color: var(--text-soft);
+      text-align: center;
+    }
+
+    .footer {
+      margin-top: 18px;
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      body {
+        padding: 14px;
+      }
+
+      .topbar {
+        display: grid;
+      }
+
+      .actions {
+        justify-content: flex-start;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .perm-row {
+        grid-template-columns: 1fr repeat(2, 72px);
+      }
+
+      .perm-row .check:nth-child(4),
+      .perm-row .check:nth-child(5) {
+        grid-column: span 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <script>
+    (function applySavedThemeEarly() {
+      const keys = [
+        "ungani_client_theme",
+        "ungani_theme",
+        "ungani_appearance",
+        "appearance",
+        "theme",
+        "color_mode",
+        "ungani_mode"
+      ];
+
+      let theme = "";
+
+      for (let i = 0; i < keys.length; i++) {
+        theme =
+          localStorage.getItem(keys[i]) ||
+          sessionStorage.getItem(keys[i]) ||
+          theme;
+
+        if (theme) break;
+      }
+
+      theme = String(theme || "").toLowerCase();
+
+      if (theme.includes("dark")) {
+        document.body.setAttribute("data-theme", "dark");
+      } else if (theme.includes("light")) {
+        document.body.setAttribute("data-theme", "light");
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.body.setAttribute("data-theme", "dark");
+      } else {
+        document.body.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+
+  <div class="wrap">
+    <header class="topbar">
+      <div>
+        <h1>Team Access</h1>
+        <p>Owner control center for staff access. Add coworkers and choose what each person can view, create, edit, or delete.</p>
+      </div>
+
+      <div class="actions">
+        <a class="btn light" href="client.html">Dashboard</a>
+        <a class="btn light" href="my-tools.html">My Tools</a>
+        <button class="btn light" type="button" onclick="toggleTheme()" id="themeButton">Dark Mode</button>
+        <button class="btn gold" type="button" onclick="loadTeamMembers()">Refresh</button>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Add / Update Staff</h2>
+        <p>Add a coworker and later connect their login email to assigned permissions.</p>
+
+        <form class="form" onsubmit="saveTeamMember(event)">
+          <label>
+            Full Name
+            <input id="fullName" type="text" placeholder="Example: Mary Wanjiku" required />
+          </label>
+
+          <label>
+            Email
+            <input id="email" type="email" placeholder="staff@example.com" />
+          </label>
+
+          <label>
+            Phone
+            <input id="phone" type="text" placeholder="+254..." />
+          </label>
+
+          <label>
+            Role
+            <select id="roleKey">
+              <option value="manager">Manager</option>
+              <option value="staff" selected>Staff</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </label>
+
+          <label>
+            Status
+            <select id="status">
+              <option value="active" selected>Active</option>
+              <option value="invited">Invited</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </label>
+
+          <button class="btn gold" type="submit">Save Staff Member</button>
+        </form>
+
+        <div class="notice">
+          This page creates the control system. The next step will connect the page guard so staff cannot open sections they are not assigned to.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Staff Members</h2>
+        <p>Tick what each coworker can access. Owner accounts keep full control.</p>
+
+        <div id="membersBox" class="member-list">
+          <div class="loading">Loading team members...</div>
+        </div>
+      </div>
+    </section>
+
+    <p class="footer">UNGANI OS Team Access · ungani.com · info@ungani.com</p>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const sections = [
+      ["dashboard", "Dashboard"],
+      ["money", "Money"],
+      ["tasks", "Tasks"],
+      ["items", "Items / Assets"],
+      ["people", "People"],
+      ["records", "Records"],
+      ["documents", "Documents"],
+      ["calendar", "Calendar"],
+      ["support", "Support"],
+      ["reports", "Reports"],
+      ["billing", "Billing"],
+      ["package", "Package"],
+      ["branches", "Branches"],
+      ["settings", "Settings"],
+      ["notifications", "Notifications"],
+      ["tools", "Tools"]
+    ];
+
+    let currentUser = null;
+    let members = [];
+
+    window.addEventListener("load", initPage);
+
+    async function initPage() {
+      updateThemeButton();
+
+      const userResponse = await supabaseClient.auth.getUser();
+      currentUser = userResponse && userResponse.data ? userResponse.data.user : null;
+
+      if (!currentUser) {
+        document.getElementById("membersBox").innerHTML = `
+          <div class="empty">
+            Please log in first.
+            <div style="margin-top:12px;"><a class="btn gold" href="login.html?mode=client">Go to Login</a></div>
+          </div>
+        `;
+        return;
+      }
+
+      await loadTeamMembers();
+    }
+
+    async function loadTeamMembers() {
+      const box = document.getElementById("membersBox");
+      box.innerHTML = `<div class="loading">Loading team members...</div>`;
+
+      try {
+        const response = await supabaseClient.rpc("owner_get_ungani_team_members");
+
+        if (response.error) {
+          box.innerHTML = `<div class="empty">Could not load team members: ${safe(response.error.message)}</div>`;
+          return;
+        }
+
+        if (!response.data || response.data.ok !== true) {
+          box.innerHTML = `<div class="empty">${safe(getValue(response.data, ["message"], "Owner access required."))}</div>`;
+          return;
+        }
+
+        members = response.data.members || [];
+        renderMembers();
+      } catch (error) {
+        box.innerHTML = `<div class="empty">Could not load team members: ${safe(error.message)}</div>`;
+      }
+    }
+
+    function renderMembers() {
+      const box = document.getElementById("membersBox");
+
+      if (!members || members.length === 0) {
+        box.innerHTML = `<div class="empty">No staff members yet. Add your first coworker from the form.</div>`;
+        return;
+      }
+
+      box.innerHTML = members.map(member => {
+        const permissions = member.permissions || {};
+
+        return `
+          <div class="member-card">
+            <div class="member-head">
+              <div>
+                <strong>${safe(member.full_name || "Unnamed Staff")}</strong>
+                <small>${safe(member.email || "No email")} · ${safe(member.phone || "No phone")}</small>
+              </div>
+              <span class="badge">${safe(member.role_key || "staff")} · ${safe(member.status || "active")}</span>
+            </div>
+
+            <div class="perm-grid">
+              ${sections.map(section => {
+                const key = section[0];
+                const label = section[1];
+                const p = permissions[key] || {};
+
+                return `
+                  <div class="perm-row">
+                    <div class="perm-title">${safe(label)}</div>
+
+                    <label class="check">
+                      <input type="checkbox" ${p.view ? "checked" : ""} onchange="savePermission('${attr(member.id)}','${attr(key)}')" id="${attr(member.id)}_${attr(key)}_view" />
+                      View
+                    </label>
+
+                    <label class="check">
+                      <input type="checkbox" ${p.create ? "checked" : ""} onchange="savePermission('${attr(member.id)}','${attr(key)}')" id="${attr(member.id)}_${attr(key)}_create" />
+                      Add
+                    </label>
+
+                    <label class="check">
+                      <input type="checkbox" ${p.edit ? "checked" : ""} onchange="savePermission('${attr(member.id)}','${attr(key)}')" id="${attr(member.id)}_${attr(key)}_edit" />
+                      Edit
+                    </label>
+
+                    <label class="check">
+                      <input type="checkbox" ${p.delete ? "checked" : ""} onchange="savePermission('${attr(member.id)}','${attr(key)}')" id="${attr(member.id)}_${attr(key)}_delete" />
+                      Delete
+                    </label>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+
+            <div class="actions" style="justify-content:flex-start;">
+              <button class="btn small red" type="button" onclick="disableMember('${attr(member.id)}')">Disable Staff</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function saveTeamMember(event) {
+      event.preventDefault();
+
+      const payload = {
+        p_full_name: document.getElementById("fullName").value,
+        p_email: document.getElementById("email").value,
+        p_phone: document.getElementById("phone").value,
+        p_role_key: document.getElementById("roleKey").value,
+        p_status: document.getElementById("status").value
+      };
+
+      const response = await supabaseClient.rpc("owner_upsert_ungani_team_member", payload);
+
+      if (response.error) {
+        alert("Could not save staff: " + response.error.message);
+        return;
+      }
+
+      if (!response.data || response.data.ok !== true) {
+        alert(getValue(response.data, ["message"], "Could not save staff."));
+        return;
+      }
+
+      document.getElementById("fullName").value = "";
+      document.getElementById("email").value = "";
+      document.getElementById("phone").value = "";
+      document.getElementById("roleKey").value = "staff";
+      document.getElementById("status").value = "active";
+
+      await loadTeamMembers();
+    }
+
+    async function savePermission(memberId, sectionKey) {
+      const canView = getChecked(memberId, sectionKey, "view");
+      const canCreate = getChecked(memberId, sectionKey, "create");
+      const canEdit = getChecked(memberId, sectionKey, "edit");
+      const canDelete = getChecked(memberId, sectionKey, "delete");
+
+      const response = await supabaseClient.rpc("owner_set_ungani_staff_permission", {
+        p_team_member_id: memberId,
+        p_section_key: sectionKey,
+        p_can_view: canView,
+        p_can_create: canCreate,
+        p_can_edit: canEdit,
+        p_can_delete: canDelete
+      });
+
+      if (response.error) {
+        alert("Could not update permission: " + response.error.message);
+        await loadTeamMembers();
+        return;
+      }
+
+      if (!response.data || response.data.ok !== true) {
+        alert(getValue(response.data, ["message"], "Could not update permission."));
+        await loadTeamMembers();
+        return;
+      }
+    }
+
+    async function disableMember(memberId) {
+      if (!confirm("Disable this staff member?")) return;
+
+      const response = await supabaseClient.rpc("owner_disable_ungani_team_member", {
+        p_team_member_id: memberId
+      });
+
+      if (response.error) {
+        alert("Could not disable staff: " + response.error.message);
+        return;
+      }
+
+      await loadTeamMembers();
+    }
+
+    function getChecked(memberId, sectionKey, action) {
+      const input = document.getElementById(memberId + "_" + sectionKey + "_" + action);
+      return input ? input.checked : false;
+    }
+
+    function toggleTheme() {
+      const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      const next = current === "dark" ? "light" : "dark";
+
+      document.body.setAttribute("data-theme", next);
+
+      localStorage.setItem("ungani_client_theme", next);
+      localStorage.setItem("ungani_theme", next);
+      localStorage.setItem("ungani_appearance", next);
+      localStorage.setItem("theme", next);
+
+      updateThemeButton();
+    }
+
+    function updateThemeButton() {
+      const button = document.getElementById("themeButton");
+      const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+
+      if (button) {
+        button.innerText = current === "dark" ? "Light Mode" : "Dark Mode";
+      }
+    }
+
+    function getValue(obj, fields, fallback) {
+      if (!obj) return fallback === undefined ? "" : fallback;
+
+      for (let i = 0; i < fields.length; i++) {
+        const key = fields[i];
+
+        if (
+          Object.prototype.hasOwnProperty.call(obj, key) &&
+          obj[key] !== null &&
+          obj[key] !== undefined &&
+          obj[key] !== ""
+        ) {
+          return obj[key];
+        }
+      }
+
+      return fallback === undefined ? "" : fallback;
+    }
+
+    function safe(value) {
+      return String(value === null || value === undefined ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function attr(value) {
+      return safe(value);
+    }
+  </script>
+</body>
+</html>
