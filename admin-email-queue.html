@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Email Queue | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 940px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .summary-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 17px;
+      padding: 15px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 7px;
+    }
+
+    .summary-card strong {
+      color: #FFFFFF;
+      font-size: 22px;
+    }
+
+    .panel {
+      margin-top: 20px;
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input,
+    select,
+    textarea {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 11px 12px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    select option {
+      background: var(--navy);
+      color: #FFFFFF;
+    }
+
+    html[data-theme="light"] select option {
+      background: #FFFFFF;
+      color: #111827;
+    }
+
+    .search-input {
+      width: 320px;
+      max-width: 100%;
+      border-radius: 999px;
+      min-height: 40px;
+      padding: 10px 13px;
+      font-size: 13px;
+    }
+
+    .filter-select {
+      border-radius: 999px;
+      min-height: 40px;
+      padding: 10px 13px;
+      font-size: 13px;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 1320px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 13px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--gold);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.4px;
+      background: rgba(3, 18, 39, 0.42);
+      white-space: nowrap;
+    }
+
+    html[data-theme="light"] th {
+      background: #F9FAFB;
+    }
+
+    td {
+      color: var(--text-soft);
+    }
+
+    .chip {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .chip.type {
+      background: rgba(212, 166, 58, 0.16);
+      color: var(--gold);
+      border: 1px solid rgba(212, 166, 58, 0.28);
+    }
+
+    .chip.pending {
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .chip.processing {
+      color: var(--warning-text);
+      background: var(--warning-bg);
+    }
+
+    .chip.sent {
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .chip.failed {
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .chip.cancelled {
+      color: var(--muted);
+      background: rgba(148, 163, 184, 0.2);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .email-subject {
+      font-weight: 900;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .email-body-preview {
+      max-width: 360px;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+
+    .btn,
+    .btn-gold,
+    .btn-info,
+    .btn-warning,
+    .btn-success,
+    .btn-danger {
+      border: none;
+      border-radius: 999px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    html[data-theme="light"] .btn {
+      background: #FFFFFF;
+      color: var(--navy);
+    }
+
+    .btn-gold {
+      background: var(--gold);
+      color: var(--navy);
+      box-shadow: 0 10px 20px rgba(212, 166, 58, 0.16);
+    }
+
+    .btn-info {
+      background: var(--info-bg);
+      color: var(--info-text);
+    }
+
+    .btn-warning {
+      background: var(--warning-bg);
+      color: var(--warning-text);
+    }
+
+    .btn-success {
+      background: var(--success-bg);
+      color: var(--success-text);
+    }
+
+    .btn-danger {
+      background: var(--danger-bg);
+      color: var(--danger-text);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .action-stack {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-width: 240px;
+    }
+
+    .loading,
+    .empty,
+    .error {
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .message {
+      margin: 18px 0 0;
+      padding: 14px;
+      border-radius: 16px;
+      line-height: 1.55;
+      display: none;
+    }
+
+    .message.success {
+      display: block;
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .message.error {
+      display: block;
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .message.info {
+      display: block;
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 980px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .filters,
+      .search-input,
+      .filter-select {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .top-btn {
+        font-size: 12px;
+        padding: 9px 11px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>Email Queue</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="top-btn" href="admin-billing.html">Billing</a>
+      <a class="top-btn" href="admin-payment-proofs.html">Payment Proofs</a>
+      <a class="top-btn" href="admin-subscriptions.html">Subscriptions</a>
+      <a class="top-btn gold" href="admin-home.html">Back to Admin</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero">
+      <h1>Email Queue</h1>
+      <p>
+        View UNGANI OS business emails that have been prepared for sending.
+        This page is the foundation for registration, approval, billing, proof, and account status emails.
+      </p>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <label>Total</label>
+          <strong id="totalCount">0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Pending</label>
+          <strong id="pendingCount">0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Processing</label>
+          <strong id="processingCount">0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Sent</label>
+          <strong id="sentCount">0</strong>
+        </div>
+        <div class="summary-card">
+          <label>Failed</label>
+          <strong id="failedCount">0</strong>
+        </div>
+      </div>
+
+      <div id="messageBox" class="message"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Queued Emails</h2>
+
+        <div class="filters">
+          <input
+            id="searchInput"
+            class="search-input"
+            type="search"
+            placeholder="Search email, subject, type, body..."
+            oninput="renderEmails()"
+          />
+
+          <select id="statusFilter" class="filter-select" onchange="renderEmails()">
+            <option value="all">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+
+          <select id="typeFilter" class="filter-select" onchange="renderEmails()">
+            <option value="all">All types</option>
+          </select>
+
+          <button class="btn-gold" type="button" onclick="loadEmails()">Refresh</button>
+        </div>
+      </div>
+
+      <div id="loadingBox" class="loading">
+        <span class="spinner"></span>
+        <span>Loading email queue...</span>
+      </div>
+
+      <div id="errorBox" class="error" style="display: none;"></div>
+
+      <div id="emptyBox" class="empty" style="display: none;">
+        No email queue records found yet.
+      </div>
+
+      <div id="tableWrap" class="table-wrap" style="display: none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Recipient</th>
+              <th>Type</th>
+              <th>Email</th>
+              <th>Status</th>
+              <th>Attempts</th>
+              <th>Related</th>
+              <th>Scheduled</th>
+              <th>Sent</th>
+              <th>Error</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="emailsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let allEmails = [];
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+      await checkAdminAccess();
+      await loadEmails();
+    });
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
+
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+
+        if (htmlTheme === "light" || htmlTheme === "dark") {
+          foundTheme = htmlTheme;
+        }
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    async function checkAdminAccess() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (!sessionData || !sessionData.session) {
+        window.location.href = "login.html";
+        return;
+      }
+
+      const { data, error } = await supabaseClient.rpc("is_ungani_admin");
+
+      if (error) throw error;
+
+      if (data !== true) {
+        document.body.innerHTML = `
+          <main class="content">
+            <section class="panel">
+              <div class="error">Access denied. This page is for UNGANI admin only.</div>
+            </section>
+          </main>
+        `;
+        throw new Error("Access denied");
+      }
+    }
+
+    async function loadEmails() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const emptyBox = document.getElementById("emptyBox");
+      const tableWrap = document.getElementById("tableWrap");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      emptyBox.style.display = "none";
+      tableWrap.style.display = "none";
+
+      try {
+        const { data, error } = await supabaseClient.rpc("admin_get_ungani_email_queue");
+
+        if (error) throw error;
+
+        allEmails = Array.isArray(data) ? data : [];
+
+        updateSummaryCounts();
+        populateTypeFilter();
+        renderEmails();
+
+        loadingBox.style.display = "none";
+
+        if (!allEmails.length) {
+          emptyBox.style.display = "block";
+        } else {
+          tableWrap.style.display = "block";
+        }
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent = "Unable to load email queue. " + getErrorMessage(error);
+      }
+    }
+
+    function updateSummaryCounts() {
+      document.getElementById("totalCount").textContent = allEmails.length;
+      document.getElementById("pendingCount").textContent =
+        allEmails.filter(item => normalize(item.send_status) === "pending").length;
+      document.getElementById("processingCount").textContent =
+        allEmails.filter(item => normalize(item.send_status) === "processing").length;
+      document.getElementById("sentCount").textContent =
+        allEmails.filter(item => normalize(item.send_status) === "sent").length;
+      document.getElementById("failedCount").textContent =
+        allEmails.filter(item => normalize(item.send_status) === "failed").length;
+    }
+
+    function populateTypeFilter() {
+      const select = document.getElementById("typeFilter");
+      const currentValue = select.value || "all";
+
+      const types = [...new Set(
+        allEmails
+          .map(item => normalize(item.email_type))
+          .filter(Boolean)
+      )].sort();
+
+      select.innerHTML = `<option value="all">All types</option>`;
+
+      types.forEach(type => {
+        const option = document.createElement("option");
+        option.value = type;
+        option.textContent = titleCase(type);
+        select.appendChild(option);
+      });
+
+      if (types.includes(currentValue)) {
+        select.value = currentValue;
+      }
+    }
+
+    function renderEmails() {
+      const body = document.getElementById("emailsBody");
+      const emptyBox = document.getElementById("emptyBox");
+      const tableWrap = document.getElementById("tableWrap");
+
+      const searchTerm = document.getElementById("searchInput").value.trim().toLowerCase();
+      const statusFilter = document.getElementById("statusFilter").value;
+      const typeFilter = document.getElementById("typeFilter").value;
+
+      let filtered = [...allEmails];
+
+      if (statusFilter !== "all") {
+        filtered = filtered.filter(item => normalize(item.send_status) === statusFilter);
+      }
+
+      if (typeFilter !== "all") {
+        filtered = filtered.filter(item => normalize(item.email_type) === typeFilter);
+      }
+
+      if (searchTerm) {
+        filtered = filtered.filter(item => {
+          const combined = [
+            item.recipient_email,
+            item.recipient_name,
+            item.email_type,
+            item.email_subject,
+            item.email_body,
+            item.related_table,
+            item.related_id,
+            item.send_status,
+            item.last_error
+          ].filter(Boolean).join(" ").toLowerCase();
+
+          return combined.includes(searchTerm);
+        });
+      }
+
+      body.innerHTML = "";
+
+      if (!filtered.length) {
+        tableWrap.style.display = "none";
+        emptyBox.style.display = "block";
+        emptyBox.textContent = "No email records match your filters.";
+        return;
+      }
+
+      emptyBox.style.display = "none";
+      tableWrap.style.display = "block";
+
+      filtered.forEach(item => {
+        const status = normalize(item.send_status || "pending");
+
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+          <td>
+            <strong>${escapeHtml(item.recipient_email || "—")}</strong>
+            <div class="muted">${escapeHtml(item.recipient_name || "No recipient name")}</div>
+            <div class="muted">Tenant: ${escapeHtml(shortId(item.tenant_id))}</div>
+            <div class="muted">User: ${escapeHtml(shortId(item.user_id))}</div>
+          </td>
+
+          <td>
+            <span class="chip type">${escapeHtml(titleCase(item.email_type || "general"))}</span>
+          </td>
+
+          <td>
+            <div class="email-subject">${escapeHtml(item.email_subject || "No subject")}</div>
+            <div class="email-body-preview">${escapeHtml(truncateText(item.email_body || "", 260))}</div>
+          </td>
+
+          <td>
+            <span class="chip ${escapeHtml(status)}">${escapeHtml(titleCase(status))}</span>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(item.send_attempts || 0)}</strong>
+          </td>
+
+          <td>
+            <div class="muted"><strong>Table:</strong> ${escapeHtml(item.related_table || "—")}</div>
+            <div class="muted"><strong>ID:</strong> ${escapeHtml(shortId(item.related_id))}</div>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(formatDateTime(item.scheduled_at))}</div>
+            <div class="muted">Created: ${escapeHtml(formatDateTime(item.created_at))}</div>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(formatDateTime(item.sent_at))}</div>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(item.last_error || "No error.")}</div>
+          </td>
+
+          <td>
+            <div class="action-stack">
+              <button class="btn-info" type="button" onclick="copyEmailBody('${escapeJs(item.id)}')">
+                Copy Body
+              </button>
+
+              <button class="btn-success" type="button" onclick="updateEmailStatus('${escapeJs(item.id)}', 'sent')">
+                Mark Sent
+              </button>
+
+              <button class="btn-warning" type="button" onclick="updateEmailStatus('${escapeJs(item.id)}', 'pending')">
+                Reset Pending
+              </button>
+
+              <button class="btn-danger" type="button" onclick="updateEmailStatus('${escapeJs(item.id)}', 'cancelled')">
+                Cancel
+              </button>
+            </div>
+          </td>
+        `;
+
+        body.appendChild(row);
+      });
+    }
+
+    async function updateEmailStatus(emailId, status) {
+      const confirmed = confirm("Update this email queue item to " + status + "?");
+
+      if (!confirmed) return;
+
+      try {
+        const { error } = await supabaseClient.rpc("admin_update_ungani_email_queue_status", {
+          p_email_id: emailId,
+          p_send_status: status,
+          p_last_error: null
+        });
+
+        if (error) throw error;
+
+        showMessage("Email status updated successfully.", "success");
+        await loadEmails();
+      } catch (error) {
+        showMessage("Unable to update email status. " + getErrorMessage(error), "error");
+      }
+    }
+
+    async function copyEmailBody(emailId) {
+      const item = allEmails.find(email => String(email.id) === String(emailId));
+
+      if (!item) {
+        showMessage("Email record not found.", "error");
+        return;
+      }
+
+      const fullText = [
+        "To: " + (item.recipient_email || ""),
+        "Subject: " + (item.email_subject || ""),
+        "",
+        item.email_body || ""
+      ].join("\\n");
+
+      try {
+        await navigator.clipboard.writeText(fullText);
+        showMessage("Email body copied.", "success");
+      } catch (error) {
+        showMessage("Unable to copy email body. " + getErrorMessage(error), "error");
+      }
+    }
+
+    function showMessage(message, type) {
+      const box = document.getElementById("messageBox");
+      box.className = "message " + type;
+      box.textContent = message;
+
+      setTimeout(() => {
+        box.className = "message";
+        box.textContent = "";
+      }, 5000);
+    }
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function titleCase(value) {
+      if (!value) return "—";
+
+      return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function truncateText(value, maxLength) {
+      const text = String(value || "");
+
+      if (text.length <= maxLength) return text;
+
+      return text.slice(0, maxLength) + "...";
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function shortId(value) {
+      if (!value) return "—";
+
+      const text = String(value);
+
+      if (text.length <= 12) return text;
+
+      return text.slice(0, 8) + "...";
+    }
+
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
+
+      try {
+        return JSON.stringify(error);
+      } catch (e) {
+        return String(error);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeJs(value) {
+      return String(value ?? "")
+        .replaceAll("\\", "\\\\")
+        .replaceAll("'", "\\'")
+        .replaceAll('"', '\\"');
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
