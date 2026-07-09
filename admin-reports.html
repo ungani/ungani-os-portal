@@ -1,457 +1,1168 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>UNGANI OS Admin Reports</title>
+  <title>Admin Reports | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="admin-shared.js"></script>
 
   <style>
-    .page-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #031227;
+      --card: rgba(8, 38, 84, 0.92);
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #FFFFFF;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
     }
 
-    .metric-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-left: 6px solid var(--gold);
-      border-radius: 20px;
-      padding: 18px;
-      box-shadow: 0 10px 24px var(--shadow);
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
     }
 
-    .metric-card h3 {
-      margin: 0 0 8px;
-      color: var(--soft-text);
-      font-size: 14px;
+    * {
+      box-sizing: border-box;
     }
 
-    .metric-card p {
+    body {
       margin: 0;
-      font-size: 28px;
-      font-weight: bold;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
       color: var(--text);
     }
 
-    .metric-card .note {
-      margin-top: 8px;
-      color: var(--soft-text);
-      font-size: 12px;
-    }
-
-    .metric-card.green { border-left-color: var(--green); }
-    .metric-card.red { border-left-color: var(--red); }
-    .metric-card.orange { border-left-color: var(--orange); }
-    .metric-card.blue { border-left-color: var(--blue); }
-
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 14px;
-    }
-
-    label {
-      display: block;
-      font-weight: bold;
-      margin: 8px 0 6px;
-      font-size: 14px;
+    html[data-theme="light"] body {
+      background: var(--bg);
       color: var(--text);
     }
 
-    input, select {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: var(--input-bg);
-      color: var(--text);
-      font-size: 15px;
-      font-family: Arial, sans-serif;
-    }
-
-    .button-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 14px;
-    }
-
-    .btn {
-      border: none;
-      border-radius: 12px;
-      padding: 10px 14px;
-      font-weight: bold;
-      cursor: pointer;
-      background: var(--gold);
-      color: #061C3D;
-      text-decoration: none;
-      display: inline-block;
-    }
-
-    .btn.dark {
-      background: #061C3D;
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
       color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
     }
 
-    body.dark .btn.dark {
-      background: #F5F5F3;
-      color: #061C3D;
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
 
-    .btn.green { background: var(--green); color: #FFFFFF; }
-    .btn.red { background: var(--red); color: #FFFFFF; }
-    .btn.orange { background: var(--orange); color: #FFFFFF; }
-    .btn.blue { background: var(--blue); color: #FFFFFF; }
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
 
-    .report-section {
-      background: var(--card);
-      border: 1px solid var(--border);
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-btn {
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 10px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
       border-radius: 22px;
-      padding: 22px;
-      margin-bottom: 18px;
-      box-shadow: 0 10px 24px var(--shadow);
+      padding: 26px;
+      box-shadow: var(--shadow);
     }
 
-    .report-section h2 {
-      margin: 0 0 12px;
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 980px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .hero-actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .summary-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 17px;
+      padding: 15px;
+      min-height: 112px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 8px;
+    }
+
+    .summary-card strong {
+      color: #FFFFFF;
+      font-size: 24px;
+      line-height: 1.2;
+      display: block;
+    }
+
+    .summary-card span {
+      margin-top: 8px;
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .main-grid {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel.full {
+      margin-top: 20px;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
       color: var(--text);
+      font-size: 20px;
     }
 
-    .report-section h3 {
-      margin: 18px 0 8px;
+    .panel-body {
+      padding: 18px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 17px;
+      padding: 15px;
+    }
+
+    .metric-box label {
+      display: block;
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 8px;
+    }
+
+    .metric-box strong {
+      font-size: 23px;
       color: var(--text);
+      display: block;
     }
 
-    .report-table-wrap {
+    .metric-box span {
+      margin-top: 7px;
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .chart-list {
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: minmax(160px, 0.9fr) minmax(120px, 1.1fr) auto;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .bar-label {
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.3;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bar-track {
+      height: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    html[data-theme="light"] .bar-track {
+      background: #EEF2F7;
+    }
+
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--gold);
+      border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+
+    .bar-value {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .search-input {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 10px 13px;
+      font-size: 13px;
+      outline: none;
+      width: 310px;
+      max-width: 100%;
+    }
+
+    .table-wrap {
+      width: 100%;
       overflow-x: auto;
     }
 
     table {
       width: 100%;
+      min-width: 1120px;
       border-collapse: collapse;
-      min-width: 760px;
     }
 
-    th, td {
+    th,
+    td {
+      padding: 13px;
       border-bottom: 1px solid var(--border);
-      padding: 11px;
       text-align: left;
       vertical-align: top;
-      font-size: 14px;
+      font-size: 13px;
     }
 
     th {
-      background: var(--bg);
-      color: var(--text);
-      font-weight: bold;
+      color: var(--gold);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.4px;
+      background: rgba(3, 18, 39, 0.42);
+      white-space: nowrap;
+    }
+
+    html[data-theme="light"] th {
+      background: #F9FAFB;
     }
 
     td {
-      color: var(--soft-text);
+      color: var(--text-soft);
     }
 
-    .row-card {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-left: 6px solid var(--gold);
-      border-radius: 18px;
-      padding: 16px;
-      margin-bottom: 12px;
-    }
-
-    .row-title {
-      font-weight: bold;
-      font-size: 17px;
-      margin-bottom: 6px;
-      color: var(--text);
-    }
-
-    .row-detail {
-      color: var(--soft-text);
-      margin: 5px 0;
-      line-height: 1.45;
-      word-break: break-word;
-    }
-
-    .badge {
-      display: inline-block;
-      background: #061C3D;
-      color: #FFFFFF;
-      padding: 5px 10px;
+    .chip {
+      display: inline-flex;
+      padding: 7px 10px;
       border-radius: 999px;
       font-size: 12px;
-      margin: 4px 4px 4px 0;
-      text-transform: capitalize;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
     }
 
-    .badge.green { background: var(--green); }
-    .badge.red { background: var(--red); }
-    .badge.orange { background: var(--orange); }
-    .badge.blue { background: var(--blue); }
-    .badge.gold { background: var(--gold); color: #061C3D; }
-
-    .empty {
-      text-align: center;
-      padding: 28px;
-      background: var(--bg);
-      border: 1px dashed var(--border);
-      border-radius: 18px;
+    .chip.gold {
+      background: rgba(212, 166, 58, 0.16);
+      color: var(--gold);
+      border: 1px solid rgba(212, 166, 58, 0.28);
     }
 
-    .empty h3 {
-      margin: 0 0 8px;
-      color: var(--text);
+    .chip.success {
+      color: var(--success-text);
+      background: var(--success-bg);
     }
 
-    .empty p {
-      margin: 0;
-      color: var(--soft-text);
+    .chip.warning {
+      color: var(--warning-text);
+      background: var(--warning-bg);
     }
 
-    .small-text {
-      color: var(--soft-text);
-      font-size: 13px;
+    .chip.info {
+      color: var(--info-text);
+      background: var(--info-bg);
+    }
+
+    .chip.danger {
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
       line-height: 1.45;
     }
 
-    .print-header {
-      display: none;
+    .main-btn,
+    .ghost-btn {
+      border: none;
+      border-radius: 999px;
+      padding: 11px 15px;
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .main-btn {
+      background: var(--gold);
+      color: var(--navy);
+      box-shadow: 0 12px 24px rgba(212, 166, 58, 0.18);
+    }
+
+    .ghost-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    html[data-theme="light"] .ghost-btn {
+      background: #FFFFFF;
+      color: var(--navy);
+    }
+
+    .loading,
+    .empty,
+    .error {
+      margin-top: 20px;
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
     }
 
     @media print {
       body {
-        background: #FFFFFF !important;
-        color: #000000 !important;
+        background: #FFFFFF;
+        color: #111827;
       }
 
-      .ungani-admin-sidebar,
-      .ungani-topbar,
-      .no-print,
-      .button-row {
+      .topbar,
+      .hero-actions,
+      .filters,
+      .footer,
+      .ghost-btn,
+      .main-btn {
         display: none !important;
       }
 
-      .ungani-admin-app {
-        display: block !important;
+      .content {
+        max-width: 100%;
+        padding: 0;
       }
 
-      .ungani-admin-main {
-        padding: 0 !important;
+      .hero,
+      .panel,
+      .summary-card,
+      .metric-box {
+        box-shadow: none;
+        border: 1px solid #D1D5DB;
+        background: #FFFFFF;
+        color: #111827;
       }
 
-      .ungani-card,
-      .report-section,
-      .metric-card {
-        box-shadow: none !important;
-        border: 1px solid #DDDDDD !important;
-        page-break-inside: avoid;
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .main-grid {
+        grid-template-columns: 1fr;
       }
 
-      .print-header {
-        display: block;
-        margin-bottom: 18px;
-        border-bottom: 2px solid #061C3D;
-        padding-bottom: 12px;
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      .content {
+        padding: 18px 12px 34px;
       }
 
-      .print-header h1 {
-        margin: 0;
-        color: #061C3D;
+      .summary-grid,
+      .metric-grid {
+        grid-template-columns: 1fr;
       }
 
-      .print-header p {
-        margin: 4px 0;
-        color: #333333;
+      .bar-row {
+        grid-template-columns: 1fr;
+        gap: 7px;
+      }
+
+      .bar-value {
+        text-align: left;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .top-btn {
+        font-size: 12px;
+        padding: 9px 11px;
+      }
+
+      .search-input {
+        width: 100%;
       }
     }
   </style>
 </head>
 
 <body>
-  <div id="adminRoot"></div>
+  <header class="topbar">
+    <div class="brand">
+      <img src="ungani-logo.png" alt="UNGANI Logo" />
+      <div class="brand-text">
+        <strong>UNGANI OS</strong>
+        <span>Admin Reports</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="top-btn" href="admin-billing.html">Billing</a>
+      <a class="top-btn" href="admin-subscriptions.html">Subscriptions</a>
+      <a class="top-btn" href="support.html">Support</a>
+      <a class="top-btn gold" href="admin-home.html">Back to Admin</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero">
+      <h1>Admin Reports Overview</h1>
+      <p>
+        View high-level UNGANI OS activity across all clients without opening any private client dashboard.
+        This page shows totals, activity summaries, client performance, and recent operational movement.
+      </p>
+
+      <div class="hero-actions">
+        <button class="main-btn" type="button" onclick="loadReports()">Refresh Report</button>
+        <button class="ghost-btn" type="button" onclick="window.print()">Print / Save PDF</button>
+      </div>
+
+      <div class="summary-grid" id="summaryGrid" style="display: none;">
+        <div class="summary-card">
+          <label>Clients With Activity</label>
+          <strong id="totalClients">0</strong>
+          <span>Clients/tenants with registrations or activity records.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Total Income</label>
+          <strong id="incomeTotal">KSh 0</strong>
+          <span>Combined income-like records across all clients.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Total Expenses</label>
+          <strong id="expenseTotal">KSh 0</strong>
+          <span>Combined expense-like records across all clients.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Net Balance</label>
+          <strong id="netBalance">KSh 0</strong>
+          <span>Income minus expenses across available records.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Open Support</label>
+          <strong id="openSupport">0</strong>
+          <span>Support issues that still need attention.</span>
+        </div>
+      </div>
+    </section>
+
+    <div id="loadingBox" class="loading">
+      <span class="spinner"></span>
+      <span>Loading admin reports...</span>
+    </div>
+
+    <div id="errorBox" class="error" style="display: none;"></div>
+
+    <div id="reportContent" style="display: none;">
+      <section class="main-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>System Activity Summary</h2>
+          </div>
+
+          <div class="panel-body">
+            <div class="metric-grid">
+              <div class="metric-box">
+                <label>Transactions</label>
+                <strong id="transactionCount">0</strong>
+                <span>Money records across all clients.</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Tasks</label>
+                <strong id="taskCount">0</strong>
+                <span id="taskDetail">Pending: 0 · Completed: 0</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Items / Assets</label>
+                <strong id="itemCount">0</strong>
+                <span id="itemDetail">Active: 0</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Business Records</label>
+                <strong id="recordCount">0</strong>
+                <span>Operational notes and business records.</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Documents</label>
+                <strong id="documentCount">0</strong>
+                <span>Uploaded client documents.</span>
+              </div>
+
+              <div class="metric-box">
+                <label>Generated</label>
+                <strong id="generatedTime">—</strong>
+                <span>Latest admin report refresh time.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Money by Category</h2>
+          </div>
+
+          <div class="panel-body">
+            <div id="categoryChart" class="chart-list"></div>
+            <div id="categoryEmpty" class="empty" style="display: none; margin-top: 0;">
+              No category data found yet.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel full">
+        <div class="panel-head">
+          <h2>Client Performance Overview</h2>
+
+          <div class="filters">
+            <input
+              id="clientSearch"
+              class="search-input"
+              type="search"
+              placeholder="Search client..."
+              oninput="renderClientsTable()"
+            />
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Income</th>
+                <th>Expenses</th>
+                <th>Net</th>
+                <th>Records</th>
+                <th>Tasks</th>
+                <th>Support</th>
+                <th>Last Activity</th>
+              </tr>
+            </thead>
+            <tbody id="clientsBody"></tbody>
+          </table>
+        </div>
+
+        <div id="clientsEmpty" class="empty" style="display: none; margin: 18px;">
+          No client activity records found.
+        </div>
+      </section>
+
+      <section class="panel full">
+        <div class="panel-head">
+          <h2>Recent System Activity</h2>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Client</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Value</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="activityBody"></tbody>
+          </table>
+        </div>
+
+        <div id="activityEmpty" class="empty" style="display: none; margin: 18px;">
+          No recent system activity found.
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+  </main>
 
   <script>
-    let supabaseClient = null;
-    let currentAdmin = null;
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
-    let dataStore = {
-      tenants: [],
-      registrations: [],
-      users: [],
-      documents: [],
-      support: [],
-      adminMessages: [],
-      teamMessages: [],
-      events: [],
-      transactions: [],
-      tasks: [],
-      records: [],
-      items: [],
-      people: [],
-      notices: [],
-      payments: [],
-      upgrades: []
-    };
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const pageMainHtml = `
-      <section class="ungani-card ungani-hero-card">
-        <div style="position: relative; z-index: 1;">
-          <h2>Admin Reports Center</h2>
-          <p>
-            Generate admin reports across clients, documents, Google Drive links, support, money records, tasks, chat, calendar, and operations.
-          </p>
-          <div style="margin-top: 16px;">
-            <a class="btn" href="admin-home.html">Admin Home</a>
-            <a class="btn green" href="admin.html">Main Admin</a>
-            <a class="btn blue" href="admin-charts.html">Charts</a>
-            <a class="btn dark" href="admin-settings.html">Admin Settings</a>
-          </div>
-        </div>
-      </section>
+    let currentReport = null;
+    let allClients = [];
 
-      <section class="page-grid" id="metricsGrid">
-        <div class="metric-card"><h3>Loading</h3><p>...</p><div class="note">Please wait</div></div>
-      </section>
-
-      <section class="ungani-card no-print">
-        <h2>Report Filters</h2>
-
-        <div class="form-grid">
-          <div>
-            <label for="clientFilter">Client</label>
-            <select id="clientFilter" onchange="renderReport()">
-              <option value="">All Clients</option>
-            </select>
-          </div>
-
-          <div>
-            <label for="reportFocus">Report Focus</label>
-            <select id="reportFocus" onchange="renderReport()">
-              <option value="full">Full Admin Report</option>
-              <option value="documents">Documents / Google Drive Report</option>
-              <option value="support">Support Report</option>
-              <option value="money">Money Report</option>
-              <option value="tasks">Tasks Report</option>
-              <option value="chat">Chat Report</option>
-              <option value="calendar">Calendar Report</option>
-              <option value="operations">Operations Report</option>
-              <option value="clients">Client Usage Report</option>
-            </select>
-          </div>
-
-          <div>
-            <label for="dateFrom">Date From</label>
-            <input id="dateFrom" type="date" onchange="renderReport()" />
-          </div>
-
-          <div>
-            <label for="dateTo">Date To</label>
-            <input id="dateTo" type="date" onchange="renderReport()" />
-          </div>
-
-          <div>
-            <label for="searchBox">Search</label>
-            <input id="searchBox" placeholder="Search report data..." oninput="renderReport()" />
-          </div>
-        </div>
-
-        <div class="button-row">
-          <button class="btn green" onclick="loadPageData()">Refresh Data</button>
-          <button class="btn blue" onclick="printReport()">Print / Save PDF</button>
-          <button class="btn dark" onclick="resetFilters()">Reset Filters</button>
-        </div>
-      </section>
-
-      <section id="reportOutput">
-        <div class="empty">
-          <h3>Loading report...</h3>
-          <p>Please wait.</p>
-        </div>
-      </section>
-    `;
-
-    window.addEventListener("load", function () {
-      UnganiAdminShared.renderShell("adminRoot", {
-        activeKey: "admin-reports",
-        pageTitle: "Admin Reports",
-        pageSubtitle: "Generate reports across all client activity.",
-        footerTitle: "Admin Reports",
-        footerVersion: "Admin Reports Version: Step 283 Shared Session Added",
-        mainHtml: pageMainHtml
-      });
-
-      UnganiAdminShared.requireAdmin({
-        onNoSession: function () {
-          document.getElementById("unganiLoadingShell").classList.add("hidden");
-          document.getElementById("unganiLoginShell").classList.remove("hidden");
-        },
-        onBlocked: function (reason) {
-          document.getElementById("unganiLoadingShell").classList.add("hidden");
-          document.getElementById("unganiBlockedShell").classList.remove("hidden");
-          document.getElementById("unganiBlockedReason").innerText = reason;
-        },
-        onReady: async function (admin, client) {
-          currentAdmin = admin;
-          supabaseClient = client;
-
-          UnganiAdminShared.renderSidebar("adminSidebar", {
-            activeKey: "admin-reports",
-            adminName: admin.full_name || "Admin Workspace",
-            footerTitle: "Admin Reports",
-            footerVersion: "Admin Reports Version: Step 283 Shared Session Added"
-          });
-
-          document.getElementById("unganiLoadingShell").classList.add("hidden");
-          document.getElementById("unganiAppShell").classList.remove("hidden");
-
-          await loadPageData();
-        }
-      });
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+      await checkAdminAccess();
+      await loadReports();
     });
 
-    function safe(value) {
-      return UnganiAdminShared.safe(value);
-    }
+    function applyExistingThemeSetting() {
+      const possibleKeys = [
+        "ungani_theme",
+        "unganiTheme",
+        "theme",
+        "color-theme",
+        "mode",
+        "ungani_mode"
+      ];
 
-    function cleanText(value) {
-      return UnganiAdminShared.cleanText(value);
-    }
+      let foundTheme = null;
 
-    function getField(row, names, fallback = "") {
-      for (const name of names) {
-        if (row && row[name] !== undefined && row[name] !== null && row[name] !== "") {
-          return row[name];
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+
+          if (!value) continue;
+
+          const clean = String(value).trim().toLowerCase();
+
+          if (clean === "light" || clean === "white") {
+            foundTheme = "light";
+            break;
+          }
+
+          if (clean === "dark" || clean === "navy") {
+            foundTheme = "dark";
+            break;
+          }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+
+        if (htmlTheme === "light" || htmlTheme === "dark") {
+          foundTheme = htmlTheme;
         }
       }
-      return fallback;
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
     }
 
-    function getTenantName(row) {
-      return getField(row, ["company_name", "business_name", "name"], "Client Business");
+    async function checkAdminAccess() {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+
+      if (!sessionData || !sessionData.session) {
+        window.location.href = "login.html?redirect=admin-reports.html";
+        return;
+      }
+
+      const { data, error } = await supabaseClient.rpc("is_ungani_admin");
+
+      if (error) throw error;
+
+      if (data !== true) {
+        document.body.innerHTML = `
+          <main class="content">
+            <section class="panel">
+              <div class="error">Access denied. This page is for UNGANI admin only.</div>
+            </section>
+          </main>
+        `;
+        throw new Error("Access denied");
+      }
     }
 
-    function getTenantNameById(tenantId) {
-      const tenant = dataStore.tenants.find(row => String(row.id) === String(tenantId));
-      return tenant ? getTenantName(tenant) : "Unknown Client";
+    async function loadReports() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const reportContent = document.getElementById("reportContent");
+      const summaryGrid = document.getElementById("summaryGrid");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      reportContent.style.display = "none";
+      summaryGrid.style.display = "none";
+
+      try {
+        const { data, error } = await supabaseClient.rpc("admin_get_ungani_reports_overview");
+
+        if (error) throw error;
+
+        currentReport = data || {};
+
+        if (currentReport.ok !== true) {
+          throw new Error(currentReport.message || "Unable to load admin reports.");
+        }
+
+        renderReport(currentReport);
+
+        loadingBox.style.display = "none";
+        summaryGrid.style.display = "grid";
+        reportContent.style.display = "block";
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent = "Unable to load admin reports. " + getErrorMessage(error);
+      }
     }
 
-    function getRecordDate(row) {
-      return row.created_at || row.updated_at || row.event_date || row.due_date || row.expiry_date || "";
+    function renderReport(report) {
+      const summary = report.summary || {};
+      const moneyByCategory = Array.isArray(report.money_by_category) ? report.money_by_category : [];
+      allClients = Array.isArray(report.clients) ? report.clients : [];
+      const recentActivity = Array.isArray(report.recent_activity) ? report.recent_activity : [];
+
+      document.getElementById("totalClients").textContent = Number(summary.total_clients || 0).toLocaleString("en-KE");
+      document.getElementById("incomeTotal").textContent = formatMoney(summary.income_total);
+      document.getElementById("expenseTotal").textContent = formatMoney(summary.expense_total);
+      document.getElementById("netBalance").textContent = formatMoney(summary.net_balance);
+      document.getElementById("openSupport").textContent = Number(summary.open_support_issues || 0).toLocaleString("en-KE");
+
+      document.getElementById("transactionCount").textContent = Number(summary.total_transactions || 0).toLocaleString("en-KE");
+      document.getElementById("taskCount").textContent = Number(summary.total_tasks || 0).toLocaleString("en-KE");
+      document.getElementById("taskDetail").textContent =
+        "Pending: " + Number(summary.pending_tasks || 0).toLocaleString("en-KE") +
+        " · Completed: " + Number(summary.completed_tasks || 0).toLocaleString("en-KE");
+
+      document.getElementById("itemCount").textContent = Number(summary.total_items || 0).toLocaleString("en-KE");
+      document.getElementById("itemDetail").textContent =
+        "Active: " + Number(summary.active_items || 0).toLocaleString("en-KE");
+
+      document.getElementById("recordCount").textContent = Number(summary.total_records || 0).toLocaleString("en-KE");
+      document.getElementById("documentCount").textContent = Number(summary.total_documents || 0).toLocaleString("en-KE");
+      document.getElementById("generatedTime").textContent = formatShortDateTime(report.generated_at);
+
+      renderCategoryChart(moneyByCategory);
+      renderClientsTable();
+      renderActivityTable(recentActivity);
     }
 
-    function formatDateTime(value) {
-      if (!value) return "N/A";
-      const dateObj = new Date(value);
-      if (isNaN(dateObj.getTime())) return "N/A";
+    function renderCategoryChart(items) {
+      const chart = document.getElementById("categoryChart");
+      const empty = document.getElementById("categoryEmpty");
 
-      return dateObj.toLocaleString("en-KE", {
-        year: "numeric",
+      chart.innerHTML = "";
+
+      if (!items.length) {
+        empty.style.display = "block";
+        return;
+      }
+
+      empty.style.display = "none";
+
+      const maxAmount = Math.max(
+        ...items.map(item => Math.abs(Number(item.total_amount || 0))),
+        1
+      );
+
+      items.forEach(item => {
+        const amount = Number(item.total_amount || 0);
+        const percent = Math.max(4, Math.min(100, Math.abs(amount) / maxAmount * 100));
+        const category = item.category || "Uncategorized";
+        const status = item.status || "unknown";
+
+        const row = document.createElement("div");
+        row.className = "bar-row";
+
+        row.innerHTML = `
+          <div class="bar-label" title="${escapeHtml(category)}">
+            ${escapeHtml(category)}
+            <div class="muted">${escapeHtml(titleCase(status))} · ${Number(item.record_count || 0)} record(s)</div>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width: ${percent}%;"></div>
+          </div>
+          <div class="bar-value">${escapeHtml(formatMoney(amount))}</div>
+        `;
+
+        chart.appendChild(row);
+      });
+    }
+
+    function renderClientsTable() {
+      const body = document.getElementById("clientsBody");
+      const empty = document.getElementById("clientsEmpty");
+      const searchTerm = document.getElementById("clientSearch").value.trim().toLowerCase();
+
+      let clients = [...allClients];
+
+      if (searchTerm) {
+        clients = clients.filter(client => {
+          const combined = [
+            client.client_name,
+            client.tenant_id,
+            client.income_total,
+            client.expense_total,
+            client.net_balance
+          ].filter(Boolean).join(" ").toLowerCase();
+
+          return combined.includes(searchTerm);
+        });
+      }
+
+      body.innerHTML = "";
+
+      if (!clients.length) {
+        empty.style.display = "block";
+        return;
+      }
+
+      empty.style.display = "none";
+
+      clients.forEach(client => {
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+          <td>
+            <strong>${escapeHtml(client.client_name || "Client")}</strong>
+            <div class="muted">Tenant: ${escapeHtml(shortId(client.tenant_id))}</div>
+          </td>
+
+          <td><strong>${escapeHtml(formatMoney(client.income_total))}</strong></td>
+          <td><strong>${escapeHtml(formatMoney(client.expense_total))}</strong></td>
+          <td><span class="chip ${Number(client.net_balance || 0) >= 0 ? "success" : "danger"}">${escapeHtml(formatMoney(client.net_balance))}</span></td>
+
+          <td>
+            <div class="muted">Money: ${Number(client.transaction_count || 0).toLocaleString("en-KE")}</div>
+            <div class="muted">Items: ${Number(client.item_count || 0).toLocaleString("en-KE")}</div>
+            <div class="muted">Records: ${Number(client.record_count || 0).toLocaleString("en-KE")}</div>
+            <div class="muted">Docs: ${Number(client.document_count || 0).toLocaleString("en-KE")}</div>
+          </td>
+
+          <td>
+            <div class="muted">Total: ${Number(client.task_count || 0).toLocaleString("en-KE")}</div>
+            <div class="muted">Pending: ${Number(client.pending_task_count || 0).toLocaleString("en-KE")}</div>
+          </td>
+
+          <td>
+            <div class="muted">Total: ${Number(client.support_count || 0).toLocaleString("en-KE")}</div>
+            <div class="muted">Open: ${Number(client.open_support_count || 0).toLocaleString("en-KE")}</div>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(formatShortDateTime(client.last_activity_at))}</div>
+          </td>
+        `;
+
+        body.appendChild(row);
+      });
+    }
+
+    function renderActivityTable(items) {
+      const body = document.getElementById("activityBody");
+      const empty = document.getElementById("activityEmpty");
+
+      body.innerHTML = "";
+
+      if (!items.length) {
+        empty.style.display = "block";
+        return;
+      }
+
+      empty.style.display = "none";
+
+      items.forEach(item => {
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+          <td>
+            <span class="chip gold">${escapeHtml(titleCase(item.activity_type || "activity"))}</span>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(item.client_name || "Client")}</strong>
+            <div class="muted">Tenant: ${escapeHtml(shortId(item.tenant_id))}</div>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(item.title || "Activity")}</div>
+          </td>
+
+          <td>
+            <span class="chip ${getStatusChipClass(item.status)}">${escapeHtml(titleCase(item.status || "unknown"))}</span>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(item.value_text ? formatMoney(item.value_text) : "—")}</div>
+          </td>
+
+          <td>
+            <div class="muted">${escapeHtml(formatShortDateTime(item.created_at))}</div>
+          </td>
+        `;
+
+        body.appendChild(row);
+      });
+    }
+
+    function getStatusChipClass(status) {
+      const clean = normalize(status);
+
+      if (["completed", "paid", "done", "approved", "active", "resolved", "closed"].includes(clean)) {
+        return "success";
+      }
+
+      if (["pending", "open", "review", "in_progress", "in progress"].includes(clean)) {
+        return "warning";
+      }
+
+      if (["cancelled", "canceled", "rejected", "failed"].includes(clean)) {
+        return "danger";
+      }
+
+      return "info";
+    }
+
+    function formatMoney(value) {
+      const amount = Number(value || 0);
+
+      return "KSh " + amount.toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function formatShortDateTime(value) {
+      if (!value) return "—";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) return "—";
+
+      return date.toLocaleString("en-KE", {
         month: "short",
         day: "numeric",
         hour: "2-digit",
@@ -459,590 +1170,51 @@
       });
     }
 
-    function formatDate(value) {
-      if (!value) return "N/A";
-      const dateObj = new Date(value);
-      if (isNaN(dateObj.getTime())) return "N/A";
+    function shortId(value) {
+      if (!value) return "—";
 
-      return dateObj.toLocaleDateString("en-KE", {
-        year: "numeric",
-        month: "short",
-        day: "numeric"
-      });
+      const text = String(value);
+
+      if (text.length <= 12) return text;
+
+      return text.slice(0, 8) + "...";
     }
 
-    function todayDate() {
-      return new Date().toISOString().slice(0, 10);
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
     }
 
-    function dateInDays(days) {
-      const dateObj = new Date();
-      dateObj.setDate(dateObj.getDate() + days);
-      return dateObj.toISOString().slice(0, 10);
+    function titleCase(value) {
+      if (!value) return "—";
+
+      return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
     }
 
-    function isExpiredDocument(row) {
-      return row.expiry_date && String(row.expiry_date) < todayDate();
-    }
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
 
-    function isExpiringDocument(row) {
-      return row.expiry_date &&
-        String(row.expiry_date) >= todayDate() &&
-        String(row.expiry_date) <= dateInDays(30);
-    }
-
-    function isOpenSupport(row) {
-      const status = String(getField(row, ["status", "issue_status"], "open")).toLowerCase();
-      return ["open", "new", "pending", "in_progress"].includes(status);
-    }
-
-    function isOpenTask(row) {
-      const status = String(getField(row, ["status", "task_status"], "pending")).toLowerCase();
-      return !["done", "completed", "closed", "cancelled"].includes(status);
-    }
-
-    function amountValue(row) {
-      const raw = getField(row, ["amount", "total_amount", "value"], 0);
-      const num = Number(raw);
-      return isNaN(num) ? 0 : num;
-    }
-
-    function moneyType(row) {
-      return String(getField(row, ["record_type", "transaction_type", "type"], "")).toLowerCase();
-    }
-
-    async function safeSelect(tableName) {
       try {
-        const { data, error } = await supabaseClient
-          .from(tableName)
-          .select("*")
-          .limit(10000);
-
-        if (error) {
-          console.log(tableName, error.message);
-          return [];
-        }
-
-        return data || [];
-      } catch (error) {
-        console.log(tableName, error.message);
-        return [];
+        return JSON.stringify(error);
+      } catch (e) {
+        return String(error);
       }
     }
 
-    async function loadPageData() {
-      UnganiAdminShared.showToast("Loading admin reports...");
-
-      const [
-        tenants,
-        registrations,
-        users,
-        documents,
-        support,
-        adminMessages,
-        teamMessages,
-        events,
-        transactions,
-        tasks,
-        records,
-        items,
-        people,
-        notices,
-        payments,
-        upgrades
-      ] = await Promise.all([
-        safeSelect("tenants"),
-        safeSelect("registrations"),
-        safeSelect("users"),
-        safeSelect("documents"),
-        safeSelect("support_issues"),
-        safeSelect("admin_client_messages"),
-        safeSelect("team_chat_messages"),
-        safeSelect("business_events"),
-        safeSelect("transactions"),
-        safeSelect("tasks"),
-        safeSelect("business_records"),
-        safeSelect("business_items"),
-        safeSelect("client_people"),
-        safeSelect("client_notices"),
-        safeSelect("payments"),
-        safeSelect("upgrade_requests")
-      ]);
-
-      dataStore = {
-        tenants,
-        registrations,
-        users,
-        documents,
-        support,
-        adminMessages: adminMessages.filter(row => row.is_internal !== true),
-        teamMessages,
-        events,
-        transactions,
-        tasks,
-        records,
-        items,
-        people,
-        notices,
-        payments,
-        upgrades
-      };
-
-      fillClientFilter();
-      renderMetrics();
-      renderReport();
-
-      UnganiAdminShared.showToast("Admin reports updated ✓");
-    }
-
-    function fillClientFilter() {
-      const options = dataStore.tenants
-        .map(row => `<option value="${safe(row.id)}">${safe(getTenantName(row))}</option>`)
-        .join("");
-
-      document.getElementById("clientFilter").innerHTML = `<option value="">All Clients</option>${options}`;
-    }
-
-    function withinDateRange(row) {
-      const from = document.getElementById("dateFrom").value;
-      const to = document.getElementById("dateTo").value;
-
-      if (!from && !to) return true;
-
-      const value = getRecordDate(row);
-      if (!value) return true;
-
-      const recordDate = String(value).slice(0, 10);
-
-      if (from && recordDate < from) return false;
-      if (to && recordDate > to) return false;
-
-      return true;
-    }
-
-    function matchesClient(row) {
-      const clientId = document.getElementById("clientFilter").value;
-      if (!clientId) return true;
-
-      return String(row.tenant_id || row.id || "") === String(clientId);
-    }
-
-    function matchesSearch(row, extraText = "") {
-      const query = document.getElementById("searchBox").value.toLowerCase().trim();
-      if (!query) return true;
-
-      return `${JSON.stringify(row)} ${extraText}`.toLowerCase().includes(query);
-    }
-
-    function filteredRows(key) {
-      return (dataStore[key] || []).filter(row => {
-        return withinDateRange(row) && matchesSearch(row, getTenantNameById(row.tenant_id));
-      }).filter(row => {
-        if (key === "tenants") {
-          const clientId = document.getElementById("clientFilter").value;
-          return !clientId || String(row.id) === String(clientId);
-        }
-
-        return matchesClient(row);
-      });
-    }
-
-    function renderMetrics() {
-      const documents = filteredRows("documents");
-      const support = filteredRows("support");
-      const tasks = filteredRows("tasks");
-      const transactions = filteredRows("transactions");
-      const adminMessages = filteredRows("adminMessages");
-      const events = filteredRows("events");
-
-      const income = transactions
-        .filter(row => ["income", "sale", "sales", "revenue", "received"].includes(moneyType(row)))
-        .reduce((sum, row) => sum + amountValue(row), 0);
-
-      const expenses = transactions
-        .filter(row => ["expense", "expenses", "cost", "paid"].includes(moneyType(row)))
-        .reduce((sum, row) => sum + amountValue(row), 0);
-
-      const metrics = [
-        { title: "Clients", value: filteredRows("tenants").length, note: "Client businesses in report", cls: "green" },
-        { title: "Documents", value: documents.length, note: "Document and Drive records", cls: "blue" },
-        { title: "Open Support", value: support.filter(isOpenSupport).length, note: "Support issues needing attention", cls: support.filter(isOpenSupport).length > 0 ? "orange" : "green" },
-        { title: "Open Tasks", value: tasks.filter(isOpenTask).length, note: "Client tasks still open", cls: tasks.filter(isOpenTask).length > 0 ? "orange" : "green" },
-        { title: "Money Records", value: transactions.length, note: `Income: ${income.toLocaleString()} | Expenses: ${expenses.toLocaleString()}`, cls: "blue" },
-        { title: "Chat Messages", value: adminMessages.length, note: "Client-admin messages", cls: "blue" },
-        { title: "Calendar Events", value: events.length, note: "Business events", cls: "green" },
-        { title: "Expired Documents", value: documents.filter(isExpiredDocument).length, note: "Documents past expiry date", cls: documents.filter(isExpiredDocument).length > 0 ? "red" : "green" }
-      ];
-
-      document.getElementById("metricsGrid").innerHTML = metrics.map(item => `
-        <div class="metric-card ${safe(item.cls)}">
-          <h3>${safe(item.title)}</h3>
-          <p>${safe(item.value)}</p>
-          <div class="note">${safe(item.note)}</div>
-        </div>
-      `).join("");
-    }
-
-    function renderReport() {
-      renderMetrics();
-
-      const focus = document.getElementById("reportFocus").value;
-      const sections = [];
-
-      sections.push(renderPrintHeader());
-      sections.push(renderExecutiveSummary());
-
-      if (focus === "full" || focus === "clients") sections.push(renderClientsSection());
-      if (focus === "full" || focus === "documents") sections.push(renderDocumentsSection());
-      if (focus === "full" || focus === "support") sections.push(renderSupportSection());
-      if (focus === "full" || focus === "money") sections.push(renderMoneySection());
-      if (focus === "full" || focus === "tasks") sections.push(renderTasksSection());
-      if (focus === "full" || focus === "chat") sections.push(renderChatSection());
-      if (focus === "full" || focus === "calendar") sections.push(renderCalendarSection());
-      if (focus === "full" || focus === "operations") {
-        sections.push(renderRecordsSection());
-        sections.push(renderItemsSection());
-        sections.push(renderPeopleSection());
-      }
-
-      document.getElementById("reportOutput").innerHTML = sections.join("");
-    }
-
-    function renderPrintHeader() {
-      const clientId = document.getElementById("clientFilter").value;
-      const focus = document.getElementById("reportFocus").value;
-      const clientName = clientId ? getTenantNameById(clientId) : "All Clients";
-
-      return `
-        <div class="print-header">
-          <h1>UNGANI OS Admin Report</h1>
-          <p><strong>Client:</strong> ${safe(clientName)}</p>
-          <p><strong>Focus:</strong> ${safe(cleanText(focus))}</p>
-          <p><strong>Generated:</strong> ${safe(formatDateTime(new Date().toISOString()))}</p>
-          <p>ungani.com | info@ungani.com</p>
-        </div>
-      `;
-    }
-
-    function renderExecutiveSummary() {
-      const clients = filteredRows("tenants");
-      const documents = filteredRows("documents");
-      const support = filteredRows("support");
-      const tasks = filteredRows("tasks");
-      const transactions = filteredRows("transactions");
-      const adminMessages = filteredRows("adminMessages");
-      const teamMessages = filteredRows("teamMessages");
-      const events = filteredRows("events");
-      const records = filteredRows("records");
-      const items = filteredRows("items");
-
-      const income = transactions
-        .filter(row => ["income", "sale", "sales", "revenue", "received"].includes(moneyType(row)))
-        .reduce((sum, row) => sum + amountValue(row), 0);
-
-      const expenses = transactions
-        .filter(row => ["expense", "expenses", "cost", "paid"].includes(moneyType(row)))
-        .reduce((sum, row) => sum + amountValue(row), 0);
-
-      return `
-        <section class="report-section">
-          <h2>Executive Summary</h2>
-          <div class="page-grid">
-            ${summaryCard("Clients", clients.length, "Client businesses included")}
-            ${summaryCard("Documents", documents.length, `${documents.filter(row => row.google_drive_url).length} Google Drive link(s)`)}
-            ${summaryCard("Expiring Docs", documents.filter(isExpiringDocument).length, "Documents expiring within 30 days")}
-            ${summaryCard("Expired Docs", documents.filter(isExpiredDocument).length, "Documents past expiry date")}
-            ${summaryCard("Open Support", support.filter(isOpenSupport).length, "Support issues needing attention")}
-            ${summaryCard("Open Tasks", tasks.filter(isOpenTask).length, "Tasks still open")}
-            ${summaryCard("Income", income.toLocaleString(), "Recorded income / sales")}
-            ${summaryCard("Expenses", expenses.toLocaleString(), "Recorded expenses")}
-            ${summaryCard("Chat Messages", adminMessages.length, "Client-admin messages")}
-            ${summaryCard("Team Messages", teamMessages.length, "Internal team chat records")}
-            ${summaryCard("Calendar Events", events.length, "Business events")}
-            ${summaryCard("Operations Records", records.length + items.length, "Records plus items/assets")}
-          </div>
-        </section>
-      `;
-    }
-
-    function summaryCard(title, value, note) {
-      return `
-        <div class="metric-card blue">
-          <h3>${safe(title)}</h3>
-          <p>${safe(value)}</p>
-          <div class="note">${safe(note)}</div>
-        </div>
-      `;
-    }
-
-    function tableSection(title, columns, rows, rowRenderer, emptyText) {
-      if (!rows.length) {
-        return `
-          <section class="report-section">
-            <h2>${safe(title)}</h2>
-            <div class="empty">
-              <h3>No data found</h3>
-              <p>${safe(emptyText || "No records matched the selected filters.")}</p>
-            </div>
-          </section>
-        `;
-      }
-
-      return `
-        <section class="report-section">
-          <h2>${safe(title)}</h2>
-          <div class="report-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  ${columns.map(col => `<th>${safe(col)}</th>`).join("")}
-                </tr>
-              </thead>
-              <tbody>
-                ${rows.map(rowRenderer).join("")}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      `;
-    }
-
-    function td(value) {
-      return `<td>${safe(value || "N/A")}</td>`;
-    }
-
-    function renderClientsSection() {
-      const rows = filteredRows("tenants");
-
-      return tableSection(
-        "Clients",
-        ["Business", "Contact", "Email", "Phone", "Status", "Drive Folder", "Created"],
-        rows,
-        row => `
-          <tr>
-            ${td(getTenantName(row))}
-            ${td(getField(row, ["contact_person", "owner_name"], "N/A"))}
-            ${td(getField(row, ["business_email", "email"], "N/A"))}
-            ${td(getField(row, ["business_phone", "phone"], "N/A"))}
-            ${td(cleanText(getField(row, ["account_status", "status"], "active")))}
-            ${td(row.google_drive_folder_url ? "Saved" : "Not Saved")}
-            ${td(formatDateTime(row.created_at))}
-          </tr>
-        `,
-        "No client records found."
-      );
-    }
-
-    function renderDocumentsSection() {
-      const rows = filteredRows("documents");
-
-      return tableSection(
-        "Documents / Google Drive",
-        ["Client", "Document", "Source", "File Type", "Expiry", "Status", "Link"],
-        rows,
-        row => {
-          const status = isExpiredDocument(row) ? "Expired" : isExpiringDocument(row) ? "Expiring Soon" : "Valid";
-          const link = getField(row, ["google_drive_url", "document_url", "external_file_url"], "No link");
-
-          return `
-            <tr>
-              ${td(getTenantNameById(row.tenant_id))}
-              ${td(getField(row, ["document_title", "file_name", "title"], "Document"))}
-              ${td(cleanText(row.document_source || "manual"))}
-              ${td(row.file_type || "N/A")}
-              ${td(formatDate(row.expiry_date))}
-              ${td(status)}
-              ${td(link)}
-            </tr>
-          `;
-        },
-        "No document records found."
-      );
-    }
-
-    function renderSupportSection() {
-      const rows = filteredRows("support");
-
-      return tableSection(
-        "Support Issues",
-        ["Client", "Issue", "Type", "Priority", "Status", "Admin Response", "Created"],
-        rows,
-        row => `
-          <tr>
-            ${td(getTenantNameById(row.tenant_id))}
-            ${td(getField(row, ["issue_title", "subject", "title"], "Support Issue"))}
-            ${td(cleanText(row.issue_type || "N/A"))}
-            ${td(cleanText(row.priority || "normal"))}
-            ${td(cleanText(getField(row, ["status", "issue_status"], "open")))}
-            ${td(row.admin_response || "N/A")}
-            ${td(formatDateTime(row.created_at))}
-          </tr>
-        `,
-        "No support records found."
-      );
-    }
-
-    function renderMoneySection() {
-      const rows = filteredRows("transactions");
-
-      return tableSection(
-        "Money Records",
-        ["Client", "Type", "Category", "Amount", "Description", "Date"],
-        rows,
-        row => `
-          <tr>
-            ${td(getTenantNameById(row.tenant_id))}
-            ${td(cleanText(getField(row, ["record_type", "transaction_type", "type"], "Record")))}
-            ${td(cleanText(getField(row, ["category", "category_name"], "N/A")))}
-            ${td(amountValue(row).toLocaleString())}
-            ${td(getField(row, ["description", "notes", "title"], "N/A"))}
-            ${td(formatDateTime(row.created_at))}
-          </tr>
-        `,
-        "No money records found."
-      );
-    }
-
-    function renderTasksSection() {
-      const rows = filteredRows("tasks");
-
-      return tableSection(
-        "Tasks / Follow-ups",
-        ["Client", "Task", "Status", "Priority", "Due Date", "Created"],
-        rows,
-        row => `
-          <tr>
-            ${td(getTenantNameById(row.tenant_id))}
-            ${td(getField(row, ["task_title", "title", "name"], "Task"))}
-            ${td(cleanText(getField(row, ["status", "task_status"], "pending")))}
-            ${td(cleanText(getField(row, ["priority"], "normal")))}
-            ${td(formatDate(row.due_date))}
-            ${td(formatDateTime(row.created_at))}
-          </tr>
-        `,
-        "No task records found."
-      );
-    }
-
-    function renderChatSection() {
-      const rows = filteredRows("adminMessages");
-
-      return tableSection(
-        "Client Admin Chat",
-        ["Client", "Sender", "Role", "Message", "Read By Admin", "Created"],
-        rows,
-        row => `
-          <tr>
-            ${td(getTenantNameById(row.tenant_id))}
-            ${td(row.sender_name || "N/A")}
-            ${td(cleanText(row.sender_role || "N/A"))}
-            ${td(row.message_body || "N/A")}
-            ${td(row.read_by_admin_at ? "Yes" : "No")}
-            ${td(formatDateTime(row.created_at))}
-          </tr>
-        `,
-        "No chat records found."
-      );
-    }
-
-    function renderCalendarSection() {
-      const rows = filteredRows("events");
-
-      return tableSection(
-        "Business Calendar",
-        ["Client", "Event", "Type", "Date", "Time", "Status", "Location"],
-        rows,
-        row => `
-          <tr>
-            ${td(getTenantNameById(row.tenant_id))}
-            ${td(getField(row, ["event_title", "title"], "Event"))}
-            ${td(cleanText(row.event_type || "N/A"))}
-            ${td(formatDate(row.event_date))}
-            ${td(`${row.start_time || ""}${row.end_time ? " - " + row.end_time : ""}` || "N/A")}
-            ${td(cleanText(row.status || "scheduled"))}
-            ${td(row.location || "N/A")}
-          </tr>
-        `,
-        "No calendar records found."
-      );
-    }
-
-    function renderRecordsSection() {
-      const rows = filteredRows("records");
-
-      return tableSection(
-        "Business Records",
-        ["Client", "Record", "Type", "Description", "Created"],
-        rows,
-        row => `
-          <tr>
-            ${td(getTenantNameById(row.tenant_id))}
-            ${td(getField(row, ["record_title", "title", "name"], "Record"))}
-            ${td(cleanText(getField(row, ["record_type", "type"], "N/A")))}
-            ${td(getField(row, ["description", "notes"], "N/A"))}
-            ${td(formatDateTime(row.created_at))}
-          </tr>
-        `,
-        "No business records found."
-      );
-    }
-
-    function renderItemsSection() {
-      const rows = filteredRows("items");
-
-      return tableSection(
-        "Items / Assets / Stock",
-        ["Client", "Item", "Type", "Quantity", "Status", "Created"],
-        rows,
-        row => `
-          <tr>
-            ${td(getTenantNameById(row.tenant_id))}
-            ${td(getField(row, ["item_name", "asset_name", "name"], "Item"))}
-            ${td(cleanText(getField(row, ["item_type", "asset_type", "type"], "N/A")))}
-            ${td(getField(row, ["quantity", "qty"], "N/A"))}
-            ${td(cleanText(row.status || "N/A"))}
-            ${td(formatDateTime(row.created_at))}
-          </tr>
-        `,
-        "No items or assets found."
-      );
-    }
-
-    function renderPeopleSection() {
-      const rows = filteredRows("people");
-
-      return tableSection(
-        "People / Staff / Contacts",
-        ["Client", "Name", "Type", "Role", "Phone", "Email", "Status"],
-        rows,
-        row => `
-          <tr>
-            ${td(getTenantNameById(row.tenant_id))}
-            ${td(row.full_name || "N/A")}
-            ${td(cleanText(row.person_type || "N/A"))}
-            ${td(row.role_title || "N/A")}
-            ${td(row.phone || "N/A")}
-            ${td(row.email || "N/A")}
-            ${td(cleanText(row.relationship_status || "active"))}
-          </tr>
-        `,
-        "No people/staff records found."
-      );
-    }
-
-    function resetFilters() {
-      document.getElementById("clientFilter").value = "";
-      document.getElementById("reportFocus").value = "full";
-      document.getElementById("dateFrom").value = "";
-      document.getElementById("dateTo").value = "";
-      document.getElementById("searchBox").value = "";
-      renderReport();
-      UnganiAdminShared.showToast("Filters reset ✓");
-    }
-
-    function printReport() {
-      window.print();
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
     }
   </script>
+
+  <script src="pwa-register.js"></script>
 </body>
 </html>
