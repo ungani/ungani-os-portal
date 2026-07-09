@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Staff Login</title>
+
+  <link rel="icon" href="/ungani-logo.png" type="image/png" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --muted: #64748B;
+      --green: #16A34A;
+      --red: #DC2626;
+      --border: rgba(6,28,61,0.12);
+      --shadow: 0 24px 70px rgba(6,28,61,0.18);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, Arial, sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(212,166,58,0.22), transparent 32%),
+        linear-gradient(135deg, #061C3D 0%, #092B58 48%, #F5F5F3 48%, #F5F5F3 100%);
+      color: var(--navy);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .shell {
+      width: min(1080px, 100%);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 430px;
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .hero {
+      background:
+        radial-gradient(circle at top right, rgba(212,166,58,0.24), transparent 38%),
+        linear-gradient(135deg, rgba(6,28,61,0.98), rgba(9,43,88,0.95));
+      color: white;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 34px;
+      padding: 34px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 560px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand img {
+      width: 62px;
+      height: 62px;
+      object-fit: contain;
+      background: white;
+      border-radius: 18px;
+      padding: 9px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.045em;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: rgba(255,255,255,0.66);
+      font-size: 13px;
+    }
+
+    .hero h2 {
+      margin: 38px 0 12px;
+      font-size: clamp(38px, 6vw, 68px);
+      line-height: 0.95;
+      letter-spacing: -0.07em;
+      max-width: 720px;
+    }
+
+    .hero .lead {
+      margin: 0;
+      max-width: 660px;
+      color: rgba(255,255,255,0.74);
+      line-height: 1.6;
+      font-size: 16px;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    .step {
+      background: rgba(255,255,255,0.09);
+      border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 20px;
+      padding: 14px;
+    }
+
+    .step strong {
+      display: block;
+      color: #FFE8A3;
+      font-size: 13px;
+    }
+
+    .step small {
+      display: block;
+      margin-top: 5px;
+      color: rgba(255,255,255,0.66);
+      line-height: 1.35;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.96);
+      border: 1px solid var(--border);
+      border-radius: 34px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 34px;
+      letter-spacing: -0.055em;
+    }
+
+    .card p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 20px 0 16px;
+      background: #F1F5F9;
+      border-radius: 999px;
+      padding: 5px;
+    }
+
+    .tab {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 12px;
+      font-weight: 950;
+      cursor: pointer;
+      background: transparent;
+      color: var(--navy);
+    }
+
+    .tab.active {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    form {
+      display: grid;
+      gap: 12px;
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 950;
+      color: var(--navy);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 13px 14px;
+      font-size: 15px;
+      color: var(--navy);
+      background: white;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: rgba(212,166,58,0.6);
+      box-shadow: 0 0 0 4px rgba(212,166,58,0.14);
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 13px 16px;
+      font-weight: 950;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: 0.2s;
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .btn.navy {
+      background: var(--navy);
+      color: white;
+    }
+
+    .btn.light {
+      background: white;
+      color: var(--navy);
+      border: 1px solid var(--border);
+    }
+
+    .message {
+      display: none;
+      padding: 13px;
+      border-radius: 18px;
+      font-size: 13px;
+      line-height: 1.45;
+      margin: 14px 0 0;
+    }
+
+    .message.show {
+      display: block;
+    }
+
+    .message.ok {
+      background: rgba(22,163,74,0.12);
+      border: 1px solid rgba(22,163,74,0.22);
+      color: #166534;
+    }
+
+    .message.warn {
+      background: rgba(212,166,58,0.14);
+      border: 1px solid rgba(212,166,58,0.28);
+      color: #7A5200;
+    }
+
+    .message.error {
+      background: rgba(220,38,38,0.10);
+      border: 1px solid rgba(220,38,38,0.18);
+      color: #991B1B;
+    }
+
+    .small-note {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    @media (max-width: 920px) {
+      body {
+        padding: 14px;
+      }
+
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        min-height: auto;
+        border-radius: 26px;
+        padding: 24px;
+      }
+
+      .steps {
+        grid-template-columns: 1fr;
+      }
+
+      .card {
+        border-radius: 26px;
+        padding: 22px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <div class="brand">
+          <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
+          <div>
+            <h1>UNGANI OS</h1>
+            <p>Staff access portal</p>
+          </div>
+        </div>
+
+        <h2>Join your assigned workspace.</h2>
+        <p class="lead">
+          This page is only for staff invited by a business owner. Use the same email address the owner added in Team Access.
+        </p>
+
+        <div class="steps">
+          <div class="step">
+            <strong>1. Owner adds email</strong>
+            <small>The business owner adds your staff email and permissions.</small>
+          </div>
+          <div class="step">
+            <strong>2. Create password</strong>
+            <small>You create your own secure password here.</small>
+          </div>
+          <div class="step">
+            <strong>3. Limited access</strong>
+            <small>You only see the sections assigned to you.</small>
+          </div>
+        </div>
+      </div>
+
+      <p style="color:rgba(255,255,255,0.56);font-size:12px;margin-top:24px;">
+        ungani.com · info@ungani.com
+      </p>
+    </section>
+
+    <section class="card">
+      <h2 id="formTitle">Staff Login</h2>
+      <p id="formSubtitle">Log in using the email your business owner added.</p>
+
+      <div class="tabs">
+        <button id="loginTab" class="tab active" type="button" onclick="setMode('login')">Login</button>
+        <button id="signupTab" class="tab" type="button" onclick="setMode('signup')">Create Password</button>
+      </div>
+
+      <form onsubmit="handleAuth(event)">
+        <label>
+          Staff Email
+          <input id="email" type="email" placeholder="staff@example.com" required />
+        </label>
+
+        <label>
+          Password
+          <input id="password" type="password" placeholder="Enter password" minlength="6" required />
+        </label>
+
+        <button id="submitButton" class="btn gold" type="submit">Login as Staff</button>
+      </form>
+
+      <div id="messageBox" class="message"></div>
+
+      <div class="small-note">
+        Do not use the normal business registration page for staff. Staff must use this page so they join the existing workspace instead of creating a new business registration.
+      </div>
+
+      <div class="links">
+        <a class="btn light" href="login.html">Main Login</a>
+        <a class="btn navy" href="index.html">Business Registration</a>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let mode = "login";
+
+    function setMode(nextMode) {
+      mode = nextMode === "signup" ? "signup" : "login";
+
+      document.getElementById("loginTab").classList.toggle("active", mode === "login");
+      document.getElementById("signupTab").classList.toggle("active", mode === "signup");
+
+      document.getElementById("formTitle").innerText = mode === "login" ? "Staff Login" : "Create Staff Password";
+      document.getElementById("formSubtitle").innerText = mode === "login"
+        ? "Log in using the email your business owner added."
+        : "Create your staff password using the same invited email.";
+
+      document.getElementById("submitButton").innerText = mode === "login"
+        ? "Login as Staff"
+        : "Create Staff Login";
+
+      hideMessage();
+    }
+
+    async function handleAuth(event) {
+      event.preventDefault();
+
+      const email = document.getElementById("email").value.trim().toLowerCase();
+      const password = document.getElementById("password").value;
+
+      if (!email || !password) {
+        showMessage("Please enter email and password.", "error");
+        return;
+      }
+
+      document.getElementById("submitButton").disabled = true;
+      document.getElementById("submitButton").innerText = mode === "login" ? "Logging in..." : "Creating...";
+
+      try {
+        if (mode === "signup") {
+          await createStaffPassword(email, password);
+        } else {
+          await loginStaff(email, password);
+        }
+      } finally {
+        document.getElementById("submitButton").disabled = false;
+        document.getElementById("submitButton").innerText = mode === "login"
+          ? "Login as Staff"
+          : "Create Staff Login";
+      }
+    }
+
+    async function createStaffPassword(email, password) {
+      const response = await supabaseClient.auth.signUp({
+        email: email,
+        password: password,
+        options: {
+          emailRedirectTo: window.location.origin + "/staff-login.html"
+        }
+      });
+
+      if (response.error) {
+        showMessage(response.error.message, "error");
+        return;
+      }
+
+      if (response.data && response.data.session) {
+        await verifyStaffAccessAndRedirect();
+        return;
+      }
+
+      showMessage(
+        "Staff login created. Please check the staff email inbox and confirm the email, then return here and log in.",
+        "ok"
+      );
+
+      setMode("login");
+    }
+
+    async function loginStaff(email, password) {
+      const response = await supabaseClient.auth.signInWithPassword({
+        email: email,
+        password: password
+      });
+
+      if (response.error) {
+        showMessage(response.error.message, "error");
+        return;
+      }
+
+      await verifyStaffAccessAndRedirect();
+    }
+
+    async function verifyStaffAccessAndRedirect() {
+      showMessage("Checking staff workspace access...", "warn");
+
+      const accessResponse = await supabaseClient.rpc("get_my_ungani_staff_access");
+
+      if (accessResponse.error) {
+        showMessage("Could not verify staff access: " + accessResponse.error.message, "error");
+        return;
+      }
+
+      const access = accessResponse.data || {};
+
+      if (access.can_access !== true) {
+        showMessage(access.message || "This email is not connected to an active staff workspace.", "error");
+        await supabaseClient.auth.signOut();
+        return;
+      }
+
+      if (access.is_owner === true) {
+        window.location.href = "client.html?mode=owner";
+        return;
+      }
+
+      if (!access.role_key || access.role_key === "guest") {
+        showMessage("This email is not listed as active staff. Ask the business owner to add it in Team Access.", "error");
+        await supabaseClient.auth.signOut();
+        return;
+      }
+
+      window.location.href = "client.html?mode=staff";
+    }
+
+    function showMessage(message, type) {
+      const box = document.getElementById("messageBox");
+      box.className = "message show " + (type || "warn");
+      box.innerText = message;
+    }
+
+    function hideMessage() {
+      const box = document.getElementById("messageBox");
+      box.className = "message";
+      box.innerText = "";
+    }
+  </script>
+</body>
+</html>
