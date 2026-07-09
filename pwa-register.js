@@ -1,9 +1,9 @@
 (function () {
-  const ALERT_SCRIPT_SRC = "notification-alerts.js";
+  const CLIENT_GUARD_SCRIPT_SRC = "client-access-guard.js";
 
   document.addEventListener("DOMContentLoaded", function () {
     registerUnganiServiceWorker();
-    loadUnganiNotificationAlerts();
+    loadUnganiClientAccessGuard();
   });
 
   function registerUnganiServiceWorker() {
@@ -23,61 +23,49 @@
     });
   }
 
-  function loadUnganiNotificationAlerts() {
+  function loadUnganiClientAccessGuard() {
     const pageName = getCurrentPageName();
 
-    if (shouldSkipNotificationAlerts(pageName)) {
+    if (!shouldLoadClientGuard(pageName)) {
       return;
     }
 
-    const userType = detectUserType(pageName);
-
-    if (!userType) {
+    if (window.initUnganiClientAccessGuard) {
+      window.initUnganiClientAccessGuard();
       return;
     }
 
-    if (window.initUnganiNotificationAlerts) {
-      window.initUnganiNotificationAlerts({
-        userType: userType
-      });
-      return;
-    }
-
-    if (document.querySelector('script[src="' + ALERT_SCRIPT_SRC + '"]')) {
-      waitForAlertScript(userType);
+    if (document.querySelector('script[src="' + CLIENT_GUARD_SCRIPT_SRC + '"]')) {
+      waitForClientGuardScript();
       return;
     }
 
     const script = document.createElement("script");
-    script.src = ALERT_SCRIPT_SRC;
+    script.src = CLIENT_GUARD_SCRIPT_SRC;
     script.defer = true;
 
     script.onload = function () {
-      if (window.initUnganiNotificationAlerts) {
-        window.initUnganiNotificationAlerts({
-          userType: userType
-        });
+      if (window.initUnganiClientAccessGuard) {
+        window.initUnganiClientAccessGuard();
       }
     };
 
     script.onerror = function () {
-      console.warn("UNGANI notification alert script failed to load.");
+      console.warn("UNGANI client access guard script failed to load.");
     };
 
     document.body.appendChild(script);
   }
 
-  function waitForAlertScript(userType) {
+  function waitForClientGuardScript() {
     let attempts = 0;
 
     const timer = setInterval(function () {
       attempts += 1;
 
-      if (window.initUnganiNotificationAlerts) {
+      if (window.initUnganiClientAccessGuard) {
         clearInterval(timer);
-        window.initUnganiNotificationAlerts({
-          userType: userType
-        });
+        window.initUnganiClientAccessGuard();
         return;
       }
 
@@ -87,44 +75,49 @@
     }, 250);
   }
 
+  function shouldLoadClientGuard(pageName) {
+    const publicPages = [
+      "index.html",
+      "login.html",
+      "register.html",
+      "signup.html",
+      "forgot-password.html",
+      "reset-password.html"
+    ];
+
+    if (publicPages.includes(pageName)) {
+      return false;
+    }
+
+    if (pageName.startsWith("admin")) {
+      return false;
+    }
+
+    if (
+      pageName === "support.html" ||
+      pageName === "billing.html" ||
+      pageName === "admin-notifications.html" ||
+      pageName === "admin-home.html"
+    ) {
+      return false;
+    }
+
+    if (
+      pageName === "client.html" ||
+      pageName === "client-notifications.html" ||
+      pageName.startsWith("my-") ||
+      pageName.startsWith("client-")
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
   function getCurrentPageName() {
     const path = window.location.pathname || "";
     const clean = path.split("/").pop() || "index.html";
 
     return clean.toLowerCase();
-  }
-
-  function detectUserType(pageName) {
-    if (
-      pageName.startsWith("admin") ||
-      pageName === "support.html" ||
-      pageName === "billing.html"
-    ) {
-      return "admin";
-    }
-
-    if (
-      pageName.startsWith("my-") ||
-      pageName.startsWith("client") ||
-      pageName === "client.html" ||
-      pageName === "client-notifications.html"
-    ) {
-      return "client";
-    }
-
-    return null;
-  }
-
-  function shouldSkipNotificationAlerts(pageName) {
-    const skipPages = [
-      "index.html",
-      "login.html",
-      "register.html",
-      "forgot-password.html",
-      "reset-password.html",
-      "signup.html"
-    ];
-
-    return skipPages.includes(pageName);
   }
 })();
