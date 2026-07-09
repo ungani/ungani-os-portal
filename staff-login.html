@@ -22,9 +22,7 @@
       --shadow: 0 24px 70px rgba(6,28,61,0.18);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -57,10 +55,10 @@
       border-radius: 34px;
       padding: 34px;
       box-shadow: var(--shadow);
+      min-height: 560px;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      min-height: 560px;
     }
 
     .brand {
@@ -159,7 +157,7 @@
 
     .tabs {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, 1fr);
       gap: 8px;
       margin: 20px 0 16px;
       background: #F1F5F9;
@@ -175,6 +173,7 @@
       cursor: pointer;
       background: transparent;
       color: var(--navy);
+      font-size: 12px;
     }
 
     .tab.active {
@@ -228,9 +227,7 @@
       text-decoration: none;
     }
 
-    .btn:hover {
-      transform: translateY(-1px);
-    }
+    .btn:hover { transform: translateY(-1px); }
 
     .btn.gold {
       background: var(--gold);
@@ -257,9 +254,7 @@
       margin: 14px 0 0;
     }
 
-    .message.show {
-      display: block;
-    }
+    .message.show { display: block; }
 
     .message.ok {
       background: rgba(22,163,74,0.12);
@@ -293,10 +288,12 @@
       margin-top: 16px;
     }
 
+    .hidden {
+      display: none !important;
+    }
+
     @media (max-width: 920px) {
-      body {
-        padding: 14px;
-      }
+      body { padding: 14px; }
 
       .shell {
         grid-template-columns: 1fr;
@@ -334,21 +331,21 @@
 
         <h2>Join your assigned workspace.</h2>
         <p class="lead">
-          This page is only for staff invited by a business owner. Use the same email address the owner added in Team Access.
+          Staff should use this page only. Do not use the normal business registration page, because that creates a new business registration.
         </p>
 
         <div class="steps">
           <div class="step">
             <strong>1. Owner adds email</strong>
-            <small>The business owner adds your staff email and permissions.</small>
+            <small>The business owner adds your email in Team Access.</small>
           </div>
           <div class="step">
-            <strong>2. Create password</strong>
-            <small>You create your own secure password here.</small>
+            <strong>2. Create or reset password</strong>
+            <small>If the email already exists, use Reset Password.</small>
           </div>
           <div class="step">
             <strong>3. Limited access</strong>
-            <small>You only see the sections assigned to you.</small>
+            <small>You only see assigned sections.</small>
           </div>
         </div>
       </div>
@@ -362,20 +359,26 @@
       <h2 id="formTitle">Staff Login</h2>
       <p id="formSubtitle">Log in using the email your business owner added.</p>
 
-      <div class="tabs">
+      <div id="tabs" class="tabs">
         <button id="loginTab" class="tab active" type="button" onclick="setMode('login')">Login</button>
-        <button id="signupTab" class="tab" type="button" onclick="setMode('signup')">Create Password</button>
+        <button id="signupTab" class="tab" type="button" onclick="setMode('signup')">Create</button>
+        <button id="resetTab" class="tab" type="button" onclick="setMode('reset')">Reset</button>
       </div>
 
-      <form onsubmit="handleAuth(event)">
-        <label>
+      <form id="authForm" onsubmit="handleAuth(event)">
+        <label id="emailLabel">
           Staff Email
-          <input id="email" type="email" placeholder="staff@example.com" required />
+          <input id="email" type="email" placeholder="staff@example.com" />
         </label>
 
-        <label>
+        <label id="passwordLabel">
           Password
-          <input id="password" type="password" placeholder="Enter password" minlength="6" required />
+          <input id="password" type="password" placeholder="Enter password" minlength="6" />
+        </label>
+
+        <label id="newPasswordLabel" class="hidden">
+          New Password
+          <input id="newPassword" type="password" placeholder="Enter new password" minlength="6" />
         </label>
 
         <button id="submitButton" class="btn gold" type="submit">Login as Staff</button>
@@ -384,12 +387,12 @@
       <div id="messageBox" class="message"></div>
 
       <div class="small-note">
-        Do not use the normal business registration page for staff. Staff must use this page so they join the existing workspace instead of creating a new business registration.
+        If Create Password says the email already exists, use Reset Password. The reset link will be sent to the staff email.
       </div>
 
       <div class="links">
         <a class="btn light" href="login.html">Main Login</a>
-        <a class="btn navy" href="index.html">Business Registration</a>
+        <a class="btn navy" href="client.html">Dashboard</a>
       </div>
     </section>
   </div>
@@ -401,20 +404,63 @@
 
     let mode = "login";
 
+    window.addEventListener("load", async function () {
+      const url = window.location.href;
+
+      if (
+        url.includes("type=recovery") ||
+        url.includes("access_token") ||
+        url.includes("refresh_token") ||
+        url.includes("code=")
+      ) {
+        setMode("new-password");
+        showMessage("Enter a new password for this staff account.", "warn");
+      }
+    });
+
     function setMode(nextMode) {
-      mode = nextMode === "signup" ? "signup" : "login";
+      mode = nextMode;
 
       document.getElementById("loginTab").classList.toggle("active", mode === "login");
       document.getElementById("signupTab").classList.toggle("active", mode === "signup");
+      document.getElementById("resetTab").classList.toggle("active", mode === "reset");
 
-      document.getElementById("formTitle").innerText = mode === "login" ? "Staff Login" : "Create Staff Password";
-      document.getElementById("formSubtitle").innerText = mode === "login"
-        ? "Log in using the email your business owner added."
-        : "Create your staff password using the same invited email.";
+      const emailLabel = document.getElementById("emailLabel");
+      const passwordLabel = document.getElementById("passwordLabel");
+      const newPasswordLabel = document.getElementById("newPasswordLabel");
 
-      document.getElementById("submitButton").innerText = mode === "login"
-        ? "Login as Staff"
-        : "Create Staff Login";
+      emailLabel.classList.remove("hidden");
+      passwordLabel.classList.remove("hidden");
+      newPasswordLabel.classList.add("hidden");
+
+      if (mode === "login") {
+        document.getElementById("formTitle").innerText = "Staff Login";
+        document.getElementById("formSubtitle").innerText = "Log in using the email your business owner added.";
+        document.getElementById("submitButton").innerText = "Login as Staff";
+      }
+
+      if (mode === "signup") {
+        document.getElementById("formTitle").innerText = "Create Staff Password";
+        document.getElementById("formSubtitle").innerText = "Use this only if the staff email has not created a password before.";
+        document.getElementById("submitButton").innerText = "Create Staff Login";
+      }
+
+      if (mode === "reset") {
+        document.getElementById("formTitle").innerText = "Reset Staff Password";
+        document.getElementById("formSubtitle").innerText = "Send a password reset link to the staff email.";
+        document.getElementById("submitButton").innerText = "Send Reset Link";
+        passwordLabel.classList.add("hidden");
+      }
+
+      if (mode === "new-password") {
+        document.getElementById("tabs").classList.add("hidden");
+        document.getElementById("formTitle").innerText = "Set New Password";
+        document.getElementById("formSubtitle").innerText = "Create a new password for this staff account.";
+        document.getElementById("submitButton").innerText = "Save New Password";
+        emailLabel.classList.add("hidden");
+        passwordLabel.classList.add("hidden");
+        newPasswordLabel.classList.remove("hidden");
+      }
 
       hideMessage();
     }
@@ -422,70 +468,145 @@
     async function handleAuth(event) {
       event.preventDefault();
 
-      const email = document.getElementById("email").value.trim().toLowerCase();
-      const password = document.getElementById("password").value;
+      if (mode === "login") {
+        await loginStaff();
+        return;
+      }
+
+      if (mode === "signup") {
+        await createStaffPassword();
+        return;
+      }
+
+      if (mode === "reset") {
+        await sendResetLink();
+        return;
+      }
+
+      if (mode === "new-password") {
+        await saveNewPassword();
+      }
+    }
+
+    async function createStaffPassword() {
+      const email = getEmail();
+      const password = getPassword();
 
       if (!email || !password) {
-        showMessage("Please enter email and password.", "error");
+        showMessage("Please enter staff email and password.", "error");
         return;
       }
 
-      document.getElementById("submitButton").disabled = true;
-      document.getElementById("submitButton").innerText = mode === "login" ? "Logging in..." : "Creating...";
+      setLoading(true, "Creating...");
 
       try {
-        if (mode === "signup") {
-          await createStaffPassword(email, password);
-        } else {
-          await loginStaff(email, password);
+        const response = await supabaseClient.auth.signUp({
+          email: email,
+          password: password,
+          options: {
+            emailRedirectTo: window.location.origin + "/staff-login.html"
+          }
+        });
+
+        if (response.error) {
+          showMessage(response.error.message + " If this email already exists, use Reset Password.", "error");
+          return;
         }
+
+        if (response.data && response.data.session) {
+          await verifyStaffAccessAndRedirect();
+          return;
+        }
+
+        showMessage("Staff login created. Check the staff email inbox to confirm, then log in.", "ok");
+        setMode("login");
       } finally {
-        document.getElementById("submitButton").disabled = false;
-        document.getElementById("submitButton").innerText = mode === "login"
-          ? "Login as Staff"
-          : "Create Staff Login";
+        setLoading(false);
       }
     }
 
-    async function createStaffPassword(email, password) {
-      const response = await supabaseClient.auth.signUp({
-        email: email,
-        password: password,
-        options: {
-          emailRedirectTo: window.location.origin + "/staff-login.html"
+    async function loginStaff() {
+      const email = getEmail();
+      const password = getPassword();
+
+      if (!email || !password) {
+        showMessage("Please enter staff email and password.", "error");
+        return;
+      }
+
+      setLoading(true, "Logging in...");
+
+      try {
+        const response = await supabaseClient.auth.signInWithPassword({
+          email: email,
+          password: password
+        });
+
+        if (response.error) {
+          showMessage(response.error.message + " If you do not know the password, use Reset Password.", "error");
+          return;
         }
-      });
 
-      if (response.error) {
-        showMessage(response.error.message, "error");
-        return;
-      }
-
-      if (response.data && response.data.session) {
         await verifyStaffAccessAndRedirect();
-        return;
+      } finally {
+        setLoading(false);
       }
-
-      showMessage(
-        "Staff login created. Please check the staff email inbox and confirm the email, then return here and log in.",
-        "ok"
-      );
-
-      setMode("login");
     }
 
-    async function loginStaff(email, password) {
-      const response = await supabaseClient.auth.signInWithPassword({
-        email: email,
-        password: password
-      });
+    async function sendResetLink() {
+      const email = getEmail();
 
-      if (response.error) {
-        showMessage(response.error.message, "error");
+      if (!email) {
+        showMessage("Please enter staff email.", "error");
         return;
       }
 
-      await verifyStaffAccessAndRedirect();
+      setLoading(true, "Sending reset link...");
+
+      try {
+        const response = await supabaseClient.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + "/staff-login.html"
+        });
+
+        if (response.error) {
+          showMessage(response.error.message, "error");
+          return;
+        }
+
+        showMessage("Password reset link sent. Open the staff email inbox, click the link, then set a new password.", "ok");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function saveNewPassword() {
+      const newPassword = document.getElementById("newPassword").value;
+
+      if (!newPassword || newPassword.length < 6) {
+        showMessage("Enter a new password with at least 6 characters.", "error");
+        return;
+      }
+
+      setLoading(true, "Saving password...");
+
+      try {
+        const response = await supabaseClient.auth.updateUser({
+          password: newPassword
+        });
+
+        if (response.error) {
+          showMessage(response.error.message, "error");
+          return;
+        }
+
+        showMessage("Password updated. Opening staff dashboard...", "ok");
+
+        setTimeout(function () {
+          window.location.href = "client.html?mode=staff";
+        }, 1000);
+      } finally {
+        setLoading(false);
+      }
     }
 
     async function verifyStaffAccessAndRedirect() {
@@ -518,6 +639,28 @@
       }
 
       window.location.href = "client.html?mode=staff";
+    }
+
+    function getEmail() {
+      return document.getElementById("email").value.trim().toLowerCase();
+    }
+
+    function getPassword() {
+      return document.getElementById("password").value;
+    }
+
+    function setLoading(isLoading, text) {
+      const button = document.getElementById("submitButton");
+      button.disabled = isLoading;
+
+      if (isLoading) {
+        button.innerText = text || "Please wait...";
+      } else {
+        if (mode === "login") button.innerText = "Login as Staff";
+        if (mode === "signup") button.innerText = "Create Staff Login";
+        if (mode === "reset") button.innerText = "Send Reset Link";
+        if (mode === "new-password") button.innerText = "Save New Password";
+      }
     }
 
     function showMessage(message, type) {
