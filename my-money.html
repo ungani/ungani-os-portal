@@ -266,6 +266,28 @@
             flex-wrap: wrap;
           }
 
+          .money-warning-box {
+            display: none;
+            margin-top: 14px;
+            padding: 14px 15px;
+            border-radius: 18px;
+            border: 1px solid rgba(212,166,58,0.45);
+            background: rgba(212,166,58,0.12);
+            color: var(--ungani-text);
+          }
+
+          .money-warning-box strong {
+            display: block;
+            margin-bottom: 4px;
+          }
+
+          .money-warning-box p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+            line-height: 1.5;
+          }
+
           @media (max-width: 1180px) {
             .money-hero-grid,
             .money-main-grid,
@@ -492,6 +514,11 @@
                   <label for="moneyNotes">Notes</label>
                   <textarea id="moneyNotes" rows="4" placeholder="Example: Client payment, supplier invoice, fuel expense, service income..."></textarea>
                 </div>
+              </div>
+
+              <div id="moneyWarningBox" class="money-warning-box">
+                <strong>Money record warning</strong>
+                <p id="moneyWarningText"></p>
               </div>
 
               <div class="ungani-button-row" style="margin-top:16px;">
@@ -789,22 +816,62 @@
     async function saveMoneyRecord(event) {
       event.preventDefault();
 
+      hideMoneyWarning();
+
+      if (
+        window.UnganiClientShared &&
+        typeof UnganiClientShared.ensureCanWrite === "function" &&
+        !UnganiClientShared.ensureCanWrite("money record")
+      ) {
+        return;
+      }
+
       const amount = Number(UnganiClientShared.value("moneyAmount") || 0);
+      const category = UnganiClientShared.value("moneyCategory");
+      const transactionDate = UnganiClientShared.value("moneyDate") || new Date().toISOString().slice(0, 10);
+      const transactionType = UnganiClientShared.value("moneyType") || "income";
 
       if (!amount || amount <= 0) {
+        showMoneyWarning("Enter a valid amount before saving.");
         UnganiClientShared.showToast("Enter a valid amount.");
+        return;
+      }
+
+      if (!category || category.toLowerCase() === "uncategorized") {
+        showMoneyWarning("Please choose a clear category so your reports and charts stay accurate.");
+        UnganiClientShared.showToast("Choose a category before saving.");
+        return;
+      }
+
+      if (!transactionDate) {
+        showMoneyWarning("Please select a transaction date before saving.");
+        UnganiClientShared.showToast("Choose a date before saving.");
+        return;
+      }
+
+      const duplicateOk = await confirmDuplicateIfNeeded(amount, category, transactionDate);
+
+      if (!duplicateOk) {
+        return;
+      }
+
+      const unusualOk = await confirmUnusualAmountIfNeeded(amount, transactionType, category);
+
+      if (!unusualOk) {
         return;
       }
 
       const payload = {
         tenant_id: currentContext.tenantId,
-        transaction_type: UnganiClientShared.value("moneyType") || "income",
-        category_name: UnganiClientShared.value("moneyCategory") || "Uncategorized",
+        transaction_type: transactionType,
+        category_name: category,
+        category: category,
         amount: amount,
-        transaction_date: UnganiClientShared.value("moneyDate") || new Date().toISOString().slice(0, 10),
+        transaction_date: transactionDate,
         payment_method: UnganiClientShared.value("moneyMethod") || null,
         status: UnganiClientShared.value("moneyStatus") || "completed",
-        notes: UnganiClientShared.value("moneyNotes") || null
+        notes: UnganiClientShared.value("moneyNotes") || null,
+        updated_at: new Date().toISOString()
       };
 
       let response;
@@ -816,6 +883,8 @@
           .eq("id", editingMoneyId)
           .eq("tenant_id", currentContext.tenantId);
       } else {
+        payload.created_at = new Date().toISOString();
+
         response = await currentContext.supabaseClient
           .from("transactions")
           .insert([payload]);
@@ -829,6 +898,92 @@
       UnganiClientShared.showToast(editingMoneyId ? "Money record updated ✓" : "Money record added ✓");
       clearMoneyForm();
       await loadMoneyRows();
+    }
+
+    async function confirmDuplicateIfNeeded(amount, category, transactionDate) {
+      try {
+        const response = await currentContext.supabaseClient.rpc("check_my_ungani_duplicate_transaction", {
+          p_amount: amount,
+          p_category: category,
+          p_transaction_date: transactionDate,
+          p_exclude_id: editingMoneyId || null
+        });
+
+        if (response.error) {
+          console.warn("Duplicate check skipped:", response.error.message);
+          return true;
+        }
+
+        const result = response.data;
+
+        if (result && result.is_duplicate === true) {
+          const message = result.message || "This looks similar to another entry added recently. Please confirm it is not a duplicate.";
+          showMoneyWarning(message);
+
+          return confirm(message + "\n\nDo you still want to save this money record?");
+        }
+      } catch (error) {
+        console.warn("Duplicate check skipped:", error.message);
+      }
+
+      return true;
+    }
+
+    async function confirmUnusualAmountIfNeeded(amount, transactionType, category) {
+      try {
+        const response = await currentContext.supabaseClient.rpc("check_my_ungani_unusual_transaction_amount", {
+          p_amount: amount,
+          p_transaction_type: transactionType,
+          p_category: category
+        });
+
+        if (response.error) {
+          console.warn("Unusual amount check skipped:", response.error.message);
+          return true;
+        }
+
+        const result = response.data;
+
+        if (result && result.is_unusual === true) {
+          const message = result.message || "This amount looks unusual compared to past records. Please confirm it is correct.";
+          const average = result.average_amount ? "\nAverage amount: KSh " + Number(result.average_amount).toLocaleString("en-KE") : "";
+          const highest = result.highest_previous_amount ? "\nHighest previous amount: KSh " + Number(result.highest_previous_amount).toLocaleString("en-KE") : "";
+          const entered = result.entered_amount ? "\nEntered amount: KSh " + Number(result.entered_amount).toLocaleString("en-KE") : "";
+
+          showMoneyWarning(message);
+
+          return confirm(message + average + highest + entered + "\n\nDo you still want to save this money record?");
+        }
+      } catch (error) {
+        console.warn("Unusual amount check skipped:", error.message);
+      }
+
+      return true;
+    }
+
+    function showMoneyWarning(message) {
+      const box = document.getElementById("moneyWarningBox");
+      const text = document.getElementById("moneyWarningText");
+
+      if (!box || !text) {
+        return;
+      }
+
+      text.textContent = message || "Please confirm this money record before saving.";
+      box.style.display = "block";
+    }
+
+    function hideMoneyWarning() {
+      const box = document.getElementById("moneyWarningBox");
+      const text = document.getElementById("moneyWarningText");
+
+      if (text) {
+        text.textContent = "";
+      }
+
+      if (box) {
+        box.style.display = "none";
+      }
     }
 
     function editMoneyRecord(id) {
@@ -855,10 +1010,19 @@
         document.getElementById("moneyMethod").value = UnganiClientShared.getValue(row, ["payment_method"], "");
         document.getElementById("moneyStatus").value = UnganiClientShared.getValue(row, ["status"], "completed");
         document.getElementById("moneyNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
+        hideMoneyWarning();
       }, 150);
     }
 
     async function deleteMoneyRecord(id) {
+      if (
+        window.UnganiClientShared &&
+        typeof UnganiClientShared.ensureCanWrite === "function" &&
+        !UnganiClientShared.ensureCanWrite("delete money record")
+      ) {
+        return;
+      }
+
       const confirmed = confirm("Delete this money record?");
 
       if (!confirmed) return;
@@ -893,6 +1057,8 @@
       });
 
       if (document.getElementById("moneyStatus")) document.getElementById("moneyStatus").value = "completed";
+
+      hideMoneyWarning();
     }
 
     function getRowType(row) {
