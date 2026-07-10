@@ -4,878 +4,1887 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>UNGANI OS Admin Health</title>
+  <title>UNGANI OS - Admin System Health</title>
+
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/ungani-logo.png" />
+  <link rel="icon" href="/ungani-logo.png" type="image/png" />
+
+  <meta name="theme-color" content="#061C3D" />
+  <meta name="background-color" content="#020617" />
+  <meta name="application-name" content="UNGANI OS" />
+  <meta name="apple-mobile-web-app-title" content="UNGANI OS" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="admin-shared.js"></script>
+  <script src="pwa-register.js"></script>
 
   <style>
-    .page-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --gray: #E5E7EB;
+      --muted: #64748B;
+      --green: #16A34A;
+      --blue: #2563EB;
+      --red: #DC2626;
+      --orange: #F97316;
+
+      --page-bg:
+        radial-gradient(circle at top right, rgba(212,166,58,0.20), transparent 32%),
+        linear-gradient(135deg, #061C3D 0%, #092B58 44%, #F5F5F3 44%, #F5F5F3 100%);
+
+      --text: #061C3D;
+      --text-soft: #64748B;
+      --card: rgba(255,255,255,0.96);
+      --card-solid: #FFFFFF;
+      --soft: #F8FAFC;
+      --border: rgba(6,28,61,0.10);
+      --table-border: #E5E7EB;
+      --shadow: 0 24px 70px rgba(6,28,61,0.13);
     }
 
-    .metric-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-left: 6px solid var(--gold);
-      border-radius: 20px;
-      padding: 18px;
-      box-shadow: 0 10px 24px var(--shadow);
+    body[data-theme="dark"] {
+      --page-bg:
+        radial-gradient(circle at top right, rgba(212,166,58,0.14), transparent 32%),
+        linear-gradient(135deg, #020617 0%, #061C3D 52%, #0F172A 100%);
+
+      --text: #F8FAFC;
+      --text-soft: #CBD5E1;
+      --card: rgba(15,23,42,0.90);
+      --card-solid: #0F172A;
+      --soft: rgba(255,255,255,0.06);
+      --border: rgba(255,255,255,0.12);
+      --table-border: rgba(255,255,255,0.12);
+      --shadow: 0 24px 70px rgba(0,0,0,0.38);
     }
 
-    .metric-card h3 {
-      margin: 0 0 8px;
-      color: var(--soft-text);
-      font-size: 14px;
+    * {
+      box-sizing: border-box;
     }
 
-    .metric-card p {
+    body {
       margin: 0;
-      font-size: 28px;
-      font-weight: bold;
+      min-height: 100vh;
+      font-family: Inter, Arial, sans-serif;
+      background: var(--page-bg);
       color: var(--text);
     }
 
-    .metric-card .note {
-      margin-top: 8px;
-      color: var(--soft-text);
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .mobile-header {
+      display: none;
+      position: sticky;
+      top: 0;
+      z-index: 80;
+      background: rgba(6,28,61,0.97);
+      color: white;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(18px);
+      padding: 11px 14px;
+    }
+
+    .mobile-header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .mobile-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .mobile-brand img {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+      background: white;
+      border-radius: 13px;
+      padding: 6px;
+      flex: 0 0 auto;
+    }
+
+    .mobile-brand strong {
+      display: block;
+      font-size: 15px;
+      letter-spacing: -0.035em;
+    }
+
+    .mobile-brand span {
+      display: block;
+      color: rgba(255,255,255,0.65);
+      font-size: 11px;
+    }
+
+    .mobile-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .hamburger,
+    .bell-btn {
+      width: 44px;
+      height: 44px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border-radius: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      cursor: pointer;
+      flex: 0 0 auto;
+      position: relative;
+    }
+
+    .bell-dot {
+      position: absolute;
+      top: -5px;
+      right: -5px;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--gold);
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 950;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(6,28,61,0.97);
+    }
+
+    .bell-dot.show {
+      display: inline-flex;
+    }
+
+    .drawer-overlay,
+    .notification-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(2,6,23,0.62);
+      z-index: 90;
+      opacity: 0;
+      pointer-events: none;
+      transition: 0.2s ease;
+    }
+
+    .drawer-overlay.open,
+    .notification-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 285px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background: rgba(6,28,61,0.97);
+      color: white;
+      padding: 24px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid rgba(255,255,255,0.12);
+      z-index: 100;
+    }
+
+    .sidebar-close {
+      display: none;
+      width: 100%;
+      margin-bottom: 16px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border-radius: 16px;
+      padding: 12px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .brand img {
+      width: 54px;
+      height: 54px;
+      object-fit: contain;
+      background: white;
+      border-radius: 16px;
+      padding: 8px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -0.04em;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      color: rgba(255,255,255,0.68);
       font-size: 12px;
     }
 
-    .metric-card.green { border-left-color: var(--green); }
-    .metric-card.red { border-left-color: var(--red); }
-    .metric-card.orange { border-left-color: var(--orange); }
-    .metric-card.blue { border-left-color: var(--blue); }
-
-    .two-col {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
+    .nav-section-title {
+      margin: 22px 0 8px;
+      color: rgba(255,255,255,0.48);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
-    .section-title-row {
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 13px;
+      border-radius: 16px;
+      color: rgba(255,255,255,0.82);
+      font-size: 14px;
+      font-weight: 750;
+      margin-bottom: 6px;
+      transition: 0.2s;
+    }
+
+    .nav-link:hover,
+    .nav-link.active {
+      background: rgba(212,166,58,0.16);
+      color: white;
+    }
+
+    .nav-pill {
+      font-size: 11px;
+      background: rgba(255,255,255,0.12);
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.75);
+    }
+
+    .main {
+      min-width: 0;
+      padding: 24px;
+      max-width: 1500px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .topbar {
       display: flex;
       justify-content: space-between;
-      gap: 12px;
       align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 14px;
+      gap: 18px;
+      margin-bottom: 20px;
+      color: white;
     }
 
-    .section-title-row h2 {
+    .topbar h2 {
       margin: 0;
+      font-size: clamp(28px, 4vw, 48px);
+      letter-spacing: -0.055em;
+      line-height: 1.02;
+    }
+
+    .topbar p {
+      margin: 8px 0 0;
+      color: rgba(255,255,255,0.72);
+      max-width: 760px;
+      line-height: 1.5;
+    }
+
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
     }
 
     .btn {
-      border: none;
-      border-radius: 12px;
-      padding: 10px 14px;
-      font-weight: bold;
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 15px;
+      font-weight: 900;
       cursor: pointer;
-      background: var(--gold);
-      color: #061C3D;
-      text-decoration: none;
-      display: inline-block;
-    }
-
-    .btn.dark {
-      background: #061C3D;
-      color: #FFFFFF;
-    }
-
-    body.dark .btn.dark {
-      background: #F5F5F3;
-      color: #061C3D;
-    }
-
-    .btn.green { background: var(--green); color: #FFFFFF; }
-    .btn.blue { background: var(--blue); color: #FFFFFF; }
-    .btn.orange { background: var(--orange); color: #FFFFFF; }
-    .btn.red { background: var(--red); color: #FFFFFF; }
-
-    .button-row {
-      display: flex;
-      flex-wrap: wrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       gap: 8px;
-      margin-top: 14px;
+      transition: 0.2s;
+      font-size: 13px;
+      white-space: nowrap;
     }
 
-    .health-score {
-      background: linear-gradient(135deg, #061C3D, #0b2b59);
-      color: #FFFFFF;
-      border-radius: 22px;
-      padding: 24px;
-      margin-bottom: 18px;
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .btn.navy {
+      background: var(--navy);
+      color: white;
+    }
+
+    body[data-theme="dark"] .btn.navy {
+      background: rgba(255,255,255,0.10);
+      border: 1px solid rgba(255,255,255,0.14);
+      color: white;
+    }
+
+    .btn.light {
+      background: white;
+      color: var(--navy);
+      border: 1px solid rgba(6,28,61,0.08);
+    }
+
+    body[data-theme="dark"] .btn.light {
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.14);
+    }
+
+    .btn.green {
+      background: var(--green);
+      color: white;
+    }
+
+    .btn.red {
+      background: var(--red);
+      color: white;
+    }
+
+    .btn.small {
+      padding: 8px 11px;
+      font-size: 12px;
+    }
+
+    .hero {
       position: relative;
       overflow: hidden;
+      background:
+        radial-gradient(circle at top right, rgba(212,166,58,0.25), transparent 35%),
+        linear-gradient(135deg, rgba(6,28,61,0.98), rgba(9,43,88,0.94));
+      color: white;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 30px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
     }
 
-    body.dark .health-score {
-      background: linear-gradient(135deg, #0B1220, #111C33);
-      border: 1px solid rgba(212,166,58,0.22);
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.18fr) minmax(300px, 0.82fr);
+      gap: 20px;
+      align-items: stretch;
     }
 
-    .health-score h2 {
-      margin: 0 0 8px;
+    .hero h3 {
+      margin: 14px 0 10px;
+      font-size: clamp(32px, 4vw, 58px);
+      letter-spacing: -0.065em;
+      line-height: 1;
+      color: white;
     }
 
-    .score-number {
-      font-size: 56px;
-      font-weight: bold;
-      color: var(--gold);
-      margin: 8px 0;
+    .hero p {
+      margin: 0;
+      color: rgba(255,255,255,0.74);
+      line-height: 1.58;
     }
 
-    .check-card {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-left: 6px solid var(--gold);
+    .hero-mini {
+      background: rgba(255,255,255,0.09);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 24px;
+      padding: 18px;
+    }
+
+    .hero-mini h4 {
+      margin: 0 0 12px;
+      color: white;
+      font-size: 18px;
+    }
+
+    .today-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .today-item {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
       border-radius: 18px;
-      padding: 16px;
-      margin-bottom: 12px;
+      background: rgba(255,255,255,0.09);
+      border: 1px solid rgba(255,255,255,0.10);
     }
 
-    .check-card.good { border-left-color: var(--green); }
-    .check-card.warning { border-left-color: var(--orange); }
-    .check-card.bad { border-left-color: var(--red); }
-    .check-card.info { border-left-color: var(--blue); }
-
-    .check-title {
-      font-weight: bold;
-      font-size: 16px;
-      margin-bottom: 6px;
-      color: var(--text);
+    .today-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(212,166,58,0.18);
     }
 
-    .check-detail {
-      color: var(--soft-text);
-      margin: 5px 0;
-      line-height: 1.45;
-      word-break: break-word;
+    .today-item strong {
+      display: block;
+      color: white;
+      font-size: 13px;
+    }
+
+    .today-item small {
+      display: block;
+      color: rgba(255,255,255,0.62);
+      margin-top: 2px;
     }
 
     .badge {
-      display: inline-block;
-      background: #061C3D;
-      color: #FFFFFF;
-      padding: 5px 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
       border-radius: 999px;
+      padding: 7px 10px;
       font-size: 12px;
-      margin: 4px 4px 4px 0;
-      text-transform: capitalize;
+      font-weight: 950;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.10);
+      color: white;
     }
 
-    .badge.green { background: var(--green); }
-    .badge.red { background: var(--red); }
-    .badge.orange { background: var(--orange); }
-    .badge.blue { background: var(--blue); }
-    .badge.gold { background: var(--gold); color: #061C3D; }
-
-    .empty {
-      text-align: center;
-      padding: 28px;
-      background: var(--bg);
-      border: 1px dashed var(--border);
-      border-radius: 18px;
+    .badge.gold {
+      background: rgba(212,166,58,0.16);
+      color: #FFE8A3;
     }
 
-    .empty h3 {
-      margin: 0 0 8px;
+    .quick-actions {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .quick-action {
+      background: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: 22px;
+      padding: 16px;
+      display: grid;
+      gap: 8px;
+      transition: 0.2s;
+      cursor: pointer;
+    }
+
+    .quick-action:hover {
+      transform: translateY(-2px);
+    }
+
+    .quick-action span {
+      font-size: 22px;
+    }
+
+    .quick-action strong {
       color: var(--text);
+      font-size: 15px;
     }
 
-    .empty p {
+    .quick-action small {
+      color: var(--text-soft);
+      line-height: 1.35;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 24px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      min-height: 136px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 18px;
+      bottom: 18px;
+      width: 5px;
+      border-radius: 0 999px 999px 0;
+      background: var(--accent);
+    }
+
+    .kpi-card span {
+      color: var(--text-soft);
+      font-size: 12px;
+      font-weight: 950;
+      text-transform: uppercase;
+      letter-spacing: 0.055em;
+    }
+
+    .kpi-card h3 {
+      margin: 17px 0 8px;
+      font-size: clamp(26px, 3vw, 38px);
+      line-height: 1;
+      letter-spacing: -0.055em;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    .kpi-card p {
       margin: 0;
-      color: var(--soft-text);
-    }
-
-    .small-text {
-      color: var(--soft-text);
+      color: var(--text-soft);
       font-size: 13px;
       line-height: 1.45;
     }
 
-    @media (max-width: 950px) {
-      .two-col {
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+
+    .section-title h3 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -0.04em;
+      color: var(--text);
+    }
+
+    .section-title p {
+      margin: 5px 0 0;
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .summary-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid var(--table-border);
+      padding: 12px 0;
+    }
+
+    .summary-row:last-child {
+      border-bottom: 0;
+    }
+
+    .summary-row strong {
+      display: block;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .summary-row p {
+      margin: 4px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .summary-value {
+      font-weight: 950;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .activity-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .activity-item {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      padding: 13px;
+      border: 1px solid var(--border);
+      background: var(--card-solid);
+      border-radius: 20px;
+    }
+
+    .activity-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 16px;
+      background: var(--soft);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .activity-item strong {
+      display: block;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .activity-item p {
+      margin: 4px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .status {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: 11px;
+      font-weight: 950;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .status.green {
+      background: rgba(22,163,74,0.12);
+      color: #22C55E;
+      border-color: rgba(22,163,74,0.18);
+    }
+
+    .status.gold {
+      background: rgba(212,166,58,0.14);
+      color: #D4A63A;
+      border-color: rgba(212,166,58,0.22);
+    }
+
+    .status.blue {
+      background: rgba(37,99,235,0.11);
+      color: #60A5FA;
+      border-color: rgba(37,99,235,0.16);
+    }
+
+    .status.red {
+      background: rgba(220,38,38,0.10);
+      color: #F87171;
+      border-color: rgba(220,38,38,0.16);
+    }
+
+    .empty {
+      text-align: center;
+      padding: 30px 16px;
+      border-radius: 22px;
+      background: var(--soft);
+      border: 1px dashed var(--border);
+      color: var(--text-soft);
+    }
+
+    .footer {
+      color: var(--text-soft);
+      font-size: 12px;
+      margin: 18px 0 4px;
+    }
+
+    .loading {
+      background: var(--card);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 30px;
+      color: var(--text-soft);
+    }
+
+    .notification-panel {
+      position: fixed;
+      right: 22px;
+      top: 84px;
+      width: min(420px, calc(100vw - 28px));
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+      background: var(--card-solid);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      box-shadow: 0 30px 90px rgba(0,0,0,0.35);
+      z-index: 120;
+      display: none;
+      padding: 18px;
+    }
+
+    .notification-panel.open {
+      display: block;
+    }
+
+    .notification-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .notification-head h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 22px;
+      letter-spacing: -0.04em;
+    }
+
+    .notification-head p {
+      margin: 4px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    .notification-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .notification-item {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      border-radius: 18px;
+      padding: 13px;
+    }
+
+    .notification-item.unread {
+      border-color: rgba(212,166,58,0.45);
+      background: rgba(212,166,58,0.10);
+    }
+
+    .notification-item strong {
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .notification-item p {
+      margin: 0;
+      color: var(--text-soft);
+      line-height: 1.45;
+      font-size: 12px;
+    }
+
+    .notification-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .json-box {
+      display: none;
+      white-space: pre-wrap;
+      overflow-x: auto;
+      max-height: 440px;
+      background: var(--soft);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .json-box.open {
+      display: block;
+    }
+
+    @media (max-width: 1180px) {
+      .mobile-header {
+        display: block;
+      }
+
+      .drawer-overlay,
+      .notification-overlay {
+        display: block;
+      }
+
+      .app-shell {
+        display: block;
+        min-height: auto;
+      }
+
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: min(86vw, 315px);
+        height: 100vh;
+        transform: translateX(-105%);
+        transition: transform 0.22s ease;
+        box-shadow: 18px 0 60px rgba(0,0,0,0.38);
+      }
+
+      .sidebar.open {
+        transform: translateX(0);
+      }
+
+      .sidebar-close {
+        display: block;
+      }
+
+      .main {
+        padding: 14px;
+        max-width: none;
+      }
+
+      .topbar {
+        display: none;
+      }
+
+      .hero {
+        border-radius: 24px;
+        padding: 18px;
+        margin-bottom: 12px;
+      }
+
+      .hero-grid,
+      .grid-2,
+      .grid-3 {
         grid-template-columns: 1fr;
       }
 
-      .score-number {
-        font-size: 44px;
+      .quick-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .kpi-card {
+        min-height: 112px;
+        padding: 15px;
+        border-radius: 18px;
+      }
+
+      .card {
+        border-radius: 20px;
+        padding: 16px;
+      }
+
+      .top-actions {
+        justify-content: flex-start;
+      }
+
+      .top-actions .btn {
+        flex: 1;
+      }
+
+      .activity-item {
+        grid-template-columns: 38px minmax(0, 1fr);
+      }
+
+      .activity-item .btn,
+      .activity-item .status {
+        grid-column: 2;
+        justify-self: start;
+      }
+
+      .notification-panel {
+        top: 74px;
+        left: 12px;
+        right: 12px;
+        width: auto;
+        max-height: calc(100vh - 96px);
+      }
+    }
+
+    @media (max-width: 520px) {
+      .main {
+        padding: 12px;
+      }
+
+      .quick-actions,
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .summary-row {
+        grid-template-columns: 1fr;
       }
     }
   </style>
 </head>
 
 <body>
-  <div id="adminRoot"></div>
-
   <script>
-    let supabaseClient = null;
-    let currentAdmin = null;
-
-    let dataStore = {
-      tenants: [],
-      registrations: [],
-      users: [],
-      documents: [],
-      support: [],
-      adminMessages: [],
-      teamMessages: [],
-      events: [],
-      transactions: [],
-      tasks: [],
-      records: [],
-      items: [],
-      people: [],
-      notices: [],
-      payments: [],
-      upgrades: []
-    };
-
-    let pageChecks = [];
-
-    const requiredTables = [
-      "tenants",
-      "registrations",
-      "users",
-      "documents",
-      "support_issues",
-      "admin_client_messages",
-      "team_chat_messages",
-      "business_events",
-      "transactions",
-      "tasks",
-      "business_records",
-      "business_items",
-      "client_people",
-      "client_notices",
-      "payments",
-      "upgrade_requests"
-    ];
-
-    const importantPages = [
-      "admin-home.html",
-      "admin.html",
-      "admin-settings.html",
-      "admin-documents.html",
-      "support.html",
-      "admin-chat.html",
-      "admin-reports.html",
-      "admin-charts.html",
-      "admin-health.html",
-      "client.html",
-      "my-documents.html",
-      "reports.html",
-      "print-report.html"
-    ];
-
-    const pageMainHtml = `
-      <section class="ungani-card ungani-hero-card">
-        <div style="position: relative; z-index: 1;">
-          <h2>Admin Health Check</h2>
-          <p>
-            Check UNGANI OS health across database tables, admin pages, client records, documents, support, chat, reports, and system activity.
-          </p>
-          <div style="margin-top: 16px;">
-            <a class="btn" href="admin-home.html">Admin Home</a>
-            <a class="btn green" href="admin.html">Main Admin</a>
-            <a class="btn blue" href="admin-reports.html">Reports</a>
-            <a class="btn dark" href="admin-settings.html">Admin Settings</a>
-          </div>
-        </div>
-      </section>
-
-      <section id="healthScoreBox">
-        <div class="health-score">
-          <h2>Calculating System Health...</h2>
-          <div class="score-number">...</div>
-          <p>Please wait while UNGANI checks the system.</p>
-        </div>
-      </section>
-
-      <section class="page-grid" id="metricsGrid">
-        <div class="metric-card"><h3>Loading</h3><p>...</p><div class="note">Please wait</div></div>
-      </section>
-
-      <section class="ungani-card">
-        <div class="section-title-row">
-          <h2>Health Actions</h2>
-          <button class="btn green" onclick="runHealthCheck()">Run Health Check</button>
-        </div>
-
-        <p class="small-text">
-          This page checks the important UNGANI OS tables and pages. It also highlights items that need admin follow-up.
-        </p>
-
-        <div class="button-row">
-          <a class="btn blue" href="admin-documents.html">Open Documents</a>
-          <a class="btn orange" href="support.html">Open Support</a>
-          <a class="btn" href="admin-chat.html">Open Chat</a>
-          <a class="btn dark" href="admin-settings.html">Admin Settings</a>
-        </div>
-      </section>
-
-      <section class="two-col">
-        <div class="ungani-card">
-          <div class="section-title-row">
-            <h2>Database Checks</h2>
-          </div>
-          <div id="databaseChecksBox">
-            <div class="empty">
-              <h3>Loading database checks...</h3>
-              <p>Please wait.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="ungani-card">
-          <div class="section-title-row">
-            <h2>Page Checks</h2>
-          </div>
-          <div id="pageChecksBox">
-            <div class="empty">
-              <h3>Loading page checks...</h3>
-              <p>Please wait.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="two-col">
-        <div class="ungani-card">
-          <div class="section-title-row">
-            <h2>Needs Attention</h2>
-          </div>
-          <div id="attentionBox">
-            <div class="empty">
-              <h3>Checking attention items...</h3>
-              <p>Please wait.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="ungani-card">
-          <div class="section-title-row">
-            <h2>Latest System Activity</h2>
-          </div>
-          <div id="activityBox">
-            <div class="empty">
-              <h3>Loading activity...</h3>
-              <p>Please wait.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-    `;
-
-    window.addEventListener("load", function () {
-      UnganiAdminShared.renderShell("adminRoot", {
-        activeKey: "admin-health",
-        pageTitle: "Admin Health",
-        pageSubtitle: "Check UNGANI OS database, pages, and system activity.",
-        footerTitle: "Admin Health",
-        footerVersion: "Admin Health Version: Step 285 Shared Session Added",
-        mainHtml: pageMainHtml
-      });
-
-      UnganiAdminShared.requireAdmin({
-        onNoSession: function () {
-          document.getElementById("unganiLoadingShell").classList.add("hidden");
-          document.getElementById("unganiLoginShell").classList.remove("hidden");
-        },
-        onBlocked: function (reason) {
-          document.getElementById("unganiLoadingShell").classList.add("hidden");
-          document.getElementById("unganiBlockedShell").classList.remove("hidden");
-          document.getElementById("unganiBlockedReason").innerText = reason;
-        },
-        onReady: async function (admin, client) {
-          currentAdmin = admin;
-          supabaseClient = client;
-
-          UnganiAdminShared.renderSidebar("adminSidebar", {
-            activeKey: "admin-health",
-            adminName: admin.full_name || "Admin Workspace",
-            footerTitle: "Admin Health",
-            footerVersion: "Admin Health Version: Step 285 Shared Session Added"
-          });
-
-          document.getElementById("unganiLoadingShell").classList.add("hidden");
-          document.getElementById("unganiAppShell").classList.remove("hidden");
-
-          await runHealthCheck();
-        }
-      });
-    });
-
-    function safe(value) {
-      return UnganiAdminShared.safe(value);
-    }
-
-    function cleanText(value) {
-      return UnganiAdminShared.cleanText(value);
-    }
-
-    function getField(row, names, fallback = "") {
-      for (const name of names) {
-        if (row && row[name] !== undefined && row[name] !== null && row[name] !== "") {
-          return row[name];
-        }
-      }
-      return fallback;
-    }
-
-    function getTenantName(row) {
-      return getField(row, ["company_name", "business_name", "name"], "Client Business");
-    }
-
-    function getTenantNameById(tenantId) {
-      const tenant = dataStore.tenants.find(row => String(row.id) === String(tenantId));
-      return tenant ? getTenantName(tenant) : "Unknown Client";
-    }
-
-    function todayDate() {
-      return new Date().toISOString().slice(0, 10);
-    }
-
-    function dateInDays(days) {
-      const dateObj = new Date();
-      dateObj.setDate(dateObj.getDate() + days);
-      return dateObj.toISOString().slice(0, 10);
-    }
-
-    function formatDateTime(value) {
-      if (!value) return "N/A";
-      const dateObj = new Date(value);
-      if (isNaN(dateObj.getTime())) return "N/A";
-
-      return dateObj.toLocaleString("en-KE", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-    }
-
-    function isExpiredDocument(row) {
-      return row.expiry_date && String(row.expiry_date) < todayDate();
-    }
-
-    function isExpiringDocument(row) {
-      return row.expiry_date &&
-        String(row.expiry_date) >= todayDate() &&
-        String(row.expiry_date) <= dateInDays(30);
-    }
-
-    function isOpenSupport(row) {
-      const status = String(getField(row, ["status", "issue_status"], "open")).toLowerCase();
-      return ["open", "new", "pending", "in_progress"].includes(status);
-    }
-
-    function isOpenTask(row) {
-      const status = String(getField(row, ["status", "task_status"], "pending")).toLowerCase();
-      return !["done", "completed", "closed", "cancelled"].includes(status);
-    }
-
-    async function safeSelect(tableName) {
-      try {
-        const { data, error } = await supabaseClient
-          .from(tableName)
-          .select("*")
-          .limit(10000);
-
-        if (error) {
-          console.log(tableName, error.message);
-          return {
-            table: tableName,
-            ok: false,
-            rows: [],
-            message: error.message
-          };
-        }
-
-        return {
-          table: tableName,
-          ok: true,
-          rows: data || [],
-          message: "Table accessible"
-        };
-      } catch (error) {
-        return {
-          table: tableName,
-          ok: false,
-          rows: [],
-          message: error.message
-        };
-      }
-    }
-
-    async function checkPageExists(pageUrl) {
-      try {
-        const response = await fetch(pageUrl, {
-          method: "GET",
-          cache: "no-store"
-        });
-
-        return {
-          page: pageUrl,
-          ok: response.ok,
-          status: response.status,
-          message: response.ok ? "Page accessible" : "Page returned " + response.status
-        };
-      } catch (error) {
-        return {
-          page: pageUrl,
-          ok: false,
-          status: "Error",
-          message: error.message
-        };
-      }
-    }
-
-    async function runHealthCheck() {
-      UnganiAdminShared.showToast("Running health check...");
-
-      const tableResults = await Promise.all(requiredTables.map(tableName => safeSelect(tableName)));
-
-      dataStore = {
-        tenants: getRows(tableResults, "tenants"),
-        registrations: getRows(tableResults, "registrations"),
-        users: getRows(tableResults, "users"),
-        documents: getRows(tableResults, "documents"),
-        support: getRows(tableResults, "support_issues"),
-        adminMessages: getRows(tableResults, "admin_client_messages").filter(row => row.is_internal !== true),
-        teamMessages: getRows(tableResults, "team_chat_messages"),
-        events: getRows(tableResults, "business_events"),
-        transactions: getRows(tableResults, "transactions"),
-        tasks: getRows(tableResults, "tasks"),
-        records: getRows(tableResults, "business_records"),
-        items: getRows(tableResults, "business_items"),
-        people: getRows(tableResults, "client_people"),
-        notices: getRows(tableResults, "client_notices"),
-        payments: getRows(tableResults, "payments"),
-        upgrades: getRows(tableResults, "upgrade_requests")
-      };
-
-      pageChecks = await Promise.all(importantPages.map(page => checkPageExists(page)));
-
-      renderMetrics();
-      renderHealthScore(tableResults);
-      renderDatabaseChecks(tableResults);
-      renderPageChecks();
-      renderAttentionItems();
-      renderLatestActivity();
-
-      UnganiAdminShared.showToast("Health check completed ✓");
-    }
-
-    function getRows(results, tableName) {
-      const result = results.find(item => item.table === tableName);
-      return result?.rows || [];
-    }
-
-    function renderMetrics() {
-      const pendingRegistrations = dataStore.registrations.filter(row => {
-        const status = String(row.status || "pending").toLowerCase();
-        return status === "pending" || status === "new";
-      });
-
-      const activeClients = dataStore.tenants.filter(row => {
-        const status = String(row.account_status || row.status || "active").toLowerCase();
-        return status === "active" || status === "trial";
-      });
-
-      const openSupport = dataStore.support.filter(isOpenSupport);
-      const openTasks = dataStore.tasks.filter(isOpenTask);
-      const expiringDocs = dataStore.documents.filter(isExpiringDocument);
-      const expiredDocs = dataStore.documents.filter(isExpiredDocument);
-      const unreadMessages = dataStore.adminMessages.filter(row => {
-        return String(row.sender_role || "").toLowerCase() === "client" && !row.read_by_admin_at;
-      });
-
-      const metrics = [
-        { title: "Active / Trial Clients", value: activeClients.length, note: "Clients currently allowed to use the system", cls: "green" },
-        { title: "Pending Registrations", value: pendingRegistrations.length, note: "Registrations waiting for admin review", cls: pendingRegistrations.length > 0 ? "orange" : "green" },
-        { title: "Open Support", value: openSupport.length, note: "Support issues still open", cls: openSupport.length > 0 ? "orange" : "green" },
-        { title: "Unread Messages", value: unreadMessages.length, note: "Client messages not marked read", cls: unreadMessages.length > 0 ? "red" : "green" },
-        { title: "Open Tasks", value: openTasks.length, note: "Client tasks still open", cls: openTasks.length > 0 ? "orange" : "green" },
-        { title: "Documents", value: dataStore.documents.length, note: "Document and Google Drive records", cls: "blue" },
-        { title: "Expiring Documents", value: expiringDocs.length, note: "Documents expiring within 30 days", cls: expiringDocs.length > 0 ? "orange" : "green" },
-        { title: "Expired Documents", value: expiredDocs.length, note: "Documents past expiry date", cls: expiredDocs.length > 0 ? "red" : "green" }
+    (function applySavedThemeEarly() {
+      const keys = [
+        "ungani_admin_theme",
+        "ungani_theme",
+        "ungani_appearance",
+        "appearance",
+        "theme",
+        "color_mode",
+        "ungani_mode"
       ];
 
-      document.getElementById("metricsGrid").innerHTML = metrics.map(item => `
-        <div class="metric-card ${safe(item.cls)}">
-          <h3>${safe(item.title)}</h3>
-          <p>${safe(item.value)}</p>
-          <div class="note">${safe(item.note)}</div>
+      let theme = "";
+
+      for (let i = 0; i < keys.length; i++) {
+        theme =
+          localStorage.getItem(keys[i]) ||
+          sessionStorage.getItem(keys[i]) ||
+          theme;
+
+        if (theme) break;
+      }
+
+      theme = String(theme || "").toLowerCase();
+
+      if (theme.includes("dark")) {
+        document.body.setAttribute("data-theme", "dark");
+      } else if (theme.includes("light")) {
+        document.body.setAttribute("data-theme", "light");
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.body.setAttribute("data-theme", "dark");
+      } else {
+        document.body.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+
+  <header class="mobile-header">
+    <div class="mobile-header-inner">
+      <div class="mobile-brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
+        <div>
+          <strong>UNGANI Admin</strong>
+          <span>System Health</span>
         </div>
-      `).join("");
+      </div>
+
+      <div class="mobile-actions">
+        <button class="bell-btn" type="button" onclick="toggleNotifications()" aria-label="Open notifications">
+          🔔
+          <span id="mobileNotificationCount" class="bell-dot">0</span>
+        </button>
+        <button class="hamburger" type="button" onclick="openSidebar()" aria-label="Open menu">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="drawerOverlay" class="drawer-overlay" onclick="closeSidebar()"></div>
+  <div id="notificationOverlay" class="notification-overlay" onclick="closeNotifications()"></div>
+
+  <div id="notificationPanel" class="notification-panel">
+    <div class="notification-head">
+      <div>
+        <h3>Admin Notifications</h3>
+        <p id="notificationSubtext">Recent UNGANI OS admin updates.</p>
+      </div>
+      <button class="btn small light" type="button" onclick="closeNotifications()">Close</button>
+    </div>
+
+    <div class="top-actions" style="justify-content:flex-start;margin-bottom:12px;">
+      <button class="btn small gold" type="button" onclick="markAllNotificationsRead()">Mark all read</button>
+      <button class="btn small navy" type="button" onclick="loadNotifications()">Refresh</button>
+    </div>
+
+    <div id="notificationList" class="notification-list">
+      <div class="empty">No notifications loaded yet.</div>
+    </div>
+  </div>
+
+  <div class="app-shell">
+    <aside id="sidebar" class="sidebar">
+      <button class="sidebar-close" type="button" onclick="closeSidebar()">Close Menu</button>
+
+      <div class="brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
+        <div>
+          <h1>UNGANI OS</h1>
+          <p>Admin Command Center</p>
+        </div>
+      </div>
+
+      <div class="nav-section-title">Command</div>
+      <a class="nav-link" href="admin-home.html">Command Center</a>
+      <a class="nav-link" href="admin.html">Registrations</a>
+      <a class="nav-link" href="admin-profiles.html">Client Profiles</a>
+      <a class="nav-link" href="users.html">Users & Access</a>
+
+      <div class="nav-section-title">Client Records</div>
+      <a class="nav-link" href="admin-money.html">Money Records</a>
+      <a class="nav-link" href="admin-items.html">Items / Assets</a>
+      <a class="nav-link" href="admin-people.html">People</a>
+      <a class="nav-link" href="admin-records.html">Business Records</a>
+      <a class="nav-link" href="admin-tasks.html">Tasks</a>
+      <a class="nav-link" href="admin-documents.html">Documents</a>
+      <a class="nav-link" href="admin-calendar.html">Calendar</a>
+
+      <div class="nav-section-title">Support</div>
+      <a class="nav-link" href="support.html">Support Issues</a>
+      <a class="nav-link" href="admin-chat.html">Client Chat</a>
+      <a class="nav-link" href="notices.html">Notices</a>
+      <a class="nav-link" href="billing.html">Billing</a>
+
+      <div class="nav-section-title">System</div>
+      <a class="nav-link" href="admin-charts.html">Admin Charts</a>
+      <a class="nav-link" href="admin-reports.html">Admin Reports</a>
+      <a class="nav-link active" href="admin-health.html">System Health <span class="nav-pill">Active</span></a>
+      <a class="nav-link" href="admin-settings.html">Settings</a>
+      <a class="nav-link" href="#" onclick="logout(); return false;">Logout</a>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h2>System Health</h2>
+          <p>Review UNGANI OS safety checks, admin action items, smart logs, notifications, email queue, billing risks, and system readiness.</p>
+        </div>
+
+        <div class="top-actions">
+          <button class="btn light" type="button" onclick="toggleNotifications()">
+            🔔 Notifications
+            <span id="desktopNotificationCount" class="status gold" style="display:none;">0</span>
+          </button>
+          <button class="btn light" onclick="toggleTheme()" id="themeButton">Dark Mode</button>
+          <button class="btn light" onclick="loadSystemHealth()">Refresh</button>
+          <button class="btn gold" onclick="runFullSystemReview()">Run Full Review</button>
+          <button class="btn red" onclick="logout()">Logout</button>
+        </div>
+      </div>
+
+      <div id="content" class="loading">Loading admin system health...</div>
+    </main>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUser = null;
+    let notifications = [];
+    let healthSnapshot = null;
+    let actionItems = null;
+    let reviewSummary = null;
+    let smartLogs = [];
+
+    window.addEventListener("load", initSystemHealth);
+
+    function openSidebar() {
+      closeNotifications();
+      document.getElementById("sidebar").classList.add("open");
+      document.getElementById("drawerOverlay").classList.add("open");
+      document.body.style.overflow = "hidden";
     }
 
-    function renderHealthScore(tableResults) {
-      const failedTables = tableResults.filter(item => !item.ok).length;
-      const failedPages = pageChecks.filter(item => !item.ok).length;
+    function closeSidebar() {
+      document.getElementById("sidebar").classList.remove("open");
+      document.getElementById("drawerOverlay").classList.remove("open");
+      document.body.style.overflow = "";
+    }
 
-      const pendingRegistrations = dataStore.registrations.filter(row => {
-        const status = String(row.status || "pending").toLowerCase();
-        return status === "pending" || status === "new";
-      }).length;
+    function toggleNotifications() {
+      closeSidebar();
 
-      const openSupport = dataStore.support.filter(isOpenSupport).length;
-      const openTasks = dataStore.tasks.filter(isOpenTask).length;
-      const expiringDocs = dataStore.documents.filter(isExpiringDocument).length;
-      const expiredDocs = dataStore.documents.filter(isExpiredDocument).length;
-      const unreadMessages = dataStore.adminMessages.filter(row => {
-        return String(row.sender_role || "").toLowerCase() === "client" && !row.read_by_admin_at;
-      }).length;
+      const panel = document.getElementById("notificationPanel");
+      const overlay = document.getElementById("notificationOverlay");
 
-      let score = 100;
+      const isOpen = panel.classList.contains("open");
 
-      score -= Math.min(failedTables * 10, 35);
-      score -= Math.min(failedPages * 5, 20);
-      score -= Math.min(pendingRegistrations * 2, 10);
-      score -= Math.min(openSupport * 4, 20);
-      score -= Math.min(openTasks * 1, 8);
-      score -= Math.min(expiringDocs * 2, 10);
-      score -= Math.min(expiredDocs * 6, 20);
-      score -= Math.min(unreadMessages * 3, 15);
+      if (isOpen) {
+        closeNotifications();
+      } else {
+        panel.classList.add("open");
+        overlay.classList.add("open");
+        document.body.style.overflow = "hidden";
+        renderNotifications();
+      }
+    }
 
-      score = Math.max(0, score);
+    function closeNotifications() {
+      document.getElementById("notificationPanel").classList.remove("open");
+      document.getElementById("notificationOverlay").classList.remove("open");
+      document.body.style.overflow = "";
+    }
 
-      let status = "Healthy";
-      let message = "UNGANI OS is looking stable. Continue monitoring client activity.";
-      let badgeClass = "green";
+    async function initSystemHealth() {
+      updateThemeButton();
 
-      if (score < 80) {
-        status = "Needs Attention";
-        message = "Some items need admin follow-up. Review the attention list below.";
-        badgeClass = "orange";
+      const userResponse = await supabaseClient.auth.getUser();
+      currentUser = userResponse && userResponse.data ? userResponse.data.user : null;
+
+      if (!currentUser) {
+        showAccessMessage("Please log in first.", "Use the admin login page to open your UNGANI OS system health page.");
+        return;
       }
 
-      if (score < 60) {
-        status = "Urgent Review";
-        message = "Several important system or client items need urgent review.";
-        badgeClass = "red";
+      const adminCheck = await supabaseClient.rpc("is_ungani_admin");
+
+      if (adminCheck.error || adminCheck.data !== true) {
+        showAccessMessage("Admin access required.", "This page is only available to UNGANI admin users.");
+        return;
       }
 
-      document.getElementById("healthScoreBox").innerHTML = `
-        <div class="health-score">
-          <h2>UNGANI OS Health Score</h2>
-          <div class="score-number">${safe(score)}/100</div>
-          <p>${safe(message)}</p>
-          <span class="badge ${safe(badgeClass)}">${safe(status)}</span>
-          <span class="badge gold">Last Check: ${safe(formatDateTime(new Date().toISOString()))}</span>
+      await loadSystemHealth();
+    }
+
+    async function loadSystemHealth() {
+      document.getElementById("content").innerHTML = `<div class="loading">Refreshing system health...</div>`;
+
+      await Promise.all([
+        loadHealthSnapshot(),
+        loadActionItems(),
+        loadReviewSummary(),
+        loadSmartLogs(),
+        loadNotifications()
+      ]);
+
+      renderSystemHealth();
+    }
+
+    async function runFullSystemReview() {
+      const content = document.getElementById("content");
+
+      content.innerHTML = `
+        <div class="loading">
+          Running full UNGANI system review... This checks smart checks, data safety, staff security, tenant isolation, billing, email queue, notifications, health snapshot, action items, and function inventory.
+        </div>
+      `;
+
+      try {
+        const response = await supabaseClient.rpc("run_admin_ungani_system_review", {
+          p_run_smart_checks: true,
+          p_run_data_safety_audit: true
+        });
+
+        if (response.error) {
+          throw response.error;
+        }
+
+        await loadSystemHealth();
+      } catch (error) {
+        content.innerHTML = `
+          <div class="loading">
+            <strong>Unable to run full system review.</strong>
+            <p>${escapeHtml(error.message || "Unknown error")}</p>
+          </div>
+        `;
+      }
+    }
+
+    async function loadHealthSnapshot() {
+      try {
+        const response = await supabaseClient.rpc("get_admin_ungani_system_health_snapshot");
+
+        if (response.error) {
+          throw response.error;
+        }
+
+        healthSnapshot = response.data || {};
+      } catch (error) {
+        healthSnapshot = {
+          ok: false,
+          message: error.message || "Unable to load health snapshot."
+        };
+      }
+    }
+
+    async function loadActionItems() {
+      try {
+        const response = await supabaseClient.rpc("get_admin_ungani_system_action_items");
+
+        if (response.error) {
+          throw response.error;
+        }
+
+        actionItems = response.data || {};
+      } catch (error) {
+        actionItems = {
+          ok: false,
+          message: error.message || "Unable to load action items.",
+          action_items: []
+        };
+      }
+    }
+
+    async function loadReviewSummary() {
+      try {
+        const response = await supabaseClient.rpc("get_admin_ungani_system_review_summary");
+
+        if (response.error) {
+          throw response.error;
+        }
+
+        reviewSummary = response.data || {};
+      } catch (error) {
+        reviewSummary = {
+          ok: false,
+          message: error.message || "Unable to load review summary."
+        };
+      }
+    }
+
+    async function loadSmartLogs() {
+      try {
+        const response = await supabaseClient.rpc("get_admin_ungani_smart_action_logs", {
+          p_limit: 25,
+          p_action_key: null,
+          p_status: null
+        });
+
+        if (response.error) {
+          throw response.error;
+        }
+
+        smartLogs = response.data || [];
+      } catch (error) {
+        smartLogs = [];
+      }
+    }
+
+    async function loadNotifications() {
+      try {
+        let response = await supabaseClient
+          .from("ungani_notifications")
+          .select("id, tenant_id, notification_title, notification_message, notification_type, priority, status, is_read, link_url, created_at")
+          .order("created_at", { ascending: false })
+          .limit(60);
+
+        if (response.error) {
+          response = await supabaseClient
+            .from("ungani_notifications")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(60);
+        }
+
+        if (response.error) {
+          console.warn("notifications", response.error.message);
+          notifications = [];
+        } else {
+          notifications = response.data || [];
+        }
+
+        updateNotificationCounts();
+        renderNotifications();
+      } catch (error) {
+        console.warn("notifications", error.message);
+        notifications = [];
+        updateNotificationCounts();
+      }
+    }
+
+    async function markAllNotificationsRead() {
+      const unreadIds = notifications
+        .filter(row => {
+          const isRead = row.is_read === true || String(row.status || "").toLowerCase() === "read";
+          return !isRead;
+        })
+        .map(row => row.id)
+        .filter(Boolean);
+
+      if (unreadIds.length === 0) {
+        renderNotifications();
+        return;
+      }
+
+      try {
+        const response = await supabaseClient
+          .from("ungani_notifications")
+          .update({
+            is_read: true,
+            status: "read",
+            updated_at: new Date().toISOString()
+          })
+          .in("id", unreadIds);
+
+        if (response.error) {
+          console.warn(response.error.message);
+        }
+
+        await loadNotifications();
+      } catch (error) {
+        console.warn(error.message);
+      }
+    }
+
+    async function markNotificationRead(id) {
+      if (!id) return;
+
+      try {
+        await supabaseClient
+          .from("ungani_notifications")
+          .update({
+            is_read: true,
+            status: "read",
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", id);
+
+        await loadNotifications();
+      } catch (error) {
+        console.warn(error.message);
+      }
+    }
+
+    function renderSystemHealth() {
+      const summary = getValue(healthSnapshot, ["summary"], {});
+      const flags = getValue(healthSnapshot, ["status_flags"], {});
+      const actionList = getValue(actionItems, ["action_items"], []);
+      const review = reviewSummary || {};
+      const recentLogs = Array.isArray(smartLogs) ? smartLogs : [];
+
+      const priorityScore = getValue(actionItems, ["priority_score"], 0);
+      const healthStatus = getHealthStatus(priorityScore, getValue(summary, ["warning_logs_last_7_days"], 0));
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div>
+              <span class="badge gold">Admin System Health</span>
+              <h3>${escapeHtml(healthStatus.title)}</h3>
+              <p>${escapeHtml(healthStatus.message)}</p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:18px;">
+                <button class="btn gold" onclick="runFullSystemReview()">Run Full System Review</button>
+                <button class="btn light" onclick="loadSystemHealth()">Refresh Snapshot</button>
+                <a class="btn light" href="admin-home.html">Admin Home</a>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              <h4>Review Status</h4>
+              <div class="today-list">
+                ${heroStatusItem("System Review", getValue(review, ["last_review_at"], null), "admin_system_review")}
+                ${heroStatusItem("Smart Checks", getValue(review, ["last_smart_check_at"], null), "smart_checks_run")}
+                ${heroStatusItem("Billing Audit", getValue(review, ["last_billing_subscription_audit_at"], null), "billing_subscription_audit")}
+                ${heroStatusItem("Email Queue Audit", getValue(review, ["last_email_queue_audit_at"], null), "email_queue_audit")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="quick-actions">
+          <button class="quick-action" type="button" onclick="runFullSystemReview()">
+            <span>🛡️</span>
+            <strong>Run Full Review</strong>
+            <small>Run all backend safety checks and log the result.</small>
+          </button>
+
+          <a class="quick-action" href="admin-smart-checks.html">
+            <span>⚙️</span>
+            <strong>Smart Checks</strong>
+            <small>Open task, stock, follow-up, category, and recurring checks.</small>
+          </a>
+
+          <a class="quick-action" href="admin-email-queue.html">
+            <span>✉️</span>
+            <strong>Email Queue</strong>
+            <small>Review queued system emails before SMTP sending is connected.</small>
+          </a>
+
+          <a class="quick-action" href="admin-billing.html">
+            <span>💳</span>
+            <strong>Billing</strong>
+            <small>Review subscriptions, billing status, and payment follow-ups.</small>
+          </a>
+        </div>
+
+        <section class="kpi-grid">
+          ${kpiCard("Total Clients", getValue(summary, ["total_clients"], 0), "All registrations in the system.", "#D4A63A", "admin.html")}
+          ${kpiCard("Pending Registrations", getValue(summary, ["pending_registrations"], 0), "New clients waiting for review.", "#2563EB", "admin.html")}
+          ${kpiCard("Open Support", getValue(summary, ["open_support_issues"], 0), "Client issues still needing action.", "#F97316", "support.html")}
+          ${kpiCard("Recent Warnings", getValue(summary, ["warning_logs_last_7_days"], 0), "Warnings, failed, or error logs in 7 days.", "#DC2626", "admin-smart-checks.html")}
+          ${kpiCard("Pending Email Queue", getValue(summary, ["pending_email_queue"], 0), "Queued emails waiting for sending setup.", "#D4A63A", "admin-email-queue.html")}
+          ${kpiCard("Unread Notifications", getValue(summary, ["unread_notifications"], 0), "System/client notifications not yet read.", "#2563EB", "admin-home.html")}
+          ${kpiCard("Approved Clients", getValue(summary, ["approved_registrations"], 0), "Approved, active, or trial clients.", "#16A34A", "admin.html")}
+          ${kpiCard("Priority Score", priorityScore, "Higher score means admin should review action items.", "#061C3D", "admin-health.html")}
+        </section>
+
+        <section class="grid-2">
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Admin Action Items</h3>
+                <p>Simple next actions generated from the system health snapshot.</p>
+              </div>
+              <span class="${statusClass(priorityScore >= 30 ? "warning" : "completed")}">${priorityScore >= 30 ? "Needs review" : "Stable"}</span>
+            </div>
+
+            <div class="activity-list">
+              ${renderActionItems(actionList)}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>System Review Summary</h3>
+                <p>Latest timestamps from backend safety checks.</p>
+              </div>
+              <button class="btn small navy" type="button" onclick="runFullSystemReview()">Run</button>
+            </div>
+
+            <div class="summary-list">
+              ${summaryRow("Last full review", "Main admin system review.", formatDateTime(getValue(review, ["last_review_at"], null)))}
+              ${summaryRow("Data safety audit", "RLS, tenant isolation, soft-delete, and delete-block checks.", formatDateTime(getValue(review, ["last_audit_at"], null)))}
+              ${summaryRow("Staff security audit", "Staff/team permissions and policies.", formatDateTime(getValue(review, ["last_staff_audit_at"], null)))}
+              ${summaryRow("Tenant isolation audit", "Records missing tenant_id and separation risk.", formatDateTime(getValue(review, ["last_tenant_isolation_audit_at"], null)))}
+              ${summaryRow("Billing audit", "Trials, unpaid/pending payments, packages, and subscription risks.", formatDateTime(getValue(review, ["last_billing_subscription_audit_at"], null)))}
+              ${summaryRow("Email queue audit", "Queued, pending, and failed email records.", formatDateTime(getValue(review, ["last_email_queue_audit_at"], null)))}
+              ${summaryRow("Notification audit", "Unread notifications, email flags, and missing notification fields.", formatDateTime(getValue(review, ["last_notification_system_audit_at"], null)))}
+              ${summaryRow("Function inventory audit", "Required backend functions and execute permissions.", formatDateTime(getValue(review, ["last_required_function_inventory_audit_at"], null)))}
+            </div>
+          </div>
+        </section>
+
+        <section class="grid-2">
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Recent Smart Action Logs</h3>
+                <p>Latest system checks, warnings, and admin review logs.</p>
+              </div>
+              <button class="btn small light" type="button" onclick="loadSystemHealth()">Refresh</button>
+            </div>
+
+            <div class="activity-list">
+              ${renderSmartLogs(recentLogs)}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Health Flags</h3>
+                <p>Quick yes/no view of important attention areas.</p>
+              </div>
+              <span class="${statusClass(getValue(summary, ["warning_logs_last_7_days"], 0) > 0 ? "warning" : "completed")}">
+                ${getValue(summary, ["warning_logs_last_7_days"], 0) > 0 ? "Warnings" : "Clear"}
+              </span>
+            </div>
+
+            <div class="summary-list">
+              ${summaryRow("Pending registrations", "New registrations waiting for action.", yesNo(getValue(flags, ["has_pending_registrations"], false)))}
+              ${summaryRow("Open support issues", "Client support items still open.", yesNo(getValue(flags, ["has_open_support_issues"], false)))}
+              ${summaryRow("Pending email queue", "Queued emails exist.", yesNo(getValue(flags, ["has_pending_email_queue"], false)))}
+              ${summaryRow("Unread notifications", "Notifications not yet read.", yesNo(getValue(flags, ["has_unread_notifications"], false)))}
+              ${summaryRow("Recent warnings", "Warning, failed, or error logs in the last 7 days.", yesNo(getValue(flags, ["has_recent_warnings"], false)))}
+            </div>
+
+            <div style="margin-top:16px;">
+              <button class="btn small navy" type="button" onclick="toggleRawSnapshot()">Show / Hide Raw Snapshot</button>
+              <pre id="rawSnapshot" class="json-box">${escapeHtml(JSON.stringify({
+                healthSnapshot,
+                actionItems,
+                reviewSummary
+              }, null, 2))}</pre>
+            </div>
+          </div>
+        </section>
+
+        <div class="footer">
+          UNGANI OS Admin System Health • Backend checks only • Client, staff, and admin areas remain separated.
         </div>
       `;
     }
 
-    function renderDatabaseChecks(tableResults) {
-      document.getElementById("databaseChecksBox").innerHTML = tableResults.map(item => {
-        const statusClass = item.ok ? "good" : "bad";
-        const badgeClass = item.ok ? "green" : "red";
-        const rowCount = item.rows?.length || 0;
+    function renderActionItems(items) {
+      if (!Array.isArray(items) || items.length === 0) {
+        return `<div class="empty">No action items loaded yet.</div>`;
+      }
+
+      return items.map(item => {
+        const priority = String(getValue(item, ["priority"], "normal")).toLowerCase();
+        const page = getValue(item, ["recommended_page"], "admin-home.html");
+        const count = getValue(item, ["count"], 0);
 
         return `
-          <div class="check-card ${safe(statusClass)}">
-            <div class="check-title">${safe(item.table)}</div>
-            <p class="check-detail">${safe(item.message)}</p>
-            <p class="check-detail"><strong>Rows Loaded:</strong> ${safe(rowCount)}</p>
-            <span class="badge ${safe(badgeClass)}">${safe(item.ok ? "OK" : "Issue")}</span>
+          <div class="activity-item">
+            <div class="activity-icon">${priorityIcon(priority)}</div>
+            <div>
+              <strong>${escapeHtml(getValue(item, ["title"], "Action item"))}</strong>
+              <p>${escapeHtml(getValue(item, ["message"], ""))}</p>
+              <p><strong>Recommended:</strong> ${escapeHtml(getValue(item, ["recommended_action"], ""))}</p>
+            </div>
+            <a class="${statusClass(priority)}" href="${escapeAttr(page)}">${escapeHtml(String(count))}</a>
           </div>
         `;
       }).join("");
     }
 
-    function renderPageChecks() {
-      document.getElementById("pageChecksBox").innerHTML = pageChecks.map(item => {
-        const statusClass = item.ok ? "good" : "bad";
-        const badgeClass = item.ok ? "green" : "red";
+    function renderSmartLogs(logs) {
+      if (!Array.isArray(logs) || logs.length === 0) {
+        return `<div class="empty">No smart action logs loaded yet.</div>`;
+      }
+
+      return logs.map(row => {
+        const status = String(getValue(row, ["status"], "completed")).toLowerCase();
 
         return `
-          <div class="check-card ${safe(statusClass)}">
-            <div class="check-title">${safe(item.page)}</div>
-            <p class="check-detail">${safe(item.message)}</p>
-            <p class="check-detail"><strong>Status:</strong> ${safe(item.status)}</p>
-            <span class="badge ${safe(badgeClass)}">${safe(item.ok ? "OK" : "Issue")}</span>
+          <div class="activity-item">
+            <div class="activity-icon">${logIcon(getValue(row, ["action_key"], ""))}</div>
+            <div>
+              <strong>${escapeHtml(getValue(row, ["action_title"], "System log"))}</strong>
+              <p>${escapeHtml(getValue(row, ["action_message"], ""))}</p>
+              <p>${escapeHtml(formatDateTime(getValue(row, ["created_at"], null)))}</p>
+            </div>
+            <span class="${statusClass(status)}">${escapeHtml(status || "log")}</span>
           </div>
         `;
       }).join("");
     }
 
-    function renderAttentionItems() {
-      const attention = [];
-
-      dataStore.registrations
-        .filter(row => ["pending", "new"].includes(String(row.status || "pending").toLowerCase()))
-        .forEach(row => {
-          attention.push({
-            title: "Pending Registration",
-            detail: getField(row, ["business_name", "company_name", "name", "email"], "Client registration waiting for review"),
-            link: "admin.html",
-            level: "orange"
-          });
-        });
-
-      dataStore.support
-        .filter(isOpenSupport)
-        .forEach(row => {
-          attention.push({
-            title: "Open Support Issue",
-            detail: `${getField(row, ["issue_title", "subject", "title"], "Support Issue")} — ${getTenantNameById(row.tenant_id)}`,
-            link: "support.html",
-            level: "orange"
-          });
-        });
-
-      dataStore.adminMessages
-        .filter(row => String(row.sender_role || "").toLowerCase() === "client" && !row.read_by_admin_at)
-        .forEach(row => {
-          attention.push({
-            title: "Unread Client Message",
-            detail: `${row.message_body || "Client message"} — ${getTenantNameById(row.tenant_id)}`,
-            link: "admin-chat.html",
-            level: "red"
-          });
-        });
-
-      dataStore.documents
-        .filter(isExpiringDocument)
-        .forEach(row => {
-          attention.push({
-            title: "Document Expiring Soon",
-            detail: `${getField(row, ["document_title", "file_name", "title"], "Document")} — ${getTenantNameById(row.tenant_id)}`,
-            link: "admin-documents.html",
-            level: "orange"
-          });
-        });
-
-      dataStore.documents
-        .filter(isExpiredDocument)
-        .forEach(row => {
-          attention.push({
-            title: "Expired Document",
-            detail: `${getField(row, ["document_title", "file_name", "title"], "Document")} — ${getTenantNameById(row.tenant_id)}`,
-            link: "admin-documents.html",
-            level: "red"
-          });
-        });
-
-      pageChecks
-        .filter(row => !row.ok)
-        .forEach(row => {
-          attention.push({
-            title: "Page Check Issue",
-            detail: `${row.page} — ${row.message}`,
-            link: row.page,
-            level: "red"
-          });
-        });
-
-      if (attention.length === 0) {
-        document.getElementById("attentionBox").innerHTML = `
-          <div class="empty">
-            <h3>All Clear</h3>
-            <p>No urgent attention items found right now.</p>
-          </div>
-        `;
-        return;
-      }
-
-      document.getElementById("attentionBox").innerHTML = attention.slice(0, 20).map(item => `
-        <div class="check-card ${item.level === "red" ? "bad" : "warning"}">
-          <div class="check-title">${safe(item.title)}</div>
-          <p class="check-detail">${safe(item.detail)}</p>
-          <span class="badge ${safe(item.level)}">Needs Attention</span>
-          <div class="button-row">
-            <a class="btn ${item.level === "red" ? "red" : "orange"}" href="${safe(item.link)}">Open</a>
-          </div>
-        </div>
-      `).join("");
+    function kpiCard(label, value, text, accent, href) {
+      return `
+        <a class="kpi-card" style="--accent:${accent};" href="${escapeAttr(href || "admin-health.html")}">
+          <span>${escapeHtml(label)}</span>
+          <h3>${escapeHtml(formatNumber(value))}</h3>
+          <p>${escapeHtml(text)}</p>
+        </a>
+      `;
     }
 
-    function renderLatestActivity() {
-      const activity = [];
-
-      dataStore.registrations.forEach(row => {
-        activity.push({
-          title: "Registration",
-          detail: getField(row, ["business_name", "company_name", "name", "email"], "Client registration"),
-          date: row.created_at,
-          badge: cleanText(row.status || "pending"),
-          link: "admin.html"
-        });
-      });
-
-      dataStore.documents.forEach(row => {
-        activity.push({
-          title: "Document",
-          detail: `${getField(row, ["document_title", "file_name", "title"], "Document")} — ${getTenantNameById(row.tenant_id)}`,
-          date: row.created_at,
-          badge: row.google_drive_url ? "Google Drive" : "Document",
-          link: "admin-documents.html"
-        });
-      });
-
-      dataStore.support.forEach(row => {
-        activity.push({
-          title: "Support",
-          detail: `${getField(row, ["issue_title", "subject", "title"], "Support Issue")} — ${getTenantNameById(row.tenant_id)}`,
-          date: row.created_at,
-          badge: cleanText(getField(row, ["status", "issue_status"], "open")),
-          link: "support.html"
-        });
-      });
-
-      dataStore.adminMessages.forEach(row => {
-        activity.push({
-          title: "Admin Chat",
-          detail: `${row.message_body || "Message"} — ${getTenantNameById(row.tenant_id)}`,
-          date: row.created_at,
-          badge: cleanText(row.sender_role || "message"),
-          link: "admin-chat.html"
-        });
-      });
-
-      dataStore.tasks.forEach(row => {
-        activity.push({
-          title: "Task",
-          detail: `${getField(row, ["task_title", "title", "name"], "Task")} — ${getTenantNameById(row.tenant_id)}`,
-          date: row.created_at,
-          badge: cleanText(getField(row, ["status", "task_status"], "pending")),
-          link: "admin-tasks.html"
-        });
-      });
-
-      activity.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-
-      const rows = activity.slice(0, 12);
-
-      if (rows.length === 0) {
-        document.getElementById("activityBox").innerHTML = `
-          <div class="empty">
-            <h3>No activity found</h3>
-            <p>System activity will appear here after clients begin using UNGANI OS.</p>
+    function summaryRow(title, text, value) {
+      return `
+        <div class="summary-row">
+          <div>
+            <strong>${escapeHtml(title)}</strong>
+            <p>${escapeHtml(text)}</p>
           </div>
-        `;
+          <div class="summary-value">${escapeHtml(value)}</div>
+        </div>
+      `;
+    }
+
+    function heroStatusItem(title, dateValue, key) {
+      return `
+        <div class="today-item">
+          <div class="today-icon">${logIcon(key)}</div>
+          <div>
+            <strong>${escapeHtml(title)}</strong>
+            <small>${escapeHtml(formatDateTime(dateValue))}</small>
+          </div>
+          <span class="status gold">Audit</span>
+        </div>
+      `;
+    }
+
+    function getHealthStatus(priorityScore, warningCount) {
+      const score = Number(priorityScore || 0);
+      const warnings = Number(warningCount || 0);
+
+      if (score >= 50 || warnings >= 5) {
+        return {
+          title: "System needs admin review",
+          message: "UNGANI OS is running, but recent warnings or action items need admin attention before the next pilot step."
+        };
+      }
+
+      if (score >= 20 || warnings > 0) {
+        return {
+          title: "System has items to review",
+          message: "There are some admin action items, but the backend health foundation is working and ready for controlled review."
+        };
+      }
+
+      return {
+        title: "System health looks stable",
+        message: "No urgent admin action is detected from the current health snapshot. Continue monitoring and run full review regularly."
+      };
+    }
+
+    function priorityIcon(priority) {
+      if (priority === "high") return "🚨";
+      if (priority === "medium") return "⚠️";
+      if (priority === "low") return "🔔";
+      return "✅";
+    }
+
+    function logIcon(key) {
+      const value = String(key || "").toLowerCase();
+
+      if (value.includes("billing")) return "💳";
+      if (value.includes("email")) return "✉️";
+      if (value.includes("staff")) return "👥";
+      if (value.includes("tenant")) return "🔐";
+      if (value.includes("notification")) return "🔔";
+      if (value.includes("function")) return "🧩";
+      if (value.includes("health")) return "🛡️";
+      if (value.includes("action")) return "📌";
+      if (value.includes("smart")) return "⚙️";
+
+      return "📋";
+    }
+
+    function statusClass(status) {
+      const value = String(status || "").toLowerCase();
+
+      if (["completed", "success", "done", "stable", "normal", "clear"].includes(value)) {
+        return "status green";
+      }
+
+      if (["warning", "warn", "high", "medium", "needs review"].includes(value)) {
+        return "status gold";
+      }
+
+      if (["failed", "error", "urgent", "critical"].includes(value)) {
+        return "status red";
+      }
+
+      return "status blue";
+    }
+
+    function yesNo(value) {
+      return value ? "Yes" : "No";
+    }
+
+    function toggleRawSnapshot() {
+      const box = document.getElementById("rawSnapshot");
+      if (!box) return;
+      box.classList.toggle("open");
+    }
+
+    function updateNotificationCounts() {
+      const unread = notifications.filter(row => {
+        const isRead = row.is_read === true || String(row.status || "").toLowerCase() === "read";
+        return !isRead;
+      }).length;
+
+      const mobileCount = document.getElementById("mobileNotificationCount");
+      const desktopCount = document.getElementById("desktopNotificationCount");
+      const subtext = document.getElementById("notificationSubtext");
+
+      if (mobileCount) {
+        mobileCount.textContent = unread > 99 ? "99+" : String(unread);
+        mobileCount.classList.toggle("show", unread > 0);
+      }
+
+      if (desktopCount) {
+        desktopCount.textContent = unread > 99 ? "99+" : String(unread);
+        desktopCount.style.display = unread > 0 ? "inline-flex" : "none";
+      }
+
+      if (subtext) {
+        subtext.textContent = unread > 0
+          ? `${unread} unread admin update${unread === 1 ? "" : "s"}.`
+          : "No unread admin updates.";
+      }
+    }
+
+    function renderNotifications() {
+      const list = document.getElementById("notificationList");
+      if (!list) return;
+
+      if (!notifications.length) {
+        list.innerHTML = `<div class="empty">No notifications found.</div>`;
         return;
       }
 
-      document.getElementById("activityBox").innerHTML = rows.map(row => `
-        <div class="check-card info">
-          <div class="check-title">${safe(row.title)}</div>
-          <p class="check-detail">${safe(row.detail)}</p>
-          <p class="check-detail">${safe(formatDateTime(row.date))}</p>
-          <span class="badge blue">${safe(row.badge)}</span>
-          <div class="button-row">
-            <a class="btn blue" href="${safe(row.link)}">Open</a>
+      list.innerHTML = notifications.map(row => {
+        const isRead = row.is_read === true || String(row.status || "").toLowerCase() === "read";
+
+        return `
+          <div class="notification-item ${isRead ? "" : "unread"}">
+            <strong>${escapeHtml(getValue(row, ["notification_title"], "Notification"))}</strong>
+            <p>${escapeHtml(getValue(row, ["notification_message"], ""))}</p>
+
+            <div class="notification-meta">
+              <span class="${statusClass(getValue(row, ["priority"], "normal"))}">
+                ${escapeHtml(getValue(row, ["notification_type"], getValue(row, ["priority"], "update")))}
+              </span>
+              <span style="color:var(--text-soft);font-size:12px;">
+                ${escapeHtml(formatDateTime(getValue(row, ["created_at"], null)))}
+              </span>
+            </div>
+
+            ${isRead ? "" : `<button class="btn small light" type="button" onclick="markNotificationRead('${escapeAttr(row.id)}')">Mark read</button>`}
+          </div>
+        `;
+      }).join("");
+    }
+
+    function showAccessMessage(title, message) {
+      document.getElementById("content").innerHTML = `
+        <div class="loading">
+          <strong>${escapeHtml(title)}</strong>
+          <p>${escapeHtml(message)}</p>
+          <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+            <a class="btn gold" href="login.html">Go to Login</a>
+            <a class="btn light" href="admin-home.html">Admin Home</a>
           </div>
         </div>
-      `).join("");
+      `;
+    }
+
+    function toggleTheme() {
+      const current = document.body.getAttribute("data-theme") || "light";
+      const next = current === "dark" ? "light" : "dark";
+
+      document.body.setAttribute("data-theme", next);
+      localStorage.setItem("ungani_admin_theme", next);
+      localStorage.setItem("ungani_theme", next);
+
+      updateThemeButton();
+    }
+
+    function updateThemeButton() {
+      const button = document.getElementById("themeButton");
+      if (!button) return;
+
+      const current = document.body.getAttribute("data-theme") || "light";
+      button.textContent = current === "dark" ? "Light Mode" : "Dark Mode";
+    }
+
+    async function logout() {
+      try {
+        await supabaseClient.auth.signOut();
+      } catch (error) {
+        console.warn(error.message);
+      }
+
+      window.location.href = "login.html?mode=admin";
+    }
+
+    function getValue(obj, path, fallback) {
+      try {
+        let current = obj;
+
+        for (let i = 0; i < path.length; i++) {
+          if (current === null || current === undefined) {
+            return fallback;
+          }
+
+          current = current[path[i]];
+        }
+
+        if (current === null || current === undefined || current === "") {
+          return fallback;
+        }
+
+        return current;
+      } catch (error) {
+        return fallback;
+      }
+    }
+
+    function formatNumber(value) {
+      const num = Number(value || 0);
+
+      if (!Number.isFinite(num)) {
+        return "0";
+      }
+
+      return num.toLocaleString();
+    }
+
+    function formatDateTime(value) {
+      if (!value) {
+        return "Not run yet";
+      }
+
+      try {
+        return new Date(value).toLocaleString([], {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+      } catch (error) {
+        return String(value);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value === null || value === undefined ? "" : value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replaceAll("`", "&#096;");
     }
   </script>
 </body>
