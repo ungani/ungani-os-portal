@@ -1,5 +1,5 @@
 (function () {
-  const VERSION = "portal14v";
+  const VERSION = "portal14w";
 
   const ICON_RULES = [
     { keys: ["admin-home", "home"], icon: "🏠", label: "Admin Home" },
@@ -144,6 +144,44 @@
         background: rgba(212, 166, 58, 0.24) !important;
         border-color: rgba(212, 166, 58, 0.48) !important;
       }
+
+      /*
+        Admin Menu button fix:
+        Desktop: hide it because the sidebar is already visible.
+        Mobile/tablet: move it to bottom-right so it does not block notification bell or menu dots.
+      */
+      .ungani-admin-floating-menu-fix {
+        transition: 0.18s ease !important;
+      }
+
+      @media (min-width: 781px) {
+        .ungani-admin-floating-menu-fix {
+          display: none !important;
+        }
+      }
+
+      @media (max-width: 780px) {
+        .ungani-admin-floating-menu-fix {
+          position: fixed !important;
+          top: auto !important;
+          right: 16px !important;
+          bottom: 18px !important;
+          left: auto !important;
+          z-index: 9999 !important;
+          border-radius: 999px !important;
+          padding: 13px 16px !important;
+          background: linear-gradient(135deg, #D4A63A, #F0C85A) !important;
+          color: #061C3D !important;
+          border: 1px solid rgba(212, 166, 58, 0.55) !important;
+          box-shadow: 0 16px 34px rgba(0, 0, 0, 0.34) !important;
+          font-weight: 900 !important;
+          min-height: 46px !important;
+        }
+
+        .ungani-admin-floating-menu-fix:hover {
+          transform: translateY(-2px) !important;
+        }
+      }
     `;
 
     document.head.appendChild(style);
@@ -159,7 +197,6 @@
   function getExistingLabel(anchor) {
     const existingText = anchor.querySelector(".ungani-admin-nav-text, .ungani-nav-text");
     if (existingText) return cleanLabel(existingText.textContent);
-
     return cleanLabel(anchor.textContent);
   }
 
@@ -227,9 +264,33 @@
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", polishSidebar);
-  } else {
+  function fixAdminMenuButton() {
+    const candidates = Array.from(document.querySelectorAll("button, a"));
+
+    candidates.forEach((el) => {
+      const text = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+      if (text === "admin menu" || text.includes("admin menu")) {
+        const insideSidebar = el.closest(".sidebar, .admin-sidebar, aside");
+        if (insideSidebar) return;
+
+        el.classList.add("ungani-admin-floating-menu-fix");
+        el.setAttribute("data-ungani-admin-menu-fixed", VERSION);
+      }
+    });
+  }
+
+  function run() {
     polishSidebar();
+    fixAdminMenuButton();
+
+    setTimeout(fixAdminMenuButton, 500);
+    setTimeout(fixAdminMenuButton, 1500);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run);
+  } else {
+    run();
   }
 })();
