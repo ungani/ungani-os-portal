@@ -296,6 +296,7 @@
             <button class="ungani-btn orange" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'in progress')">In Progress</button>
             <button class="ungani-btn green" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'resolved')">Resolved</button>
             <button class="ungani-btn dark" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'closed')">Closed</button>
+            <button class="ungani-btn red" onclick="deleteIssue('${UnganiClientShared.attr(row.id)}')">Delete</button>
           </div>
         </div>
       `;
@@ -459,6 +460,36 @@
       }
 
       UnganiClientShared.showToast("Support status updated ✓");
+      await loadIssues();
+    }
+
+    async function deleteIssue(id) {
+      const confirmed = confirm("Move this support issue to Recently Deleted? You can restore it within 30 days.");
+
+      if (!confirmed) return;
+
+      const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+        p_source_table: "support_issues",
+        p_source_record_id: id,
+        p_delete_reason: "Deleted from Support Issues page"
+      });
+
+      if (response.error) {
+        UnganiClientShared.showToast("Could not delete support issue: " + response.error.message);
+        return;
+      }
+
+      if (response.data && response.data.ok === false) {
+        UnganiClientShared.showToast(response.data.message || "Could not delete support issue.");
+        return;
+      }
+
+      UnganiClientShared.showToast("Support issue moved to Recently Deleted ✓");
+
+      if (currentEditId && String(currentEditId) === String(id)) {
+        currentEditId = null;
+      }
+
       await loadIssues();
     }
 
