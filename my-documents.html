@@ -890,22 +890,27 @@
     }
 
     async function deleteDocument(id) {
-      const confirmed = confirm("Delete this document record?");
+      const confirmed = confirm("Move this document to Recently Deleted? You can restore it within 30 days.");
 
       if (!confirmed) return;
 
-      const response = await currentContext.supabaseClient
-        .from("documents")
-        .delete()
-        .eq("id", id)
-        .eq("tenant_id", currentContext.tenantId);
+      const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+        p_source_table: "documents",
+        p_source_record_id: id,
+        p_delete_reason: "Deleted from Documents page"
+      });
 
       if (response.error) {
         UnganiClientShared.showToast("Could not delete document: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Document deleted ✓");
+      if (response.data && response.data.ok === false) {
+        UnganiClientShared.showToast(response.data.message || "Could not delete document.");
+        return;
+      }
+
+      UnganiClientShared.showToast("Document moved to Recently Deleted ✓");
       await loadDocumentRows();
     }
 
