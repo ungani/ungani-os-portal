@@ -858,22 +858,27 @@
     }
 
     async function deleteRecord(id) {
-      const confirmed = confirm("Delete this business record?");
+      const confirmed = confirm("Move this business record to Recently Deleted? You can restore it within 30 days.");
 
       if (!confirmed) return;
 
-      const response = await currentContext.supabaseClient
-        .from("business_records")
-        .delete()
-        .eq("id", id)
-        .eq("tenant_id", currentContext.tenantId);
+      const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+        p_source_table: "business_records",
+        p_source_record_id: id,
+        p_delete_reason: "Deleted from Business Records page"
+      });
 
       if (response.error) {
         UnganiClientShared.showToast("Could not delete record: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Record deleted ✓");
+      if (response.data && response.data.ok === false) {
+        UnganiClientShared.showToast(response.data.message || "Could not delete record.");
+        return;
+      }
+
+      UnganiClientShared.showToast("Record moved to Recently Deleted ✓");
       await loadRecordRows();
     }
 
