@@ -18,6 +18,7 @@
     let businessPreset = null;
     let moneyRows = [];
     let categorySuggestions = [];
+    let recurringRows = [];
     let editingMoneyId = null;
 
     window.addEventListener("load", function () {
@@ -70,7 +71,10 @@
 
       moneyRows = response.data || [];
 
-      await loadCategorySuggestions();
+      await Promise.all([
+        loadCategorySuggestions(),
+        loadRecurringRows()
+      ]);
 
       renderMoneyPage();
     }
@@ -91,6 +95,25 @@
       } catch (error) {
         console.warn("Category suggestions skipped:", error.message);
         categorySuggestions = [];
+      }
+    }
+
+    async function loadRecurringRows() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_recurring_transactions", {
+          p_limit: 50
+        });
+
+        if (response.error) {
+          console.warn("Recurring money skipped:", response.error.message);
+          recurringRows = [];
+          return;
+        }
+
+        recurringRows = response.data || [];
+      } catch (error) {
+        console.warn("Recurring money skipped:", error.message);
+        recurringRows = [];
       }
     }
 
@@ -444,6 +467,8 @@
 
         ${renderCategorySuggestionsPanel()}
 
+        ${renderRecurringMoneyPanel()}
+
         <section class="money-category-section">
           <div class="ungani-card">
             <div class="ungani-section-title">
@@ -599,7 +624,7 @@
         </section>
 
         <p class="ungani-small">
-          Money Version: Step 24C Category Suggestions · ungani.com · info@ungani.com
+          Money Version: Step 25B Recurring Money Panel · ungani.com · info@ungani.com
         </p>
       `);
 
@@ -672,6 +697,321 @@
           </div>
         </section>
       `;
+    }
+
+    function renderRecurringMoneyPanel() {
+      return `
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Recurring Money</h3>
+              <p class="ungani-small">Create reminders for repeating payments, expenses, income, rent, subscriptions, salaries, and other regular records.</p>
+            </div>
+
+            <button class="ungani-btn green" onclick="loadMoneyRows()">Refresh</button>
+          </div>
+
+          <div class="money-main-grid">
+            <div>
+              ${renderRecurringRows()}
+            </div>
+
+            <div class="ungani-card" style="box-shadow:none;">
+              <div class="ungani-section-title">
+                <div>
+                  <h3 style="font-size:18px;">Add Recurring Reminder</h3>
+                  <p class="ungani-small">This creates a reminder only unless auto-create is selected.</p>
+                </div>
+              </div>
+
+              <form onsubmit="createRecurringTransaction(event)">
+                <div class="money-form-grid">
+                  <div>
+                    <label for="recurringType">Type</label>
+                    <select id="recurringType" onchange="updateRecurringCategoryOptions()">
+                      <option value="expense">Expense</option>
+                      <option value="income">Income</option>
+                      <option value="petty_cash">Petty Cash</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="recurringCategory">Category</label>
+                    <select id="recurringCategory"></select>
+                  </div>
+
+                  <div>
+                    <label for="recurringAmount">Amount</label>
+                    <input id="recurringAmount" type="number" step="0.01" min="0" placeholder="Example: 15000" />
+                  </div>
+
+                  <div>
+                    <label for="recurringFrequency">Frequency</label>
+                    <select id="recurringFrequency">
+                      <option value="monthly">Monthly</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="daily">Daily</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="yearly">Yearly</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="recurringNextDate">Next Date</label>
+                    <input id="recurringNextDate" type="date" />
+                  </div>
+
+                  <div>
+                    <label for="recurringMethod">Payment Method</label>
+                    <select id="recurringMethod">
+                      <option value="">Select Method</option>
+                      <option value="M-Pesa">M-Pesa</option>
+                      <option value="Bank Transfer">Bank Transfer</option>
+                      <option value="Cash">Cash</option>
+                      <option value="Card">Card</option>
+                      <option value="Cheque">Cheque</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  <div class="wide">
+                    <label for="recurringNotes">Notes</label>
+                    <textarea id="recurringNotes" rows="3" placeholder="Example: Monthly rent, weekly fuel, staff salary, subscription..."></textarea>
+                  </div>
+
+                  <div class="wide">
+                    <label style="display:flex;gap:10px;align-items:center;font-weight:850;">
+                      <input id="recurringAutoCreate" type="checkbox" />
+                      Auto-create pending money record when due
+                    </label>
+                    <p class="ungani-small" style="margin-top:6px;">
+                      Leave unchecked for reminder-only. Auto-create will create a pending money record when Smart Checks runs.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="ungani-button-row" style="margin-top:16px;">
+                  <button class="ungani-btn gold" type="submit">Save Recurring</button>
+                  <button class="ungani-btn dark" type="button" onclick="clearRecurringForm()">Clear</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderRecurringRows() {
+      if (!recurringRows || recurringRows.length === 0) {
+        return `
+          <div class="ungani-empty" style="text-align:left;">
+            <h3>No recurring money reminders yet</h3>
+            <p>Create one for rent, salaries, subscriptions, supplier payments, regular income, or repeating expenses.</p>
+          </div>
+        `;
+      }
+
+      return `
+        <div style="display:grid;gap:12px;">
+          ${recurringRows.map(function (row) {
+            const amount = Number(row.amount || 0);
+            const status = String(row.status || "active").toLowerCase();
+            const isActive = status === "active";
+            const isPaused = status === "paused";
+            const isCancelled = status === "cancelled";
+
+            return `
+              <div class="ungani-card" style="box-shadow:none;">
+                <div class="ungani-section-title">
+                  <div>
+                    <h3 style="font-size:16px;margin-bottom:4px;">
+                      ${UnganiClientShared.safe(row.category_name || "Recurring money")}
+                    </h3>
+
+                    <p class="ungani-small">
+                      ${UnganiClientShared.safe(row.transaction_type || "transaction")}
+                      · ${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(amount))}
+                      · ${UnganiClientShared.safe(row.frequency || "monthly")}
+                    </p>
+
+                    <p class="ungani-small" style="margin-top:6px;">
+                      Next: ${UnganiClientShared.safe(UnganiClientShared.formatDate(row.next_run_date))}
+                      ${row.last_run_date ? " · Last: " + UnganiClientShared.safe(UnganiClientShared.formatDate(row.last_run_date)) : ""}
+                      ${row.auto_create ? " · Auto-create on" : " · Reminder only"}
+                    </p>
+
+                    ${row.notes ? `<p class="ungani-small" style="margin-top:6px;">${UnganiClientShared.safe(row.notes)}</p>` : ""}
+                  </div>
+
+                  ${recurringStatusBadge(status)}
+                </div>
+
+                <div class="ungani-button-row">
+                  ${isActive ? `<button class="ungani-btn small dark" onclick="updateRecurringStatus('${UnganiClientShared.attr(row.id)}', 'paused')">Pause</button>` : ""}
+                  ${isPaused ? `<button class="ungani-btn small gold" onclick="updateRecurringStatus('${UnganiClientShared.attr(row.id)}', 'active')">Resume</button>` : ""}
+                  ${!isCancelled ? `<button class="ungani-btn small red" onclick="updateRecurringStatus('${UnganiClientShared.attr(row.id)}', 'cancelled')">Cancel</button>` : ""}
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function recurringStatusBadge(status) {
+      const lower = String(status || "active").toLowerCase();
+
+      if (lower === "active") {
+        return `<span class="ungani-badge green">Active</span>`;
+      }
+
+      if (lower === "paused") {
+        return `<span class="ungani-badge gold">Paused</span>`;
+      }
+
+      if (lower === "cancelled") {
+        return `<span class="ungani-badge red">Cancelled</span>`;
+      }
+
+      if (lower === "completed") {
+        return `<span class="ungani-badge blue">Completed</span>`;
+      }
+
+      return `<span class="ungani-badge gold">${UnganiClientShared.safe(lower)}</span>`;
+    }
+
+    async function createRecurringTransaction(event) {
+      event.preventDefault();
+
+      if (
+        window.UnganiClientShared &&
+        typeof UnganiClientShared.ensureCanWrite === "function" &&
+        !UnganiClientShared.ensureCanWrite("recurring money")
+      ) {
+        return;
+      }
+
+      const amount = Number(UnganiClientShared.value("recurringAmount") || 0);
+      const category = UnganiClientShared.value("recurringCategory");
+      const nextDate = UnganiClientShared.value("recurringNextDate") || new Date().toISOString().slice(0, 10);
+      const autoCreate = document.getElementById("recurringAutoCreate") ? document.getElementById("recurringAutoCreate").checked : false;
+
+      if (!amount || amount <= 0) {
+        UnganiClientShared.showToast("Enter a valid recurring amount.");
+        return;
+      }
+
+      if (!category) {
+        UnganiClientShared.showToast("Choose a recurring category.");
+        return;
+      }
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("create_my_ungani_recurring_transaction", {
+          p_transaction_type: UnganiClientShared.value("recurringType") || "expense",
+          p_category_name: category,
+          p_amount: amount,
+          p_frequency: UnganiClientShared.value("recurringFrequency") || "monthly",
+          p_next_run_date: nextDate,
+          p_payment_method: UnganiClientShared.value("recurringMethod") || null,
+          p_notes: UnganiClientShared.value("recurringNotes") || null,
+          p_reminder_only: !autoCreate,
+          p_auto_create: autoCreate
+        });
+
+        if (response.error) {
+          UnganiClientShared.showToast("Could not create recurring money: " + response.error.message);
+          return;
+        }
+
+        const result = response.data || {};
+
+        if (result.ok === false) {
+          UnganiClientShared.showToast(result.message || "Could not create recurring money.");
+          return;
+        }
+
+        UnganiClientShared.showToast(result.message || "Recurring money created ✓");
+        clearRecurringForm();
+        await loadMoneyRows();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not create recurring money: " + error.message);
+      }
+    }
+
+    async function updateRecurringStatus(id, status) {
+      if (
+        window.UnganiClientShared &&
+        typeof UnganiClientShared.ensureCanWrite === "function" &&
+        !UnganiClientShared.ensureCanWrite("recurring money")
+      ) {
+        return;
+      }
+
+      const confirmed = confirm("Change this recurring money record to " + status + "?");
+
+      if (!confirmed) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("update_my_ungani_recurring_transaction_status", {
+          p_recurring_id: id,
+          p_status: status
+        });
+
+        if (response.error) {
+          UnganiClientShared.showToast("Could not update recurring money: " + response.error.message);
+          return;
+        }
+
+        const result = response.data || {};
+
+        if (result.ok === false) {
+          UnganiClientShared.showToast(result.message || "Could not update recurring money.");
+          return;
+        }
+
+        UnganiClientShared.showToast(result.message || "Recurring money updated ✓");
+        await loadMoneyRows();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not update recurring money: " + error.message);
+      }
+    }
+
+    function clearRecurringForm() {
+      if (document.getElementById("recurringType")) document.getElementById("recurringType").value = "expense";
+      updateRecurringCategoryOptions();
+
+      ["recurringAmount", "recurringNextDate", "recurringMethod", "recurringNotes"].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+      });
+
+      if (document.getElementById("recurringFrequency")) document.getElementById("recurringFrequency").value = "monthly";
+      if (document.getElementById("recurringAutoCreate")) document.getElementById("recurringAutoCreate").checked = false;
+    }
+
+    function updateRecurringCategoryOptions() {
+      const typeEl = document.getElementById("recurringType");
+      const categoryEl = document.getElementById("recurringCategory");
+
+      if (!typeEl || !categoryEl || !businessPreset) return;
+
+      const type = String(typeEl.value || "expense").toLowerCase();
+      const current = categoryEl.value;
+
+      let categories = businessPreset.expenseCategories;
+
+      if (type.includes("income")) {
+        categories = businessPreset.incomeCategories;
+      }
+
+      categoryEl.innerHTML = categories.map(function (item) {
+        return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+      }).join("");
+
+      if (current) {
+        categoryEl.value = current;
+      }
     }
 
     async function respondToCategorySuggestion(id, action) {
