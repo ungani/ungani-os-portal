@@ -43,26 +43,42 @@
     }
 
     async function loadRecentlyDeleted() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading recently deleted records...");
+  currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading recently deleted records...");
 
-      try {
-        const response = await currentContext.supabaseClient.rpc("get_my_ungani_recently_deleted");
+  try {
+    const response = await currentContext.supabaseClient
+      .from("ungani_recently_deleted")
+      .select("id, tenant_id, source_table, source_record_id, record_title, record_subtitle, delete_reason, deleted_by, deleted_at, status, created_at")
+      .eq("tenant_id", currentContext.tenantId)
+      .eq("status", "deleted")
+      .in("source_table", [
+        "tasks",
+        "business_items",
+        "business_records",
+        "documents",
+        "support_issues",
+        "client_people",
+        "business_events",
+        "transactions"
+      ])
+      .order("deleted_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
 
-        if (response.error) {
-          UnganiClientShared.setContent(
-            UnganiClientShared.errorCard("Could not load Recently Deleted", response.error.message)
-          );
-          return;
-        }
-
-        deletedRows = response.data || [];
-        renderRecentlyDeletedPage();
-      } catch (error) {
-        UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load Recently Deleted", error.message)
-        );
-      }
+    if (response.error) {
+      UnganiClientShared.setContent(
+        UnganiClientShared.errorCard("Could not load Recently Deleted", response.error.message)
+      );
+      return;
     }
+
+    deletedRows = response.data || [];
+    renderRecentlyDeletedPage();
+  } catch (error) {
+    UnganiClientShared.setContent(
+      UnganiClientShared.errorCard("Could not load Recently Deleted", error.message)
+    );
+  }
+}
 
     function renderRecentlyDeletedPage() {
       const filteredRows = getFilteredDeletedRows();
