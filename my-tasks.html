@@ -864,22 +864,27 @@
     }
 
     async function deleteTaskRecord(id) {
-      const confirmed = confirm("Delete this task?");
+      const confirmed = confirm("Move this task to Recently Deleted? You can restore it within 30 days.");
 
       if (!confirmed) return;
 
-      const response = await currentContext.supabaseClient
-        .from("tasks")
-        .delete()
-        .eq("id", id)
-        .eq("tenant_id", currentContext.tenantId);
+      const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+        p_source_table: "tasks",
+        p_source_record_id: id,
+        p_delete_reason: "Deleted from Tasks page"
+      });
 
       if (response.error) {
         UnganiClientShared.showToast("Could not delete task: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Task deleted ✓");
+      if (response.data && response.data.ok === false) {
+        UnganiClientShared.showToast(response.data.message || "Could not delete task.");
+        return;
+      }
+
+      UnganiClientShared.showToast("Task moved to Recently Deleted ✓");
       await loadTaskRows();
     }
 
