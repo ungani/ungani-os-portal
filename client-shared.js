@@ -2568,3 +2568,279 @@
     };
   }
 })();
+(function () {
+  let readOnlyState = {
+    loaded: false,
+    isReadOnly: false,
+    message: "This account is currently in read-only mode. Please contact UNGANI or update payment to continue editing."
+  };
+
+  function waitForSharedState(callback) {
+    let tries = 0;
+
+    const timer = setInterval(function () {
+      tries++;
+
+      if (
+        window.UnganiClientShared &&
+        typeof window.UnganiClientShared.getState === "function"
+      ) {
+        clearInterval(timer);
+        callback(window.UnganiClientShared.getState());
+        return;
+      }
+
+      if (tries > 80) {
+        clearInterval(timer);
+      }
+    }, 250);
+  }
+
+  async function loadReadOnlyAccess() {
+    waitForSharedState(async function (state) {
+      if (!state || !state.supabaseClient || !state.tenantId) {
+        setTimeout(loadReadOnlyAccess, 800);
+        return;
+      }
+
+      try {
+        const accessResponse = await state.supabaseClient.rpc("get_my_ungani_subscription_access");
+
+        if (!accessResponse.error && accessResponse.data) {
+          const access = accessResponse.data;
+          readOnlyState.isReadOnly = access.can_write === false || access.can_write === "false";
+
+          if (access.reason) {
+            readOnlyState.message = access.reason;
+          }
+        }
+      } catch (error) {
+        console.warn("UNGANI read-only access check skipped:", error.message);
+      }
+
+      try {
+        const noticeResponse = await state.supabaseClient.rpc("get_my_ungani_read_only_notice");
+
+        if (!noticeResponse.error && noticeResponse.data) {
+          if (noticeResponse.data.message) {
+            readOnlyState.message = noticeResponse.data.message;
+          }
+
+          if (noticeResponse.data.read_only === true || noticeResponse.data.read_only === "true") {
+            readOnlyState.isReadOnly = true;
+          }
+        }
+      } catch (error) {
+        console.warn("UNGANI read-only notice check skipped:", error.message);
+      }
+
+      readOnlyState.loaded = true;
+
+      renderReadOnlyBanner();
+      installReadOnlyGuard();
+      exposeReadOnlyHelpers();
+    });
+  }
+
+  function renderReadOnlyBanner() {
+    if (!readOnlyState.isReadOnly) {
+      return;
+    }
+
+    if (document.getElementById("unganiReadOnlyBanner")) {
+      return;
+    }
+
+    const topbar = document.querySelector(".ungani-topbar");
+
+    if (!topbar) {
+      setTimeout(renderReadOnlyBanner, 800);
+      return;
+    }
+
+    injectReadOnlyStyles();
+
+    const banner = document.createElement("div");
+    banner.id = "unganiReadOnlyBanner";
+    banner.className = "ungani-readonly-banner";
+    banner.innerHTML = `
+      <div>
+        <strong>Read-only mode active</strong>
+        <p>${safe(readOnlyState.message)}</p>
+      </div>
+      <a class="ungani-btn gold" href="my-billing.html">Open Billing</a>
+    `;
+
+    topbar.insertAdjacentElement("afterend", banner);
+  }
+
+  function injectReadOnlyStyles() {
+    if (document.getElementById("ungani-readonly-style")) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "ungani-readonly-style";
+    style.textContent = `
+      .ungani-readonly-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin: -8px 0 18px;
+        padding: 15px 16px;
+        border-radius: 20px;
+        border: 1px solid rgba(212,166,58,0.45);
+        background:
+          radial-gradient(circle at top right, rgba(212,166,58,0.22), transparent 30%),
+          rgba(212,166,58,0.12);
+        color: var(--ungani-text);
+        box-shadow: var(--ungani-shadow);
+      }
+
+      .ungani-readonly-banner strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--ungani-text);
+      }
+
+      .ungani-readonly-banner p {
+        margin: 0;
+        color: var(--ungani-muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 720px) {
+        .ungani-readonly-banner {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function installReadOnlyGuard() {
+    if (document.body.dataset.unganiReadOnlyGuardInstalled === "true") {
+      return;
+    }
+
+    document.body.dataset.unganiReadOnlyGuardInstalled = "true";
+
+    document.addEventListener("submit", function (event) {
+      if (!readOnlyState.isReadOnly) {
+        return;
+      }
+
+      const form = event.target;
+
+      if (form && form.closest(".ungani-login-card")) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      showReadOnlyMessage();
+    }, true);
+
+    document.addEventListener("click", function (event) {
+      if (!readOnlyState.isReadOnly) {
+        return;
+      }
+
+      const target = event.target.closest("button");
+
+      if (!target) {
+        return;
+      }
+
+      const text = String(target.textContent || "").toLowerCase();
+
+      const writeWords = [
+        "save",
+        "submit",
+        "update",
+        "delete",
+        "restore",
+        "complete",
+        "done",
+        "resolved",
+        "closed",
+        "in progress",
+        "available",
+        "reserved",
+        "sold",
+        "add",
+        "quick add"
+      ];
+
+      const isWriteButton = writeWords.some(function (word) {
+        return text.includes(word);
+      });
+
+      if (!isWriteButton) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      showReadOnlyMessage();
+    }, true);
+  }
+
+  function showReadOnlyMessage() {
+    if (
+      window.UnganiClientShared &&
+      typeof window.UnganiClientShared.showToast === "function"
+    ) {
+      window.UnganiClientShared.showToast(readOnlyState.message);
+      return;
+    }
+
+    alert(readOnlyState.message);
+  }
+
+  function exposeReadOnlyHelpers() {
+    if (!window.UnganiClientShared) {
+      return;
+    }
+
+    window.UnganiClientShared.isReadOnlyMode = function () {
+      return readOnlyState.isReadOnly;
+    };
+
+    window.UnganiClientShared.getReadOnlyMessage = function () {
+      return readOnlyState.message;
+    };
+
+    window.UnganiClientShared.ensureCanWrite = function () {
+      if (!readOnlyState.isReadOnly) {
+        return true;
+      }
+
+      showReadOnlyMessage();
+      return false;
+    };
+
+    window.UnganiClientShared.reloadReadOnlyAccess = function () {
+      return loadReadOnlyAccess();
+    };
+  }
+
+  function safe(valueText) {
+    return String(valueText === null || valueText === undefined ? "" : valueText)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", loadReadOnlyAccess);
+  } else {
+    loadReadOnlyAccess();
+  }
+})();
