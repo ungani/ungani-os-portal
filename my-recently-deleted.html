@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Recently Deleted | UNGANI OS</title>
+
+  <link rel="icon" href="ungani-logo.png" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --gray: #E5E7EB;
+      --text: #172033;
+      --muted: #64748B;
+      --danger: #B42318;
+      --success: #027A48;
+      --shadow: 0 18px 45px rgba(6, 28, 61, 0.14);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: var(--offwhite);
+      color: var(--text);
+    }
+
+    .layout {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+    }
+
+    .sidebar {
+      background: var(--navy);
+      color: var(--white);
+      padding: 24px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .brand img {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      background: var(--white);
+      border-radius: 12px;
+      padding: 4px;
+    }
+
+    .brand strong {
+      display: block;
+      font-size: 18px;
+      letter-spacing: 0.5px;
+    }
+
+    .brand span {
+      display: block;
+      color: rgba(255,255,255,0.72);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+
+    .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-top: 8px;
+    }
+
+    .nav a {
+      color: rgba(255,255,255,0.86);
+      text-decoration: none;
+      padding: 11px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      transition: 0.2s ease;
+    }
+
+    .nav a:hover,
+    .nav a.active {
+      background: rgba(212,166,58,0.16);
+      color: var(--white);
+    }
+
+    .nav a.active {
+      border: 1px solid rgba(212,166,58,0.42);
+    }
+
+    .main {
+      padding: 26px;
+    }
+
+    .topbar {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 20px;
+    }
+
+    .topbar h1 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 26px;
+    }
+
+    .topbar p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 780px;
+      font-size: 14px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(212,166,58,0.16);
+      color: var(--navy);
+      font-weight: 700;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .panel {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 19px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button,
+    .button {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 13px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: var(--navy);
+      color: var(--white);
+    }
+
+    .btn-gold {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .btn-light {
+      background: var(--offwhite);
+      color: var(--navy);
+      border: 1px solid var(--gray);
+    }
+
+    .btn-danger {
+      background: rgba(180,35,24,0.08);
+      color: var(--danger);
+      border: 1px solid rgba(180,35,24,0.2);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .notice {
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: rgba(212,166,58,0.12);
+      color: var(--navy);
+      font-size: 13px;
+      line-height: 1.45;
+      margin-bottom: 16px;
+      border: 1px solid rgba(212,166,58,0.24);
+    }
+
+    .error {
+      background: rgba(180,35,24,0.08);
+      color: var(--danger);
+      border-color: rgba(180,35,24,0.2);
+    }
+
+    .success {
+      background: rgba(2,122,72,0.08);
+      color: var(--success);
+      border-color: rgba(2,122,72,0.18);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--gray);
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+      background: var(--white);
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--gray);
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      background: #F8FAFC;
+      color: var(--navy);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .type-pill {
+      display: inline-flex;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: rgba(6,28,61,0.08);
+      color: var(--navy);
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .empty {
+      text-align: center;
+      padding: 42px 18px;
+      color: var(--muted);
+    }
+
+    .record-title {
+      font-weight: 800;
+      color: var(--navy);
+      margin-bottom: 4px;
+    }
+
+    .record-sub {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .mobile-menu {
+      display: none;
+    }
+
+    @media (max-width: 860px) {
+      .layout {
+        display: block;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .mobile-menu {
+        display: flex;
+        background: var(--navy);
+        color: var(--white);
+        padding: 14px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .mobile-menu img {
+        width: 36px;
+        height: 36px;
+        object-fit: contain;
+        background: var(--white);
+        border-radius: 10px;
+        padding: 4px;
+      }
+
+      .main {
+        padding: 16px;
+      }
+
+      .topbar {
+        display: block;
+      }
+
+      .badge {
+        margin-top: 14px;
+      }
+
+      .panel-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="mobile-menu">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <img src="ungani-logo.png" alt="UNGANI" />
+      <strong>UNGANI OS</strong>
+    </div>
+    <a href="client.html?mode=owner" style="color:#fff;text-decoration:none;">Dashboard</a>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="ungani-logo.png" alt="UNGANI" />
+        <div>
+          <strong>UNGANI OS</strong>
+          <span>Connecting businesses</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <a href="client.html?mode=owner">Dashboard</a>
+        <a href="my-money.html">Money Records</a>
+        <a href="my-items.html">Items / Assets / Stock</a>
+        <a href="my-tasks.html">Tasks / Follow-ups</a>
+        <a href="my-records.html">Business Records</a>
+        <a href="my-documents.html">Documents</a>
+        <a href="my-support.html">Support Issues</a>
+        <a href="my-reports.html">Reports</a>
+        <a href="my-settings.html">Settings</a>
+        <a href="my-recently-deleted.html" class="active">Recently Deleted</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <section class="topbar">
+        <div>
+          <h1>Recently Deleted</h1>
+          <p>
+            Deleted records are kept here for up to 30 days before permanent removal.
+            Only the business owner can restore records from this page.
+          </p>
+        </div>
+        <div class="badge">30-day recovery</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Recoverable Records</h2>
+            <div class="muted" id="summaryText">Loading deleted records...</div>
+          </div>
+
+          <div class="actions">
+            <button class="btn-light" id="refreshBtn" type="button">Refresh</button>
+            <a class="button btn-primary" href="client.html?mode=owner">Back to Dashboard</a>
+          </div>
+        </div>
+
+        <div id="messageBox" class="notice" style="display:none;"></div>
+
+        <div class="notice">
+          This page is for recovery only. It does not permanently delete records yet.
+          Permanent cleanup should be handled later after the 30-day window and backup review are confirmed.
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Record</th>
+                <th>Deleted At</th>
+                <th>Recover Until</th>
+                <th>Reason</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="deletedTableBody">
+              <tr>
+                <td colspan="6" class="empty">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const tableBody = document.getElementById("deletedTableBody");
+    const summaryText = document.getElementById("summaryText");
+    const messageBox = document.getElementById("messageBox");
+    const refreshBtn = document.getElementById("refreshBtn");
+
+    function showMessage(text, type = "notice") {
+      messageBox.textContent = text;
+      messageBox.className = `notice ${type}`;
+      messageBox.style.display = "block";
+
+      window.setTimeout(() => {
+        messageBox.style.display = "none";
+      }, 6000);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+
+      try {
+        const date = new Date(value);
+        return new Intl.DateTimeFormat("en-KE", {
+          dateStyle: "medium",
+          timeStyle: "short",
+          timeZone: "Africa/Nairobi"
+        }).format(date);
+      } catch (error) {
+        return value;
+      }
+    }
+
+    function labelForTable(tableName) {
+      const map = {
+        tasks: "Task",
+        business_items: "Item / Asset",
+        business_records: "Business Record",
+        documents: "Document",
+        support_issues: "Support Issue",
+        client_people: "Person / Contact",
+        business_events: "Calendar Event"
+      };
+
+      return map[tableName] || tableName || "Record";
+    }
+
+    function getSnapshotTitle(row) {
+      const s = row.record_snapshot || {};
+
+      return (
+        s.title ||
+        s.name ||
+        s.item_name ||
+        s.record_title ||
+        s.file_name ||
+        s.document_name ||
+        s.subject ||
+        s.issue_title ||
+        s.person_name ||
+        s.full_name ||
+        s.description ||
+        s.notes ||
+        row.source_record_id ||
+        "Deleted record"
+      );
+    }
+
+    function getSnapshotSubtitle(row) {
+      const s = row.record_snapshot || {};
+      const pieces = [];
+
+      if (s.status) pieces.push(`Status: ${s.status}`);
+      if (s.category) pieces.push(`Category: ${s.category}`);
+      if (s.amount) pieces.push(`Amount: ${s.amount}`);
+      if (s.created_at) pieces.push(`Created: ${formatDate(s.created_at)}`);
+
+      return pieces.slice(0, 3).join(" · ");
+    }
+
+    async function requireSession() {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data.session) {
+        window.location.href = "login.html?mode=client";
+        return null;
+      }
+
+      return data.session;
+    }
+
+    async function loadDeletedRecords() {
+      tableBody.innerHTML = `<tr><td colspan="6" class="empty">Loading...</td></tr>`;
+      summaryText.textContent = "Loading deleted records...";
+
+      try {
+        const session = await requireSession();
+        if (!session) return;
+
+        const { data, error } = await supabase.rpc("get_my_ungani_recently_deleted");
+
+        if (error) {
+          console.error(error);
+          tableBody.innerHTML = `<tr><td colspan="6" class="empty">Unable to load deleted records.</td></tr>`;
+          summaryText.textContent = "Unable to load deleted records.";
+          showMessage(error.message || "Unable to load deleted records.", "error");
+          return;
+        }
+
+        const rows = Array.isArray(data) ? data : [];
+
+        if (rows.length === 0) {
+          tableBody.innerHTML = `<tr><td colspan="6" class="empty">No recoverable deleted records found.</td></tr>`;
+          summaryText.textContent = "No recoverable deleted records.";
+          return;
+        }
+
+        summaryText.textContent = `${rows.length} recoverable record${rows.length === 1 ? "" : "s"} found.`;
+
+        tableBody.innerHTML = rows.map((row) => {
+          const title = escapeHtml(getSnapshotTitle(row));
+          const subtitle = escapeHtml(getSnapshotSubtitle(row));
+          const type = escapeHtml(labelForTable(row.source_table));
+          const reason = escapeHtml(row.delete_reason || "-");
+
+          return `
+            <tr>
+              <td><span class="type-pill">${type}</span></td>
+              <td>
+                <div class="record-title">${title}</div>
+                <div class="record-sub">${subtitle || escapeHtml(row.source_record_id)}</div>
+              </td>
+              <td>${escapeHtml(formatDate(row.deleted_at))}</td>
+              <td>${escapeHtml(formatDate(row.recover_until))}</td>
+              <td>${reason}</td>
+              <td>
+                <button
+                  class="btn-gold"
+                  type="button"
+                  data-restore-id="${escapeHtml(row.id)}"
+                >
+                  Restore
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join("");
+
+      } catch (error) {
+        console.error(error);
+        tableBody.innerHTML = `<tr><td colspan="6" class="empty">Something went wrong.</td></tr>`;
+        summaryText.textContent = "Something went wrong.";
+        showMessage(error.message || "Something went wrong.", "error");
+      }
+    }
+
+    async function restoreRecord(recentlyDeletedId, button) {
+      if (!recentlyDeletedId) return;
+
+      const confirmed = window.confirm("Restore this deleted record?");
+      if (!confirmed) return;
+
+      button.disabled = true;
+      button.textContent = "Restoring...";
+
+      try {
+        const { data, error } = await supabase.rpc("restore_ungani_deleted_record", {
+          p_recently_deleted_id: recentlyDeletedId
+        });
+
+        if (error) {
+          console.error(error);
+          showMessage(error.message || "Unable to restore record.", "error");
+          button.disabled = false;
+          button.textContent = "Restore";
+          return;
+        }
+
+        if (data && data.ok === false) {
+          showMessage(data.message || "Unable to restore record.", "error");
+          button.disabled = false;
+          button.textContent = "Restore";
+          return;
+        }
+
+        showMessage((data && data.message) || "Record restored successfully.", "success");
+        await loadDeletedRecords();
+
+      } catch (error) {
+        console.error(error);
+        showMessage(error.message || "Unable to restore record.", "error");
+        button.disabled = false;
+        button.textContent = "Restore";
+      }
+    }
+
+    tableBody.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-restore-id]");
+      if (!button) return;
+
+      restoreRecord(button.dataset.restoreId, button);
+    });
+
+    refreshBtn.addEventListener("click", loadDeletedRecords);
+
+    loadDeletedRecords();
+  </script>
+
+  <script src="pwa-register.js?v=portal14s"></script>
+</body>
+</html>
