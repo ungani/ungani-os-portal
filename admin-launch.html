@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UNGANI Admin Launch Readiness</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --softgray: #E5E7EB;
+      --text: #111827;
+      --muted: #6B7280;
+      --danger: #B91C1C;
+      --success: #047857;
+      --warning: #B45309;
+      --card: rgba(255, 255, 255, 0.96);
+      --shadow: 0 18px 45px rgba(6, 28, 61, 0.14);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.16), transparent 36%),
+        linear-gradient(135deg, #F5F5F3 0%, #FFFFFF 45%, #F3F4F6 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      width: 278px;
+      background: var(--navy);
+      color: var(--white);
+      padding: 24px 18px;
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      overflow-y: auto;
+      box-shadow: 10px 0 30px rgba(6, 28, 61, 0.18);
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 26px;
+      padding: 8px 8px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    }
+
+    .brand img {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      background: var(--white);
+      border-radius: 12px;
+      padding: 5px;
+    }
+
+    .brand h1 {
+      font-size: 18px;
+      margin: 0;
+      letter-spacing: 0.5px;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+    }
+
+    .nav-section-title {
+      color: rgba(255, 255, 255, 0.48);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin: 18px 10px 8px;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: rgba(255, 255, 255, 0.86);
+      text-decoration: none;
+      padding: 12px 12px;
+      border-radius: 12px;
+      margin: 3px 0;
+      font-size: 14px;
+      transition: 0.18s ease;
+      border: 1px solid transparent;
+    }
+
+    .nav-link:hover,
+    .nav-link.active {
+      color: var(--white);
+      background: rgba(212, 166, 58, 0.15);
+      border-color: rgba(212, 166, 58, 0.28);
+      transform: translateX(2px);
+    }
+
+    .main {
+      margin-left: 278px;
+      width: calc(100% - 278px);
+      padding: 24px;
+    }
+
+    .topbar {
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(6, 28, 61, 0.08);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .topbar h2 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    .topbar p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    button,
+    .button-link {
+      border: none;
+      cursor: pointer;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-weight: 700;
+      font-size: 13px;
+      transition: 0.18s ease;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .btn-primary:hover {
+      filter: brightness(0.97);
+      transform: translateY(-1px);
+    }
+
+    .btn-navy {
+      background: var(--navy);
+      color: var(--white);
+    }
+
+    .btn-navy:hover {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
+
+    .btn-light {
+      background: var(--white);
+      color: var(--navy);
+      border: 1px solid var(--softgray);
+    }
+
+    .btn-light:hover {
+      border-color: rgba(212, 166, 58, 0.75);
+      transform: translateY(-1px);
+    }
+
+    .status-panel {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .hero-card {
+      background: var(--navy);
+      color: var(--white);
+      border-radius: 22px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+      min-height: 230px;
+    }
+
+    .hero-card::after {
+      content: "";
+      position: absolute;
+      right: -80px;
+      top: -80px;
+      width: 230px;
+      height: 230px;
+      background: rgba(212, 166, 58, 0.22);
+      border-radius: 50%;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.10);
+    }
+
+    .score {
+      font-size: 64px;
+      line-height: 1;
+      font-weight: 900;
+      margin: 0;
+      letter-spacing: -0.04em;
+    }
+
+    .score span {
+      font-size: 24px;
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .hero-card p {
+      max-width: 650px;
+      margin: 12px 0 0;
+      color: rgba(255, 255, 255, 0.74);
+      line-height: 1.55;
+    }
+
+    .mini-panel {
+      background: var(--card);
+      border: 1px solid rgba(6, 28, 61, 0.08);
+      border-radius: 22px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .mini-panel h3,
+    .section-card h3 {
+      margin: 0 0 12px;
+      color: var(--navy);
+      font-size: 18px;
+    }
+
+    .mini-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--softgray);
+      font-size: 14px;
+    }
+
+    .mini-row:last-child {
+      border-bottom: none;
+    }
+
+    .mini-row strong {
+      color: var(--navy);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(6, 28, 61, 0.08);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      min-height: 120px;
+    }
+
+    .card .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+    }
+
+    .card .value {
+      font-size: 34px;
+      font-weight: 900;
+      color: var(--navy);
+      letter-spacing: -0.03em;
+    }
+
+    .card .hint {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 7px;
+      line-height: 1.4;
+    }
+
+    .sections {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .section-card {
+      background: var(--card);
+      border: 1px solid rgba(6, 28, 61, 0.08);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .item-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .item {
+      border: 1px solid var(--softgray);
+      border-radius: 14px;
+      padding: 14px;
+      background: var(--white);
+    }
+
+    .item-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 6px;
+    }
+
+    .item h4 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 15px;
+    }
+
+    .item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .pill {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      background: #F3F4F6;
+      color: var(--navy);
+    }
+
+    .pill.high,
+    .pill.danger {
+      background: #FEE2E2;
+      color: var(--danger);
+    }
+
+    .pill.medium,
+    .pill.warning {
+      background: #FEF3C7;
+      color: var(--warning);
+    }
+
+    .pill.low,
+    .pill.normal,
+    .pill.success {
+      background: #DCFCE7;
+      color: var(--success);
+    }
+
+    .notice {
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+      display: none;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .notice.show {
+      display: block;
+    }
+
+    .notice.info {
+      background: #EFF6FF;
+      color: #1D4ED8;
+      border: 1px solid #BFDBFE;
+    }
+
+    .notice.error {
+      background: #FEF2F2;
+      color: var(--danger);
+      border: 1px solid #FECACA;
+    }
+
+    .notice.success {
+      background: #ECFDF5;
+      color: var(--success);
+      border: 1px solid #BBF7D0;
+    }
+
+    .raw-box {
+      display: none;
+      background: #0B1220;
+      color: #E5E7EB;
+      border-radius: 16px;
+      padding: 16px;
+      overflow: auto;
+      max-height: 420px;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      margin-top: 12px;
+    }
+
+    .raw-box.show {
+      display: block;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+      padding: 14px;
+      background: #F9FAFB;
+      border: 1px dashed var(--softgray);
+      border-radius: 14px;
+    }
+
+    .footer-note {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+      padding: 18px;
+    }
+
+    @media (max-width: 1100px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .status-panel,
+      .sections {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 780px) {
+      .sidebar {
+        position: relative;
+        width: 100%;
+        min-height: auto;
+      }
+
+      .app {
+        display: block;
+      }
+
+      .main {
+        margin-left: 0;
+        width: 100%;
+        padding: 16px;
+      }
+
+      .topbar {
+        display: block;
+      }
+
+      .actions {
+        justify-content: flex-start;
+        margin-top: 14px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .score {
+        font-size: 52px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" />
+        <div>
+          <h1>UNGANI</h1>
+          <p>Admin Command Center</p>
+        </div>
+      </div>
+
+      <div class="nav-section-title">Main</div>
+      <a class="nav-link" href="admin-home.html?v=portal14s">🏠 Admin Home</a>
+      <a class="nav-link active" href="admin-launch.html?v=portal14s">🚀 Launch Readiness</a>
+      <a class="nav-link" href="admin-health.html?v=portal14s">🛡️ System Health</a>
+      <a class="nav-link" href="admin-smart-checks.html?v=portal14s">🧠 Smart Checks</a>
+
+      <div class="nav-section-title">Clients</div>
+      <a class="nav-link" href="admin.html?v=portal14s">👥 Client Admin</a>
+      <a class="nav-link" href="admin-subscriptions.html?v=portal14s">📦 Subscriptions</a>
+      <a class="nav-link" href="admin-upgrade-requests.html?v=portal14s">⬆️ Upgrade Requests</a>
+      <a class="nav-link" href="admin-billing.html?v=portal14s">💳 Billing</a>
+
+      <div class="nav-section-title">System</div>
+      <a class="nav-link" href="admin-email-queue.html?v=portal14s">✉️ Email Queue</a>
+      <a class="nav-link" href="login.html?v=portal14s">🚪 Login Page</a>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h2>Launch Readiness</h2>
+          <p>One admin view for pilot readiness, system health, risks, and action items.</p>
+        </div>
+
+        <div class="actions">
+          <button class="btn-light" onclick="loadSnapshot()">Refresh</button>
+          <button class="btn-primary" onclick="runFullReview()">Run Full Review</button>
+          <button class="btn-navy" onclick="recordSnapshot()">Record Snapshot</button>
+        </div>
+      </div>
+
+      <div id="notice" class="notice"></div>
+
+      <section class="status-panel">
+        <div class="hero-card">
+          <div class="hero-content">
+            <div id="statusBadge" class="status-badge">Checking launch status...</div>
+            <h1 class="score"><span id="readinessScore">--</span><span>/100</span></h1>
+            <p id="statusMessage">
+              Loading the latest launch dashboard snapshot from Supabase.
+            </p>
+          </div>
+        </div>
+
+        <div class="mini-panel">
+          <h3>Snapshot Summary</h3>
+          <div class="mini-row">
+            <span>Controlled pilot</span>
+            <strong id="pilotReady">--</strong>
+          </div>
+          <div class="mini-row">
+            <span>Status level</span>
+            <strong id="statusLevel">--</strong>
+          </div>
+          <div class="mini-row">
+            <span>Last checked</span>
+            <strong id="checkedAt">--</strong>
+          </div>
+          <div class="mini-row">
+            <span>Admin session</span>
+            <strong id="adminSession">Checking...</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <div class="label">Total Clients</div>
+          <div id="totalClients" class="value">--</div>
+          <div class="hint">All client accounts detected by the launch snapshot.</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Approved</div>
+          <div id="approvedRegistrations" class="value">--</div>
+          <div class="hint">Approved, active, or trial registrations.</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Pending</div>
+          <div id="pendingRegistrations" class="value">--</div>
+          <div class="hint">Registrations waiting for admin action.</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Support Issues</div>
+          <div id="openSupportIssues" class="value">--</div>
+          <div class="hint">Open support items needing review.</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Notifications</div>
+          <div id="unreadNotifications" class="value">--</div>
+          <div class="hint">Unread admin/system notifications.</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Warnings 7 Days</div>
+          <div id="warningLogs" class="value">--</div>
+          <div class="hint">Recent warning, error, or failed logs.</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Pending Emails</div>
+          <div id="pendingEmails" class="value">--</div>
+          <div class="hint">Queued emails waiting for SMTP sending.</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Failed Emails</div>
+          <div id="failedEmails" class="value">--</div>
+          <div class="hint">Failed email queue records.</div>
+        </div>
+      </section>
+
+      <section class="sections">
+        <div class="section-card">
+          <h3>Action Items</h3>
+          <div id="actionItems" class="item-list">
+            <div class="empty">Loading action items...</div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <h3>Blockers & Warnings</h3>
+          <div id="riskItems" class="item-list">
+            <div class="empty">Loading blockers and warnings...</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap;">
+          <h3 style="margin:0;">Technical Result</h3>
+          <button class="btn-light" onclick="toggleRaw()">Show / Hide JSON</button>
+        </div>
+        <pre id="rawJson" class="raw-box"></pre>
+      </section>
+
+      <div class="footer-note">
+        UNGANI OS · Connecting businesses · Admin launch readiness page
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let latestSnapshot = null;
+
+    function byId(id) {
+      return document.getElementById(id);
+    }
+
+    function showNotice(message, type = "info") {
+      const box = byId("notice");
+      box.className = "notice show " + type;
+      box.textContent = message;
+    }
+
+    function clearNotice() {
+      const box = byId("notice");
+      box.className = "notice";
+      box.textContent = "";
+    }
+
+    function setText(id, value) {
+      byId(id).textContent = value === null || value === undefined || value === "" ? "--" : value;
+    }
+
+    function formatDate(value) {
+      if (!value) return "--";
+
+      try {
+        return new Date(value).toLocaleString();
+      } catch (error) {
+        return value;
+      }
+    }
+
+    function normalizePriority(value) {
+      const text = String(value || "normal").toLowerCase();
+
+      if (text.includes("high") || text.includes("danger")) return "high";
+      if (text.includes("medium") || text.includes("warning")) return "medium";
+      if (text.includes("low")) return "low";
+
+      return "normal";
+    }
+
+    function renderList(targetId, items, emptyMessage) {
+      const target = byId(targetId);
+      target.innerHTML = "";
+
+      if (!Array.isArray(items) || items.length === 0) {
+        target.innerHTML = `<div class="empty">${emptyMessage}</div>`;
+        return;
+      }
+
+      items.slice(0, 12).forEach((item) => {
+        const priority = normalizePriority(item.priority || item.status_level || item.level);
+        const title = item.title || item.key || item.risk_key || "Item";
+        const message = item.message || "No message provided.";
+        const count = item.count !== undefined && item.count !== null ? ` · ${item.count}` : "";
+
+        const div = document.createElement("div");
+        div.className = "item";
+        div.innerHTML = `
+          <div class="item-head">
+            <h4>${escapeHtml(title)}</h4>
+            <span class="pill ${priority}">${escapeHtml(priority)}${escapeHtml(count)}</span>
+          </div>
+          <p>${escapeHtml(message)}</p>
+        `;
+
+        target.appendChild(div);
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function renderSnapshot(snapshot) {
+      latestSnapshot = snapshot;
+
+      const status = snapshot.status || {};
+      const cards = snapshot.cards || {};
+      const actionItems = snapshot.action_items || [];
+      const blockers = snapshot.blockers || [];
+      const warnings = snapshot.warnings || [];
+
+      const score = status.readiness_score ?? "--";
+      const label = status.label || "Needs review";
+      const level = status.level || "warning";
+      const ready = status.ready_for_controlled_pilot === true;
+
+      setText("statusBadge", label);
+      setText("readinessScore", score);
+      setText("pilotReady", ready ? "Yes" : "No");
+      setText("statusLevel", level);
+      setText("checkedAt", formatDate(snapshot.checked_at));
+
+      byId("statusMessage").textContent = ready
+        ? "UNGANI OS looks ready for controlled pilot testing. Continue with careful testing and monitor the action items."
+        : "UNGANI OS needs review before expanding pilot testing. Check blockers, warnings, and action items below.";
+
+      setText("totalClients", cards.total_clients);
+      setText("approvedRegistrations", cards.approved_registrations);
+      setText("pendingRegistrations", cards.pending_registrations);
+      setText("openSupportIssues", cards.open_support_issues);
+      setText("unreadNotifications", cards.unread_notifications);
+      setText("warningLogs", cards.warning_logs_last_7_days);
+      setText("pendingEmails", cards.pending_email_queue);
+      setText("failedEmails", cards.failed_email_queue);
+
+      renderList("actionItems", actionItems, "No launch action items found.");
+      renderList("riskItems", [...blockers, ...warnings], "No blockers or warnings found.");
+
+      byId("rawJson").textContent = JSON.stringify(snapshot, null, 2);
+    }
+
+    async function requireAdmin() {
+      const sessionResult = await supabaseClient.auth.getSession();
+      const session = sessionResult.data && sessionResult.data.session;
+
+      if (!session) {
+        byId("adminSession").textContent = "Not logged in";
+        showNotice("Please log in as an UNGANI admin before opening this page.", "error");
+        return false;
+      }
+
+      const { data, error } = await supabaseClient.rpc("is_ungani_admin");
+
+      if (error) {
+        byId("adminSession").textContent = "Check failed";
+        showNotice("Admin check failed: " + error.message, "error");
+        return false;
+      }
+
+      if (data !== true) {
+        byId("adminSession").textContent = "Not admin";
+        showNotice("Access denied. This page is only for UNGANI admin users.", "error");
+        return false;
+      }
+
+      byId("adminSession").textContent = "Admin verified";
+      return true;
+    }
+
+    async function loadSnapshot() {
+      clearNotice();
+      showNotice("Loading launch dashboard snapshot...", "info");
+
+      const isAdmin = await requireAdmin();
+      if (!isAdmin) return;
+
+      const { data, error } = await supabaseClient.rpc("get_admin_ungani_launch_dashboard_snapshot");
+
+      if (error) {
+        showNotice("Could not load launch snapshot: " + error.message, "error");
+        byId("rawJson").textContent = JSON.stringify(error, null, 2);
+        return;
+      }
+
+      if (!data || data.ok !== true) {
+        showNotice((data && data.message) ? data.message : "Launch snapshot returned an error.", "error");
+        byId("rawJson").textContent = JSON.stringify(data, null, 2);
+        return;
+      }
+
+      renderSnapshot(data);
+      showNotice("Launch dashboard snapshot loaded successfully.", "success");
+    }
+
+    async function runFullReview() {
+      clearNotice();
+      showNotice("Running full Admin System Review. This may take a moment...", "info");
+
+      const isAdmin = await requireAdmin();
+      if (!isAdmin) return;
+
+      const { data, error } = await supabaseClient.rpc("run_admin_ungani_system_review", {
+        p_run_smart_checks: true,
+        p_run_data_safety_audit: true
+      });
+
+      if (error) {
+        showNotice("Full review failed: " + error.message, "error");
+        byId("rawJson").textContent = JSON.stringify(error, null, 2);
+        return;
+      }
+
+      if (!data || data.ok !== true) {
+        showNotice((data && data.message) ? data.message : "Full review returned an error.", "error");
+        byId("rawJson").textContent = JSON.stringify(data, null, 2);
+        return;
+      }
+
+      showNotice("Full Admin System Review completed. Refreshing snapshot...", "success");
+      await loadSnapshot();
+    }
+
+    async function recordSnapshot() {
+      clearNotice();
+      showNotice("Recording launch dashboard snapshot...", "info");
+
+      const isAdmin = await requireAdmin();
+      if (!isAdmin) return;
+
+      const { data, error } = await supabaseClient.rpc("run_admin_ungani_launch_dashboard_snapshot_log");
+
+      if (error) {
+        showNotice("Snapshot log failed: " + error.message, "error");
+        byId("rawJson").textContent = JSON.stringify(error, null, 2);
+        return;
+      }
+
+      if (!data || data.ok !== true) {
+        showNotice((data && data.message) ? data.message : "Snapshot log returned an error.", "error");
+        byId("rawJson").textContent = JSON.stringify(data, null, 2);
+        return;
+      }
+
+      byId("rawJson").textContent = JSON.stringify(data, null, 2);
+      showNotice("Launch dashboard snapshot recorded successfully.", "success");
+      await loadSnapshot();
+    }
+
+    function toggleRaw() {
+      byId("rawJson").classList.toggle("show");
+    }
+
+    document.addEventListener("DOMContentLoaded", loadSnapshot);
+  </script>
+</body>
+</html>
