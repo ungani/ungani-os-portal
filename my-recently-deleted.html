@@ -1,761 +1,545 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Recently Deleted | UNGANI OS</title>
-
-  <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#061C3D" />
+  <title>UNGANI OS - Recently Deleted</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-  <style>
-    :root {
-      --navy: #061C3D;
-      --navy-2: #082654;
-      --navy-3: #092A59;
-      --gold: #D4A63A;
-      --bg: #031227;
-      --card: rgba(8, 38, 84, 0.92);
-      --panel: rgba(3, 18, 39, 0.72);
-      --text: #FFFFFF;
-      --text-soft: #F5F5F3;
-      --muted: #B8C3D6;
-      --border: rgba(255, 255, 255, 0.12);
-      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
-      --success-text: #BBF7D0;
-      --success-bg: rgba(22, 101, 52, 0.35);
-      --warning-text: #FDE68A;
-      --warning-bg: rgba(146, 64, 14, 0.35);
-      --danger-text: #FECACA;
-      --danger-bg: rgba(153, 27, 27, 0.35);
-      --info-text: #BFDBFE;
-      --info-bg: rgba(30, 64, 175, 0.35);
-    }
-
-    html[data-theme="light"] {
-      --bg: #F5F5F3;
-      --card: #FFFFFF;
-      --panel: #F9FAFB;
-      --text: #061C3D;
-      --text-soft: #111827;
-      --muted: #6B7280;
-      --border: rgba(6, 28, 61, 0.12);
-      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
-      --success-text: #166534;
-      --success-bg: #DCFCE7;
-      --warning-text: #92400E;
-      --warning-bg: #FEF3C7;
-      --danger-text: #991B1B;
-      --danger-bg: #FEE2E2;
-      --info-text: #1E40AF;
-      --info-bg: #DBEAFE;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: Arial, Helvetica, sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
-        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
-      color: var(--text);
-    }
-
-    html[data-theme="light"] body {
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .topbar {
-      background: rgba(3, 18, 39, 0.92);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-      color: #FFFFFF;
-      padding: 18px 22px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      flex-wrap: wrap;
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      backdrop-filter: blur(12px);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .brand img {
-      width: 46px;
-      height: 46px;
-      object-fit: contain;
-      background: #FFFFFF;
-      border-radius: 14px;
-      padding: 5px;
-    }
-
-    .brand-text {
-      display: flex;
-      flex-direction: column;
-      line-height: 1.2;
-    }
-
-    .brand-text strong {
-      font-size: 18px;
-      letter-spacing: 0.3px;
-    }
-
-    .brand-text span {
-      font-size: 13px;
-      color: #B8C3D6;
-    }
-
-    .top-actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .top-btn {
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: rgba(255, 255, 255, 0.08);
-      color: #FFFFFF;
-      text-decoration: none;
-      padding: 10px 13px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 800;
-      cursor: pointer;
-    }
-
-    .top-btn.gold {
-      background: var(--gold);
-      color: var(--navy);
-      border-color: var(--gold);
-    }
-
-    .content {
-      width: 100%;
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 26px 18px 44px;
-    }
-
-    .hero {
-      background:
-        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
-        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      color: #FFFFFF;
-      border-radius: 22px;
-      padding: 26px;
-      box-shadow: var(--shadow);
-    }
-
-    .hero h1 {
-      margin: 0 0 8px;
-      font-size: 29px;
-    }
-
-    .hero p {
-      margin: 0;
-      color: #B8C3D6;
-      max-width: 920px;
-      line-height: 1.6;
-      font-size: 15px;
-    }
-
-    .summary-grid {
-      margin-top: 18px;
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .summary-card {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 17px;
-      padding: 15px;
-    }
-
-    .summary-card label {
-      display: block;
-      color: #B8C3D6;
-      font-size: 12px;
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      margin-bottom: 7px;
-    }
-
-    .summary-card strong {
-      color: #FFFFFF;
-      font-size: 22px;
-      display: block;
-    }
-
-    .summary-card span {
-      margin-top: 8px;
-      display: block;
-      color: #B8C3D6;
-      font-size: 12px;
-      line-height: 1.45;
-    }
-
-    .panel {
-      background: var(--card);
-      border-radius: 22px;
-      box-shadow: var(--shadow);
-      border: 1px solid var(--border);
-      overflow: hidden;
-    }
-
-    .panel.full {
-      margin-top: 20px;
-    }
-
-    .panel-head {
-      padding: 18px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(3, 18, 39, 0.34);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    html[data-theme="light"] .panel-head {
-      background: #F9FAFB;
-    }
-
-    .panel-head h2 {
-      margin: 0;
-      color: var(--text);
-      font-size: 20px;
-    }
-
-    .panel-head p {
-      margin: 6px 0 0;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .panel-body {
-      padding: 18px;
-    }
-
-    .chip {
-      display: inline-flex;
-      padding: 7px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 900;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .chip.success {
-      color: var(--success-text);
-      background: var(--success-bg);
-    }
-
-    .chip.warning {
-      color: var(--warning-text);
-      background: var(--warning-bg);
-    }
-
-    .chip.info {
-      color: var(--info-text);
-      background: var(--info-bg);
-    }
-
-    .chip.danger {
-      color: var(--danger-text);
-      background: var(--danger-bg);
-    }
-
-    .chip.gold {
-      color: var(--gold);
-      background: rgba(212, 166, 58, 0.16);
-      border: 1px solid rgba(212, 166, 58, 0.28);
-    }
-
-    .loading,
-    .empty,
-    .error,
-    .notice {
-      margin-top: 20px;
-      padding: 20px;
-      color: var(--muted);
-      line-height: 1.6;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      box-shadow: var(--shadow);
-    }
-
-    .loading {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      color: var(--gold);
-      font-weight: 900;
-    }
-
-    .notice {
-      margin-top: 0;
-      background: var(--panel);
-      color: var(--text-soft);
-      box-shadow: none;
-    }
-
-    .notice.success {
-      color: var(--success-text);
-      background: var(--success-bg);
-    }
-
-    .notice.danger {
-      color: var(--danger-text);
-      background: var(--danger-bg);
-    }
-
-    .spinner {
-      width: 18px;
-      height: 18px;
-      border: 3px solid rgba(255, 255, 255, 0.22);
-      border-top-color: var(--gold);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    html[data-theme="light"] .spinner {
-      border-color: rgba(6, 28, 61, 0.14);
-      border-top-color: var(--gold);
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    .table-wrap {
-      width: 100%;
-      overflow-x: auto;
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      background: var(--panel);
-    }
-
-    table {
-      width: 100%;
-      min-width: 940px;
-      border-collapse: collapse;
-    }
-
-    th,
-    td {
-      padding: 14px;
-      text-align: left;
-      border-bottom: 1px solid var(--border);
-      vertical-align: top;
-      font-size: 13px;
-      color: var(--text-soft);
-    }
-
-    th {
-      color: var(--gold);
-      font-size: 12px;
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      background: rgba(3, 18, 39, 0.24);
-    }
-
-    html[data-theme="light"] th {
-      background: #F9FAFB;
-    }
-
-    tr:last-child td {
-      border-bottom: none;
-    }
-
-    .record-title {
-      color: var(--text);
-      font-weight: 900;
-      margin-bottom: 5px;
-    }
-
-    .record-sub {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.45;
-      max-width: 420px;
-    }
-
-    .button-row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-
-    .action-btn {
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: rgba(255, 255, 255, 0.08);
-      color: #FFFFFF;
-      padding: 10px 13px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 800;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .action-btn.gold {
-      background: var(--gold);
-      color: var(--navy);
-      border-color: var(--gold);
-    }
-
-    .action-btn:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-
-    .footer {
-      margin-top: 20px;
-      text-align: center;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    @media (max-width: 980px) {
-      .summary-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-    }
-
-    @media (max-width: 560px) {
-      .content {
-        padding: 18px 12px 34px;
-      }
-
-      .summary-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .hero h1 {
-        font-size: 24px;
-      }
-
-      .topbar {
-        padding: 15px;
-      }
-
-      .top-btn,
-      .action-btn {
-        font-size: 12px;
-        padding: 9px 11px;
-      }
-
-      .panel-head {
-        align-items: flex-start;
-      }
-    }
-  </style>
+  <script src="client-shared.js"></script>
 </head>
 
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <img src="ungani-logo.png" alt="UNGANI Logo" />
-      <div class="brand-text">
-        <strong>UNGANI OS</strong>
-        <span>Client Recovery</span>
-      </div>
-    </div>
-
-    <div class="top-actions">
-      <a class="top-btn" href="my-settings.html">Settings</a>
-      <a class="top-btn" href="my-documents.html">Documents</a>
-      <a class="top-btn gold" href="client.html">Back to Dashboard</a>
-    </div>
-  </header>
-
-  <main class="content">
-    <section class="hero">
-      <h1>Recently Deleted</h1>
-      <p>
-        Review records that were moved to recovery. Deleted records stay recoverable for up to 30 days before permanent cleanup.
-      </p>
-
-      <div id="summaryGrid" class="summary-grid">
-        <div class="summary-card">
-          <label>Recoverable</label>
-          <strong id="recoverableCount">—</strong>
-          <span>Records currently available for restore.</span>
-        </div>
-
-        <div class="summary-card">
-          <label>Recovery Window</label>
-          <strong>30 Days</strong>
-          <span>Records are recoverable before permanent cleanup.</span>
-        </div>
-
-        <div class="summary-card">
-          <label>Access</label>
-          <strong>Owner</strong>
-          <span>Restore access is limited to the business owner.</span>
-        </div>
-
-        <div class="summary-card">
-          <label>Status</label>
-          <strong id="pageStatus">Loading</strong>
-          <span id="pageStatusText">Checking recoverable records...</span>
-        </div>
-      </div>
-    </section>
-
-    <div id="loadingBox" class="loading">
-      <span class="spinner"></span>
-      <span>Loading recently deleted records...</span>
-    </div>
-
-    <div id="errorBox" class="error" style="display: none;"></div>
-
-    <div id="messageBox" class="notice" style="display: none;"></div>
-
-    <section id="deletedContent" class="panel full" style="display: none;">
-      <div class="panel-head">
-        <div>
-          <h2>Recoverable Records</h2>
-          <p id="listSubtitle">Records moved to Recently Deleted will appear here.</p>
-        </div>
-
-        <div class="button-row">
-          <button class="action-btn" type="button" onclick="loadRecentlyDeleted()">Refresh</button>
-          <a class="action-btn gold" href="my-settings.html">Back to Settings</a>
-        </div>
-      </div>
-
-      <div class="panel-body">
-        <div class="notice">
-          This page only restores records. It does not permanently delete records. Permanent cleanup should be handled later after the backup and recovery process is confirmed.
-        </div>
-
-        <div style="height: 14px;"></div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Record</th>
-                <th>Deleted At</th>
-                <th>Recover Until</th>
-                <th>Reason</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-
-            <tbody id="deletedTableBody">
-              <tr>
-                <td colspan="6" class="empty">Loading...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <div class="footer">
-      UNGANI OS · ungani.com · info@ungani.com
-    </div>
-  </main>
-
   <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    let currentContext = null;
+    let deletedRows = [];
+    let currentFilter = "";
 
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-    document.addEventListener("DOMContentLoaded", async () => {
-      applyExistingThemeSetting();
-      await checkClientSession();
-      await loadRecentlyDeleted();
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "recently-deleted",
+        pageTitle: "Recently Deleted",
+        pageSubtitle: "Restore records that were safely deleted from your workspace.",
+        onReady: startRecentlyDeletedPage
+      });
     });
 
-    function applyExistingThemeSetting() {
-      const possibleKeys = [
-        "ungani_theme",
-        "unganiTheme",
-        "theme",
-        "color-theme",
-        "mode",
-        "ungani_mode"
-      ];
+    async function startRecentlyDeletedPage(context) {
+      currentContext = context;
 
-      let foundTheme = null;
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      const subEl = document.querySelector(".ungani-topbar p");
 
-      try {
-        for (const key of possibleKeys) {
-          const value = localStorage.getItem(key);
-          if (!value) continue;
-
-          const clean = String(value).trim().toLowerCase();
-
-          if (clean === "light" || clean === "white") {
-            foundTheme = "light";
-            break;
-          }
-
-          if (clean === "dark" || clean === "navy") {
-            foundTheme = "dark";
-            break;
-          }
-        }
-      } catch (error) {
-        foundTheme = null;
+      if (titleEl) {
+        titleEl.innerText = "Recently Deleted";
       }
 
-      if (!foundTheme) {
-        const htmlTheme = document.documentElement.getAttribute("data-theme");
-
-        if (htmlTheme === "light" || htmlTheme === "dark") {
-          foundTheme = htmlTheme;
-        }
+      if (subEl) {
+        subEl.innerText = "Restore safely deleted records, including money, tasks, items, documents, people, support, records, and calendar events.";
       }
 
-      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
-    }
-
-    async function checkClientSession() {
-      const { data } = await supabaseClient.auth.getSession();
-
-      if (!data || !data.session) {
-        window.location.href = "login.html?redirect=my-recently-deleted.html";
-      }
+      await loadRecentlyDeleted();
     }
 
     async function loadRecentlyDeleted() {
-      const loadingBox = document.getElementById("loadingBox");
-      const errorBox = document.getElementById("errorBox");
-      const deletedContent = document.getElementById("deletedContent");
-      const tableBody = document.getElementById("deletedTableBody");
-
-      loadingBox.style.display = "flex";
-      errorBox.style.display = "none";
-      deletedContent.style.display = "none";
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading recently deleted records...");
 
       try {
-        const { data, error } = await supabaseClient.rpc("get_my_ungani_recently_deleted");
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_recently_deleted");
 
-        if (error) throw error;
+        if (response.error) {
+          UnganiClientShared.setContent(
+            UnganiClientShared.errorCard("Could not load Recently Deleted", response.error.message)
+          );
+          return;
+        }
 
-        const rows = Array.isArray(data) ? data : [];
-
-        renderRecentlyDeleted(rows);
-
-        loadingBox.style.display = "none";
-        deletedContent.style.display = "block";
+        deletedRows = response.data || [];
+        renderRecentlyDeletedPage();
       } catch (error) {
-        loadingBox.style.display = "none";
-        errorBox.style.display = "block";
-        errorBox.textContent = "Unable to load recently deleted records. " + getErrorMessage(error);
-
-        document.getElementById("recoverableCount").textContent = "—";
-        document.getElementById("pageStatus").textContent = "Error";
-        document.getElementById("pageStatusText").textContent = "Recently Deleted could not load.";
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load Recently Deleted", error.message)
+        );
       }
     }
 
-    function renderRecentlyDeleted(rows) {
-      const tableBody = document.getElementById("deletedTableBody");
-      const recoverableCount = document.getElementById("recoverableCount");
-      const pageStatus = document.getElementById("pageStatus");
-      const pageStatusText = document.getElementById("pageStatusText");
-      const listSubtitle = document.getElementById("listSubtitle");
+    function renderRecentlyDeletedPage() {
+      const filteredRows = getFilteredDeletedRows();
+      const summary = calculateDeletedSummary();
 
-      recoverableCount.textContent = Number(rows.length || 0).toLocaleString("en-KE");
+      UnganiClientShared.setContent(`
+        <style>
+          .deleted-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+            gap: 18px;
+            align-items: stretch;
+          }
 
-      if (!rows || rows.length === 0) {
-        pageStatus.textContent = "Clear";
-        pageStatusText.textContent = "No recoverable deleted records found.";
-        listSubtitle.textContent = "No recoverable records found.";
+          .deleted-guide-box {
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.09);
+            border-radius: 24px;
+            padding: 18px;
+          }
 
-        tableBody.innerHTML = `
-          <tr>
-            <td colspan="6" class="empty">
-              No recoverable deleted records found.
-            </td>
-          </tr>
-        `;
-        return;
+          .deleted-guide-box h3 {
+            color: white;
+            margin: 0 0 8px;
+          }
+
+          .deleted-guide-box p {
+            color: rgba(255,255,255,0.74);
+            margin: 0;
+            line-height: 1.55;
+          }
+
+          .deleted-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .deleted-kpi-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            box-shadow: var(--ungani-shadow);
+            padding: 20px;
+            min-height: 135px;
+            cursor: pointer;
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+          }
+
+          .deleted-kpi-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--ungani-shadow-hover);
+            border-color: rgba(212,166,58,0.55);
+          }
+
+          .deleted-kpi-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 5px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent);
+          }
+
+          .deleted-kpi-card span {
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.055em;
+          }
+
+          .deleted-kpi-card h3 {
+            margin: 17px 0 8px;
+            font-size: clamp(25px, 3vw, 36px);
+            line-height: 1;
+            letter-spacing: -0.055em;
+            overflow-wrap: anywhere;
+          }
+
+          .deleted-kpi-card p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .deleted-filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+          }
+
+          .deleted-filter-pill {
+            border: 1px solid var(--ungani-border);
+            background: var(--ungani-soft);
+            color: var(--ungani-text);
+            border-radius: 999px;
+            padding: 9px 12px;
+            font-size: 12px;
+            font-weight: 900;
+            cursor: pointer;
+          }
+
+          .deleted-filter-pill.active,
+          .deleted-filter-pill:hover {
+            border-color: rgba(212,166,58,0.7);
+            background: rgba(212,166,58,0.14);
+          }
+
+          .deleted-list-grid {
+            display: grid;
+            gap: 12px;
+          }
+
+          .deleted-record-card {
+            box-shadow: none;
+            cursor: pointer;
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+          }
+
+          .deleted-record-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--ungani-shadow-hover);
+            border-color: rgba(212,166,58,0.55);
+          }
+
+          .deleted-record-main {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 14px;
+            align-items: start;
+          }
+
+          .deleted-record-title {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 6px;
+          }
+
+          .deleted-record-title h3 {
+            margin: 0;
+            font-size: 17px;
+          }
+
+          .deleted-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+          }
+
+          .deleted-meta span {
+            border-radius: 999px;
+            padding: 7px 10px;
+            background: var(--ungani-soft);
+            border: 1px solid var(--ungani-border);
+            color: var(--ungani-muted);
+            font-size: 12px;
+            font-weight: 850;
+          }
+
+          .deleted-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+          }
+
+          @media (max-width: 1180px) {
+            .deleted-hero-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .deleted-kpi-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 720px) {
+            .deleted-kpi-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .deleted-record-main {
+              grid-template-columns: 1fr;
+            }
+
+            .deleted-actions {
+              justify-content: flex-start;
+            }
+          }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <div class="deleted-hero-grid">
+            <div>
+              <span class="ungani-badge gold">Safe Delete</span>
+              <h2 style="font-size:clamp(32px,4vw,52px);line-height:1.02;margin:18px 0 12px;">
+                Restore deleted records before they are needed again.
+              </h2>
+              <p>
+                UNGANI moves records here instead of permanently deleting them. This helps protect client data and reduce accidental loss.
+              </p>
+
+              <div class="ungani-button-row">
+                <button class="ungani-btn gold" onclick="loadRecentlyDeleted()">Refresh</button>
+                <a class="ungani-btn light" href="client.html">Back to Dashboard</a>
+              </div>
+            </div>
+
+            <div class="deleted-guide-box">
+              <h3>What can be restored?</h3>
+              <p>Money records, tasks, items/assets, business records, documents, support issues, people/leads, and calendar events.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="deleted-kpi-grid">
+          ${deletedKpi("All Deleted", summary.total, "All safely deleted records", "#D4A63A", "")}
+          ${deletedKpi("Money Records", summary.money, "Deleted income / expense records", "#16A34A", "transactions")}
+          ${deletedKpi("Work Records", summary.work, "Tasks, records, documents, events", "#061C3D", "work")}
+          ${deletedKpi("People & Support", summary.peopleSupport, "People, leads, support issues", "#DC2626", "people_support")}
+        </section>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Filters</h3>
+              <p class="ungani-small">Choose the deleted record type you want to review.</p>
+            </div>
+
+            <button class="ungani-btn dark" onclick="setDeletedFilter('')">Reset</button>
+          </div>
+
+          <div class="deleted-filter-row">
+            ${filterPill("All", "")}
+            ${filterPill("Money", "transactions")}
+            ${filterPill("Tasks", "tasks")}
+            ${filterPill("Items / Assets", "business_items")}
+            ${filterPill("Records", "business_records")}
+            ${filterPill("Documents", "documents")}
+            ${filterPill("Support", "support_issues")}
+            ${filterPill("People", "client_people")}
+            ${filterPill("Calendar", "business_events")}
+          </div>
+        </section>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Deleted Records</h3>
+              <p class="ungani-small">${filteredRows.length} record(s) shown.</p>
+            </div>
+
+            <button class="ungani-btn green" onclick="loadRecentlyDeleted()">Refresh</button>
+          </div>
+
+          ${renderDeletedRows(filteredRows)}
+        </section>
+
+        <p class="ungani-small">
+          Recently Deleted Version: Step 28D Money Restore View · ungani.com · info@ungani.com
+        </p>
+      `);
+    }
+
+    function calculateDeletedSummary() {
+      const summary = {
+        total: deletedRows.length,
+        money: 0,
+        work: 0,
+        peopleSupport: 0
+      };
+
+      deletedRows.forEach(function (row) {
+        const table = normalizeTable(row.source_table);
+
+        if (table === "transactions") {
+          summary.money += 1;
+        } else if (["tasks", "business_items", "business_records", "documents", "business_events"].includes(table)) {
+          summary.work += 1;
+        } else if (["client_people", "support_issues"].includes(table)) {
+          summary.peopleSupport += 1;
+        }
+      });
+
+      return summary;
+    }
+
+    function deletedKpi(title, value, subtitle, accent, filterValue) {
+      return `
+        <div class="deleted-kpi-card" style="--accent:${UnganiClientShared.attr(accent)};" onclick="setDeletedFilter('${UnganiClientShared.attr(filterValue)}')">
+          <span>${UnganiClientShared.safe(title)}</span>
+          <h3>${UnganiClientShared.safe(String(value || 0))}</h3>
+          <p>${UnganiClientShared.safe(subtitle)}</p>
+        </div>
+      `;
+    }
+
+    function filterPill(label, value) {
+      const active = String(currentFilter || "") === String(value || "");
+
+      return `
+        <button class="deleted-filter-pill ${active ? "active" : ""}" onclick="setDeletedFilter('${UnganiClientShared.attr(value)}')">
+          ${UnganiClientShared.safe(label)}
+        </button>
+      `;
+    }
+
+    function setDeletedFilter(value) {
+      currentFilter = value || "";
+      renderRecentlyDeletedPage();
+    }
+
+    function getFilteredDeletedRows() {
+      if (!currentFilter) {
+        return deletedRows;
       }
 
-      pageStatus.textContent = "Review";
-      pageStatusText.textContent = "Recoverable records are available.";
-      listSubtitle.textContent = rows.length + " recoverable record(s) found.";
+      if (currentFilter === "work") {
+        return deletedRows.filter(function (row) {
+          return ["tasks", "business_items", "business_records", "documents", "business_events"].includes(normalizeTable(row.source_table));
+        });
+      }
 
-      tableBody.innerHTML = rows.map((row) => {
-        const title = getSnapshotTitle(row);
-        const subtitle = getSnapshotSubtitle(row);
-        const type = labelForTable(row.source_table);
+      if (currentFilter === "people_support") {
+        return deletedRows.filter(function (row) {
+          return ["client_people", "support_issues"].includes(normalizeTable(row.source_table));
+        });
+      }
 
+      return deletedRows.filter(function (row) {
+        return normalizeTable(row.source_table) === currentFilter;
+      });
+    }
+
+    function renderDeletedRows(rows) {
+      if (!rows || rows.length === 0) {
         return `
-          <tr>
-            <td>
-              <span class="chip gold">${safe(type)}</span>
-            </td>
+          <div class="ungani-empty">
+            <h3>No deleted records found</h3>
+            <p>Deleted records will appear here after they are moved to Recently Deleted.</p>
+          </div>
+        `;
+      }
 
-            <td>
-              <div class="record-title">${safe(title)}</div>
-              <div class="record-sub">${safe(subtitle || row.source_record_id || "Deleted record")}</div>
-            </td>
+      return `
+        <div class="deleted-list-grid">
+          ${rows.map(function (row) {
+            return renderDeletedCard(row);
+          }).join("")}
+        </div>
+      `;
+    }
 
-            <td>${safe(formatDate(row.deleted_at))}</td>
-            <td>${safe(formatDate(row.recover_until))}</td>
-            <td>${safe(row.delete_reason || "—")}</td>
+    function renderDeletedCard(row) {
+      const table = normalizeTable(row.source_table);
+      const typeInfo = getTableInfo(table);
+      const title = row.record_title || typeInfo.label;
+      const subtitle = row.record_subtitle || "Deleted record";
+      const deletedAt = row.deleted_at || row.created_at;
+      const reason = row.delete_reason || "No reason provided";
+      const href = typeInfo.href;
 
-            <td>
-              <button
-                class="action-btn gold"
-                type="button"
-                data-restore-id="${attr(row.id)}"
-                onclick="restoreDeletedRecord(this)"
-              >
+      return `
+        <div class="ungani-card deleted-record-card" onclick="openDeletedSource('${UnganiClientShared.attr(href)}')">
+          <div class="deleted-record-main">
+            <div>
+              <div class="deleted-record-title">
+                <span class="ungani-badge ${typeInfo.color}">${UnganiClientShared.safe(typeInfo.icon + " " + typeInfo.label)}</span>
+                <h3>${UnganiClientShared.safe(title)}</h3>
+              </div>
+
+              <p class="ungani-small">${UnganiClientShared.safe(subtitle)}</p>
+
+              <div class="deleted-meta">
+                <span>Deleted: ${UnganiClientShared.safe(UnganiClientShared.formatDate(deletedAt))}</span>
+                <span>Reason: ${UnganiClientShared.safe(reason)}</span>
+                <span>Source: ${UnganiClientShared.safe(typeInfo.label)}</span>
+              </div>
+            </div>
+
+            <div class="deleted-actions">
+              <button class="ungani-btn small gold" onclick="event.stopPropagation(); restoreDeletedRecord('${UnganiClientShared.attr(row.id)}')">
                 Restore
               </button>
-            </td>
-          </tr>
-        `;
-      }).join("");
+              <a class="ungani-btn small dark" href="${UnganiClientShared.attr(href)}" onclick="event.stopPropagation();">
+                Open Section
+              </a>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
-    async function restoreDeletedRecord(button) {
-      const recentlyDeletedId = button.getAttribute("data-restore-id");
+    function getTableInfo(table) {
+      const map = {
+        transactions: {
+          label: "Money Record",
+          icon: "💰",
+          color: "green",
+          href: "my-money.html"
+        },
+        tasks: {
+          label: "Task",
+          icon: "✅",
+          color: "gold",
+          href: "my-tasks.html"
+        },
+        business_items: {
+          label: "Item / Asset",
+          icon: "🏷️",
+          color: "gold",
+          href: "my-items.html"
+        },
+        business_records: {
+          label: "Business Record",
+          icon: "📑",
+          color: "gold",
+          href: "my-records.html"
+        },
+        documents: {
+          label: "Document",
+          icon: "📄",
+          color: "gold",
+          href: "my-documents.html"
+        },
+        support_issues: {
+          label: "Support Issue",
+          icon: "🛟",
+          color: "red",
+          href: "my-support.html"
+        },
+        client_people: {
+          label: "Person / Lead",
+          icon: "👥",
+          color: "gold",
+          href: "my-people.html"
+        },
+        business_events: {
+          label: "Calendar Event",
+          icon: "📅",
+          color: "gold",
+          href: "my-calendar.html"
+        }
+      };
 
-      if (!recentlyDeletedId) {
-        showMessage("Missing restore record ID.", "danger");
+      return map[table] || {
+        label: "Deleted Record",
+        icon: "◆",
+        color: "gold",
+        href: "client.html"
+      };
+    }
+
+    function normalizeTable(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function openDeletedSource(href) {
+      if (!href) return;
+      window.location.href = href;
+    }
+
+    async function restoreDeletedRecord(id) {
+      if (
+        window.UnganiClientShared &&
+        typeof UnganiClientShared.ensureCanWrite === "function" &&
+        !UnganiClientShared.ensureCanWrite("restore deleted record")
+      ) {
         return;
       }
 
@@ -763,141 +547,29 @@
 
       if (!confirmed) return;
 
-      button.disabled = true;
-      button.textContent = "Restoring...";
-
       try {
-        const { data, error } = await supabaseClient.rpc("restore_ungani_deleted_record", {
-          p_recently_deleted_id: recentlyDeletedId
+        const response = await currentContext.supabaseClient.rpc("restore_ungani_deleted_record", {
+          p_recently_deleted_id: id
         });
 
-        if (error) throw error;
-
-        if (data && data.ok === false) {
-          showMessage(data.message || "Unable to restore record.", "danger");
-          button.disabled = false;
-          button.textContent = "Restore";
+        if (response.error) {
+          UnganiClientShared.showToast("Could not restore record: " + response.error.message);
           return;
         }
 
-        showMessage((data && data.message) || "Record restored successfully.", "success");
+        const result = response.data || {};
+
+        if (result.ok === false) {
+          UnganiClientShared.showToast(result.message || "Could not restore record.");
+          return;
+        }
+
+        UnganiClientShared.showToast(result.message || "Record restored successfully ✓");
         await loadRecentlyDeleted();
       } catch (error) {
-        showMessage("Unable to restore record. " + getErrorMessage(error), "danger");
-        button.disabled = false;
-        button.textContent = "Restore";
+        UnganiClientShared.showToast("Could not restore record: " + error.message);
       }
-    }
-
-    function showMessage(message, type) {
-      const messageBox = document.getElementById("messageBox");
-
-      messageBox.textContent = message;
-      messageBox.className = "notice " + (type || "");
-      messageBox.style.display = "block";
-
-      setTimeout(() => {
-        messageBox.style.display = "none";
-      }, 6500);
-    }
-
-    function labelForTable(tableName) {
-      const map = {
-        tasks: "Task",
-        business_items: "Item / Asset",
-        business_records: "Business Record",
-        documents: "Document",
-        support_issues: "Support Issue",
-        client_people: "Person / Contact",
-        business_events: "Calendar Event"
-      };
-
-      return map[tableName] || titleCase(tableName || "Record");
-    }
-
-    function getSnapshotTitle(row) {
-      const snapshot = row.record_snapshot || {};
-
-      return (
-        snapshot.title ||
-        snapshot.name ||
-        snapshot.item_name ||
-        snapshot.record_title ||
-        snapshot.document_title ||
-        snapshot.file_name ||
-        snapshot.document_name ||
-        snapshot.subject ||
-        snapshot.issue_title ||
-        snapshot.person_name ||
-        snapshot.full_name ||
-        snapshot.description ||
-        snapshot.notes ||
-        row.source_record_id ||
-        "Deleted record"
-      );
-    }
-
-    function getSnapshotSubtitle(row) {
-      const snapshot = row.record_snapshot || {};
-      const parts = [];
-
-      if (snapshot.status) parts.push("Status: " + titleCase(snapshot.status));
-      if (snapshot.category) parts.push("Category: " + snapshot.category);
-      if (snapshot.amount) parts.push("Amount: " + snapshot.amount);
-      if (snapshot.created_at) parts.push("Created: " + formatDate(snapshot.created_at));
-
-      return parts.slice(0, 3).join(" · ");
-    }
-
-    function formatDate(value) {
-      if (!value) return "—";
-
-      try {
-        return new Intl.DateTimeFormat("en-KE", {
-          dateStyle: "medium",
-          timeStyle: "short",
-          timeZone: "Africa/Nairobi"
-        }).format(new Date(value));
-      } catch (error) {
-        return String(value);
-      }
-    }
-
-    function titleCase(value) {
-      if (!value) return "—";
-
-      return String(value)
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, char => char.toUpperCase());
-    }
-
-    function getErrorMessage(error) {
-      if (!error) return "";
-      if (error.message) return error.message;
-      if (error.details) return error.details;
-      if (error.hint) return error.hint;
-
-      try {
-        return JSON.stringify(error);
-      } catch (e) {
-        return String(error);
-      }
-    }
-
-    function safe(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    function attr(value) {
-      return safe(value);
     }
   </script>
-
-  <script src="pwa-register.js"></script>
 </body>
 </html>
