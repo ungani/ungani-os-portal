@@ -906,22 +906,27 @@
     }
 
     async function deletePerson(id) {
-      const confirmed = confirm("Delete this person record?");
+      const confirmed = confirm("Move this person record to Recently Deleted? You can restore it within 30 days.");
 
       if (!confirmed) return;
 
-      const response = await currentContext.supabaseClient
-        .from("client_people")
-        .delete()
-        .eq("id", id)
-        .eq("tenant_id", currentContext.tenantId);
+      const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+        p_source_table: "client_people",
+        p_source_record_id: id,
+        p_delete_reason: "Deleted from People page"
+      });
 
       if (response.error) {
         UnganiClientShared.showToast("Could not delete person: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Person deleted ✓");
+      if (response.data && response.data.ok === false) {
+        UnganiClientShared.showToast(response.data.message || "Could not delete person.");
+        return;
+      }
+
+      UnganiClientShared.showToast("Person moved to Recently Deleted ✓");
       await loadPeopleRows();
     }
 
