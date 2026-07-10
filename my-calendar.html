@@ -958,22 +958,27 @@
     }
 
     async function deleteEvent(id) {
-      const confirmed = confirm("Delete this calendar activity?");
+      const confirmed = confirm("Move this calendar activity to Recently Deleted? You can restore it within 30 days.");
 
       if (!confirmed) return;
 
-      const response = await currentContext.supabaseClient
-        .from("business_events")
-        .delete()
-        .eq("id", id)
-        .eq("tenant_id", currentContext.tenantId);
+      const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+        p_source_table: "business_events",
+        p_source_record_id: id,
+        p_delete_reason: "Deleted from Calendar page"
+      });
 
       if (response.error) {
         UnganiClientShared.showToast("Could not delete activity: " + response.error.message);
         return;
       }
 
-      UnganiClientShared.showToast("Calendar activity deleted ✓");
+      if (response.data && response.data.ok === false) {
+        UnganiClientShared.showToast(response.data.message || "Could not delete activity.");
+        return;
+      }
+
+      UnganiClientShared.showToast("Calendar activity moved to Recently Deleted ✓");
       await loadEventRows();
     }
 
