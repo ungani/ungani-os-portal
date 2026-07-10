@@ -2844,3 +2844,254 @@
     loadReadOnlyAccess();
   }
 })();
+(function () {
+  function waitForUnganiShared(callback) {
+    let tries = 0;
+
+    const timer = setInterval(function () {
+      tries++;
+
+      if (
+        window.UnganiClientShared &&
+        typeof window.UnganiClientShared.getState === "function"
+      ) {
+        clearInterval(timer);
+        callback(window.UnganiClientShared.getState());
+        return;
+      }
+
+      if (tries > 80) {
+        clearInterval(timer);
+      }
+    }, 250);
+  }
+
+  async function getEngineNotifications() {
+    const shared = window.UnganiClientShared;
+
+    if (!shared || typeof shared.getState !== "function") {
+      return [];
+    }
+
+    const state = shared.getState();
+
+    if (!state || !state.supabaseClient || !state.tenantId) {
+      return [];
+    }
+
+    try {
+      const response = await state.supabaseClient.rpc("get_my_ungani_notifications", {
+        p_limit: 30
+      });
+
+      if (response.error) {
+        console.warn("UNGANI notification engine error:", response.error.message);
+        return [];
+      }
+
+      return response.data || [];
+    } catch (error) {
+      console.warn("UNGANI notification engine skipped:", error.message);
+      return [];
+    }
+  }
+
+  async function refreshEngineNotificationBadge() {
+    const countEl = document.getElementById("unganiBellCount");
+
+    if (!countEl) {
+      return;
+    }
+
+    const items = await getEngineNotifications();
+    const unread = items.filter(function (item) {
+      return item.is_read === false || item.status === "unread";
+    });
+
+    countEl.textContent = String(unread.length);
+    countEl.style.display = unread.length > 0 ? "inline-flex" : "none";
+  }
+
+  async function toggleEngineNotifications() {
+    const panel = document.getElementById("unganiNotificationPanel");
+
+    if (!panel) {
+      return;
+    }
+
+    if (
+      window.UnganiClientShared &&
+      typeof window.UnganiClientShared.closeGlobalSearch === "function"
+    ) {
+      window.UnganiClientShared.closeGlobalSearch();
+    }
+
+    if (
+      window.UnganiClientShared &&
+      typeof window.UnganiClientShared.closeQuickAdd === "function"
+    ) {
+      window.UnganiClientShared.closeQuickAdd();
+    }
+
+    if (panel.style.display === "block") {
+      panel.style.display = "none";
+      return;
+    }
+
+    panel.style.display = "block";
+    panel.innerHTML = `
+      <div class="ungani-panel-head">
+        <strong>Notifications</strong>
+        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.toggleNotifications()">Close</button>
+      </div>
+      <div class="ungani-panel-body">
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Loading notifications...</h3>
+              <p class="ungani-small">Checking your latest UNGANI updates.</p>
+            </div>
+            <span class="ungani-badge gold">Loading</span>
+          </div>
+        </section>
+      </div>
+    `;
+
+    const items = await getEngineNotifications();
+
+    panel.innerHTML = `
+      <div class="ungani-panel-head">
+        <strong>Notifications</strong>
+        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.toggleNotifications()">Close</button>
+      </div>
+
+      <div class="ungani-panel-body">
+        ${items.length === 0 ? `
+          <div class="ungani-empty">
+            <h3>No notifications yet</h3>
+            <p>Support updates, task reminders, payment updates, stock alerts, and system messages will appear here.</p>
+          </div>
+        ` : items.map(function (item) {
+          const color = getNotificationColor(item);
+          const title = item.notification_title || "UNGANI Notification";
+          const message = item.notification_message || "";
+          const type = item.notification_type || "system";
+          const href = item.link_url || "#";
+          const created = formatNotificationDate(item.created_at);
+          const readClass = item.is_read ? "read" : "unread";
+
+          return `
+            <a class="ungani-alert-row ungani-engine-notification ${readClass}" href="${safeAttr(href)}" onclick="UnganiNotificationEngine.markRead('${safeAttr(item.id)}')">
+              <span class="ungani-badge ${safeAttr(color)}">${safe(type)}</span>
+              ${item.is_read ? "" : `<span class="ungani-badge red">New</span>`}
+              <h3 style="font-size:15px;margin:8px 0 4px;">${safe(title)}</h3>
+              <p class="ungani-small" style="margin:0;">${safe(message)}</p>
+              <p class="ungani-small" style="margin:6px 0 0;">${safe(created)}</p>
+            </a>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  async function markRead(notificationId) {
+    const shared = window.UnganiClientShared;
+
+    if (!shared || typeof shared.getState !== "function") {
+      return;
+    }
+
+    const state = shared.getState();
+
+    if (!state || !state.supabaseClient || !notificationId) {
+      return;
+    }
+
+    try {
+      await state.supabaseClient.rpc("mark_my_ungani_notification_read", {
+        p_notification_id: notificationId
+      });
+
+      setTimeout(refreshEngineNotificationBadge, 400);
+    } catch (error) {
+      console.warn("UNGANI mark notification read skipped:", error.message);
+    }
+  }
+
+  function getNotificationColor(item) {
+    const priority = String(item.priority || "").toLowerCase();
+    const type = String(item.notification_type || "").toLowerCase();
+
+    if (priority === "urgent" || priority === "high") return "red";
+    if (type.includes("support")) return "gold";
+    if (type.includes("task")) return "blue";
+    if (type.includes("payment") || type.includes("billing")) return "green";
+    if (type.includes("stock")) return "red";
+    if (type.includes("lead") || type.includes("people")) return "blue";
+    if (type.includes("property") || type.includes("item")) return "gold";
+
+    return "blue";
+  }
+
+  function formatNotificationDate(valueText) {
+    if (!valueText) {
+      return "Just now";
+    }
+
+    const date = new Date(valueText);
+
+    if (isNaN(date.getTime())) {
+      return String(valueText);
+    }
+
+    try {
+      return new Intl.DateTimeFormat("en-KE", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(date);
+    } catch (error) {
+      return date.toISOString();
+    }
+  }
+
+  function safe(valueText) {
+    return String(valueText === null || valueText === undefined ? "" : valueText)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function safeAttr(valueText) {
+    return safe(valueText);
+  }
+
+  function installNotificationEngine() {
+    if (!window.UnganiClientShared) {
+      return;
+    }
+
+    window.UnganiClientShared.toggleNotifications = toggleEngineNotifications;
+    window.UnganiClientShared.refreshNotificationBadge = refreshEngineNotificationBadge;
+
+    window.UnganiNotificationEngine = {
+      refreshBadge: refreshEngineNotificationBadge,
+      toggle: toggleEngineNotifications,
+      markRead: markRead
+    };
+
+    refreshEngineNotificationBadge();
+
+    setInterval(function () {
+      refreshEngineNotificationBadge();
+    }, 60000);
+  }
+
+  waitForUnganiShared(function () {
+    installNotificationEngine();
+  });
+})();
