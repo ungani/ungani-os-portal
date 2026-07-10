@@ -26,7 +26,9 @@
     currentPageTitle: "UNGANI OS",
     currentPageSubtitle: "",
     currentTheme: localStorage.getItem("ungani_theme") || localStorage.getItem("ungani_client_theme") || "light",
-    searchTimer: null
+    searchTimer: null,
+    subscriptionAccess: null,
+    readOnlyNotice: null
   };
 
   injectEarlyBranding();
