@@ -1,24 +1,37 @@
 (function () {
-  const VERSION = "portal14x";
+  const VERSION = "portal14y";
 
   const ADMIN_LINKS = [
-    { section: "COMMAND", label: "Admin Home", icon: "🏠", href: "admin-home.html?v=portal14x" },
-    { section: "COMMAND", label: "Launch Readiness", icon: "🚀", href: "admin-launch.html?v=portal14x" },
-    { section: "COMMAND", label: "System Health", icon: "🛡️", href: "admin-health.html?v=portal14x" },
-    { section: "COMMAND", label: "Smart Checks", icon: "🧠", href: "admin-smart-checks.html?v=portal14x" },
+    { section: "COMMAND", label: "Admin Home", icon: "🏠", href: "admin-home.html?v=portal14y" },
+    { section: "COMMAND", label: "Launch Readiness", icon: "🚀", href: "admin-launch.html?v=portal14y" },
+    { section: "COMMAND", label: "System Health", icon: "🛡️", href: "admin-health.html?v=portal14y" },
+    { section: "COMMAND", label: "Smart Checks", icon: "🧠", href: "admin-smart-checks.html?v=portal14y" },
 
-    { section: "CLIENTS", label: "Client Admin", icon: "👥", href: "admin.html?v=portal14x" },
-    { section: "CLIENTS", label: "Subscriptions", icon: "📦", href: "admin-subscriptions.html?v=portal14x" },
-    { section: "CLIENTS", label: "Upgrade Requests", icon: "⬆️", href: "admin-upgrade-requests.html?v=portal14x" },
-    { section: "CLIENTS", label: "Billing", icon: "💳", href: "admin-billing.html?v=portal14x" },
-    { section: "CLIENTS", label: "Payment Proofs", icon: "🧾", href: "admin-payment-proofs.html?v=portal14x" },
+    { section: "CLIENTS", label: "Client Admin", icon: "👥", href: "admin.html?v=portal14y" },
+    { section: "CLIENTS", label: "Subscriptions", icon: "📦", href: "admin-subscriptions.html?v=portal14y" },
+    { section: "CLIENTS", label: "Upgrade Requests", icon: "⬆️", href: "admin-upgrade-requests.html?v=portal14y" },
+    { section: "CLIENTS", label: "Billing", icon: "💳", href: "admin-billing.html?v=portal14y" },
+    { section: "CLIENTS", label: "Payment Proofs", icon: "🧾", href: "admin-payment-proofs.html?v=portal14y" },
 
-    { section: "SYSTEM", label: "Email Queue", icon: "✉️", href: "admin-email-queue.html?v=portal14x" },
-    { section: "SYSTEM", label: "Branches", icon: "🏬", href: "admin-branches.html?v=portal14x" },
-    { section: "SYSTEM", label: "Reports", icon: "📊", href: "admin-reports.html?v=portal14x" },
-    { section: "SYSTEM", label: "Onboarding", icon: "🧭", href: "admin-onboarding.html?v=portal14x" },
-    { section: "SYSTEM", label: "Settings", icon: "⚙️", href: "admin-settings.html?v=portal14x" }
+    { section: "SYSTEM", label: "Email Queue", icon: "✉️", href: "admin-email-queue.html?v=portal14y" },
+    { section: "SYSTEM", label: "Branches", icon: "🏬", href: "admin-branches.html?v=portal14y" },
+    { section: "SYSTEM", label: "Reports", icon: "📊", href: "admin-reports.html?v=portal14y" },
+    { section: "SYSTEM", label: "Onboarding", icon: "🧭", href: "admin-onboarding.html?v=portal14y" },
+    { section: "SYSTEM", label: "Settings", icon: "⚙️", href: "admin-settings.html?v=portal14y" }
   ];
+
+  function pageName() {
+    return window.location.pathname.split("/").pop().split("?")[0].toLowerCase();
+  }
+
+  function existingSidebar() {
+    return (
+      document.querySelector(".sidebar") ||
+      document.querySelector(".admin-sidebar") ||
+      document.querySelector("aside.sidebar") ||
+      document.querySelector("aside.admin-sidebar")
+    );
+  }
 
   function injectStyles() {
     const old = document.getElementById("ungani-admin-page-shell-polish-style");
@@ -36,30 +49,38 @@
           linear-gradient(135deg, #03142E 0%, #061C3D 45%, #081A34 100%) !important;
       }
 
-      body.ungani-admin-page-polished .ungani-admin-standard-sidebar,
       body.ungani-admin-page-polished .sidebar,
       body.ungani-admin-page-polished .admin-sidebar,
-      body.ungani-admin-page-polished aside.sidebar {
-        width: 278px !important;
+      body.ungani-admin-page-polished aside.sidebar,
+      body.ungani-admin-page-polished aside.admin-sidebar,
+      body.ungani-admin-page-polished .ungani-admin-standard-sidebar {
         background:
           linear-gradient(180deg, rgba(3, 20, 46, 0.99), rgba(6, 28, 61, 0.99)) !important;
         color: #FFFFFF !important;
+        border-right: 1px solid rgba(212, 166, 58, 0.18) !important;
+        box-shadow: 12px 0 36px rgba(0, 0, 0, 0.30) !important;
+      }
+
+      /*
+        Only pages where this script CREATES a sidebar get forced margin-left.
+        Existing-sidebar pages like admin-subscriptions must keep their own layout.
+      */
+      body.ungani-admin-created-sidebar .ungani-admin-main-content {
+        margin-left: 278px !important;
+        width: calc(100% - 278px) !important;
+        min-height: 100vh !important;
+        padding: 24px !important;
+      }
+
+      .ungani-admin-standard-sidebar {
+        width: 278px !important;
         padding: 24px 18px !important;
         position: fixed !important;
         top: 0 !important;
         bottom: 0 !important;
         left: 0 !important;
         overflow-y: auto !important;
-        border-right: 1px solid rgba(212, 166, 58, 0.18) !important;
-        box-shadow: 12px 0 36px rgba(0, 0, 0, 0.30) !important;
         z-index: 20 !important;
-      }
-
-      body.ungani-admin-page-polished.ungani-admin-has-sidebar .ungani-admin-main-content {
-        margin-left: 278px !important;
-        width: calc(100% - 278px) !important;
-        min-height: 100vh !important;
-        padding: 24px !important;
       }
 
       .ungani-admin-brand {
@@ -78,7 +99,6 @@
         background: #FFFFFF !important;
         border-radius: 14px !important;
         padding: 5px !important;
-        box-shadow: 0 8px 20px rgba(212, 166, 58, 0.16) !important;
       }
 
       .ungani-admin-brand h1 {
@@ -107,21 +127,16 @@
         width: 100% !important;
         display: flex !important;
         align-items: center !important;
-        justify-content: flex-start !important;
         gap: 12px !important;
-        text-align: left !important;
         color: rgba(255, 255, 255, 0.86) !important;
         text-decoration: none !important;
         padding: 12px 13px !important;
         border-radius: 14px !important;
         margin: 4px 0 !important;
         font-size: 14px !important;
-        line-height: 1.2 !important;
         font-weight: 800 !important;
-        transition: 0.18s ease !important;
         border: 1px solid transparent !important;
         background: transparent !important;
-        cursor: pointer !important;
       }
 
       .ungani-admin-side-link:hover,
@@ -129,7 +144,6 @@
         color: #FFFFFF !important;
         background: rgba(212, 166, 58, 0.16) !important;
         border-color: rgba(212, 166, 58, 0.36) !important;
-        transform: translateX(2px) !important;
       }
 
       .ungani-admin-side-icon {
@@ -142,13 +156,6 @@
         border-radius: 10px !important;
         background: rgba(255, 255, 255, 0.08) !important;
         border: 1px solid rgba(212, 166, 58, 0.22) !important;
-        font-size: 14px !important;
-      }
-
-      .ungani-admin-side-text {
-        display: inline-flex !important;
-        align-items: center !important;
-        text-align: left !important;
       }
 
       body.ungani-admin-page-polished h1,
@@ -156,13 +163,6 @@
       body.ungani-admin-page-polished h3,
       body.ungani-admin-page-polished h4 {
         color: #FFFFFF !important;
-      }
-
-      body.ungani-admin-page-polished p,
-      body.ungani-admin-page-polished small,
-      body.ungani-admin-page-polished span,
-      body.ungani-admin-page-polished label {
-        color: inherit;
       }
 
       body.ungani-admin-page-polished .card,
@@ -175,37 +175,27 @@
       body.ungani-admin-page-polished .subscription-card,
       body.ungani-admin-page-polished .billing-card,
       body.ungani-admin-page-polished .stat-card,
-      body.ungani-admin-page-polished .summary-card {
-        background:
-          linear-gradient(145deg, rgba(6, 28, 61, 0.92), rgba(10, 37, 79, 0.84)) !important;
-        color: #FFFFFF !important;
-        border: 1px solid rgba(212, 166, 58, 0.16) !important;
-        box-shadow: 0 22px 60px rgba(0, 0, 0, 0.30) !important;
-        border-radius: 20px !important;
+      body.ungani-admin-page-polished .summary-card,
+      body.ungani-admin-page-polished section {
+        background-color: rgba(6, 28, 61, 0.72);
+        color: #FFFFFF;
       }
 
       body.ungani-admin-page-polished table {
-        width: 100% !important;
         background: rgba(6, 28, 61, 0.74) !important;
         color: #FFFFFF !important;
-        border-collapse: separate !important;
-        border-spacing: 0 !important;
         border: 1px solid rgba(212, 166, 58, 0.14) !important;
         border-radius: 16px !important;
-        overflow: hidden !important;
       }
 
       body.ungani-admin-page-polished th {
         background: rgba(212, 166, 58, 0.16) !important;
         color: #F0C85A !important;
-        font-weight: 900 !important;
-        text-align: left !important;
       }
 
       body.ungani-admin-page-polished td,
       body.ungani-admin-page-polished th {
         border-bottom: 1px solid rgba(255, 255, 255, 0.10) !important;
-        padding: 12px !important;
       }
 
       body.ungani-admin-page-polished input,
@@ -214,7 +204,6 @@
         background: rgba(255, 255, 255, 0.08) !important;
         color: #FFFFFF !important;
         border: 1px solid rgba(212, 166, 58, 0.22) !important;
-        border-radius: 12px !important;
       }
 
       body.ungani-admin-page-polished button,
@@ -223,13 +212,6 @@
       body.ungani-admin-page-polished .button {
         border-radius: 14px !important;
         font-weight: 900 !important;
-      }
-
-      body.ungani-admin-page-polished .btn-primary,
-      body.ungani-admin-page-polished .primary,
-      body.ungani-admin-page-polished button.primary {
-        background: linear-gradient(135deg, #D4A63A, #F0C85A) !important;
-        color: #061C3D !important;
       }
 
       .ungani-admin-floating-menu-fix {
@@ -243,17 +225,14 @@
       }
 
       @media (max-width: 780px) {
-        body.ungani-admin-page-polished .ungani-admin-standard-sidebar,
-        body.ungani-admin-page-polished .sidebar,
-        body.ungani-admin-page-polished .admin-sidebar,
-        body.ungani-admin-page-polished aside.sidebar {
+        body.ungani-admin-created-sidebar .ungani-admin-standard-sidebar {
           position: relative !important;
           width: 100% !important;
           min-height: auto !important;
           bottom: auto !important;
         }
 
-        body.ungani-admin-page-polished.ungani-admin-has-sidebar .ungani-admin-main-content {
+        body.ungani-admin-created-sidebar .ungani-admin-main-content {
           margin-left: 0 !important;
           width: 100% !important;
           padding: 16px !important;
@@ -282,14 +261,7 @@
   }
 
   function createSidebar() {
-    const existing =
-      document.querySelector(".sidebar") ||
-      document.querySelector(".admin-sidebar") ||
-      document.querySelector("aside.sidebar");
-
-    if (existing) return existing;
-
-    const currentPage = window.location.pathname.split("/").pop().split("?")[0];
+    const currentPage = pageName();
 
     const aside = document.createElement("aside");
     aside.className = "ungani-admin-standard-sidebar sidebar";
@@ -319,51 +291,18 @@
       html += `
         <a class="ungani-admin-side-link${active}" href="${link.href}">
           <span class="ungani-admin-side-icon">${link.icon}</span>
-          <span class="ungani-admin-side-text">${link.label}</span>
+          <span>${link.label}</span>
         </a>
       `;
     });
 
     aside.innerHTML = html;
     document.body.insertBefore(aside, document.body.firstChild);
-
     return aside;
   }
 
-  function findMainContent(sidebar) {
-    const candidates = [
-      "main",
-      ".main",
-      ".admin-main",
-      ".main-content",
-      ".content",
-      ".admin-content",
-      ".page",
-      ".page-content",
-      ".container",
-      "#main",
-      "#app"
-    ];
-
-    for (const selector of candidates) {
-      const el = document.querySelector(selector);
-      if (el && el !== sidebar && !sidebar.contains(el)) {
-        return el;
-      }
-    }
-
-    return null;
-  }
-
-  function wrapBodyContent(sidebar) {
-    let main = findMainContent(sidebar);
-
-    if (main) {
-      main.classList.add("ungani-admin-main-content");
-      return main;
-    }
-
-    main = document.createElement("main");
+  function wrapOnlyWhenSidebarWasCreated(sidebar) {
+    const main = document.createElement("main");
     main.className = "ungani-admin-main-content";
 
     const children = Array.from(document.body.children);
@@ -382,39 +321,38 @@
     });
 
     document.body.insertBefore(main, sidebar.nextSibling);
-
-    return main;
   }
 
   function fixAdminMenuButton() {
-    const candidates = Array.from(document.querySelectorAll("button, a"));
-
-    candidates.forEach((el) => {
+    Array.from(document.querySelectorAll("button, a")).forEach((el) => {
       const text = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
 
       if (text === "admin menu" || text.includes("admin menu")) {
-        const insideSidebar = el.closest(".sidebar, .admin-sidebar, aside");
-        if (insideSidebar) return;
-
+        if (el.closest(".sidebar, .admin-sidebar, aside")) return;
         el.classList.add("ungani-admin-floating-menu-fix");
       }
     });
   }
 
   function run() {
-    const page = window.location.pathname.split("/").pop().toLowerCase();
-
+    const page = pageName();
     if (!page.startsWith("admin")) return;
 
     document.body.classList.add("ungani-admin-page-polished");
     injectStyles();
 
-    const sidebar = createSidebar();
-    document.body.classList.add("ungani-admin-has-sidebar");
+    const sidebar = existingSidebar();
 
-    wrapBodyContent(sidebar);
+    if (!sidebar) {
+      const created = createSidebar();
+      document.body.classList.add("ungani-admin-created-sidebar");
+      wrapOnlyWhenSidebarWasCreated(created);
+    } else {
+      document.body.classList.add("ungani-admin-existing-sidebar");
+      sidebar.setAttribute("data-ungani-existing-sidebar", VERSION);
+    }
+
     fixAdminMenuButton();
-
     setTimeout(fixAdminMenuButton, 500);
     setTimeout(fixAdminMenuButton, 1500);
   }
