@@ -1,40 +1,58 @@
 (function () {
-  const ADMIN_SIDEBAR_VERSION = "portal14u";
+  const VERSION = "portal14v";
 
-  const NAV_MAP = [
-    { match: "admin-home.html", icon: "🏠", label: "Admin Home" },
-    { match: "admin-launch.html", icon: "🚀", label: "Launch Readiness" },
-    { match: "admin-health.html", icon: "🛡️", label: "System Health" },
-    { match: "admin-smart-checks.html", icon: "🧠", label: "Smart Checks" },
+  const ICON_RULES = [
+    { keys: ["admin-home", "home"], icon: "🏠", label: "Admin Home" },
+    { keys: ["admin-launch", "launch"], icon: "🚀", label: "Launch Readiness" },
+    { keys: ["admin-health", "health"], icon: "🛡️", label: "System Health" },
+    { keys: ["admin-smart", "smart"], icon: "🧠", label: "Smart Checks" },
 
-    { match: "admin.html", icon: "👥", label: "Client Admin" },
-    { match: "admin-subscriptions.html", icon: "📦", label: "Subscriptions" },
-    { match: "admin-upgrade-requests.html", icon: "⬆️", label: "Upgrade Requests" },
-    { match: "admin-billing.html", icon: "💳", label: "Billing" },
-    { match: "admin-payment-proofs.html", icon: "🧾", label: "Payment Proofs" },
+    { keys: ["admin.html", "client admin"], icon: "👥", label: "Client Admin" },
+    { keys: ["client profiles", "profiles"], icon: "🏢", label: "Client Profiles" },
+    { keys: ["users", "access", "team"], icon: "🔐", label: "Users & Access" },
 
-    { match: "admin-email-queue.html", icon: "✉️", label: "Email Queue" },
-    { match: "admin-branches.html", icon: "🏢", label: "Branches" },
-    { match: "admin-reports.html", icon: "📊", label: "Reports" },
-    { match: "admin-onboarding.html", icon: "🧭", label: "Onboarding" },
-    { match: "admin-settings.html", icon: "⚙️", label: "Settings" },
+    { keys: ["money", "income", "expense"], icon: "💰", label: "Money Records" },
+    { keys: ["items", "assets", "stock"], icon: "📦", label: "Items / Assets" },
+    { keys: ["people", "leads", "contacts"], icon: "👤", label: "People" },
+    { keys: ["business records", "records"], icon: "🗂️", label: "Business Records" },
+    { keys: ["tasks", "follow"], icon: "✅", label: "Tasks" },
+    { keys: ["documents", "files"], icon: "📄", label: "Documents" },
+    { keys: ["calendar", "events"], icon: "📅", label: "Calendar" },
 
-    { match: "login.html", icon: "🚪", label: "Login" },
-    { match: "index.html", icon: "📝", label: "Registration" }
+    { keys: ["support"], icon: "💬", label: "Support" },
+    { keys: ["registrations", "approvals"], icon: "📝", label: "Approvals" },
+    { keys: ["notifications"], icon: "🔔", label: "Notifications" },
+
+    { keys: ["subscriptions", "packages"], icon: "📦", label: "Subscriptions" },
+    { keys: ["upgrade"], icon: "⬆️", label: "Upgrade Requests" },
+    { keys: ["billing", "payments"], icon: "💳", label: "Billing" },
+    { keys: ["proof"], icon: "🧾", label: "Payment Proofs" },
+
+    { keys: ["email"], icon: "✉️", label: "Email Queue" },
+    { keys: ["branches"], icon: "🏬", label: "Branches" },
+    { keys: ["reports", "analytics"], icon: "📊", label: "Reports" },
+    { keys: ["onboarding"], icon: "🧭", label: "Onboarding" },
+    { keys: ["settings"], icon: "⚙️", label: "Settings" },
+
+    { keys: ["login"], icon: "🚪", label: "Login" },
+    { keys: ["logout"], icon: "🚪", label: "Logout" },
+    { keys: ["index", "registration"], icon: "📝", label: "Registration" }
   ];
 
   function injectStyles() {
-    if (document.getElementById("ungani-admin-sidebar-polish-style")) return;
+    const old = document.getElementById("ungani-admin-sidebar-polish-style");
+    if (old) old.remove();
 
     const style = document.createElement("style");
     style.id = "ungani-admin-sidebar-polish-style";
+
     style.textContent = `
       body .sidebar,
       body .admin-sidebar,
       body aside.sidebar,
       body aside.admin-sidebar {
         background:
-          linear-gradient(180deg, rgba(3, 20, 46, 0.98), rgba(6, 28, 61, 0.98)) !important;
+          linear-gradient(180deg, rgba(3, 20, 46, 0.99), rgba(6, 28, 61, 0.99)) !important;
         border-right: 1px solid rgba(212, 166, 58, 0.18) !important;
         box-shadow: 12px 0 36px rgba(0, 0, 0, 0.30) !important;
       }
@@ -44,133 +62,126 @@
         border-bottom: 1px solid rgba(212, 166, 58, 0.18) !important;
       }
 
-      body .sidebar .brand h1,
-      body .admin-sidebar .brand h1,
-      body .sidebar h1,
-      body .admin-sidebar h1 {
-        color: #FFFFFF !important;
-        letter-spacing: 0.6px !important;
-      }
-
-      body .sidebar .brand p,
-      body .admin-sidebar .brand p {
-        color: rgba(255, 255, 255, 0.64) !important;
-      }
-
-      body .sidebar img,
-      body .admin-sidebar img {
-        box-shadow: 0 8px 20px rgba(212, 166, 58, 0.16);
-      }
-
       body .sidebar .nav-section-title,
       body .admin-sidebar .nav-section-title,
       body .sidebar .section-title,
       body .admin-sidebar .section-title,
       body .sidebar .menu-title,
       body .admin-sidebar .menu-title {
-        color: rgba(212, 166, 58, 0.86) !important;
+        color: rgba(212, 166, 58, 0.90) !important;
         font-size: 11px !important;
         text-transform: uppercase !important;
         letter-spacing: 0.13em !important;
         font-weight: 900 !important;
       }
 
-      body .sidebar a,
-      body .admin-sidebar a {
-        text-decoration: none !important;
-      }
-
-      body .sidebar a.ungani-polished-nav-link,
-      body .admin-sidebar a.ungani-polished-nav-link {
+      body .sidebar a.ungani-admin-nav-polished,
+      body .admin-sidebar a.ungani-admin-nav-polished {
+        width: 100% !important;
         display: flex !important;
         align-items: center !important;
-        gap: 11px !important;
-        color: rgba(255, 255, 255, 0.84) !important;
-        padding: 12px 12px !important;
+        justify-content: flex-start !important;
+        gap: 12px !important;
+        text-align: left !important;
+        color: rgba(255, 255, 255, 0.86) !important;
+        text-decoration: none !important;
+        padding: 12px 13px !important;
         border-radius: 14px !important;
         margin: 4px 0 !important;
         font-size: 14px !important;
         line-height: 1.2 !important;
+        font-weight: 800 !important;
         transition: 0.18s ease !important;
         border: 1px solid transparent !important;
         background: transparent !important;
         cursor: pointer !important;
       }
 
-      body .sidebar a.ungani-polished-nav-link:hover,
-      body .admin-sidebar a.ungani-polished-nav-link:hover,
-      body .sidebar a.ungani-polished-nav-link.active,
-      body .admin-sidebar a.ungani-polished-nav-link.active,
-      body .sidebar a.ungani-polished-nav-link[aria-current="page"],
-      body .admin-sidebar a.ungani-polished-nav-link[aria-current="page"] {
+      body .sidebar a.ungani-admin-nav-polished:hover,
+      body .admin-sidebar a.ungani-admin-nav-polished:hover,
+      body .sidebar a.ungani-admin-nav-polished.active,
+      body .admin-sidebar a.ungani-admin-nav-polished.active,
+      body .sidebar a.ungani-admin-nav-polished[aria-current="page"],
+      body .admin-sidebar a.ungani-admin-nav-polished[aria-current="page"] {
         color: #FFFFFF !important;
         background: rgba(212, 166, 58, 0.16) !important;
-        border-color: rgba(212, 166, 58, 0.34) !important;
+        border-color: rgba(212, 166, 58, 0.36) !important;
         transform: translateX(2px) !important;
       }
 
-      .ungani-nav-icon {
-        width: 24px;
-        min-width: 24px;
-        height: 24px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 9px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(212, 166, 58, 0.18);
-        font-size: 13px;
+      .ungani-admin-nav-icon {
+        width: 30px !important;
+        min-width: 30px !important;
+        height: 30px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 10px !important;
+        background: rgba(255, 255, 255, 0.08) !important;
+        border: 1px solid rgba(212, 166, 58, 0.22) !important;
+        font-size: 14px !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+        padding: 0 !important;
       }
 
-      .ungani-nav-text {
-        display: inline-flex;
-        align-items: center;
-        min-width: 0;
+      .ungani-admin-nav-text {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        flex: 0 1 auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        min-width: 0 !important;
+        text-align: left !important;
+        white-space: normal !important;
       }
 
-      body .sidebar a.ungani-polished-nav-link:hover .ungani-nav-icon,
-      body .admin-sidebar a.ungani-polished-nav-link:hover .ungani-nav-icon,
-      body .sidebar a.ungani-polished-nav-link.active .ungani-nav-icon,
-      body .admin-sidebar a.ungani-polished-nav-link.active .ungani-nav-icon {
-        background: rgba(212, 166, 58, 0.22);
-        border-color: rgba(212, 166, 58, 0.42);
+      body .sidebar a.ungani-admin-nav-polished:hover .ungani-admin-nav-icon,
+      body .admin-sidebar a.ungani-admin-nav-polished:hover .ungani-admin-nav-icon,
+      body .sidebar a.ungani-admin-nav-polished.active .ungani-admin-nav-icon,
+      body .admin-sidebar a.ungani-admin-nav-polished.active .ungani-admin-nav-icon {
+        background: rgba(212, 166, 58, 0.24) !important;
+        border-color: rgba(212, 166, 58, 0.48) !important;
       }
     `;
 
     document.head.appendChild(style);
   }
 
-  function cleanText(value) {
+  function cleanLabel(value) {
     return String(value || "")
-      .replace(/[🏠🚀🛡️🧠👥📦⬆️💳🧾✉️🏢📊🧭⚙️🚪📝]/g, "")
+      .replace(/[🏠🚀🛡️🧠👥🏢🔐💰📦👤🗂️✅📄📅💬📝🔔⬆️💳🧾✉️🏬📊🧭⚙️🚪•·]/g, "")
       .replace(/\s+/g, " ")
       .trim();
   }
 
-  function getNavMeta(anchor) {
-    const href = anchor.getAttribute("href") || "";
-    const text = cleanText(anchor.textContent);
+  function getExistingLabel(anchor) {
+    const existingText = anchor.querySelector(".ungani-admin-nav-text, .ungani-nav-text");
+    if (existingText) return cleanLabel(existingText.textContent);
 
-    const byHref = NAV_MAP.find((item) => href.includes(item.match));
-    if (byHref) return byHref;
+    return cleanLabel(anchor.textContent);
+  }
 
-    const lower = text.toLowerCase();
+  function getMeta(anchor) {
+    const href = String(anchor.getAttribute("href") || "").toLowerCase();
+    const label = getExistingLabel(anchor);
+    const text = label.toLowerCase();
+    const combined = `${href} ${text}`;
 
-    if (lower.includes("home")) return { icon: "🏠", label: text || "Admin Home" };
-    if (lower.includes("launch")) return { icon: "🚀", label: text || "Launch Readiness" };
-    if (lower.includes("health")) return { icon: "🛡️", label: text || "System Health" };
-    if (lower.includes("smart")) return { icon: "🧠", label: text || "Smart Checks" };
-    if (lower.includes("client")) return { icon: "👥", label: text || "Clients" };
-    if (lower.includes("subscription") || lower.includes("package")) return { icon: "📦", label: text || "Subscriptions" };
-    if (lower.includes("upgrade")) return { icon: "⬆️", label: text || "Upgrade Requests" };
-    if (lower.includes("billing") || lower.includes("payment")) return { icon: "💳", label: text || "Billing" };
-    if (lower.includes("email")) return { icon: "✉️", label: text || "Email Queue" };
-    if (lower.includes("branch")) return { icon: "🏢", label: text || "Branches" };
-    if (lower.includes("report")) return { icon: "📊", label: text || "Reports" };
-    if (lower.includes("setting")) return { icon: "⚙️", label: text || "Settings" };
-    if (lower.includes("login") || lower.includes("logout")) return { icon: "🚪", label: text || "Login" };
+    for (const rule of ICON_RULES) {
+      if (rule.keys.some((key) => combined.includes(key))) {
+        return {
+          icon: rule.icon,
+          label: label || rule.label
+        };
+      }
+    }
 
-    return { icon: "•", label: text || "Admin Link" };
+    return {
+      icon: "📌",
+      label: label || "Admin Link"
+    };
   }
 
   function polishSidebar() {
@@ -183,39 +194,36 @@
 
     if (!sidebar) return;
 
-    sidebar.setAttribute("data-ungani-sidebar-polish", ADMIN_SIDEBAR_VERSION);
+    sidebar.setAttribute("data-ungani-sidebar-polish", VERSION);
 
-    const currentPath = window.location.pathname.split("/").pop();
+    const currentPath = window.location.pathname.split("/").pop().split("?")[0];
 
-    const anchors = sidebar.querySelectorAll("a[href]");
-    anchors.forEach((anchor) => {
+    sidebar.querySelectorAll("a[href]").forEach((anchor) => {
       const href = anchor.getAttribute("href") || "";
 
       if (
-        href.startsWith("mailto:") ||
-        href.startsWith("tel:") ||
         href.startsWith("#") ||
-        anchor.dataset.unganiPolished === "true"
+        href.startsWith("mailto:") ||
+        href.startsWith("tel:")
       ) {
         return;
       }
 
-      const meta = getNavMeta(anchor);
-
-      anchor.classList.add("ungani-polished-nav-link");
-
+      const meta = getMeta(anchor);
       const hrefPath = href.split("?")[0].split("/").pop();
+
+      anchor.classList.remove("ungani-polished-nav-link");
+      anchor.classList.add("ungani-admin-nav-polished");
+
       if (hrefPath && currentPath && hrefPath === currentPath) {
         anchor.classList.add("active");
         anchor.setAttribute("aria-current", "page");
       }
 
       anchor.innerHTML = `
-        <span class="ungani-nav-icon">${meta.icon}</span>
-        <span class="ungani-nav-text">${meta.label}</span>
+        <span class="ungani-admin-nav-icon">${meta.icon}</span>
+        <span class="ungani-admin-nav-text">${meta.label}</span>
       `;
-
-      anchor.dataset.unganiPolished = "true";
     });
   }
 
