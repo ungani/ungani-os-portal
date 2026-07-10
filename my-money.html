@@ -17,6 +17,7 @@
     let currentContext = null;
     let businessPreset = null;
     let moneyRows = [];
+    let categorySuggestions = [];
     let editingMoneyId = null;
 
     window.addEventListener("load", function () {
@@ -68,7 +69,29 @@
       }
 
       moneyRows = response.data || [];
+
+      await loadCategorySuggestions();
+
       renderMoneyPage();
+    }
+
+    async function loadCategorySuggestions() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_category_suggestions", {
+          p_limit: 20
+        });
+
+        if (response.error) {
+          console.warn("Category suggestions skipped:", response.error.message);
+          categorySuggestions = [];
+          return;
+        }
+
+        categorySuggestions = response.data || [];
+      } catch (error) {
+        console.warn("Category suggestions skipped:", error.message);
+        categorySuggestions = [];
+      }
     }
 
     function renderMoneyPage() {
@@ -419,6 +442,8 @@
           </div>
         </section>
 
+        ${renderCategorySuggestionsPanel()}
+
         <section class="money-category-section">
           <div class="ungani-card">
             <div class="ungani-section-title">
@@ -574,7 +599,7 @@
         </section>
 
         <p class="ungani-small">
-          Money Version: Step 310B-1 Business-Type Money Presets · ungani.com · info@ungani.com
+          Money Version: Step 24C Category Suggestions · ungani.com · info@ungani.com
         </p>
       `);
 
@@ -584,6 +609,111 @@
       setTimeout(function () {
         renderMoneyCharts(trend, expenseBreakdown);
       }, 150);
+    }
+
+    function renderCategorySuggestionsPanel() {
+      if (!categorySuggestions || categorySuggestions.length === 0) {
+        return "";
+      }
+
+      return `
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Smart Category Suggestions</h3>
+              <p class="ungani-small">UNGANI found money records that may need cleaner categories.</p>
+            </div>
+
+            <button class="ungani-btn green" onclick="loadMoneyRows()">Refresh</button>
+          </div>
+
+          <div style="display:grid;gap:12px;">
+            ${categorySuggestions.map(function (item) {
+              const amount = Number(item.transaction_amount || 0);
+              const confidence = Math.round(Number(item.confidence || 0) * 100);
+
+              return `
+                <div class="ungani-card" style="box-shadow:none;">
+                  <div class="ungani-section-title">
+                    <div>
+                      <h3 style="font-size:16px;margin-bottom:4px;">
+                        ${UnganiClientShared.safe(item.current_category || "Uncategorized")}
+                        →
+                        ${UnganiClientShared.safe(item.suggested_category || "Suggested Category")}
+                      </h3>
+
+                      <p class="ungani-small">
+                        ${UnganiClientShared.safe(item.reason || "Suggested based on the record details.")}
+                      </p>
+
+                      <p class="ungani-small" style="margin-top:6px;">
+                        ${UnganiClientShared.safe(UnganiClientShared.formatDate(item.transaction_date))}
+                        · ${UnganiClientShared.safe(item.transaction_type || "transaction")}
+                        · ${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(amount))}
+                        · Confidence ${UnganiClientShared.safe(confidence + "%")}
+                      </p>
+                    </div>
+
+                    <span class="ungani-badge gold">Suggestion</span>
+                  </div>
+
+                  <div class="ungani-button-row">
+                    <button class="ungani-btn small gold" onclick="respondToCategorySuggestion('${UnganiClientShared.attr(item.id)}', 'accept')">
+                      Accept
+                    </button>
+
+                    <button class="ungani-btn small dark" onclick="respondToCategorySuggestion('${UnganiClientShared.attr(item.id)}', 'reject')">
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </section>
+      `;
+    }
+
+    async function respondToCategorySuggestion(id, action) {
+      if (
+        window.UnganiClientShared &&
+        typeof UnganiClientShared.ensureCanWrite === "function" &&
+        !UnganiClientShared.ensureCanWrite("category suggestion")
+      ) {
+        return;
+      }
+
+      const confirmed = confirm(
+        action === "accept"
+          ? "Accept this category suggestion and update the money record?"
+          : "Reject this category suggestion?"
+      );
+
+      if (!confirmed) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("respond_to_ungani_category_suggestion", {
+          p_suggestion_id: id,
+          p_action: action
+        });
+
+        if (response.error) {
+          UnganiClientShared.showToast("Could not update suggestion: " + response.error.message);
+          return;
+        }
+
+        const result = response.data || {};
+
+        if (result.ok === false) {
+          UnganiClientShared.showToast(result.message || "Could not update suggestion.");
+          return;
+        }
+
+        UnganiClientShared.showToast(result.message || "Suggestion updated ✓");
+        await loadMoneyRows();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not update suggestion: " + error.message);
+      }
     }
 
     async function renderMoneyCharts(trend, expenseBreakdown) {
