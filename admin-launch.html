@@ -934,22 +934,30 @@
     }
 
     async function runFullReview() {
-      clearNotice();
-      showNotice("Running full Admin System Review. This may take a moment...", "info");
+  clearNotice();
+  showNotice("Running fast launch review. This avoids timeout and updates the launch snapshot...", "info");
 
-      const isAdmin = await requireAdmin();
-      if (!isAdmin) return;
+  const isAdmin = await requireAdmin();
+  if (!isAdmin) return;
 
-      const { data, error } = await supabaseClient.rpc("run_admin_ungani_system_review", {
-        p_run_smart_checks: true,
-        p_run_data_safety_audit: true
-      });
+  const { data, error } = await supabaseClient.rpc("get_admin_ungani_launch_dashboard_snapshot_fast");
 
-      if (error) {
-        showNotice("Full review failed: " + error.message, "error");
-        byId("rawJson").textContent = JSON.stringify(error, null, 2);
-        return;
-      }
+  if (error) {
+    showNotice("Fast launch review failed: " + error.message, "error");
+    byId("rawJson").textContent = JSON.stringify(error, null, 2);
+    return;
+  }
+
+  if (!data || data.ok !== true) {
+    showNotice((data && data.message) ? data.message : "Fast launch review returned an error.", "error");
+    byId("rawJson").textContent = JSON.stringify(data, null, 2);
+    return;
+  }
+
+  renderSnapshot(data);
+  byId("rawJson").textContent = JSON.stringify(data, null, 2);
+  showNotice("Fast launch review completed successfully.", "success");
+}
 
       if (!data || data.ok !== true) {
         showNotice((data && data.message) ? data.message : "Full review returned an error.", "error");
@@ -968,7 +976,7 @@
       const isAdmin = await requireAdmin();
       if (!isAdmin) return;
 
-      const { data, error } = await supabaseClient.rpc("run_admin_ungani_launch_dashboard_snapshot_log");
+      const { data, error } = await supabaseClient.rpc("run_admin_ungani_launch_dashboard_snapshot_log_fast");
 
       if (error) {
         showNotice("Snapshot log failed: " + error.message, "error");
