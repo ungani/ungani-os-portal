@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI Admin - Smart Checks</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --offwhite: #F5F5F3;
+      --white: #FFFFFF;
+      --softgray: #E5E7EB;
+      --text: #0F172A;
+      --muted: #64748B;
+      --red: #DC2626;
+      --green: #16A34A;
+      --blue: #2563EB;
+      --border: rgba(15, 23, 42, 0.11);
+      --shadow: 0 20px 55px rgba(6, 28, 61, 0.12);
+      --card: rgba(255,255,255,0.94);
+      --soft: rgba(6,28,61,0.045);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212,166,58,0.20), transparent 28%),
+        linear-gradient(135deg, #F8FAFC 0%, #F5F5F3 45%, #EEF2F7 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .admin-shell {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background:
+        radial-gradient(circle at top, rgba(212,166,58,0.20), transparent 32%),
+        var(--navy);
+      color: white;
+      padding: 24px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .brand img {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      border-radius: 12px;
+      background: white;
+      padding: 5px;
+    }
+
+    .brand strong {
+      display: block;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+
+    .brand span {
+      display: block;
+      font-size: 12px;
+      color: rgba(255,255,255,0.68);
+      margin-top: 3px;
+    }
+
+    .nav {
+      display: grid;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .nav a {
+      color: rgba(255,255,255,0.80);
+      text-decoration: none;
+      padding: 12px 13px;
+      border-radius: 14px;
+      font-weight: 800;
+      font-size: 13px;
+      border: 1px solid transparent;
+    }
+
+    .nav a:hover,
+    .nav a.active {
+      color: white;
+      background: rgba(255,255,255,0.11);
+      border-color: rgba(255,255,255,0.14);
+    }
+
+    .main {
+      padding: 24px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .topbar h1 {
+      margin: 0;
+      color: var(--navy);
+      font-size: clamp(28px, 4vw, 44px);
+      letter-spacing: -0.05em;
+      line-height: 1;
+    }
+
+    .topbar p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: 26px;
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+
+    .hero {
+      background:
+        radial-gradient(circle at top right, rgba(212,166,58,0.26), transparent 32%),
+        linear-gradient(135deg, var(--navy), #0A2B5F);
+      color: white;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero h2 {
+      margin: 0 0 12px;
+      font-size: clamp(30px, 4vw, 52px);
+      letter-spacing: -0.06em;
+      line-height: 1.02;
+    }
+
+    .hero p {
+      margin: 0;
+      color: rgba(255,255,255,0.76);
+      line-height: 1.6;
+      max-width: 760px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 16px;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+    }
+
+    .btn.dark {
+      background: var(--navy);
+      color: white;
+    }
+
+    .btn.light {
+      background: white;
+      color: var(--navy);
+    }
+
+    .btn.green {
+      background: var(--green);
+      color: white;
+    }
+
+    .btn.red {
+      background: var(--red);
+      color: white;
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .mini-card {
+      border-radius: 22px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      padding: 18px;
+    }
+
+    .mini-card span {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(212,166,58,0.16);
+      color: var(--navy);
+      font-size: 12px;
+      font-weight: 950;
+      margin-bottom: 12px;
+    }
+
+    .mini-card h3 {
+      margin: 0 0 8px;
+      color: var(--navy);
+    }
+
+    .mini-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .result-box {
+      display: none;
+      background: #0B1220;
+      color: #E5E7EB;
+      border-radius: 20px;
+      padding: 16px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      margin-top: 16px;
+    }
+
+    .status-line {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 950;
+      background: rgba(212,166,58,0.16);
+      color: var(--navy);
+    }
+
+    .badge.green {
+      background: rgba(22,163,74,0.12);
+      color: var(--green);
+    }
+
+    .badge.red {
+      background: rgba(220,38,38,0.12);
+      color: var(--red);
+    }
+
+    @media (max-width: 980px) {
+      .admin-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        height: auto;
+        position: relative;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="ungani-logo.png" alt="UNGANI" />
+        <div>
+          <strong>UNGANI Admin</strong>
+          <span>Connecting businesses.</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <a href="admin-home.html">Command Center</a>
+        <a href="admin.html">Registrations</a>
+        <a href="admin-subscriptions.html">Subscriptions</a>
+        <a href="admin-billing.html">Billing</a>
+        <a href="admin-upgrade-requests.html">Upgrade Requests</a>
+        <a href="admin-smart-checks.html" class="active">Smart Checks</a>
+        <a href="admin-system-health.html">System Health</a>
+        <a href="login.html">Exit</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h1>Smart Checks</h1>
+          <p>Run UNGANI automatic checks for overdue tasks, low stock, and follow-up nudges.</p>
+        </div>
+
+        <span id="adminStatusBadge" class="badge">Checking admin...</span>
+      </div>
+
+      <section class="card hero">
+        <h2>Run smart operational checks.</h2>
+        <p>
+          This page helps UNGANI detect pending operational issues before clients miss them.
+          It creates in-app notifications for the affected client accounts without exposing client dashboards.
+        </p>
+
+        <div class="button-row">
+          <button id="runSmartChecksBtn" class="btn gold" onclick="runSmartChecks()" disabled>
+            Run Smart Checks
+          </button>
+          <button class="btn light" onclick="checkAdminAccess()">Refresh Access</button>
+          <a class="btn light" href="admin-home.html">Back to Admin Home</a>
+        </div>
+
+        <p id="smartCheckStatus" class="status-line">Waiting for admin verification...</p>
+      </section>
+
+      <section class="grid">
+        <div class="mini-card">
+          <span>Tasks</span>
+          <h3>Overdue Tasks</h3>
+          <p>Checks pending or in-progress tasks that are due, overdue, or need follow-up.</p>
+        </div>
+
+        <div class="mini-card">
+          <span>Stock</span>
+          <h3>Low Stock</h3>
+          <p>Checks items/assets/stock records where quantity is below the minimum level.</p>
+        </div>
+
+        <div class="mini-card">
+          <span>Follow-ups</span>
+          <h3>Leads & Support</h3>
+          <p>Checks leads that need contact and support issues that have stayed open too long.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0 0 8px;color:var(--navy);">Latest smart-check result</h3>
+            <p style="margin:0;color:var(--muted);font-size:14px;">
+              Results will show here after you run the smart checks.
+            </p>
+          </div>
+
+          <button class="btn dark" onclick="clearResult()">Clear Result</button>
+        </div>
+
+        <pre id="smartCheckResult" class="result-box"></pre>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUser = null;
+    let adminReady = false;
+
+    window.addEventListener("load", async function () {
+      await checkAdminAccess();
+    });
+
+    async function checkAdminAccess() {
+      const badge = document.getElementById("adminStatusBadge");
+      const button = document.getElementById("runSmartChecksBtn");
+      const status = document.getElementById("smartCheckStatus");
+
+      adminReady = false;
+      button.disabled = true;
+      badge.textContent = "Checking admin...";
+      badge.className = "badge";
+      status.textContent = "Checking admin session...";
+
+      const sessionResponse = await supabaseClient.auth.getSession();
+      const session = sessionResponse.data ? sessionResponse.data.session : null;
+
+      if (!session || !session.user) {
+        badge.textContent = "Not logged in";
+        badge.className = "badge red";
+        status.textContent = "Please log in through the admin login page first.";
+        return;
+      }
+
+      currentUser = session.user;
+
+      try {
+        const adminResponse = await supabaseClient.rpc("is_ungani_admin");
+
+        if (adminResponse.error) {
+          badge.textContent = "Admin check failed";
+          badge.className = "badge red";
+          status.textContent = "Could not confirm admin access: " + adminResponse.error.message;
+          return;
+        }
+
+        if (adminResponse.data === true || adminResponse.data === "true") {
+          adminReady = true;
+          button.disabled = false;
+          badge.textContent = "Admin verified";
+          badge.className = "badge green";
+          status.textContent = "Admin verified. You can run smart checks now.";
+          return;
+        }
+
+        badge.textContent = "Access denied";
+        badge.className = "badge red";
+        status.textContent = "This account is not recognized as an UNGANI admin.";
+      } catch (error) {
+        badge.textContent = "Admin check error";
+        badge.className = "badge red";
+        status.textContent = "Admin check error: " + error.message;
+      }
+    }
+
+    async function runSmartChecks() {
+      const button = document.getElementById("runSmartChecksBtn");
+      const status = document.getElementById("smartCheckStatus");
+      const resultBox = document.getElementById("smartCheckResult");
+
+      if (!adminReady) {
+        status.textContent = "Admin access is not verified yet.";
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = "Running...";
+      status.textContent = "Running UNGANI smart checks...";
+      resultBox.style.display = "block";
+      resultBox.textContent = "Running checks...";
+
+      try {
+        const response = await supabaseClient.rpc("run_ungani_smart_checks");
+
+        if (response.error) {
+          resultBox.textContent = response.error.message;
+          status.textContent = "Smart checks failed.";
+          button.disabled = false;
+          button.textContent = "Run Smart Checks";
+          return;
+        }
+
+        resultBox.textContent = JSON.stringify(response.data, null, 2);
+        status.textContent = "Smart checks completed successfully.";
+      } catch (error) {
+        resultBox.textContent = error.message;
+        status.textContent = "Smart checks failed.";
+      }
+
+      button.disabled = false;
+      button.textContent = "Run Smart Checks";
+    }
+
+    function clearResult() {
+      const resultBox = document.getElementById("smartCheckResult");
+      resultBox.textContent = "";
+      resultBox.style.display = "none";
+    }
+  </script>
+</body>
+</html>
