@@ -4,9 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>UNGANI Admin - Smart Checks</title>
+  <title>UNGANI OS - Admin Smart Checks</title>
+
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/ungani-logo.png" />
+  <link rel="icon" href="/ungani-logo.png" type="image/png" />
+
+  <meta name="theme-color" content="#061C3D" />
+  <meta name="background-color" content="#020617" />
+  <meta name="application-name" content="UNGANI OS" />
+  <meta name="apple-mobile-web-app-title" content="UNGANI OS" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
 
   <style>
     :root {
@@ -14,48 +27,175 @@
       --gold: #D4A63A;
       --offwhite: #F5F5F3;
       --white: #FFFFFF;
-      --softgray: #E5E7EB;
-      --text: #0F172A;
+      --gray: #E5E7EB;
       --muted: #64748B;
-      --red: #DC2626;
       --green: #16A34A;
       --blue: #2563EB;
-      --border: rgba(15, 23, 42, 0.11);
-      --shadow: 0 20px 55px rgba(6, 28, 61, 0.12);
-      --card: rgba(255,255,255,0.94);
-      --soft: rgba(6,28,61,0.045);
+      --red: #DC2626;
+      --orange: #F97316;
+
+      --page-bg:
+        radial-gradient(circle at top right, rgba(212,166,58,0.20), transparent 32%),
+        linear-gradient(135deg, #061C3D 0%, #092B58 44%, #F5F5F3 44%, #F5F5F3 100%);
+
+      --text: #061C3D;
+      --text-soft: #64748B;
+      --card: rgba(255,255,255,0.96);
+      --card-solid: #FFFFFF;
+      --soft: #F8FAFC;
+      --border: rgba(6,28,61,0.10);
+      --table-border: #E5E7EB;
+      --shadow: 0 24px 70px rgba(6,28,61,0.13);
     }
 
-    * {
-      box-sizing: border-box;
+    body[data-theme="dark"] {
+      --page-bg:
+        radial-gradient(circle at top right, rgba(212,166,58,0.14), transparent 32%),
+        linear-gradient(135deg, #020617 0%, #061C3D 52%, #0F172A 100%);
+
+      --text: #F8FAFC;
+      --text-soft: #CBD5E1;
+      --card: rgba(15,23,42,0.90);
+      --card-solid: #0F172A;
+      --soft: rgba(255,255,255,0.06);
+      --border: rgba(255,255,255,0.12);
+      --table-border: rgba(255,255,255,0.12);
+      --shadow: 0 24px 70px rgba(0,0,0,0.38);
     }
+
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
-      font-family: Inter, Arial, sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(212,166,58,0.20), transparent 28%),
-        linear-gradient(135deg, #F8FAFC 0%, #F5F5F3 45%, #EEF2F7 100%);
-      color: var(--text);
       min-height: 100vh;
+      font-family: Inter, Arial, sans-serif;
+      background: var(--page-bg);
+      color: var(--text);
     }
 
-    .admin-shell {
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .mobile-header {
+      display: none;
+      position: sticky;
+      top: 0;
+      z-index: 80;
+      background: rgba(6,28,61,0.97);
+      color: white;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(18px);
+      padding: 11px 14px;
+    }
+
+    .mobile-header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .mobile-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .mobile-brand img {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+      background: white;
+      border-radius: 13px;
+      padding: 6px;
+      flex: 0 0 auto;
+    }
+
+    .mobile-brand strong {
+      display: block;
+      font-size: 15px;
+      letter-spacing: -0.035em;
+    }
+
+    .mobile-brand span {
+      display: block;
+      color: rgba(255,255,255,0.65);
+      font-size: 11px;
+    }
+
+    .mobile-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .hamburger,
+    .bell-btn {
+      width: 44px;
+      height: 44px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border-radius: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      cursor: pointer;
+      flex: 0 0 auto;
+      position: relative;
+    }
+
+    .drawer-overlay,
+    .notification-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(2,6,23,0.62);
+      z-index: 90;
+      opacity: 0;
+      pointer-events: none;
+      transition: 0.2s ease;
+    }
+
+    .drawer-overlay.open,
+    .notification-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .app-shell {
       display: grid;
-      grid-template-columns: 280px minmax(0, 1fr);
+      grid-template-columns: 285px minmax(0, 1fr);
       min-height: 100vh;
     }
 
     .sidebar {
-      background:
-        radial-gradient(circle at top, rgba(212,166,58,0.20), transparent 32%),
-        var(--navy);
+      background: rgba(6,28,61,0.97);
       color: white;
       padding: 24px;
       position: sticky;
       top: 0;
       height: 100vh;
       overflow-y: auto;
+      border-right: 1px solid rgba(255,255,255,0.12);
+      z-index: 100;
+    }
+
+    .sidebar-close {
+      display: none;
+      width: 100%;
+      margin-bottom: 16px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border-radius: 16px;
+      padding: 12px;
+      font-weight: 900;
+      cursor: pointer;
     }
 
     .brand {
@@ -66,127 +206,118 @@
     }
 
     .brand img {
-      width: 44px;
-      height: 44px;
+      width: 54px;
+      height: 54px;
       object-fit: contain;
-      border-radius: 12px;
       background: white;
-      padding: 5px;
+      border-radius: 16px;
+      padding: 8px;
     }
 
-    .brand strong {
-      display: block;
-      font-size: 17px;
-      letter-spacing: -0.02em;
+    .brand h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -0.04em;
     }
 
-    .brand span {
-      display: block;
-      font-size: 12px;
+    .brand p {
+      margin: 3px 0 0;
       color: rgba(255,255,255,0.68);
-      margin-top: 3px;
+      font-size: 12px;
     }
 
-    .nav {
-      display: grid;
-      gap: 8px;
-      margin-top: 20px;
+    .nav-section-title {
+      margin: 22px 0 8px;
+      color: rgba(255,255,255,0.48);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
-    .nav a {
-      color: rgba(255,255,255,0.80);
-      text-decoration: none;
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
       padding: 12px 13px;
-      border-radius: 14px;
-      font-weight: 800;
-      font-size: 13px;
-      border: 1px solid transparent;
+      border-radius: 16px;
+      color: rgba(255,255,255,0.82);
+      font-size: 14px;
+      font-weight: 750;
+      margin-bottom: 6px;
+      transition: 0.2s;
     }
 
-    .nav a:hover,
-    .nav a.active {
+    .nav-link:hover,
+    .nav-link.active {
+      background: rgba(212,166,58,0.16);
       color: white;
-      background: rgba(255,255,255,0.11);
-      border-color: rgba(255,255,255,0.14);
+    }
+
+    .nav-pill {
+      font-size: 11px;
+      background: rgba(255,255,255,0.12);
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.75);
     }
 
     .main {
+      min-width: 0;
       padding: 24px;
+      max-width: 1500px;
+      width: 100%;
+      margin: 0 auto;
     }
 
     .topbar {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      align-items: center;
+      gap: 18px;
       margin-bottom: 20px;
+      color: white;
     }
 
-    .topbar h1 {
+    .topbar h2 {
       margin: 0;
-      color: var(--navy);
-      font-size: clamp(28px, 4vw, 44px);
-      letter-spacing: -0.05em;
-      line-height: 1;
+      font-size: clamp(28px, 4vw, 48px);
+      letter-spacing: -0.055em;
+      line-height: 1.02;
     }
 
     .topbar p {
       margin: 8px 0 0;
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
-      border-radius: 26px;
-      padding: 22px;
-      margin-bottom: 18px;
-    }
-
-    .hero {
-      background:
-        radial-gradient(circle at top right, rgba(212,166,58,0.26), transparent 32%),
-        linear-gradient(135deg, var(--navy), #0A2B5F);
-      color: white;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .hero h2 {
-      margin: 0 0 12px;
-      font-size: clamp(30px, 4vw, 52px);
-      letter-spacing: -0.06em;
-      line-height: 1.02;
-    }
-
-    .hero p {
-      margin: 0;
-      color: rgba(255,255,255,0.76);
-      line-height: 1.6;
+      color: rgba(255,255,255,0.72);
       max-width: 760px;
+      line-height: 1.5;
     }
 
-    .button-row {
+    .top-actions {
       display: flex;
-      gap: 10px;
       flex-wrap: wrap;
-      margin-top: 18px;
+      gap: 10px;
+      justify-content: flex-end;
     }
 
     .btn {
       border: 0;
       border-radius: 999px;
-      padding: 12px 16px;
+      padding: 11px 15px;
       font-weight: 900;
       cursor: pointer;
-      text-decoration: none;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
+      transition: 0.2s;
       font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
     }
 
     .btn.gold {
@@ -194,14 +325,27 @@
       color: var(--navy);
     }
 
-    .btn.dark {
+    .btn.navy {
       background: var(--navy);
+      color: white;
+    }
+
+    body[data-theme="dark"] .btn.navy {
+      background: rgba(255,255,255,0.10);
+      border: 1px solid rgba(255,255,255,0.14);
       color: white;
     }
 
     .btn.light {
       background: white;
       color: var(--navy);
+      border: 1px solid rgba(6,28,61,0.08);
+    }
+
+    body[data-theme="dark"] .btn.light {
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.14);
     }
 
     .btn.green {
@@ -214,52 +358,297 @@
       color: white;
     }
 
+    .btn.small {
+      padding: 8px 11px;
+      font-size: 12px;
+    }
+
     .btn:disabled {
-      opacity: 0.55;
+      opacity: 0.58;
       cursor: not-allowed;
+      transform: none;
     }
 
-    .grid {
+    .hero {
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at top right, rgba(212,166,58,0.25), transparent 35%),
+        linear-gradient(135deg, rgba(6,28,61,0.98), rgba(9,43,88,0.94));
+      color: white;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 30px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+
+    .hero-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 16px;
+      grid-template-columns: minmax(0, 1.18fr) minmax(300px, 0.82fr);
+      gap: 20px;
+      align-items: stretch;
     }
 
-    .mini-card {
-      border-radius: 22px;
-      border: 1px solid var(--border);
-      background: var(--soft);
+    .hero h3 {
+      margin: 14px 0 10px;
+      font-size: clamp(32px, 4vw, 58px);
+      letter-spacing: -0.065em;
+      line-height: 1;
+      color: white;
+    }
+
+    .hero p {
+      margin: 0;
+      color: rgba(255,255,255,0.74);
+      line-height: 1.58;
+    }
+
+    .hero-mini {
+      background: rgba(255,255,255,0.09);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 24px;
       padding: 18px;
     }
 
-    .mini-card span {
+    .hero-mini h4 {
+      margin: 0 0 12px;
+      color: white;
+      font-size: 18px;
+    }
+
+    .today-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .today-item {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.09);
+      border: 1px solid rgba(255,255,255,0.10);
+    }
+
+    .today-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 14px;
       display: inline-flex;
-      padding: 7px 10px;
+      align-items: center;
+      justify-content: center;
+      background: rgba(212,166,58,0.18);
+    }
+
+    .today-item strong {
+      display: block;
+      color: white;
+      font-size: 13px;
+    }
+
+    .today-item small {
+      display: block;
+      color: rgba(255,255,255,0.62);
+      margin-top: 2px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
       border-radius: 999px;
-      background: rgba(212,166,58,0.16);
-      color: var(--navy);
+      padding: 7px 10px;
       font-size: 12px;
       font-weight: 950;
-      margin-bottom: 12px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.10);
+      color: white;
     }
 
-    .mini-card h3 {
-      margin: 0 0 8px;
-      color: var(--navy);
+    .badge.gold {
+      background: rgba(212,166,58,0.16);
+      color: #FFE8A3;
     }
 
-    .mini-card p {
+    .quick-actions {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .quick-action {
+      background: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: 22px;
+      padding: 16px;
+      display: grid;
+      gap: 8px;
+      transition: 0.2s;
+    }
+
+    .quick-action:hover {
+      transform: translateY(-2px);
+    }
+
+    .quick-action span {
+      font-size: 22px;
+    }
+
+    .quick-action strong {
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .quick-action small {
+      color: var(--text-soft);
+      line-height: 1.35;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 18px;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+
+    .section-title h3 {
       margin: 0;
-      color: var(--muted);
-      line-height: 1.55;
+      font-size: 22px;
+      letter-spacing: -0.04em;
+      color: var(--text);
+    }
+
+    .section-title p {
+      margin: 5px 0 0;
+      color: var(--text-soft);
       font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .summary-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid var(--table-border);
+      padding: 12px 0;
+    }
+
+    .summary-row:last-child {
+      border-bottom: 0;
+    }
+
+    .summary-row strong {
+      display: block;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .summary-row p {
+      margin: 4px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .summary-value {
+      font-weight: 950;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .status {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: 11px;
+      font-weight: 950;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .status.green {
+      background: rgba(22,163,74,0.12);
+      color: #22C55E;
+      border-color: rgba(22,163,74,0.18);
+    }
+
+    .status.gold {
+      background: rgba(212,166,58,0.14);
+      color: #D4A63A;
+      border-color: rgba(212,166,58,0.22);
+    }
+
+    .status.blue {
+      background: rgba(37,99,235,0.11);
+      color: #60A5FA;
+      border-color: rgba(37,99,235,0.16);
+    }
+
+    .status.red {
+      background: rgba(220,38,38,0.10);
+      color: #F87171;
+      border-color: rgba(220,38,38,0.16);
+    }
+
+    .empty {
+      text-align: center;
+      padding: 30px 16px;
+      border-radius: 22px;
+      background: var(--soft);
+      border: 1px dashed var(--border);
+      color: var(--text-soft);
+    }
+
+    .footer {
+      color: var(--text-soft);
+      font-size: 12px;
+      margin: 18px 0 4px;
+    }
+
+    .loading {
+      background: var(--card);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 30px;
+      color: var(--text-soft);
     }
 
     .result-box {
       display: none;
-      background: #0B1220;
-      color: #E5E7EB;
-      border-radius: 20px;
+      background: var(--card-solid);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 22px;
       padding: 16px;
       overflow-x: auto;
       font-size: 13px;
@@ -268,140 +657,225 @@
       margin-top: 16px;
     }
 
-    .status-line {
-      color: var(--muted);
-      font-size: 13px;
-      margin-top: 12px;
+    body[data-theme="dark"] .result-box {
+      background: rgba(2,6,23,0.84);
+      color: #E5E7EB;
     }
 
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      padding: 7px 10px;
-      font-size: 12px;
-      font-weight: 950;
-      background: rgba(212,166,58,0.16);
-      color: var(--navy);
-    }
+    @media (max-width: 1180px) {
+      body { background: var(--page-bg); }
 
-    .badge.green {
-      background: rgba(22,163,74,0.12);
-      color: var(--green);
-    }
+      .mobile-header { display: block; }
 
-    .badge.red {
-      background: rgba(220,38,38,0.12);
-      color: var(--red);
-    }
+      .drawer-overlay,
+      .notification-overlay {
+        display: block;
+      }
 
-    @media (max-width: 980px) {
-      .admin-shell {
-        grid-template-columns: 1fr;
+      .app-shell {
+        display: block;
+        min-height: auto;
       }
 
       .sidebar {
-        height: auto;
-        position: relative;
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: min(86vw, 315px);
+        height: 100vh;
+        transform: translateX(-105%);
+        transition: transform 0.22s ease;
+        box-shadow: 18px 0 60px rgba(0,0,0,0.38);
       }
 
-      .grid {
-        grid-template-columns: 1fr;
+      .sidebar.open {
+        transform: translateX(0);
+      }
+
+      .sidebar-close {
+        display: block;
+      }
+
+      .main {
+        padding: 14px;
+        max-width: none;
       }
 
       .topbar {
-        flex-direction: column;
-        align-items: flex-start;
+        display: none;
       }
+
+      .hero {
+        border-radius: 24px;
+        padding: 18px;
+        margin-bottom: 12px;
+      }
+
+      .hero-grid,
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h3 {
+        font-size: 28px;
+        letter-spacing: -0.05em;
+        margin: 10px 0 8px;
+      }
+
+      .hero p {
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .quick-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .quick-action {
+        padding: 13px;
+        border-radius: 18px;
+      }
+
+      .quick-action span {
+        font-size: 19px;
+      }
+
+      .quick-action small {
+        display: none;
+      }
+
+      .card {
+        border-radius: 20px;
+        padding: 16px;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .main { padding: 12px; }
+      .hero h3 { font-size: 25px; }
+      .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 
 <body>
-  <div class="admin-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <img src="ungani-logo.png" alt="UNGANI" />
+  <script>
+    (function applySavedThemeEarly() {
+      const keys = [
+        "ungani_admin_theme",
+        "ungani_theme",
+        "ungani_appearance",
+        "appearance",
+        "theme",
+        "color_mode",
+        "ungani_mode"
+      ];
+
+      let theme = "";
+
+      for (let i = 0; i < keys.length; i++) {
+        theme =
+          localStorage.getItem(keys[i]) ||
+          sessionStorage.getItem(keys[i]) ||
+          theme;
+
+        if (theme) break;
+      }
+
+      theme = String(theme || "").toLowerCase();
+
+      if (theme.includes("dark")) {
+        document.body.setAttribute("data-theme", "dark");
+      } else if (theme.includes("light")) {
+        document.body.setAttribute("data-theme", "light");
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.body.setAttribute("data-theme", "dark");
+      } else {
+        document.body.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+
+  <header class="mobile-header">
+    <div class="mobile-header-inner">
+      <div class="mobile-brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
         <div>
           <strong>UNGANI Admin</strong>
-          <span>Connecting businesses.</span>
+          <span>Smart Checks</span>
         </div>
       </div>
 
-      <nav class="nav">
-        <a href="admin-home.html">Command Center</a>
-        <a href="admin.html">Registrations</a>
-        <a href="admin-subscriptions.html">Subscriptions</a>
-        <a href="admin-billing.html">Billing</a>
-        <a href="admin-upgrade-requests.html">Upgrade Requests</a>
-        <a href="admin-smart-checks.html" class="active">Smart Checks</a>
-        <a href="admin-system-health.html">System Health</a>
-        <a href="login.html">Exit</a>
-      </nav>
+      <div class="mobile-actions">
+        <button class="hamburger" type="button" onclick="openSidebar()" aria-label="Open menu">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="drawerOverlay" class="drawer-overlay" onclick="closeSidebar()"></div>
+
+  <div class="app-shell">
+    <aside id="sidebar" class="sidebar">
+      <button class="sidebar-close" type="button" onclick="closeSidebar()">Close Menu</button>
+
+      <div class="brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
+        <div>
+          <h1>UNGANI OS</h1>
+          <p>Admin Command Center</p>
+        </div>
+      </div>
+
+      <div class="nav-section-title">Command</div>
+      <a class="nav-link" href="admin-home.html">Command Center <span class="nav-pill">Home</span></a>
+      <a class="nav-link" href="admin.html">Registrations</a>
+      <a class="nav-link" href="admin-profiles.html">Client Profiles</a>
+      <a class="nav-link" href="users.html">Users & Access</a>
+
+      <div class="nav-section-title">Client Records</div>
+      <a class="nav-link" href="admin-money.html">Money Records</a>
+      <a class="nav-link" href="admin-items.html">Items / Assets</a>
+      <a class="nav-link" href="admin-people.html">People</a>
+      <a class="nav-link" href="admin-records.html">Business Records</a>
+      <a class="nav-link" href="admin-tasks.html">Tasks</a>
+      <a class="nav-link" href="admin-documents.html">Documents</a>
+      <a class="nav-link" href="admin-calendar.html">Calendar</a>
+
+      <div class="nav-section-title">Support</div>
+      <a class="nav-link" href="support.html">Support Issues</a>
+      <a class="nav-link" href="admin-chat.html">Client Chat</a>
+      <a class="nav-link" href="notices.html">Notices</a>
+      <a class="nav-link" href="billing.html">Billing</a>
+
+      <div class="nav-section-title">System</div>
+      <a class="nav-link" href="admin-charts.html">Admin Charts</a>
+      <a class="nav-link" href="admin-reports.html">Admin Reports</a>
+      <a class="nav-link active" href="admin-smart-checks.html">Smart Checks <span class="nav-pill">New</span></a>
+      <a class="nav-link" href="admin-health.html">System Health</a>
+      <a class="nav-link" href="admin-settings.html">Settings</a>
+      <a class="nav-link" href="#" onclick="logout(); return false;">Logout</a>
     </aside>
 
     <main class="main">
       <div class="topbar">
         <div>
-          <h1>Smart Checks</h1>
-          <p>Run UNGANI automatic checks for overdue tasks, low stock, and follow-up nudges.</p>
+          <h2>Smart Checks</h2>
+          <p>Run overdue task checks, low-stock checks, and follow-up nudges without opening client dashboards.</p>
         </div>
 
-        <span id="adminStatusBadge" class="badge">Checking admin...</span>
+        <div class="top-actions">
+          <button class="btn light" onclick="toggleTheme()" id="themeButton">Dark Mode</button>
+          <button class="btn light" onclick="checkAdminAccess()">Refresh Access</button>
+          <a class="btn gold" href="admin-home.html">Command Center</a>
+          <button class="btn red" onclick="logout()">Logout</button>
+        </div>
       </div>
 
-      <section class="card hero">
-        <h2>Run smart operational checks.</h2>
-        <p>
-          This page helps UNGANI detect pending operational issues before clients miss them.
-          It creates in-app notifications for the affected client accounts without exposing client dashboards.
-        </p>
-
-        <div class="button-row">
-          <button id="runSmartChecksBtn" class="btn gold" onclick="runSmartChecks()" disabled>
-            Run Smart Checks
-          </button>
-          <button class="btn light" onclick="checkAdminAccess()">Refresh Access</button>
-          <a class="btn light" href="admin-home.html">Back to Admin Home</a>
-        </div>
-
-        <p id="smartCheckStatus" class="status-line">Waiting for admin verification...</p>
-      </section>
-
-      <section class="grid">
-        <div class="mini-card">
-          <span>Tasks</span>
-          <h3>Overdue Tasks</h3>
-          <p>Checks pending or in-progress tasks that are due, overdue, or need follow-up.</p>
-        </div>
-
-        <div class="mini-card">
-          <span>Stock</span>
-          <h3>Low Stock</h3>
-          <p>Checks items/assets/stock records where quantity is below the minimum level.</p>
-        </div>
-
-        <div class="mini-card">
-          <span>Follow-ups</span>
-          <h3>Leads & Support</h3>
-          <p>Checks leads that need contact and support issues that have stayed open too long.</p>
-        </div>
-      </section>
-
-      <section class="card">
-        <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;">
-          <div>
-            <h3 style="margin:0 0 8px;color:var(--navy);">Latest smart-check result</h3>
-            <p style="margin:0;color:var(--muted);font-size:14px;">
-              Results will show here after you run the smart checks.
-            </p>
-          </div>
-
-          <button class="btn dark" onclick="clearResult()">Clear Result</button>
-        </div>
-
-        <pre id="smartCheckResult" class="result-box"></pre>
-      </section>
+      <div id="content" class="loading">Loading smart checks...</div>
     </main>
   </div>
 
@@ -409,109 +883,334 @@
     const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
     const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     let currentUser = null;
     let adminReady = false;
+    let latestResult = null;
 
-    window.addEventListener("load", async function () {
+    window.addEventListener("load", initSmartChecksPage);
+
+    function openSidebar() {
+      document.getElementById("sidebar").classList.add("open");
+      document.getElementById("drawerOverlay").classList.add("open");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeSidebar() {
+      document.getElementById("sidebar").classList.remove("open");
+      document.getElementById("drawerOverlay").classList.remove("open");
+      document.body.style.overflow = "";
+    }
+
+    async function initSmartChecksPage() {
+      updateThemeButton();
       await checkAdminAccess();
-    });
+    }
 
     async function checkAdminAccess() {
-      const badge = document.getElementById("adminStatusBadge");
-      const button = document.getElementById("runSmartChecksBtn");
-      const status = document.getElementById("smartCheckStatus");
-
       adminReady = false;
-      button.disabled = true;
-      badge.textContent = "Checking admin...";
-      badge.className = "badge";
-      status.textContent = "Checking admin session...";
 
-      const sessionResponse = await supabaseClient.auth.getSession();
-      const session = sessionResponse.data ? sessionResponse.data.session : null;
+      document.getElementById("content").innerHTML = `
+        <div class="loading">Checking admin access...</div>
+      `;
 
-      if (!session || !session.user) {
-        badge.textContent = "Not logged in";
-        badge.className = "badge red";
-        status.textContent = "Please log in through the admin login page first.";
+      const userResponse = await supabaseClient.auth.getUser();
+      currentUser = userResponse && userResponse.data ? userResponse.data.user : null;
+
+      if (!currentUser) {
+        showAccessMessage("Please log in first.", "Use the admin login page to open Smart Checks.");
         return;
       }
 
-      currentUser = session.user;
+      const adminCheck = await supabaseClient.rpc("is_ungani_admin");
 
-      try {
-        const adminResponse = await supabaseClient.rpc("is_ungani_admin");
-
-        if (adminResponse.error) {
-          badge.textContent = "Admin check failed";
-          badge.className = "badge red";
-          status.textContent = "Could not confirm admin access: " + adminResponse.error.message;
-          return;
-        }
-
-        if (adminResponse.data === true || adminResponse.data === "true") {
-          adminReady = true;
-          button.disabled = false;
-          badge.textContent = "Admin verified";
-          badge.className = "badge green";
-          status.textContent = "Admin verified. You can run smart checks now.";
-          return;
-        }
-
-        badge.textContent = "Access denied";
-        badge.className = "badge red";
-        status.textContent = "This account is not recognized as an UNGANI admin.";
-      } catch (error) {
-        badge.textContent = "Admin check error";
-        badge.className = "badge red";
-        status.textContent = "Admin check error: " + error.message;
+      if (adminCheck.error || adminCheck.data !== true) {
+        showAccessMessage("Admin access required.", "This page is only available to UNGANI admin users.");
+        return;
       }
+
+      adminReady = true;
+      renderSmartChecksPage();
+    }
+
+    function renderSmartChecksPage() {
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div>
+              <span class="badge gold">UNGANI Admin</span>
+              <h3>Smart operational checks</h3>
+              <p>
+                Run system checks for overdue tasks, low stock, lead follow-ups, and support follow-ups.
+                The system creates in-app notifications for the correct client account while keeping admin and client areas separate.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <button id="runSmartChecksBtn" class="btn gold" onclick="runSmartChecks()">Run Smart Checks</button>
+                <button class="btn light" onclick="renderSmartChecksPage()">Refresh Page</button>
+                <a class="btn light" href="admin-health.html">System Health</a>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              <h4>Checks included</h4>
+
+              <div class="today-list">
+                ${todayItem("✅", "Overdue Tasks", "Tasks", "due or overdue")}
+                ${todayItem("📦", "Low Stock", "Items", "below minimum")}
+                ${todayItem("👥", "Leads", "People", "follow-up nudges")}
+                ${todayItem("💬", "Support", "Issues", "open too long")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("✅", "Tasks", "Open admin tasks", "admin-tasks.html")}
+          ${quickAction("📦", "Items", "Open items/assets", "admin-items.html")}
+          ${quickAction("👥", "People", "Open people/leads", "admin-people.html")}
+          ${quickAction("💬", "Support", "Open support issues", "support.html")}
+        </section>
+
+        <section class="grid-3">
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Overdue Tasks</h3>
+                <p>Checks pending and in-progress tasks that need attention.</p>
+              </div>
+              <span class="status gold">Smart</span>
+            </div>
+
+            <div class="summary-list">
+              ${summaryRow("Daily duplicate protection", "On", "One notification per task per day")}
+              ${summaryRow("Priority handling", "On", "Overdue records are marked higher priority")}
+              ${summaryRow("Client link", "Tasks", "Notification opens client task page")}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Low Stock</h3>
+                <p>Checks quantity against minimum stock or reorder level.</p>
+              </div>
+              <span class="status red">Alert</span>
+            </div>
+
+            <div class="summary-list">
+              ${summaryRow("Stock protection", "On", "Checks stock/items/assets safely")}
+              ${summaryRow("Duplicate protection", "On", "One alert per item per day")}
+              ${summaryRow("Client link", "Items", "Notification opens items/assets page")}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Follow-ups</h3>
+                <p>Checks leads and support issues that need action.</p>
+              </div>
+              <span class="status blue">Nudge</span>
+            </div>
+
+            <div class="summary-list">
+              ${summaryRow("Lead reminders", "On", "Follow-up dates due soon or overdue")}
+              ${summaryRow("Support reminders", "On", "Open issues older than expected")}
+              ${summaryRow("Client privacy", "Locked", "Admin does not enter client dashboard")}
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Latest Smart Check Result</h3>
+              <p>After running checks, the summary result will appear here.</p>
+            </div>
+
+            <div class="top-actions">
+              <button class="btn small navy" onclick="clearResult()">Clear</button>
+              <button class="btn small gold" onclick="runSmartChecks()">Run Again</button>
+            </div>
+          </div>
+
+          <pre id="smartCheckResult" class="result-box">${latestResult ? safe(JSON.stringify(latestResult, null, 2)) : ""}</pre>
+        </section>
+
+        <p class="footer">
+          Admin Smart Checks Version: Step 21C Matched Admin Theme · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      const resultBox = document.getElementById("smartCheckResult");
+
+      if (resultBox && latestResult) {
+        resultBox.style.display = "block";
+      }
+
+      updateThemeButton();
     }
 
     async function runSmartChecks() {
-      const button = document.getElementById("runSmartChecksBtn");
-      const status = document.getElementById("smartCheckStatus");
-      const resultBox = document.getElementById("smartCheckResult");
-
       if (!adminReady) {
-        status.textContent = "Admin access is not verified yet.";
-        return;
+        await checkAdminAccess();
+        if (!adminReady) return;
       }
 
-      button.disabled = true;
-      button.textContent = "Running...";
-      status.textContent = "Running UNGANI smart checks...";
-      resultBox.style.display = "block";
-      resultBox.textContent = "Running checks...";
+      const button = document.getElementById("runSmartChecksBtn");
+      const resultBox = document.getElementById("smartCheckResult");
+
+      if (button) {
+        button.disabled = true;
+        button.innerText = "Running...";
+      }
+
+      if (resultBox) {
+        resultBox.style.display = "block";
+        resultBox.textContent = "Running UNGANI smart checks...";
+      }
 
       try {
         const response = await supabaseClient.rpc("run_ungani_smart_checks");
 
         if (response.error) {
-          resultBox.textContent = response.error.message;
-          status.textContent = "Smart checks failed.";
-          button.disabled = false;
-          button.textContent = "Run Smart Checks";
-          return;
+          latestResult = {
+            ok: false,
+            message: response.error.message
+          };
+        } else {
+          latestResult = response.data || {
+            ok: true,
+            message: "Smart checks completed."
+          };
         }
 
-        resultBox.textContent = JSON.stringify(response.data, null, 2);
-        status.textContent = "Smart checks completed successfully.";
+        if (resultBox) {
+          resultBox.textContent = JSON.stringify(latestResult, null, 2);
+        }
       } catch (error) {
-        resultBox.textContent = error.message;
-        status.textContent = "Smart checks failed.";
+        latestResult = {
+          ok: false,
+          message: error.message
+        };
+
+        if (resultBox) {
+          resultBox.textContent = JSON.stringify(latestResult, null, 2);
+        }
       }
 
-      button.disabled = false;
-      button.textContent = "Run Smart Checks";
+      if (button) {
+        button.disabled = false;
+        button.innerText = "Run Smart Checks";
+      }
     }
 
     function clearResult() {
+      latestResult = null;
+
       const resultBox = document.getElementById("smartCheckResult");
-      resultBox.textContent = "";
-      resultBox.style.display = "none";
+
+      if (resultBox) {
+        resultBox.textContent = "";
+        resultBox.style.display = "none";
+      }
+    }
+
+    function todayItem(icon, title, value, subtitle) {
+      return `
+        <div class="today-item">
+          <div class="today-icon">${safe(icon)}</div>
+          <div>
+            <strong>${safe(title)}</strong>
+            <small>${safe(subtitle)}</small>
+          </div>
+          <span class="badge gold">${safe(value)}</span>
+        </div>
+      `;
+    }
+
+    function quickAction(icon, title, subtitle, href) {
+      return `
+        <a class="quick-action" href="${attr(href)}">
+          <span>${safe(icon)}</span>
+          <strong>${safe(title)}</strong>
+          <small>${safe(subtitle)}</small>
+        </a>
+      `;
+    }
+
+    function summaryRow(label, value, sub) {
+      return `
+        <div class="summary-row">
+          <div>
+            <strong>${safe(label)}</strong>
+            <p>${safe(sub || "")}</p>
+          </div>
+          <div class="summary-value">${safe(value)}</div>
+        </div>
+      `;
+    }
+
+    function toggleTheme() {
+      const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      const next = current === "dark" ? "light" : "dark";
+
+      document.body.setAttribute("data-theme", next);
+
+      localStorage.setItem("ungani_admin_theme", next);
+      localStorage.setItem("ungani_theme", next);
+      localStorage.setItem("ungani_appearance", next);
+      localStorage.setItem("theme", next);
+
+      updateThemeButton();
+    }
+
+    function updateThemeButton() {
+      const button = document.getElementById("themeButton");
+      const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+
+      if (button) {
+        button.innerText = current === "dark" ? "Light Mode" : "Dark Mode";
+      }
+    }
+
+    function safe(value) {
+      return String(value === null || value === undefined ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function attr(value) {
+      return safe(value);
+    }
+
+    async function logout() {
+      await supabaseClient.auth.signOut();
+      window.location.href = "login.html?mode=admin";
+    }
+
+    function showAccessMessage(title, message) {
+      document.getElementById("content").innerHTML = `
+        <div class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(title)}</h3>
+              <p>${safe(message)}</p>
+            </div>
+          </div>
+
+          <div class="top-actions" style="justify-content:flex-start;">
+            <a class="btn gold" href="login.html?mode=admin">Go to Admin Login</a>
+          </div>
+
+          <p class="footer">Admin Smart Checks Version: Step 21C Matched Admin Theme · ungani.com · info@ungani.com</p>
+        </div>
+      `;
     }
   </script>
 </body>
