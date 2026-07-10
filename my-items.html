@@ -504,6 +504,7 @@
               <button class="ungani-btn green" onclick="quickStatus('${UnganiClientShared.attr(id)}', 'available')">Available</button>
               <button class="ungani-btn gold" onclick="quickStatus('${UnganiClientShared.attr(id)}', 'reserved')">Reserved</button>
               <button class="ungani-btn dark" onclick="quickStatus('${UnganiClientShared.attr(id)}', 'sold')">Sold</button>
+              <button class="ungani-btn red" onclick="deleteItem('${UnganiClientShared.attr(id)}')">Delete</button>
             </div>
           </div>
         </article>
@@ -659,6 +660,7 @@
 
             <div class="ungani-button-row" style="margin-top:0;">
               <button class="ungani-btn" onclick="editItem('${UnganiClientShared.attr(row.id)}')">Edit</button>
+              <button class="ungani-btn red" onclick="deleteItem('${UnganiClientShared.attr(row.id)}')">Delete</button>
             </div>
           </div>
         `;
@@ -874,6 +876,37 @@
       }
 
       UnganiClientShared.showToast("Status updated ✓");
+      await loadItems();
+    }
+
+    async function deleteItem(id) {
+      const label = isRealEstate ? "property/listing" : "item/asset/stock";
+      const confirmed = confirm("Move this " + label + " to Recently Deleted? You can restore it within 30 days.");
+
+      if (!confirmed) return;
+
+      const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+        p_source_table: "business_items",
+        p_source_record_id: id,
+        p_delete_reason: "Deleted from Items / Properties page"
+      });
+
+      if (response.error) {
+        UnganiClientShared.showToast("Could not delete item: " + response.error.message);
+        return;
+      }
+
+      if (response.data && response.data.ok === false) {
+        UnganiClientShared.showToast(response.data.message || "Could not delete item.");
+        return;
+      }
+
+      UnganiClientShared.showToast(isRealEstate ? "Property moved to Recently Deleted ✓" : "Item moved to Recently Deleted ✓");
+
+      if (currentEditId && String(currentEditId) === String(id)) {
+        currentEditId = null;
+      }
+
       await loadItems();
     }
 
