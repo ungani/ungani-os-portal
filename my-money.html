@@ -624,12 +624,13 @@
         </section>
 
         <p class="ungani-small">
-          Money Version: Step 25B Recurring Money Panel · ungani.com · info@ungani.com
+          Money Version: Step 27C Safe Money Delete · ungani.com · info@ungani.com
         </p>
       `);
 
       restoreMoneyFilters();
       updateCategoryOptions();
+      updateRecurringCategoryOptions();
 
       setTimeout(function () {
         renderMoneyCharts(trend, expenseBreakdown);
@@ -1493,23 +1494,34 @@
         return;
       }
 
-      const confirmed = confirm("Delete this money record?");
+      const confirmed = confirm("Move this money record to Recently Deleted?");
 
       if (!confirmed) return;
 
-      const response = await currentContext.supabaseClient
-        .from("transactions")
-        .delete()
-        .eq("id", id)
-        .eq("tenant_id", currentContext.tenantId);
+      try {
+        const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+          p_table_name: "transactions",
+          p_record_id: id,
+          p_delete_reason: "Deleted from Money Records page"
+        });
 
-      if (response.error) {
-        UnganiClientShared.showToast("Could not delete record: " + response.error.message);
-        return;
+        if (response.error) {
+          UnganiClientShared.showToast("Could not delete record: " + response.error.message);
+          return;
+        }
+
+        const result = response.data || {};
+
+        if (result.ok === false) {
+          UnganiClientShared.showToast(result.message || "Could not delete record.");
+          return;
+        }
+
+        UnganiClientShared.showToast(result.message || "Money record moved to Recently Deleted ✓");
+        await loadMoneyRows();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not delete record: " + error.message);
       }
-
-      UnganiClientShared.showToast("Money record deleted ✓");
-      await loadMoneyRows();
     }
 
     function clearMoneyForm() {
