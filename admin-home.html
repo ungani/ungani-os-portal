@@ -302,14 +302,6 @@
       width: 100%;
     }
 
-    .nav-pill {
-      font-size: 11px;
-      background: rgba(255,255,255,0.12);
-      padding: 4px 8px;
-      border-radius: 999px;
-      color: rgba(255,255,255,0.75);
-    }
-
     .main {
       min-width: 0;
       padding: 24px;
@@ -606,14 +598,6 @@
     .grid-2 {
       display: grid;
       grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
-      gap: 18px;
-      align-items: start;
-      margin-bottom: 18px;
-    }
-
-    .grid-3 {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 18px;
       align-items: start;
       margin-bottom: 18px;
@@ -998,8 +982,7 @@
         font-size: 12px;
       }
 
-      .grid-2,
-      .grid-3 {
+      .grid-2 {
         grid-template-columns: 1fr;
         gap: 12px;
         margin-bottom: 12px;
@@ -1371,35 +1354,6 @@
       return current === undefined || current === null ? fallback : current;
     }
 
-    function dynamicFormat(amount, tenantCurrencyCode = "") {
-      const num = Number(amount || 0);
-      let resolvedCode = String(tenantCurrencyCode || "").trim().toUpperCase();
-
-      // Check system default setting fallback if tenant profile holds no string value
-      if (!resolvedCode && activeGlobalSettings.length > 0) {
-        resolvedCode = String(
-          getValue(activeGlobalSettings[0], ["base_currency"]) || 
-          getValue(activeGlobalSettings[0], ["currency_code"]) || 
-          getValue(activeGlobalSettings[0], ["currency"]) || 
-          ""
-        ).trim().toUpperCase();
-      }
-
-      // Final dynamic generic fallback
-      if (!resolvedCode || resolvedCode === "NULL") {
-        resolvedCode = "USD";
-      }
-
-      try {
-        return new Intl.NumberFormat("en-US", {
-          style: "currency",
-          currency: resolvedCode
-        }).format(num);
-      } catch (e) {
-        return resolvedCode + " " + num.toFixed(2);
-      }
-    }
-
     async function initAdminDashboard() {
       updateThemeButton();
       const userResponse = await supabaseClient.auth.getUser();
@@ -1581,23 +1535,33 @@
       const target = document.getElementById("content");
       if (!target) return;
 
-      // Match metrics totals cleanly
-      const pendingRegs = adminData.registrations.filter(r => String(getValue(r, ["status"], "")).toLowerCase() === "pending").length;
-      const urgentSupport = adminData.support.filter(s => String(getValue(s, ["priority"], "")).toLowerCase() === "critical" || String(getValue(s, ["status"], "")).toLowerCase() === "open").length;
-      const totalTasks = adminData.tasks.filter(t => String(getValue(t, ["status"], "")).toLowerCase() !== "completed").length;
+      // 1. Calculate genuine metrics directly from your database records
+      const totalTenants = adminData.tenants ? adminData.tenants.length : 0;
+      const totalUsers = adminData.users ? adminData.users.length : 0;
+      const totalItems = adminData.items ? adminData.items.length : 0;
       
-      const totalSystemVolume = adminData.transactions.reduce((sum, t) => sum + Number(getValue(t, ["amount"], 0)), 0);
+      // Sum up transaction amounts dynamically
+      const volumeSum = adminData.transactions ? adminData.transactions.reduce((sum, tx) => sum + Number(tx.amount || 0), 0) : 0;
 
-      // Determine global system setting currency fallback
-      let systemFallbackCurrency = "";
-      if (activeGlobalSettings.length > 0) {
-        systemFallbackCurrency = getValue(activeGlobalSettings[0], ["base_currency"]) || 
-                                 getValue(activeGlobalSettings[0], ["currency_code"]) || 
-                                 getValue(activeGlobalSettings[0], ["currency"]) || "";
+      // 2. Set up currency code lookup based on your settings array
+      let currencyLabel = "";
+      if (activeGlobalSettings && activeGlobalSettings.length > 0) {
+        currencyLabel = activeGlobalSettings[0].base_currency || activeGlobalSettings[0].currency_code || activeGlobalSettings[0].currency || "";
+      }
+      currencyLabel = currencyLabel.trim().toUpperCase();
+
+      // 3. Fallback to a localized standard number string if no explicit currency code is defined yet
+      let formattedVolume = volumeSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (currencyLabel && currencyLabel !== "NULL") {
+        formattedVolume = `${currencyLabel} ${formattedVolume}`;
       }
 
+      const pendingRegs = adminData.registrations ? adminData.registrations.filter(r => String(r.status || "").toLowerCase() === "pending").length : 0;
+      const urgentSupport = adminData.support ? adminData.support.filter(s => String(s.priority || "").toLowerCase() === "critical" || String(s.status || "").toLowerCase() === "open").length : 0;
+      const totalTasks = adminData.tasks ? adminData.tasks.filter(t => String(t.status || "").toLowerCase() !== "completed").length : 0;
+
+      // 4. Generate layout markup safely injecting the dynamic text IDs
       let html = `
-        <!-- HERO WELCOME BANNER (RESTORED ARCHITECTURE) -->
         <div class="hero">
           <div class="hero-grid">
             <div>
@@ -1620,7 +1584,7 @@
                     <strong>Notifications</strong>
                     <small>unread update(s)</small>
                   </div>
-                  <span class="status gold">${notifications.filter(n => String(getValue(n, ["status"], "")).toLowerCase() !== "read").length}</span>
+                  <span class="status gold">${notifications ? notifications.filter(n => String(n.status || "").toLowerCase() !== "read").length : 0}</span>
                 </div>
                 <div class="today-item">
                   <div class="today-icon">📝</div>
@@ -1636,7 +1600,7 @@
                     <strong>Open support</strong>
                     <small>${urgentSupport} urgent</small>
                   </div>
-                  <span class="status red">${adminData.support.filter(s => String(getValue(s, ["status"], "")).toLowerCase() !== "resolved").length}</span>
+                  <span class="status red">${adminData.support ? adminData.support.filter(s => String(s.status || "").toLowerCase() !== "resolved").length : 0}</span>
                 </div>
                 <div class="today-item">
                   <div class="today-icon">⏰</div>
@@ -1651,7 +1615,6 @@
           </div>
         </div>
 
-        <!-- QUICK ACTION GRID HUB -->
         <div class="quick-actions">
           <a href="admin.html" class="quick-action">
             <span>📝</span>
@@ -1675,36 +1638,33 @@
           </a>
         </div>
 
-        <!-- ANALYTIC KPI CARDS MATRIX (DYNAMICALLY RENDERED WITH PROPER MULTI-CURRENCY EXTRACTION) -->
         <div class="kpi-grid">
           <div class="kpi-card" style="--accent: var(--blue);">
             <span>Active Enterprise Tenants</span>
-            <h3>${adminData.tenants.length}</h3>
+            <h3>${totalTenants}</h3>
             <p>Live functional business containers running across instances.</p>
           </div>
           
           <div class="kpi-card" style="--accent: var(--gold);">
             <span>Aggregated Ledgers Volume</span>
-            <h3>${dynamicFormat(totalSystemVolume, systemFallbackCurrency)}</h3>
+            <h3>${formattedVolume}</h3>
             <p>Sum value total tracked inside global transactions.</p>
           </div>
           
           <div class="kpi-card" style="--accent: var(--green);">
             <span>Users & Operators</span>
-            <h3>${adminData.users.length}</h3>
+            <h3>${totalUsers}</h3>
             <p>Authenticated profiles interacting with custom client workspaces.</p>
           </div>
 
           <div class="kpi-card" style="--accent: var(--orange);">
             <span>Tracked Physical Assets</span>
-            <h3>${adminData.items.length}</h3>
+            <h3>${totalItems}</h3>
             <p>Items cataloged across client business units.</p>
           </div>
         </div>
 
-        <!-- SYSTEM OPERATIONAL PIPELINE DETAILS -->
         <div class="grid-2">
-          <!-- ACTIVE PROFILE TRANSLATIONS -->
           <div class="card">
             <div class="section-title">
               <div>
@@ -1715,11 +1675,10 @@
             </div>
             
             <div class="summary-list">
-              ${adminData.tenants.length === 0 ? '<div class="empty">No client tenant matrices active currently.</div>' : 
+              ${!adminData.tenants || adminData.tenants.length === 0 ? '<div class="empty">No client tenant matrices active currently.</div>' : 
                 adminData.tenants.slice(0, 5).map(t => {
-                  const companyName = getValue(t, ["company_name"], getValue(t, ["name"], "Unnamed Client"));
-                  const currencyCode = String(getValue(t, ["currency_code"], getValue(t, ["currency"], systemFallbackCurrency || "USD"))).toUpperCase();
-                  
+                  const companyName = t.company_name || t.name || "Unnamed Client";
+                  const currencyCode = String(t.currency_code || t.currency || currencyLabel || "USD").toUpperCase();
                   return `
                     <div class="summary-row">
                       <div>
@@ -1736,7 +1695,6 @@
             </div>
           </div>
 
-          <!-- DYNAMIC TRANSACTION PIPELINE STREAM -->
           <div class="card">
             <div class="section-title">
               <div>
@@ -1747,27 +1705,26 @@
             </div>
 
             <div class="activity-list">
-              ${adminData.transactions.length === 0 ? '<div class="empty">No ledger transactions recorded in pipeline.</div>' :
+              ${!adminData.transactions || adminData.transactions.length === 0 ? '<div class="empty">No ledger transactions recorded in pipeline.</div>' :
                 adminData.transactions.slice(0, 4).map(tx => {
-                  const label = getValue(tx, ["label"], getValue(tx, ["description"], "System Ledger Entry"));
-                  const txType = String(getValue(tx, ["type"], "income")).toLowerCase();
-                  const tenantId = getValue(tx, ["tenant_id"]);
+                  const label = tx.label || tx.description || "System Ledger Entry";
+                  const txType = String(tx.type || "income").toLowerCase();
+                  const amountVal = Number(tx.amount || 0);
                   
-                  // Extract explicit tenant profile currency if matches transaction owner
-                  const matchTenant = adminData.tenants.find(t => String(t.id) === String(tenantId));
-                  const txCurrency = matchTenant ? (getValue(matchTenant, ["currency_code"]) || getValue(matchTenant, ["currency"])) : systemFallbackCurrency;
+                  // Local fallback tracking formatting per item string match
+                  let itemFormat = amountVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                  if (currencyLabel) { itemFormat = `${currencyLabel} ${itemFormat}`; }
                   
-                  const formattedValue = dynamicFormat(getValue(tx, ["amount"], 0), txCurrency);
-                  const isExpense = txType.includes("expense") || txType.includes("out") || Number(getValue(tx, ["amount"], 0)) < 0;
+                  const isExpense = txType.includes("expense") || txType.includes("out") || amountVal < 0;
 
                   return `
                     <div class="activity-item">
                       <div class="activity-icon">${isExpense ? '📉' : '📈'}</div>
                       <div>
                         <strong>${label}</strong>
-                        <p>Tenant Reference: ${tenantId || 'Global Domain'}</p>
+                        <p>Tenant Reference: ${tx.tenant_id || 'Global Domain'}</p>
                       </div>
-                      <span class="status ${isExpense ? 'red' : 'green'}">${formattedValue}</span>
+                      <span class="status ${isExpense ? 'red' : 'green'}">${itemFormat}</span>
                     </div>
                   `;
                 }).join("")
