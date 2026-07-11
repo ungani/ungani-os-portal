@@ -286,6 +286,78 @@
       line-height: 1.45;
     }
 
+    /* Form Fields for Preferences */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .form-control {
+      background: rgba(3, 18, 39, 0.45);
+      border: 1px solid var(--border);
+      color: #FFFFFF;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    html[data-theme="light"] .form-control {
+      background: #FFFFFF;
+      color: #061C3D;
+    }
+
+    .form-control:focus {
+      border-color: var(--gold);
+    }
+
+    .form-actions {
+      margin-top: 20px;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .action-msg {
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .action-msg.success { color: var(--success-text); }
+    .action-msg.error { color: var(--danger-text); }
+
+    .btn-save {
+      background: var(--gold);
+      color: var(--navy);
+      border: none;
+      padding: 11px 24px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .btn-save:hover {
+      opacity: 0.9;
+    }
+
     .link-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -411,7 +483,7 @@
     }
 
     @media (max-width: 980px) {
-      .grid {
+      .grid, .form-grid {
         grid-template-columns: 1fr;
       }
 
@@ -596,6 +668,55 @@
         </div>
       </section>
 
+      <!-- Preferences Panel Element -->
+      <section class="panel full">
+        <div class="panel-head">
+          <h2>User Preferences</h2>
+        </div>
+        <div class="panel-body">
+          <form id="preferencesForm" onsubmit="savePreferences(event)">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="prefLanguage">Language</label>
+                <select id="prefLanguage" class="form-control">
+                  <option value="en">English</option>
+                  <option value="sw">Kiswahili</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="prefCurrency">Currency</label>
+                <select id="prefCurrency" class="form-control">
+                  <option value="KES">Kenyan Shilling (KSh / KES)</option>
+                  <option value="USD">US Dollar ($ / USD)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="prefTheme">Theme</label>
+                <select id="prefTheme" class="form-control" onchange="previewTheme(this.value)">
+                  <option value="dark">Dark Mode</option>
+                  <option value="light">Light Mode</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="prefTimezone">Timezone</label>
+                <select id="prefTimezone" class="form-control">
+                  <option value="Africa/Nairobi">East Africa Time (EAT - UTC+3)</option>
+                  <option value="UTC">Coordinated Universal Time (UTC)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <span id="prefMessage" class="action-msg"></span>
+              <button type="submit" id="btnSavePrefs" class="btn-save">Save Preferences</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
       <section class="panel full">
         <div class="panel-head">
           <h2>Quick Settings & Tools</h2>
@@ -689,11 +810,13 @@
     const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    let currentUserId = null;
 
     document.addEventListener("DOMContentLoaded", async () => {
       applyExistingThemeSetting();
       await checkClientSession();
       await loadSettings();
+      await fetchUserPreferences();
     });
 
     function applyExistingThemeSetting() {
@@ -740,11 +863,17 @@
       document.documentElement.setAttribute("data-theme", foundTheme || "dark");
     }
 
+    function previewTheme(themeValue) {
+      document.documentElement.setAttribute("data-theme", themeValue);
+    }
+
     async function checkClientSession() {
       const { data } = await supabaseClient.auth.getSession();
 
       if (!data || !data.session) {
         window.location.href = "login.html?redirect=my-settings.html";
+      } else {
+        currentUserId = data.session.user.id;
       }
     }
 
@@ -777,6 +906,81 @@
         loadingBox.style.display = "none";
         errorBox.style.display = "block";
         errorBox.textContent = "Unable to load settings. " + getErrorMessage(error);
+      }
+    }
+
+    async function fetchUserPreferences() {
+      if (!currentUserId) return;
+      try {
+        const { data, error } = await supabaseClient
+          .from("user_preferences")
+          .select("language, currency, theme, timezone")
+          .eq("user_id", currentUserId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (data) {
+          if (data.language) document.getElementById("prefLanguage").value = data.language;
+          if (data.currency) document.getElementById("prefCurrency").value = data.currency;
+          if (data.theme) {
+            document.getElementById("prefTheme").value = data.theme;
+            previewTheme(data.theme);
+          }
+          if (data.timezone) document.getElementById("prefTimezone").value = data.timezone;
+        }
+      } catch (err) {
+        console.error("Error retrieving user preferences:", err);
+      }
+    }
+
+    async function savePreferences(event) {
+      event.preventDefault();
+      const msgSpan = document.getElementById("prefMessage");
+      const btnSave = document.getElementById("btnSavePrefs");
+      
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentUserId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No active user session identified.";
+        return;
+      }
+
+      const language = document.getElementById("prefLanguage").value;
+      const currency = document.getElementById("prefCurrency").value;
+      const theme = document.getElementById("prefTheme").value;
+      const timezone = document.getElementById("prefTimezone").value;
+
+      btnSave.disabled = true;
+      btnSave.textContent = "Saving...";
+
+      try {
+        const { error } = await supabaseClient
+          .from("user_preferences")
+          .upsert({
+            user_id: currentUserId,
+            language,
+            currency,
+            theme,
+            timezone,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "user_id" });
+
+        if (error) throw error;
+
+        localStorage.setItem("ungani_theme", theme);
+        previewTheme(theme);
+
+        msgSpan.className = "action-msg success";
+        msgSpan.textContent = "Preferences saved successfully.";
+      } catch (err) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+      } finally {
+        btnSave.disabled = false;
+        btnSave.textContent = "Save Preferences";
       }
     }
 
