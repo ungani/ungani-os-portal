@@ -686,6 +686,36 @@
 
             <button onclick="saveLanguage()" data-i18n="saveLanguage">Save Language</button>
           </div>
+
+          <div class="setting-box">
+            <h3 data-i18n="currency">Currency</h3>
+            <p data-i18n="currencyDescription">Select your preferred default currency display.</p>
+
+            <label for="currencySelect" data-i18n="selectCurrency">Select Currency</label>
+            <select id="currencySelect">
+              <option value="KES">Kenyan Shilling (KES)</option>
+              <option value="USD">US Dollar (USD)</option>
+              <option value="EUR">Euro (EUR)</option>
+              <option value="GBP">British Pound (GBP)</option>
+            </select>
+
+            <button onclick="saveCurrency()" data-i18n="saveCurrency">Save Currency</button>
+          </div>
+
+          <div class="setting-box">
+            <h3 data-i18n="timezone">Timezone</h3>
+            <p data-i18n="timezoneDescription">Set your default system operational timezone.</p>
+
+            <label for="timezoneSelect" data-i18n="selectTimezone">Select Timezone</label>
+            <select id="timezoneSelect">
+              <option value="Africa/Nairobi">EAT (Nairobi, UTC+3)</option>
+              <option value="UTC">UTC / GMT</option>
+              <option value="America/New_York">EST / EDT (New York)</option>
+              <option value="Europe/London">BST / GMT (London)</option>
+            </select>
+
+            <button onclick="saveTimezone()" data-i18n="saveTimezone">Save Timezone</button>
+          </div>
         </div>
       </section>
 
@@ -719,6 +749,8 @@
     let currentAdmin = null;
     let currentTheme = "light";
     let currentLanguage = "en";
+    let currentCurrency = "KES";
+    let currentTimezone = "Africa/Nairobi";
 
     const translations = {
       en: {
@@ -765,6 +797,14 @@
         languageDescription: "Choose your preferred admin language.",
         selectLanguage: "Select Language",
         saveLanguage: "Save Language",
+        currency: "Currency",
+        currencyDescription: "Select your preferred default currency display.",
+        selectCurrency: "Select Currency",
+        saveCurrency: "Save Currency",
+        timezone: "Timezone",
+        timezoneDescription: "Set your default system operational timezone.",
+        selectTimezone: "Select Timezone",
+        saveTimezone: "Save Timezone",
         adminDetails: "Admin Details",
         email: "Email",
         password: "Password",
@@ -772,6 +812,8 @@
         loginSuccess: "Login successful.",
         themeSaved: "Theme saved ✓",
         languageSaved: "Language saved ✓",
+        currencySaved: "Currency saved ✓",
+        timezoneSaved: "Timezone saved ✓",
         refreshing: "Refreshing admin settings...",
         refreshed: "Admin settings refreshed ✓"
       },
@@ -819,6 +861,14 @@
         languageDescription: "Chagua lugha unayopendelea kwa admin.",
         selectLanguage: "Chagua Lugha",
         saveLanguage: "Hifadhi Lugha",
+        currency: "Sarafu",
+        currencyDescription: "Chagua sarafu unayopendelea.",
+        selectCurrency: "Chagua Sarafu",
+        saveCurrency: "Hifadhi Sarafu",
+        timezone: "Saa za Eneo",
+        timezoneDescription: "Weka mfumo wa saa za eneo lako.",
+        selectTimezone: "Chagua Saa za Eneo",
+        saveTimezone: "Hifadhi Saa za Eneo",
         adminDetails: "Maelezo ya Admin",
         email: "Barua pepe",
         password: "Nenosiri",
@@ -826,6 +876,8 @@
         loginSuccess: "Umeingia kikamilifu.",
         themeSaved: "Muonekano umehifadhiwa ✓",
         languageSaved: "Lugha imehifadhiwa ✓",
+        currencySaved: "Sarafu imehifadhiwa ✓",
+        timezoneSaved: "Saa za eneo zimehifadhiwa ✓",
         refreshing: "Inasasisha mipangilio ya admin...",
         refreshed: "Mipangilio ya admin imesasishwa ✓"
       }
@@ -835,7 +887,7 @@
       return String(value ?? "")
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt bridge;");
+        .replaceAll(">", "&gt;");
     }
 
     function t(key) {
@@ -989,7 +1041,7 @@
 
       const { data: userData, error } = await supabaseClient
         .from("users")
-        .select("id, full_name, email, role, status, preferred_theme, preferred_language")
+        .select("id, full_name, email, role, status, preferred_theme, preferred_language, preferred_currency, preferred_timezone")
         .eq("id", currentAdminId)
         .maybeSingle();
 
@@ -1019,6 +1071,8 @@
       currentAdmin = userData;
       currentTheme = userData.preferred_theme || localStorage.getItem("ungani_theme") || "light";
       currentLanguage = userData.preferred_language || "en";
+      currentCurrency = userData.preferred_currency || "KES";
+      currentTimezone = userData.preferred_timezone || "Africa/Nairobi";
 
       applyTheme(currentTheme);
       applyLanguage();
@@ -1027,10 +1081,12 @@
 
       document.getElementById("sidebarAdmin").innerText = userData.full_name || "Admin Workspace";
       document.getElementById("heroAdmin").innerText = `${userData.full_name || "Admin"} | ${userData.email || ""} | Role: ${cleanText(userData.role || "admin")}`;
-      document.getElementById("heroPreferences").innerText = `${cleanText(currentTheme)} mode | ${currentLanguage === "sw" ? "Swahili" : "English"}`;
+      document.getElementById("heroPreferences").innerText = `${cleanText(currentTheme)} mode | ${currentLanguage === "sw" ? "Swahili" : "English"} | ${currentCurrency} | ${currentTimezone}`;
 
       document.getElementById("themeSelect").value = currentTheme;
       document.getElementById("languageSelect").value = currentLanguage;
+      document.getElementById("currencySelect").value = currentCurrency;
+      document.getElementById("timezoneSelect").value = currentTimezone;
 
       renderAdminDetails();
     }
@@ -1050,6 +1106,8 @@
           <div class="row-title">${safe(currentLanguage === "sw" ? "Mapendeleo ya Admin" : "Admin Preferences")}</div>
           <p class="row-detail"><strong>${safe(currentLanguage === "sw" ? "Muonekano" : "Theme")}:</strong> ${safe(cleanText(currentTheme))}</p>
           <p class="row-detail"><strong>${safe(currentLanguage === "sw" ? "Lugha" : "Language")}:</strong> ${safe(currentLanguage === "sw" ? "Swahili" : "English")}</p>
+          <p class="row-detail"><strong>${safe(currentLanguage === "sw" ? "Sarafu" : "Currency")}:</strong> ${safe(currentCurrency)}</p>
+          <p class="row-detail"><strong>${safe(currentLanguage === "sw" ? "Saa za Eneo" : "Timezone")}:</strong> ${safe(currentTimezone)}</p>
           <span class="badge badge-gold">${safe(currentLanguage === "sw" ? "Imehifadhiwa kwa Akaunti ya Admin" : "Saved to Admin User Account")}</span>
         </div>
       `;
@@ -1072,20 +1130,14 @@
 
       const { error } = await supabaseClient
         .from("users")
-        .update({
-          preferred_theme: selectedTheme
-        })
+        .update({ preferred_theme: selectedTheme })
         .eq("id", currentAdminId);
 
-      if (error) {
-        alert(error.message);
-        return;
-      }
+      if (error) { alert(error.message); return; }
 
       currentTheme = selectedTheme;
       applyTheme(currentTheme);
       showToast(t("themeSaved"));
-
       await loadAdminProfile();
     }
 
@@ -1094,24 +1146,47 @@
 
       const { error } = await supabaseClient
         .from("users")
-        .update({
-          preferred_language: selectedLanguage
-        })
+        .update({ preferred_language: selectedLanguage })
         .eq("id", currentAdminId);
 
-      if (error) {
-        alert(error.message);
-        return;
-      }
+      if (error) { alert(error.message); return; }
 
       currentLanguage = selectedLanguage;
       applyLanguage();
       showToast(t("languageSaved"));
-
       await loadAdminProfile();
     }
 
-    // Initialize session check on load
+    async function saveCurrency() {
+      const selectedCurrency = document.getElementById("currencySelect").value;
+
+      const { error } = await supabaseClient
+        .from("users")
+        .update({ preferred_currency: selectedCurrency })
+        .eq("id", currentAdminId);
+
+      if (error) { alert(error.message); return; }
+
+      currentCurrency = selectedCurrency;
+      showToast(t("currencySaved"));
+      await loadAdminProfile();
+    }
+
+    async function saveTimezone() {
+      const selectedTimezone = document.getElementById("timezoneSelect").value;
+
+      const { error } = await supabaseClient
+        .from("users")
+        .update({ preferred_timezone: selectedTimezone })
+        .eq("id", currentAdminId);
+
+      if (error) { alert(error.message); return; }
+
+      currentTimezone = selectedTimezone;
+      showToast(t("timezoneSaved"));
+      await loadAdminProfile();
+    }
+
     window.addEventListener("DOMContentLoaded", checkExistingSession);
   </script>
 </body>
