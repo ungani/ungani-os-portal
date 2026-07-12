@@ -400,6 +400,40 @@
       font-weight: 900;
     }
 
+    .sub-section-box {
+      display: none;
+      border: 1px solid var(--gray);
+      border-radius: 17px;
+      padding: 12px 14px;
+      background: var(--offwhite);
+    }
+
+    .sub-section-box.show {
+      display: block;
+    }
+
+    .sub-section-box p {
+      margin: 0 0 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .sub-section-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+    }
+
+    .sub-section-option input {
+      width: auto;
+    }
+
+    .sub-section-option label {
+      margin: 0;
+      font-weight: 700;
+    }
+
     @media (max-width: 980px) {
       body {
         align-items: flex-start;
@@ -568,7 +602,7 @@
 
           <div class="field full">
             <label for="businessType">Business Type</label>
-            <select id="businessType" required>
+            <select id="businessType" required onchange="updateSubSections()">
               <option value="">Select business type</option>
               <option value="Logistics & Transport">Logistics & Transport</option>
               <option value="Real Estate / Property Management">Real Estate / Property Management</option>
@@ -583,6 +617,7 @@
               <option value="Printing / Branding">Printing / Branding</option>
               <option value="Photography / Videography">Photography / Videography</option>
               <option value="Car Hire / Car Rental">Car Hire / Car Rental</option>
+              <option value="Tour Company">Tour Company</option>
               <option value="Security / Guarding">Security / Guarding</option>
               <option value="Cleaning / Facility Services">Cleaning / Facility Services</option>
               <option value="Construction / Contractors">Construction / Contractors</option>
@@ -593,6 +628,44 @@
               <option value="General Business Operations">General Business Operations</option>
               <option value="Other">Other</option>
             </select>
+          </div>
+
+          <div class="field full">
+            <div id="logisticsSubSections" class="sub-section-box">
+              <p>Select what your business handles:</p>
+              <div class="sub-section-option">
+                <input type="checkbox" id="subTransport" value="Transport / Trips" />
+                <label for="subTransport">Transport / Trips</label>
+              </div>
+              <div class="sub-section-option">
+                <input type="checkbox" id="subColdChain" value="Cold Chain / Reefer & Gensets" />
+                <label for="subColdChain">Cold Chain / Reefer & Gensets</label>
+              </div>
+              <div class="sub-section-option">
+                <input type="checkbox" id="subClearing" value="Clearing & Forwarding" />
+                <label for="subClearing">Clearing & Forwarding</label>
+              </div>
+            </div>
+
+            <div id="hospitalitySubSections" class="sub-section-box">
+              <p>Select what your business handles:</p>
+              <div class="sub-section-option">
+                <input type="checkbox" id="subHotel" value="Hotel / Rooms" />
+                <label for="subHotel">Hotel / Rooms</label>
+              </div>
+              <div class="sub-section-option">
+                <input type="checkbox" id="subBnb" value="BnB" />
+                <label for="subBnb">BnB</label>
+              </div>
+              <div class="sub-section-option">
+                <input type="checkbox" id="subRestaurant" value="Restaurant" />
+                <label for="subRestaurant">Restaurant</label>
+              </div>
+              <div class="sub-section-option">
+                <input type="checkbox" id="subBar" value="Bar / Club" />
+                <label for="subBar">Bar / Club</label>
+              </div>
+            </div>
           </div>
 
           <div class="field full">
@@ -621,7 +694,7 @@
       </div>
 
       <p class="footer">
-        Registration Version: Step Mobile-3D Clean Columns ·
+        Registration Version: Step Mobile-3E Sub-Sections ·
         <a href="https://ungani.com" target="_blank" rel="noopener">ungani.com</a>
       </p>
     </section>
@@ -640,6 +713,26 @@
       setupInstallBox();
     }
 
+    function updateSubSections() {
+      const type = value("businessType");
+      const logisticsBox = document.getElementById("logisticsSubSections");
+      const hospitalityBox = document.getElementById("hospitalitySubSections");
+
+      logisticsBox.classList.remove("show");
+      hospitalityBox.classList.remove("show");
+
+      if (type === "Logistics & Transport") {
+        logisticsBox.classList.add("show");
+      } else if (type === "Hospitality / Restaurant / Venue") {
+        hospitalityBox.classList.add("show");
+      }
+    }
+
+    function getSelectedSubSections() {
+      const boxes = document.querySelectorAll(".sub-section-box.show input[type='checkbox']:checked");
+      return Array.from(boxes).map(function (box) { return box.value; });
+    }
+
     async function submitRegistration(event) {
       event.preventDefault();
 
@@ -652,6 +745,7 @@
       const password = value("password");
       const businessType = value("businessType");
       const notes = value("notes");
+      const selectedSections = getSelectedSubSections();
 
       if (!businessName || !contactName || !phone || !email || !password || !businessType) {
         showStatus("Please fill in all required fields.", "error");
@@ -691,7 +785,8 @@
         email,
         businessType,
         notes,
-        authUserId
+        authUserId,
+        selectedSections
       });
 
       setLoading(false);
@@ -702,6 +797,7 @@
       }
 
       document.getElementById("registrationForm").reset();
+      updateSubSections();
 
       showStatus(
         "Registration submitted successfully. UNGANI will review and approve your business account before login access.",
@@ -720,6 +816,7 @@
         email: data.email,
         business_type: data.businessType,
         business_type_key: makeBusinessKey(data.businessType),
+        selected_sections: data.selectedSections && data.selectedSections.length ? data.selectedSections : null,
         status: "pending",
         notes: data.notes,
         auth_user_id: data.authUserId,
