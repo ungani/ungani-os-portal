@@ -582,8 +582,12 @@
 
     document.addEventListener("DOMContentLoaded", async () => {
       applyExistingThemeSetting();
-      await checkAdminAccess();
-      await loadOverview();
+      try {
+        await checkAdminAccess();
+        await loadOverview();
+      } catch (err) {
+        console.error("Initialization check failure:", err);
+      }
     });
 
     function applyExistingThemeSetting() {
@@ -640,7 +644,10 @@
 
       const { data, error } = await supabaseClient.rpc("is_ungani_admin");
 
-      if (error) throw error;
+      if (error) {
+        console.error("Access verification error:", error);
+        throw new Error("Access validation failed.");
+      }
 
       if (data !== true) {
         document.body.innerHTML = `
@@ -829,16 +836,11 @@
     }
 
     function getErrorMessage(error) {
-      if (!error) return "";
-      if (error.message) return error.message;
-      if (error.details) return error.details;
-      if (error.hint) return error.hint;
-
-      try {
-        return JSON.stringify(error);
-      } catch (e) {
-        return String(error);
-      }
+      // Secure fallback: Log full sensitive error to internal developer console safely
+      console.error("Internal application error info payload:", error);
+      
+      // Always present a completely sterile, standardized generic prompt string to the client screen
+      return "An unexpected error occurred. Please try again later.";
     }
 
     function escapeHtml(value) {
