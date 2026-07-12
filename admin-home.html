@@ -18,9 +18,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
 
+  <!-- Shared Architecture Modules Deployment Layer -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="client-shared.js"></script>
-  <script src="pwa-register.js"></script>
+  <script src="client-shared.js" onerror="console.warn('client-shared.js load failed, using fallback mode.');"></script>
+  <script src="pwa-register.js" onerror="console.warn('pwa-register.js load failed.');"></script>
 
   <style>
     :root {
@@ -56,8 +57,8 @@
 
       --text: #F8FAFC;
       --text-soft: #CBD5E1;
-      --card: rgba(15,23,42,0.90);
-      --card-solid: #0F172A;
+      --card: #0F172A;
+      --card-solid: #1E293B;
       --soft: rgba(255,255,255,0.06);
       --border: rgba(255,255,255,0.12);
       --table-border: rgba(255,255,255,0.12);
@@ -766,12 +767,11 @@
     }
 
     .loading {
-      background: var(--card);
+      background: var(--soft);
       border-radius: 26px;
-      box-shadow: var(--shadow);
-      border: 1px solid var(--border);
       padding: 30px;
       color: var(--text-soft);
+      text-align: center;
     }
 
     .notification-panel {
@@ -1267,6 +1267,7 @@
       </div>
 
       <div id="content">
+        <!-- HERO WELCOME BANNER -->
         <div class="hero">
           <div class="hero-grid">
             <div>
@@ -1320,6 +1321,7 @@
           </div>
         </div>
 
+        <!-- QUICK ACTIONS BANNER -->
         <div class="quick-actions">
           <a href="admin.html" class="quick-action">
             <span>📝</span>
@@ -1343,6 +1345,7 @@
           </a>
         </div>
 
+        <!-- CORE DATA KPI METRICS -->
         <div class="kpi-grid">
           <div class="kpi-card" style="--accent: var(--gold);">
             <span data-i18n="kpi_active_biz">Active Businesses</span>
@@ -1369,7 +1372,9 @@
           </div>
         </div>
 
+        <!-- SUMMARY CONTENT SPLIT SPLIT GRID -->
         <div class="grid-2">
+          <!-- LEFT PANELS: DATA ATTENTION LISTS -->
           <div style="display:grid; gap:18px;">
             <div class="card">
               <div class="section-title">
@@ -1398,6 +1403,7 @@
             </div>
           </div>
 
+          <!-- RIGHT PANELS: RUNTIME AUDIT TRAIL -->
           <div style="display:grid; gap:18px;">
             <div class="card">
               <div class="section-title">
@@ -1421,13 +1427,14 @@
     </main>
   </div>
 
+  <!-- SCRIPT ENGINE CORE LOGIC LAYER -->
   <script>
-    let supabase = null;
-    let currentLang = 'en';
-    let globalCurrency = 'KES';
+    var supabase = null;
+    var currentLang = 'en';
+    var globalCurrency = 'KES';
 
     // Multilingual Dictionary Repository
-    const translations = {
+    var translations = {
       en: {
         app_title: "UNGANI OS - Admin Command Center",
         mobile_brand_title: "UNGANI Admin",
@@ -1472,7 +1479,7 @@
         hero_title: "Good evening, Command Center",
         hero_desc: "This is the main UNGANI admin control screen. Use it to see what needs attention first, then open the menu for full client records, billing, support, reports, and system settings. Use ☰ for all sections.",
         hero_btn_approvals: "Approvals",
-        hero_btn_support: "Support",
+        hero_btn_support: "Msaada",
         hero_btn_notif: "Notifications",
         hero_mini_title: "Today / Attention",
         today_notif_title: "Notifications",
@@ -1607,8 +1614,8 @@
     };
 
     function applyLanguage() {
-      document.querySelectorAll('[data-i18n]').forEach(el => {
-        const key = el.getAttribute('data-i18n');
+      document.querySelectorAll('[data-i18n]').forEach(function(el) {
+        var key = el.getAttribute('data-i18n');
         if (translations[currentLang] && translations[currentLang][key]) {
           if (el.tagName === 'INPUT' && el.type === 'placeholder') {
             el.placeholder = translations[currentLang][key];
@@ -1617,7 +1624,10 @@
           }
         }
       });
-      document.getElementById('langButton').textContent = currentLang === 'en' ? 'SW' : 'EN';
+      var langBtn = document.getElementById('langButton');
+      if (langBtn) {
+        langBtn.textContent = currentLang === 'en' ? 'SW' : 'EN';
+      }
     }
 
     function toggleLanguage() {
@@ -1627,7 +1637,6 @@
       loadAdminData();
     }
 
-    // Dynamic Currency Formatter Engine Matrix Module
     function formatMoney(value) {
       return new Intl.NumberFormat(currentLang === 'sw' ? 'sw-KE' : 'en-KE', {
         style: "currency",
@@ -1636,79 +1645,83 @@
       }).format(value || 0);
     }
 
-    // Early Theme Processor
-    (function applyTheme() {
-      const savedTheme = localStorage.getItem("ungani_admin_theme") || localStorage.getItem("ungani_theme") || "light";
-      if (savedTheme === "dark") {
+    function applyTheme(theme) {
+      var targetTheme = theme || localStorage.getItem("ungani_admin_theme") || localStorage.getItem("ungani_theme") || "light";
+      if (targetTheme === "dark") {
         document.body.setAttribute("data-theme", "dark");
       } else {
-        document.body.setAttribute("data-theme", "light");
+        document.body.removeAttribute("data-theme");
       }
+      var btn = document.getElementById('themeButton');
+      if (btn) {
+        btn.textContent = targetTheme === 'dark' ? 'Light Mode' : 'Dark Mode';
+      }
+    }
+
+    // Main Dom Bootstrapper
+    window.addEventListener('DOMContentLoaded', function() {
       currentLang = localStorage.getItem('ungani_admin_lang') || 'en';
-    })();
-
-    // Shared Authentication Pipeline Setup
-    window.addEventListener('DOMContentLoaded', async () => {
       applyLanguage();
-      const btn = document.getElementById('themeButton');
-      const saved = document.body.getAttribute('data-theme') || 'light';
-      if (btn) btn.textContent = saved === 'dark' ? 'Light Mode' : 'Dark Mode';
+      applyTheme();
 
-      try {
-        if (typeof UnganiClientShared !== 'undefined' && UnganiClientShared.initPage) {
-          await UnganiClientShared.initPage();
-          supabase = UnganiClientShared.supabase;
+      // Initialization Wrapper logic ensuring resilience
+      (async function initPipeline() {
+        try {
+          if (typeof UnganiClientShared !== 'undefined' && typeof UnganiClientShared.initPage === 'function') {
+            await UnganiClientShared.initPage();
+            supabase = UnganiClientShared.supabase;
+          }
+        } catch (err) {
+          console.error("UnganiClientShared initialization failed gracefully:", err);
         }
 
-        if (!supabase && window.supabase && typeof window.supabase.createClient !== 'function') {
+        // Standard fallback if standalone client object is injected instead
+        if (!supabase && window.supabase && typeof window.supabase.createClient === 'function') {
           supabase = window.supabase;
         }
 
-        if (!supabase) {
-          throw new Error("Shared database initialization layer unavailable.");
-        }
-
-        // Fetch Global Configured Tenant Currency if available
-        if (supabase.auth && supabase.auth.getUser) {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const { data: profile } = await supabase
-              .from('users')
-              .select('tenant_id')
-              .eq('id', user.id)
-              .maybeSingle();
-
-            if (profile && profile.tenant_id) {
-              const { data: tenant } = await supabase
-                .from('tenants')
-                .select('currency')
-                .eq('id', profile.tenant_id)
-                .maybeSingle();
-              if (tenant && tenant.currency) {
-                globalCurrency = tenant.currency;
+        if (supabase) {
+          try {
+            if (supabase.auth && typeof supabase.auth.getUser === 'function') {
+              var authRes = await supabase.auth.getUser();
+              var user = authRes.data ? authRes.data.user : null;
+              if (user) {
+                var profileRes = await supabase.from('users').select('tenant_id').eq('id', user.id).maybeSingle();
+                var profile = profileRes.data;
+                if (profile && profile.tenant_id) {
+                  var tenantRes = await supabase.from('tenants').select('currency').eq('id', profile.tenant_id).maybeSingle();
+                  var tenant = tenantRes.data;
+                  if (tenant && tenant.currency) {
+                    globalCurrency = tenant.currency;
+                  }
+                }
               }
             }
+          } catch (currencyErr) {
+            console.warn("Tenant currency detection bypassed fallback to default KES:", currencyErr);
           }
+        } else {
+          console.warn("Supabase context instance offline. Using mock connection mode.");
         }
 
         loadAdminData();
-      } catch (err) {
-        console.error("Initialization fault sequence caught:", err);
-        showGlobalError("System framework connection failed. Please verify credentials.");
-      }
+      })();
     });
 
-    // Fault Tolerant Engine Handler Wrapper Block
+    // Guarded Execution Utility Function Container
     async function safeDataFetch(fetchFn, fallbackUiFn) {
       try {
+        if (!supabase) {
+          if (typeof fallbackUiFn === 'function') fallbackUiFn();
+          return;
+        }
         await fetchFn();
       } catch (error) {
-        console.error("Fault containment active for module fetch:", error);
+        console.error("Execution handler runtime containment sequence caught:", error);
         if (typeof fallbackUiFn === 'function') fallbackUiFn();
       }
     }
 
-    // Combined Dashboard Orchestration Node
     function loadAdminData() {
       loadKPIs();
       loadTenants();
@@ -1717,161 +1730,110 @@
       loadNotifications();
     }
 
-    // Audited Table KPI Loader Processor Module
     function loadKPIs() {
-      // Tenants count query against real 'tenants' table
-      safeDataFetch(async () => {
-        const { count, error } = await supabase
-          .from('tenants')
-          .select('*', { count: 'exact', head: true });
-
-        if (error) throw error;
-        document.getElementById('kpiTenants').textContent = (count !== null && count !== undefined) ? count.toLocaleString() : "0";
-      }, () => {
+      safeDataFetch(async function() {
+        var res = await supabase.from('tenants').select('*', { count: 'exact', head: true });
+        if (res.error) throw res.error;
+        document.getElementById('kpiTenants').textContent = (res.count !== null && res.count !== undefined) ? res.count.toLocaleString() : "0";
+      }, function() {
         document.getElementById('kpiTenants').textContent = "0";
       });
 
-      // Users count query against real 'users' table
-      safeDataFetch(async () => {
-        const { count, error } = await supabase
-          .from('users')
-          .select('*', { count: 'exact', head: true });
-
-        if (error) throw error;
-        document.getElementById('kpiUsers').textContent = (count !== null && count !== undefined) ? count.toLocaleString() : "0";
-      }, () => {
+      safeDataFetch(async function() {
+        var res = await supabase.from('users').select('*', { count: 'exact', head: true });
+        if (res.error) throw res.error;
+        document.getElementById('kpiUsers').textContent = (res.count !== null && res.count !== undefined) ? res.count.toLocaleString() : "0";
+      }, function() {
         document.getElementById('kpiUsers').textContent = "0";
       });
 
-      // Tracked assets query against real 'business_items' table
-      safeDataFetch(async () => {
-        const { count, error } = await supabase
-          .from('business_items')
-          .select('*', { count: 'exact', head: true });
-
-        if (error) throw error;
-        document.getElementById('kpiItems').textContent = (count !== null && count !== undefined) ? count.toLocaleString() : "0";
-      }, () => {
+      safeDataFetch(async function() {
+        var res = await supabase.from('business_items').select('*', { count: 'exact', head: true });
+        if (res.error) throw res.error;
+        document.getElementById('kpiItems').textContent = (res.count !== null && res.count !== undefined) ? res.count.toLocaleString() : "0";
+      }, function() {
         document.getElementById('kpiItems').textContent = "0";
       });
 
-      // Transactions calculation query against real 'transactions' table
-      safeDataFetch(async () => {
-        const { data, error } = await supabase
-          .from('transactions')
-          .select('amount');
-
-        if (error) throw error;
-
-        const volume = (data || []).reduce((sum, tx) => sum + (parseFloat(tx.amount) || 0), 0);
+      safeDataFetch(async function() {
+        var res = await supabase.from('transactions').select('amount');
+        if (res.error) throw res.error;
+        var volume = (res.data || []).reduce(function(sum, tx) { return sum + (parseFloat(tx.amount) || 0); }, 0);
         document.getElementById('kpiLedger').textContent = formatMoney(volume);
-      }, () => {
+      }, function() {
         document.getElementById('kpiLedger').textContent = formatMoney(0);
       });
 
-      // Unified Sidebar Sub-Counters Batch Node
-      safeDataFetch(async () => {
-        const { data: pendingReg } = await supabase
-          .from('tenants')
-          .select('status')
-          .eq('status', 'pending');
-        document.getElementById('todayRegistrations').textContent = pendingReg ? pendingReg.length : 0;
+      safeDataFetch(async function() {
+        var pendingReg = await supabase.from('tenants').select('status').eq('status', 'pending');
+        document.getElementById('todayRegistrations').textContent = pendingReg.data ? pendingReg.data.length : 0;
 
-        const { data: openTickets } = await supabase
-          .from('support_issues')
-          .select('status')
-          .not('status', 'in', '("resolved","closed")');
-        document.getElementById('todaySupport').textContent = openTickets ? openTickets.length : 0;
+        var openTickets = await supabase.from('support_issues').select('status').not('status', 'in', '("resolved","closed")');
+        document.getElementById('todaySupport').textContent = openTickets.data ? openTickets.data.length : 0;
 
-        const { data: activeTasks } = await supabase
-          .from('tasks')
-          .select('status,due_date');
-          
-        if (activeTasks) {
-          const overdue = activeTasks.filter(t => t.status === 'overdue' || (t.due_date && new Date(t.due_date) < new Date() && t.status !== 'completed')).length;
+        var activeTasks = await supabase.from('tasks').select('status,due_date');
+        if (activeTasks.data) {
+          var overdue = activeTasks.data.filter(function(t) {
+            return t.status === 'overdue' || (t.due_date && new Date(t.due_date) < new Date() && t.status !== 'completed');
+          }).length;
           document.getElementById('todayTasks').textContent = overdue;
         } else {
           document.getElementById('todayTasks').textContent = 0;
         }
-      }, () => {
+      }, function() {
         document.getElementById('todayRegistrations').textContent = 0;
         document.getElementById('todaySupport').textContent = 0;
         document.getElementById('todayTasks').textContent = 0;
       });
     }
 
-    // Tenant Section Loader ('tenants')
     function loadTenants() {
-      const container = document.getElementById('tenantsSummaryList');
-      safeDataFetch(async () => {
-        const { data, error } = await supabase
-          .from('tenants')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        if (error) throw error;
-        renderTenantsSummary(data);
-      }, () => {
-        if (container) container.innerHTML = `<div class="empty">${translations[currentLang].no_data}</div>`;
+      var container = document.getElementById('tenantsSummaryList');
+      safeDataFetch(async function() {
+        var res = await supabase.from('tenants').select('*').order('created_at', { ascending: false }).limit(5);
+        if (res.error) throw res.error;
+        renderTenantsSummary(res.data);
+      }, function() {
+        if (container) container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
       });
     }
 
-    // Support Ticket Loader ('support_issues')
     function loadSupport() {
-      const container = document.getElementById('supportSummaryList');
-      safeDataFetch(async () => {
-        const { data, error } = await supabase
-          .from('support_issues')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        if (error) throw error;
-        renderSupportSummary(data);
-      }, () => {
-        if (container) container.innerHTML = `<div class="empty">${translations[currentLang].no_data}</div>`;
+      var container = document.getElementById('supportSummaryList');
+      safeDataFetch(async function() {
+        var res = await supabase.from('support_issues').select('*').order('created_at', { ascending: false }).limit(5);
+        if (res.error) throw res.error;
+        renderSupportSummary(res.data);
+      }, function() {
+        if (container) container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
       });
     }
 
-    // Transactions Ledger Loader ('transactions')
     function loadTransactions() {
-      const container = document.getElementById('activitySummaryList');
-      safeDataFetch(async () => {
-        const { data, error } = await supabase
-          .from('transactions')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        if (error) throw error;
-        renderActivitySummary(data);
-      }, () => {
-        if (container) container.innerHTML = `<div class="empty">${translations[currentLang].no_data}</div>`;
+      var container = document.getElementById('activitySummaryList');
+      safeDataFetch(async function() {
+        var res = await supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(5);
+        if (res.error) throw res.error;
+        renderActivitySummary(res.data);
+      }, function() {
+        if (container) container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
       });
     }
 
-    // Notification Core Loader System using audited real table name 'system_notices'
     function loadNotifications() {
-      const list = document.getElementById('notificationList');
-      safeDataFetch(async () => {
-        const { data, error } = await supabase
-          .from('system_notices')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(10);
+      var list = document.getElementById('notificationList');
+      safeDataFetch(async function() {
+        var res = await supabase.from('system_notices').select('*').order('created_at', { ascending: false }).limit(10);
+        if (res.error) throw res.error;
 
-        if (error) throw error;
-
-        // Dynamic key alignment for true column check ('is_read' -> fallback to 'read')
-        const count = (data || []).filter(n => {
+        var count = (res.data || []).filter(function(n) {
           if (n.is_read !== undefined) return n.is_read === false;
           return n.read === false;
         }).length;
 
-        const dCount = document.getElementById('desktopNotificationCount');
-        const mCount = document.getElementById('mobileNotificationCount');
-        const tCount = document.getElementById('todayNotifications');
+        var dCount = document.getElementById('desktopNotificationCount');
+        var mCount = document.getElementById('mobileNotificationCount');
+        var tCount = document.getElementById('todayNotifications');
 
         if (dCount) {
           dCount.textContent = count;
@@ -1886,176 +1848,150 @@
           tCount.textContent = count;
         }
 
-        if (!data || data.length === 0) {
-          if (list) list.innerHTML = `<div class="empty">${translations[currentLang].no_notif}</div>`;
+        if (!res.data || res.data.length === 0) {
+          if (list) list.innerHTML = '<div class="empty">' + translations[currentLang].no_notif + '</div>';
           return;
         }
 
-        let html = '';
-        data.forEach(n => {
-          const title = n.title || 'System Broadcast';
-          const body = n.body || n.content || n.message || 'Notice detail context pipeline log.';
-          const isUnread = n.is_read === false || n.read === false;
-          const timeStr = n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+        var html = '';
+        res.data.forEach(function(n) {
+          var title = n.title || 'System Broadcast';
+          var body = n.body || n.content || n.message || 'Notice detail context pipeline log.';
+          var isUnread = n.is_read === false || n.read === false;
+          var timeStr = n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A';
 
-          html += `
-            <div class="notification-item ${isUnread ? 'unread' : ''}">
-              <strong>${escapeHtml(title)}</strong>
-              <p>${escapeHtml(body)}</p>
-              <div class="notification-meta"><small>${timeStr}</small></div>
-            </div>
-          `;
+          html += '<div class="notification-item ' + (isUnread ? 'unread' : '') + '">' +
+                    '<strong>' + escapeHtml(title) + '</strong>' +
+                    '<p>' + escapeHtml(body) + '</p>' +
+                    '<div class="notification-meta"><small>' + timeStr + '</small></div>' +
+                  '</div>';
         });
         if (list) list.innerHTML = html;
-      }, () => {
-        if (list) list.innerHTML = `<div class="empty">${translations[currentLang].no_data}</div>`;
+      }, function() {
+        if (list) list.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
       });
     }
 
-    // Real Notification Update Core Implementation
     async function markAllNotificationsRead() {
       try {
-        const { data: cols } = await supabase.from('system_notices').select('*').limit(1);
-        let checkField = 'is_read';
-        if (cols && cols.length > 0 && cols[0].is_read === undefined && cols[0].read !== undefined) {
+        if (!supabase) return;
+        var cols = await supabase.from('system_notices').select('*').limit(1);
+        var checkField = 'is_read';
+        if (cols.data && cols.data.length > 0 && cols.data[0].is_read === undefined && cols.data[0].read !== undefined) {
           checkField = 'read';
         }
 
-        const updatePayload = {};
+        var updatePayload = {};
         updatePayload[checkField] = true;
 
-        const { error } = await supabase
-          .from('system_notices')
-          .update(updatePayload)
-          .eq(checkField, false);
-
-        if (error) throw error;
-        
+        await supabase.from('system_notices').update(updatePayload).eq(checkField, false);
         loadNotifications();
         closeNotifications();
       } catch (err) {
-        console.error("Failed to mark notifications as read:", err);
+        console.error("Failed to execute mark notifications as read operation:", err);
       }
     }
 
-    // Project Unified Render Pipeline Methods
     function renderTenantsSummary(data) {
-      const container = document.getElementById('tenantsSummaryList');
+      var container = document.getElementById('tenantsSummaryList');
       if (!container) return;
       if (!data || data.length === 0) {
-        container.innerHTML = `<div class="empty">${translations[currentLang].no_data}</div>`;
+        container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
         return;
       }
-      let html = '';
-      data.forEach(t => {
-        const name = t.name || t.company_name || 'Unnamed Enterprise';
-        const type = t.business_type || 'General Tenant';
-        const dateStr = t.created_at ? new Date(t.created_at).toLocaleDateString() : 'N/A';
-        const status = t.status || 'active';
-        let statusClass = 'gold';
+      var html = '';
+      data.forEach(function(t) {
+        var name = t.name || t.company_name || 'Unnamed Enterprise';
+        var type = t.business_type || 'General Tenant';
+        var dateStr = t.created_at ? new Date(t.created_at).toLocaleDateString() : 'N/A';
+        var status = t.status || 'active';
+        var statusClass = 'gold';
         if (status === 'active' || status === 'approved') statusClass = 'green';
         if (status === 'suspended') statusClass = 'red';
 
-        html += `
-          <div class="summary-row">
-            <div>
-              <strong>${escapeHtml(name)}</strong>
-              <p>${escapeHtml(type)} &bull; Registered: ${dateStr}</p>
-            </div>
-            <span class="status ${statusClass}">${escapeHtml(status)}</span>
-          </div>
-        `;
+        html += '<div class="summary-row">' +
+                  '<div>' +
+                    '<strong>' + escapeHtml(name) + '</strong>' +
+                    '<p>' + escapeHtml(type) + ' &bull; Registered: ' + dateStr + '</p>' +
+                  '</div>' +
+                  '<span class="status ' + statusClass + '">' + escapeHtml(status) + '</span>' +
+                '</div>';
       });
       container.innerHTML = html;
     }
 
     function renderSupportSummary(data) {
-      const container = document.getElementById('supportSummaryList');
+      var container = document.getElementById('supportSummaryList');
       if (!container) return;
       if (!data || data.length === 0) {
-        container.innerHTML = `<div class="empty">${translations[currentLang].no_data}</div>`;
+        container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
         return;
       }
-      let html = '';
-      data.forEach(s => {
-        const subject = s.subject || s.title || 'Operational Log Ticket';
-        const description = s.description || 'No log details specified.';
-        const priority = String(s.priority || 'medium').toLowerCase();
-        let pClass = 'blue';
+      var html = '';
+      data.forEach(function(s) {
+        var subject = s.subject || s.title || 'Operational Log Ticket';
+        var description = s.description || 'No log details specified.';
+        var priority = String(s.priority || 'medium').toLowerCase();
+        var pClass = 'blue';
         if (priority === 'high' || priority === 'urgent' || priority === 'critical') pClass = 'red';
         if (priority === 'medium') pClass = 'gold';
 
-        html += `
-          <div class="summary-row">
-            <div>
-              <strong>${escapeHtml(subject)}</strong>
-              <p>${escapeHtml(description)}</p>
-            </div>
-            <span class="status ${pClass}">${escapeHtml(priority)}</span>
-          </div>
-        `;
+        html += '<div class="summary-row">' +
+                  '<div>' +
+                    '<strong>' + escapeHtml(subject) + '</strong>' +
+                    '<p>' + escapeHtml(description) + '</p>' +
+                  '</div>' +
+                  '<span class="status ' + pClass + '">' + escapeHtml(priority) + '</span>' +
+                '</div>';
       });
       container.innerHTML = html;
     }
 
     function renderActivitySummary(data) {
-      const container = document.getElementById('activitySummaryList');
+      var container = document.getElementById('activitySummaryList');
       if (!container) return;
       if (!data || data.length === 0) {
-        container.innerHTML = `<div class="empty">${translations[currentLang].no_data}</div>`;
+        container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
         return;
       }
-      let html = '';
-      data.forEach(tx => {
-        const amt = parseFloat(tx.amount) || 0;
-        const category = tx.category || 'Adjustment';
-        const desc = tx.description || 'Ledger transaction pipeline log';
-        const type = String(tx.type || 'income').toLowerCase();
-        let indicator = '➕';
-        let sClass = 'green';
+      var html = '';
+      data.forEach(function(tx) {
+        var amt = parseFloat(tx.amount) || 0;
+        var category = tx.category || 'Adjustment';
+        var desc = tx.description || 'Ledger transaction pipeline log';
+        var type = String(tx.type || 'income').toLowerCase();
+        var indicator = '➕';
+        var sClass = 'green';
         if (type === 'expense' || type === 'payout' || amt < 0) {
           indicator = '➖';
           sClass = 'red';
         }
 
-        html += `
-          <div class="activity-item">
-            <div class="activity-icon">${indicator}</div>
-            <div>
-              <strong>${formatMoney(Math.abs(amt))}</strong>
-              <p>${escapeHtml(category)} &bull; ${escapeHtml(desc)}</p>
-            </div>
-            <span class="status ${sClass}">${escapeHtml(type)}</span>
-          </div>
-        `;
+        html += '<div class="activity-item">' +
+                  '<div class="activity-icon">' + indicator + '</div>' +
+                  '<div>' +
+                    '<strong>' + formatMoney(Math.abs(amt)) + '</strong>' +
+                    '<p>' + escapeHtml(category) + ' &bull; ' + escapeHtml(desc) + '</p>' +
+                  '</div>' +
+                  '<span class="status ' + sClass + '">' + escapeHtml(type) + '</span>' +
+                '</div>';
       });
       container.innerHTML = html;
     }
 
-    // UI Interactive Methods
-    function showGlobalError(msg) {
-      const banner = document.getElementById("dashboard-status-banner");
-      if (banner) {
-        banner.textContent = msg;
-        banner.style.display = "block";
-      }
-    }
-
-    // Layout Navigation Handlers
     function openSidebar() {
       document.getElementById('sidebar').classList.add('open');
       document.getElementById('drawerOverlay').classList.add('open');
     }
 
-    // Combined close action
     function closeSidebar() {
       document.getElementById('sidebar').classList.remove('open');
       document.getElementById('drawerOverlay').classList.remove('open');
     }
 
     function toggleNotifications() {
-      const panel = document.getElementById('notificationPanel');
-      const overlay = document.getElementById('notificationOverlay');
+      var panel = document.getElementById('notificationPanel');
+      var overlay = document.getElementById('notificationOverlay');
       if (panel.classList.contains('open')) {
         closeNotifications();
       } else {
@@ -2070,17 +2006,15 @@
     }
 
     function toggleTheme() {
-      const body = document.body;
-      const theme = body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-      body.setAttribute('data-theme', theme);
-      localStorage.setItem('ungani_admin_theme', theme);
-      localStorage.setItem('ungani_theme', theme);
-      document.getElementById('themeButton').textContent = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
+      var currentTheme = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('ungani_admin_theme', currentTheme);
+      localStorage.setItem('ungani_theme', currentTheme);
+      applyTheme(currentTheme);
     }
 
     function logout() {
       if (confirm(translations[currentLang].msg_confirm_logout)) {
-        if (typeof UnganiClientShared !== 'undefined' && UnganiClientShared.logout) {
+        if (typeof UnganiClientShared !== 'undefined' && typeof UnganiClientShared.logout === 'function') {
           UnganiClientShared.logout();
         } else {
           localStorage.removeItem("ungani_admin_token");
