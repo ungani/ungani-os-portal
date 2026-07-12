@@ -2,7 +2,8 @@
   const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
   const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
-  const POLL_INTERVAL_MS = 15000;
+  const BASE_POLL_INTERVAL_MS = 15000; // Base interval: 15 seconds
+  const MAX_POLL_INTERVAL_MS = 300000; // Cap backoff at 5 minutes
   const STORAGE_KEY = "ungani_last_seen_notification_alert_id";
 
   let supabaseClient = null;
@@ -10,6 +11,11 @@
   let lastSeenId = null;
   let currentUserType = "client";
   let audioReady = false;
+
+  // Trackers for our optimized smart loop
+  let currentInterval = BASE_POLL_INTERVAL_MS;
+  let errorCount = 0;
+  let pollTimeoutId = null;
 
   function initUnganiNotificationAlerts(options = {}) {
     if (alertStarted) return;
@@ -29,66 +35,98 @@
     createAlertContainer();
     enableAudioAfterUserInteraction();
 
-    checkForNewNotifications();
+    // Listen for tab switching to sleep or wake up the polling cycle dynamically
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    setInterval(() => {
-      checkForNewNotifications();
-    }, POLL_INTERVAL_MS);
+    // Kick off the initial loop execution safely
+    runSmartPollLoop();
+  }
+
+  // Smart loop manager that respects tab visibility and errors
+  async function runSmartPollLoop() {
+    // Clear any pending timeouts to avoid unexpected duplicate cycles
+    if (pollTimeoutId) clearTimeout(pollTimeoutId);
+
+    // If the browser tab is hidden or minimized, skip processing entirely
+    if (document.hidden) {
+      pollTimeoutId = setTimeout(runSmartPollLoop, 10000); // Re-check visibility in 10s
+      return;
+    }
+
+    try {
+      await checkForNewNotifications();
+      
+      // On a successful response, fully restore original polling speeds
+      errorCount = 0;
+      currentInterval = BASE_POLL_INTERVAL_MS;
+    } catch (error) {
+      console.warn("UNGANI notification alert check failed:", error);
+      errorCount++;
+      
+      // Exponential Backoff: Progressively slow down checking cadence if database errors strike
+      currentInterval = Math.min(BASE_POLL_INTERVAL_MS * Math.pow(2, errorCount), MAX_POLL_INTERVAL_MS);
+    }
+
+    pollTimeoutId = setTimeout(runSmartPollLoop, currentInterval);
+  }
+
+  // Wakes the loop up instantly if the user focuses back on the tab
+  function handleVisibilityChange() {
+    if (!document.hidden) {
+      runSmartPollLoop();
+    }
   }
 
   async function checkForNewNotifications() {
-    try {
-      const sessionResponse = await supabaseClient.auth.getSession();
+    const sessionResponse = await supabaseClient.auth.getSession();
 
-      if (
-        !sessionResponse ||
-        !sessionResponse.data ||
-        !sessionResponse.data.session
-      ) {
-        return;
-      }
+    if (
+      !sessionResponse ||
+      !sessionResponse.data ||
+      !sessionResponse.data.session
+    ) {
+      return;
+    }
 
-      let query = supabaseClient
-        .from("ungani_notifications")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(1);
+    let query = supabaseClient
+      .from("ungani_notifications")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1);
 
-      query = applyUserTypeFilter(query);
+    query = applyUserTypeFilter(query);
 
-      const response = await query;
+    const response = await query;
 
-      if (response.error) {
-        return;
-      }
+    if (response.error) {
+      // Throwing error directly triggers our catch block logic to scale down request rates gracefully
+      throw new Error(response.error.message);
+    }
 
-      const notifications = Array.isArray(response.data) ? response.data : [];
+    const notifications = Array.isArray(response.data) ? response.data : [];
 
-      if (!notifications.length) {
-        return;
-      }
+    if (!notifications.length) {
+      return;
+    }
 
-      const latest = notifications[0];
-      const latestId = String(latest.id || "");
+    const latest = notifications[0];
+    const latestId = String(latest.id || "");
 
-      if (!latestId) {
-        return;
-      }
+    if (!latestId) {
+      return;
+    }
 
-      if (!lastSeenId) {
-        lastSeenId = latestId;
-        localStorage.setItem(STORAGE_KEY + "_" + currentUserType, latestId);
-        return;
-      }
+    if (!lastSeenId) {
+      lastSeenId = latestId;
+      localStorage.setItem(STORAGE_KEY + "_" + currentUserType, latestId);
+      return;
+    }
 
-      if (latestId !== lastSeenId) {
-        lastSeenId = latestId;
-        localStorage.setItem(STORAGE_KEY + "_" + currentUserType, latestId);
-        showNotificationPopup(latest);
-        playNotificationSound();
-      }
-    } catch (error) {
-      console.warn("UNGANI notification alert check failed:", error);
+    if (latestId !== lastSeenId) {
+      lastSeenId = latestId;
+      localStorage.setItem(STORAGE_KEY + "_" + currentUserType, latestId);
+      showNotificationPopup(latest);
+      playNotificationSound();
     }
   }
 
