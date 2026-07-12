@@ -325,11 +325,17 @@
       font-size: clamp(28px, 4vw, 48px);
       letter-spacing: -0.055em;
       line-height: 1.02;
+      color: var(--text);
+    }
+
+    body:not([data-theme="dark"]) .topbar h2,
+    body:not([data-theme="dark"]) .topbar p {
+      color: white;
     }
 
     .topbar p {
       margin: 8px 0 0;
-      color: rgba(255,255,255,0.72);
+      color: var(--text-soft);
       max-width: 760px;
       line-height: 1.5;
     }
@@ -1505,8 +1511,8 @@
         sec_ledger_desc: "Cross-tenant unified transaction pipeline logging",
         btn_view_flow: "View Flow",
         loading_ledger: "Loading system ledger pipeline...",
-        footer_text: "© 2026 UNGANI OS Ecosystem. All Rights Reserved. Command Cluster Cloud Layer.",
-        no_data: "No data available",
+        footer_text: "© 2026 Mfumo wa UNGANI OS. Haki zote zimehifadhiwa. Tabaka la Wingu la Kundi la Amri.",
+        no_data: "No records found",
         no_notif: "No notices found",
         msg_confirm_logout: "Confirm session cleanup configuration exit command sequence?"
       },
@@ -1517,7 +1523,7 @@
         notif_head_title: "Taarifa za Utawala",
         notif_head_subtitle: "Marekebisho ya Mfumo na Notisi Zilizokaguliwa",
         btn_close: "Funga",
-        btn_mark_read: " Weka zote zimesomwa",
+        btn_mark_read: "Weka zote zimesomwa",
         btn_refresh: "Pakia Upya",
         empty_notifications: "Hakuna taarifa zilizopakiwa bado.",
         btn_close_menu: "Funga Menyu",
@@ -1548,7 +1554,7 @@
         nav_logout: "Ondoka",
         topbar_title: "Kituo cha Amri ya Utawala",
         topbar_subtitle: "Simamia wateja, usajili, msaada, malipo, kumbukumbu, na maeneo ya mfumo yanayohitaji uangalizi kwenye UNGANI OS.",
-        btn_top_notif: " Taarifa",
+        btn_top_notif: "Taarifa",
         btn_review_reg: "Kagua Usajili",
         hero_badge: "Utawala wa UNGANI",
         hero_title: "Habari za jioni, Kituo cha Amri",
@@ -1594,7 +1600,7 @@
         btn_view_flow: "Angalia Mtiririko",
         loading_ledger: "Inapakia mfumo wa mtiririko wa sura ya hesabu...",
         footer_text: "© 2026 Mfumo wa UNGANI OS. Haki zote zimehifadhiwa. Tabaka la Wingu la Kundi la Amri.",
-        no_data: "Hakuna data inayopatikana",
+        no_data: "Hakuna rekodi zilizopatikana",
         no_notif: "Hakuna notisi zilizopatikana",
         msg_confirm_logout: "Thibitisha mlolongo wa amri ya kutoka na kusafisha usanidi wa kikao?"
       }
@@ -1720,9 +1726,9 @@
           .select('*', { count: 'exact', head: true });
 
         if (error) throw error;
-        document.getElementById('kpiTenants').textContent = (count ?? 0).toLocaleString();
+        document.getElementById('kpiTenants').textContent = (count !== null && count !== undefined) ? count.toLocaleString() : "0";
       }, () => {
-        document.getElementById('kpiTenants').textContent = "—";
+        document.getElementById('kpiTenants').textContent = "0";
       });
 
       // Users count query against real 'users' table
@@ -1732,9 +1738,9 @@
           .select('*', { count: 'exact', head: true });
 
         if (error) throw error;
-        document.getElementById('kpiUsers').textContent = (count ?? 0).toLocaleString();
+        document.getElementById('kpiUsers').textContent = (count !== null && count !== undefined) ? count.toLocaleString() : "0";
       }, () => {
-        document.getElementById('kpiUsers').textContent = "—";
+        document.getElementById('kpiUsers').textContent = "0";
       });
 
       // Tracked assets query against real 'business_items' table
@@ -1744,9 +1750,9 @@
           .select('*', { count: 'exact', head: true });
 
         if (error) throw error;
-        document.getElementById('kpiItems').textContent = (count ?? 0).toLocaleString();
+        document.getElementById('kpiItems').textContent = (count !== null && count !== undefined) ? count.toLocaleString() : "0";
       }, () => {
-        document.getElementById('kpiItems').textContent = "—";
+        document.getElementById('kpiItems').textContent = "0";
       });
 
       // Transactions calculation query against real 'transactions' table
@@ -1760,7 +1766,7 @@
         const volume = (data || []).reduce((sum, tx) => sum + (parseFloat(tx.amount) || 0), 0);
         document.getElementById('kpiLedger').textContent = formatMoney(volume);
       }, () => {
-        document.getElementById('kpiLedger').textContent = "—";
+        document.getElementById('kpiLedger').textContent = formatMoney(0);
       });
 
       // Unified Sidebar Sub-Counters Batch Node
@@ -1769,13 +1775,13 @@
           .from('tenants')
           .select('status')
           .eq('status', 'pending');
-        if (pendingReg) document.getElementById('todayRegistrations').textContent = pendingReg.length;
+        document.getElementById('todayRegistrations').textContent = pendingReg ? pendingReg.length : 0;
 
         const { data: openTickets } = await supabase
           .from('support_issues')
           .select('status')
           .not('status', 'in', '("resolved","closed")');
-        if (openTickets) document.getElementById('todaySupport').textContent = openTickets.length;
+        document.getElementById('todaySupport').textContent = openTickets ? openTickets.length : 0;
 
         const { data: activeTasks } = await supabase
           .from('tasks')
@@ -1784,9 +1790,13 @@
         if (activeTasks) {
           const overdue = activeTasks.filter(t => t.status === 'overdue' || (t.due_date && new Date(t.due_date) < new Date() && t.status !== 'completed')).length;
           document.getElementById('todayTasks').textContent = overdue;
+        } else {
+          document.getElementById('todayTasks').textContent = 0;
         }
       }, () => {
-        // Soft suppression on secondary summary counters
+        document.getElementById('todayRegistrations').textContent = 0;
+        document.getElementById('todaySupport').textContent = 0;
+        document.getElementById('todayTasks').textContent = 0;
       });
     }
 
@@ -1905,7 +1915,6 @@
     // Real Notification Update Core Implementation
     async function markAllNotificationsRead() {
       try {
-        // Audit field definition mapping verification check
         const { data: cols } = await supabase.from('system_notices').select('*').limit(1);
         let checkField = 'is_read';
         if (cols && cols.length > 0 && cols[0].is_read === undefined && cols[0].read !== undefined) {
@@ -2038,6 +2047,7 @@
       document.getElementById('drawerOverlay').classList.add('open');
     }
 
+    // Combined close action
     function closeSidebar() {
       document.getElementById('sidebar').classList.remove('open');
       document.getElementById('drawerOverlay').classList.remove('open');
