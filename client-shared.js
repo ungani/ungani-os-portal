@@ -840,33 +840,115 @@
       }
 
       .ungani-btn {
-        border: 0;
-        border-radius: 14px;
-        padding: 11px 15px;
+        position: relative;
+        border: 1.5px solid transparent;
+        border-radius: 12px;
+        min-height: 44px;
+        padding: 0 18px;
         background: var(--ungani-navy);
         color: #FFFFFF;
-        font-weight: 850;
+        font-weight: 800;
+        font-size: 14px;
+        font-family: inherit;
         cursor: pointer;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
-        box-shadow: 0 12px 24px rgba(6,28,61,0.15);
-        transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+        white-space: nowrap;
+        text-decoration: none;
+        box-shadow: 0 10px 22px rgba(6,28,61,0.15);
+        transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
       }
 
       .ungani-btn:hover {
         transform: translateY(-2px);
-        box-shadow: 0 18px 34px rgba(6,28,61,0.22);
+        box-shadow: 0 16px 30px rgba(6,28,61,0.22);
         filter: brightness(1.04);
       }
 
-      .ungani-btn.green { background: var(--ungani-green); }
-      .ungani-btn.gold { background: var(--ungani-gold); color: var(--ungani-navy); }
-      .ungani-btn.orange { background: var(--ungani-gold); color: var(--ungani-navy); }
-      .ungani-btn.red { background: var(--ungani-red); }
-      .ungani-btn.dark { background: #0F172A; color: #FFFFFF; }
-      .ungani-btn.light { background: rgba(255,255,255,0.12); color: #FFFFFF; border: 1px solid rgba(255,255,255,0.16); }
+      .ungani-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 6px 14px rgba(6,28,61,0.18);
+        filter: brightness(0.98);
+      }
+
+      .ungani-btn:focus-visible {
+        outline: 2px solid var(--ungani-gold);
+        outline-offset: 2px;
+      }
+
+      .ungani-btn:disabled,
+      .ungani-btn.is-loading {
+        cursor: not-allowed;
+        opacity: 0.65;
+        transform: none !important;
+        filter: none !important;
+        box-shadow: none !important;
+      }
+
+      /* Primary: Save / Approve / Confirm / Submit */
+      .ungani-btn.gold,
+      .ungani-btn.primary {
+        background: var(--ungani-gold);
+        color: var(--ungani-navy);
+      }
+
+      /* Secondary: Cancel / Back / Close - outline, on light surfaces */
+      .ungani-btn.dark,
+      .ungani-btn.secondary {
+        background: #FFFFFF;
+        color: var(--ungani-navy);
+        border-color: var(--ungani-navy);
+        box-shadow: none;
+      }
+
+      html[data-ungani-theme="dark"] .ungani-btn.dark,
+      html[data-ungani-theme="dark"] .ungani-btn.secondary {
+        background: transparent;
+        color: #FFFFFF;
+        border-color: rgba(255,255,255,0.42);
+      }
+
+      /* Secondary, adapted for permanently-dark surfaces (e.g. the sidebar) */
+      .ungani-btn.light {
+        background: transparent;
+        color: #FFFFFF;
+        border-color: rgba(255,255,255,0.45);
+        box-shadow: none;
+      }
+
+      /* Destructive: Delete / Reject / Remove */
+      .ungani-btn.red,
+      .ungani-btn.destructive {
+        background: var(--ungani-red);
+        color: #FFFFFF;
+      }
+
+      .ungani-btn.green { background: var(--ungani-green); color: #FFFFFF; }
+      .ungani-btn.orange { background: var(--ungani-orange); color: #FFFFFF; }
+      .ungani-btn.blue { background: var(--ungani-blue); color: #FFFFFF; }
+
+      .ungani-btn.small {
+        min-height: 36px;
+        padding: 0 13px;
+        font-size: 12.5px;
+        border-radius: 10px;
+      }
+
+      .ungani-btn-spinner {
+        display: inline-block;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        border: 2px solid rgba(0,0,0,0.2);
+        border-top-color: currentColor;
+        animation: unganiBtnSpin 0.65s linear infinite;
+      }
+
+      @keyframes unganiBtnSpin {
+        to { transform: rotate(360deg); }
+      }
 
       .ungani-badge {
         display: inline-flex;
@@ -1115,7 +1197,6 @@
 
         .ungani-btn {
           width: auto;
-          min-height: 42px;
         }
       }
     `;
@@ -2391,6 +2472,40 @@
     window.location.href = "client.html";
   }
 
+  function withButtonLoading(button, asyncFn) {
+    if (!button || button.disabled || button.classList.contains("is-loading")) {
+      return Promise.resolve(typeof asyncFn === "function" ? asyncFn() : undefined);
+    }
+
+    const originalHtml = button.innerHTML;
+    const originalMinWidth = button.style.minWidth;
+
+    button.style.minWidth = button.offsetWidth + "px";
+    button.disabled = true;
+    button.classList.add("is-loading");
+    button.innerHTML = '<span class="ungani-btn-spinner"></span>';
+
+    const restore = function () {
+      button.disabled = false;
+      button.classList.remove("is-loading");
+      button.innerHTML = originalHtml;
+      button.style.minWidth = originalMinWidth;
+    };
+
+    return Promise.resolve()
+      .then(function () {
+        return typeof asyncFn === "function" ? asyncFn() : undefined;
+      })
+      .then(function (result) {
+        restore();
+        return result;
+      })
+      .catch(function (error) {
+        restore();
+        throw error;
+      });
+  }
+
   function showToast(message) {
     const existing = document.querySelector(".ungani-toast");
 
@@ -2574,6 +2689,7 @@
       formatDateTime,
       todayISO,
       showToast,
+      withButtonLoading,
       toggleTheme,
       toggleSidebar,
       logout,

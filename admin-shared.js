@@ -414,30 +414,115 @@
         border: 1px solid rgba(212,166,58,0.22);
       }
 
-      .ungani-button {
-        border: none;
+      .ungani-btn {
+        position: relative;
+        border: 1.5px solid transparent;
         border-radius: 12px;
-        padding: 10px 14px;
         min-height: 44px;
-        font-weight: bold;
+        padding: 0 18px;
+        background: var(--ungani-navy);
+        color: #FFFFFF;
+        font-weight: 800;
+        font-size: 14px;
+        font-family: inherit;
         cursor: pointer;
-        background: var(--ungani-gold);
-        color: #061C3D;
-        margin: 4px 5px 4px 0;
-        text-decoration: none;
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        gap: 8px;
+        white-space: nowrap;
+        text-decoration: none;
+        margin: 4px 5px 4px 0;
+        box-shadow: 0 10px 22px rgba(6,28,61,0.15);
+        transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
       }
 
-      .ungani-button.dark {
-        background: #061C3D;
+      .ungani-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 30px rgba(6,28,61,0.22);
+        filter: brightness(1.04);
+      }
+
+      .ungani-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 6px 14px rgba(6,28,61,0.18);
+        filter: brightness(0.98);
+      }
+
+      .ungani-btn:focus-visible {
+        outline: 2px solid var(--ungani-gold);
+        outline-offset: 2px;
+      }
+
+      .ungani-btn:disabled,
+      .ungani-btn.is-loading {
+        cursor: not-allowed;
+        opacity: 0.65;
+        transform: none !important;
+        filter: none !important;
+        box-shadow: none !important;
+      }
+
+      /* Primary: Save / Approve / Confirm / Submit */
+      .ungani-btn.gold,
+      .ungani-btn.primary {
+        background: var(--ungani-gold);
+        color: var(--ungani-navy);
+      }
+
+      /* Secondary: Cancel / Back / Close - outline, on light surfaces */
+      .ungani-btn.dark,
+      .ungani-btn.secondary {
+        background: #FFFFFF;
+        color: var(--ungani-navy);
+        border-color: var(--ungani-navy);
+        box-shadow: none;
+      }
+
+      html[data-ungani-theme="dark"] .ungani-btn.dark,
+      html[data-ungani-theme="dark"] .ungani-btn.secondary {
+        background: transparent;
+        color: #FFFFFF;
+        border-color: rgba(255,255,255,0.42);
+      }
+
+      .ungani-btn.light {
+        background: transparent;
+        color: #FFFFFF;
+        border-color: rgba(255,255,255,0.45);
+        box-shadow: none;
+      }
+
+      /* Destructive: Delete / Reject / Remove */
+      .ungani-btn.red,
+      .ungani-btn.destructive {
+        background: var(--ungani-red);
         color: #FFFFFF;
       }
 
-      html[data-ungani-theme="dark"] .ungani-button.dark {
-        background: #F5F5F3;
-        color: #061C3D;
+      .ungani-btn.green { background: var(--ungani-green); color: #FFFFFF; }
+      .ungani-btn.orange { background: var(--ungani-orange); color: #FFFFFF; }
+      .ungani-btn.blue { background: var(--ungani-blue); color: #FFFFFF; }
+
+      .ungani-btn.small {
+        min-height: 36px;
+        padding: 0 13px;
+        font-size: 12.5px;
+        border-radius: 10px;
+      }
+
+      .ungani-btn-spinner {
+        display: inline-block;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        border: 2px solid rgba(0,0,0,0.2);
+        border-top-color: currentColor;
+        animation: unganiBtnSpin 0.65s linear infinite;
+      }
+
+      @keyframes unganiBtnSpin {
+        to { transform: rotate(360deg); }
       }
 
       .ungani-loading-shell,
@@ -595,6 +680,40 @@
     });
   }
 
+  function withButtonLoading(button, asyncFn) {
+    if (!button || button.disabled || button.classList.contains("is-loading")) {
+      return Promise.resolve(typeof asyncFn === "function" ? asyncFn() : undefined);
+    }
+
+    const originalHtml = button.innerHTML;
+    const originalMinWidth = button.style.minWidth;
+
+    button.style.minWidth = button.offsetWidth + "px";
+    button.disabled = true;
+    button.classList.add("is-loading");
+    button.innerHTML = '<span class="ungani-btn-spinner"></span>';
+
+    const restore = function () {
+      button.disabled = false;
+      button.classList.remove("is-loading");
+      button.innerHTML = originalHtml;
+      button.style.minWidth = originalMinWidth;
+    };
+
+    return Promise.resolve()
+      .then(function () {
+        return typeof asyncFn === "function" ? asyncFn() : undefined;
+      })
+      .then(function (result) {
+        restore();
+        return result;
+      })
+      .catch(function (error) {
+        restore();
+        throw error;
+      });
+  }
+
   function showToast(message) {
     let toast = document.getElementById("unganiToast");
 
@@ -656,7 +775,7 @@
         ungani.com
 
         <div style="margin-top:12px;">
-          <button class="ungani-button" id="unganiAdminThemeBtn" type="button" data-i18n="theme">${safe(t("theme"))}</button>
+          <button class="ungani-btn" id="unganiAdminThemeBtn" type="button" data-i18n="theme">${safe(t("theme"))}</button>
         </div>
       </div>
     `;
@@ -699,7 +818,7 @@
           <label data-i18n="password">${safe(t("password"))}</label>
           <input id="unganiAdminPassword" type="password" placeholder="Enter password" />
 
-          <button class="ungani-button" id="unganiAdminLoginButton" data-i18n="login">${safe(t("login"))}</button>
+          <button class="ungani-btn gold" id="unganiAdminLoginButton" data-i18n="login">${safe(t("login"))}</button>
 
           <div id="unganiLoginMessage"></div>
 
@@ -714,7 +833,7 @@
           <img src="ungani-logo.png" alt="UNGANI Logo" class="ungani-logo" />
           <h2 style="color: var(--ungani-red);" data-i18n="accessBlocked">${safe(t("accessBlocked"))}</h2>
           <p id="unganiBlockedReason"></p>
-          <button class="ungani-button dark" id="unganiBlockedLogoutButton" data-i18n="logout">${safe(t("logout"))}</button>
+          <button class="ungani-btn dark" id="unganiBlockedLogoutButton" data-i18n="logout">${safe(t("logout"))}</button>
         </div>
       </div>
 
@@ -732,8 +851,8 @@
             </div>
 
             <div class="ungani-topbar-actions">
-              <a href="admin-settings.html" class="ungani-button dark" data-i18n="adminSettings">${safe(t("adminSettings"))}</a>
-              <button class="ungani-button dark" id="unganiAdminLogoutButton" data-i18n="logout">${safe(t("logout"))}</button>
+              <a href="admin-settings.html" class="ungani-btn dark" data-i18n="adminSettings">${safe(t("adminSettings"))}</a>
+              <button class="ungani-btn dark" id="unganiAdminLogoutButton" data-i18n="logout">${safe(t("logout"))}</button>
             </div>
           </div>
 
@@ -1040,6 +1159,7 @@
     updateAdminPreferences,
     logoutAdmin,
     showToast,
+    withButtonLoading,
     safe,
     cleanText,
     t,

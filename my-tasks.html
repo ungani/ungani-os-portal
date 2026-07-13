@@ -654,9 +654,9 @@
                 </div>
 
                 <div class="task-actions">
-                  ${status.toLowerCase() !== "completed" ? `<button class="ungani-btn small green" onclick="markTaskCompleted('${UnganiClientShared.attr(row.id)}')">Done</button>` : ""}
+                  ${status.toLowerCase() !== "completed" ? `<button class="ungani-btn small green" onclick="markTaskCompleted('${UnganiClientShared.attr(row.id)}', this)">Done</button>` : ""}
                   <button class="ungani-btn small gold" onclick="editTaskRecord('${UnganiClientShared.attr(row.id)}')">Edit</button>
-                  <button class="ungani-btn small red" onclick="deleteTaskRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>
+                  <button class="ungani-btn small red" onclick="deleteTaskRecord('${UnganiClientShared.attr(row.id)}', this)">Delete</button>
                 </div>
               </div>
             `;
@@ -819,46 +819,50 @@
         return;
       }
 
-      const payload = {
-        tenant_id: currentContext.tenantId,
-        task_title: title,
-        task_type: UnganiClientShared.value("taskType") || "General Task",
-        priority: UnganiClientShared.value("taskPriority") || "normal",
-        status: UnganiClientShared.value("taskStatus") || "pending",
-        due_date: UnganiClientShared.value("taskDueDate") || null,
-        assigned_to: null,
-        related_person: UnganiClientShared.value("taskRelatedPerson") || null,
-        related_item: UnganiClientShared.value("taskRelatedItem") || null,
-        notes: UnganiClientShared.value("taskNotes") || null
-      };
+      const submitBtn = event.submitter || event.target.querySelector('button[type="submit"]');
 
-      let response;
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        const payload = {
+          tenant_id: currentContext.tenantId,
+          task_title: title,
+          task_type: UnganiClientShared.value("taskType") || "General Task",
+          priority: UnganiClientShared.value("taskPriority") || "normal",
+          status: UnganiClientShared.value("taskStatus") || "pending",
+          due_date: UnganiClientShared.value("taskDueDate") || null,
+          assigned_to: null,
+          related_person: UnganiClientShared.value("taskRelatedPerson") || null,
+          related_item: UnganiClientShared.value("taskRelatedItem") || null,
+          notes: UnganiClientShared.value("taskNotes") || null
+        };
 
-      try {
-        if (editingTaskId) {
-          response = await currentContext.supabaseClient
-            .from("tasks")
-            .update(payload)
-            .eq("id", editingTaskId)
-            .eq("tenant_id", currentContext.tenantId);
-        } else {
-          response = await currentContext.supabaseClient
-            .from("tasks")
-            .insert([payload]);
+        let response;
+
+        try {
+          if (editingTaskId) {
+            response = await currentContext.supabaseClient
+              .from("tasks")
+              .update(payload)
+              .eq("id", editingTaskId)
+              .eq("tenant_id", currentContext.tenantId);
+          } else {
+            response = await currentContext.supabaseClient
+              .from("tasks")
+              .insert([payload]);
+          }
+        } catch (error) {
+          UnganiClientShared.showToast("Could not save task: " + (error.message || "Network error. Please check your connection."));
+          return;
         }
-      } catch (error) {
-        UnganiClientShared.showToast("Could not save task: " + (error.message || "Network error. Please check your connection."));
-        return;
-      }
 
-      if (response.error) {
-        UnganiClientShared.showToast("Could not save task: " + response.error.message);
-        return;
-      }
+        if (response.error) {
+          UnganiClientShared.showToast("Could not save task: " + response.error.message);
+          return;
+        }
 
-      UnganiClientShared.showToast(editingTaskId ? "Task updated ✓" : "Task added ✓");
-      clearTaskForm();
-      await loadTaskRows();
+        UnganiClientShared.showToast(editingTaskId ? "Task updated ✓" : "Task added ✓");
+        clearTaskForm();
+        await loadTaskRows();
+      });
     }
 
     function editTaskRecord(id) {
@@ -889,30 +893,32 @@
       }, 150);
     }
 
-    async function markTaskCompleted(id) {
-      let response;
+    async function markTaskCompleted(id, buttonEl) {
+      await UnganiClientShared.withButtonLoading(buttonEl, async () => {
+        let response;
 
-      try {
-        response = await currentContext.supabaseClient
-          .from("tasks")
-          .update({ status: "completed" })
-          .eq("id", id)
-          .eq("tenant_id", currentContext.tenantId);
-      } catch (error) {
-        UnganiClientShared.showToast("Could not update task: " + (error.message || "Network error. Please check your connection."));
-        return;
-      }
+        try {
+          response = await currentContext.supabaseClient
+            .from("tasks")
+            .update({ status: "completed" })
+            .eq("id", id)
+            .eq("tenant_id", currentContext.tenantId);
+        } catch (error) {
+          UnganiClientShared.showToast("Could not update task: " + (error.message || "Network error. Please check your connection."));
+          return;
+        }
 
-      if (response.error) {
-        UnganiClientShared.showToast("Could not update task: " + response.error.message);
-        return;
-      }
+        if (response.error) {
+          UnganiClientShared.showToast("Could not update task: " + response.error.message);
+          return;
+        }
 
-      UnganiClientShared.showToast("Task marked completed ✓");
-      await loadTaskRows();
+        UnganiClientShared.showToast("Task marked completed ✓");
+        await loadTaskRows();
+      });
     }
 
-    async function deleteTaskRecord(id) {
+    async function deleteTaskRecord(id, buttonEl) {
       if (
         window.UnganiClientShared &&
         typeof UnganiClientShared.ensureCanWrite === "function" &&
@@ -925,31 +931,33 @@
 
       if (!confirmed) return;
 
-      let response;
+      await UnganiClientShared.withButtonLoading(buttonEl, async () => {
+        let response;
 
-      try {
-        response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
-          p_table_name: "tasks",
-          p_record_id: id,
-          p_delete_reason: "Deleted from Tasks page"
-        });
-      } catch (error) {
-        UnganiClientShared.showToast("Could not delete task: " + (error.message || "Network error. Please check your connection."));
-        return;
-      }
+        try {
+          response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+            p_table_name: "tasks",
+            p_record_id: id,
+            p_delete_reason: "Deleted from Tasks page"
+          });
+        } catch (error) {
+          UnganiClientShared.showToast("Could not delete task: " + (error.message || "Network error. Please check your connection."));
+          return;
+        }
 
-      if (response.error) {
-        UnganiClientShared.showToast("Could not delete task: " + response.error.message);
-        return;
-      }
+        if (response.error) {
+          UnganiClientShared.showToast("Could not delete task: " + response.error.message);
+          return;
+        }
 
-      if (response.data && response.data.ok === false) {
-        UnganiClientShared.showToast(response.data.message || "Could not delete task.");
-        return;
-      }
+        if (response.data && response.data.ok === false) {
+          UnganiClientShared.showToast(response.data.message || "Could not delete task.");
+          return;
+        }
 
-      UnganiClientShared.showToast("Task moved to Recently Deleted ✓");
-      await loadTaskRows();
+        UnganiClientShared.showToast("Task moved to Recently Deleted ✓");
+        await loadTaskRows();
+      });
     }
 
     function clearTaskForm() {
