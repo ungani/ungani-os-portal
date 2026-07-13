@@ -27,6 +27,10 @@
       --warning: #FBBF24;
       --shadow: 0 22px 60px rgba(0,0,0,0.30);
       --radius: 20px;
+      --green: #15803D;
+      --red: #B91C1C;
+      --orange: #C77700;
+      --blue: #2563EB;
     }
 
     * {
@@ -181,44 +185,71 @@
     }
 
     button,
-    .btn {
-      border: none;
+    .ungani-btn {
+      position: relative;
+      border: 1.5px solid transparent;
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 0 18px;
+      background: var(--navy);
+      color: #FFFFFF;
+      font-weight: 800;
+      font-size: 14px;
+      font-family: inherit;
       cursor: pointer;
-      border-radius: 14px;
-      padding: 12px 14px;
-      font-weight: 900;
-      font-size: 13px;
-      text-decoration: none;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: 0.18s ease;
       white-space: nowrap;
+      text-decoration: none;
+      box-shadow: 0 10px 22px rgba(6,28,61,0.15);
+      transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
     }
 
-    .btn-primary {
-      background: linear-gradient(135deg, var(--gold), var(--gold2));
+    .ungani-btn:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(6,28,61,0.22); filter: brightness(1.04); }
+    .ungani-btn:active { transform: translateY(0); box-shadow: 0 6px 14px rgba(6,28,61,0.18); filter: brightness(0.98); }
+    .ungani-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .ungani-btn:disabled,
+    .ungani-btn.is-loading { cursor: not-allowed; opacity: 0.65; transform: none !important; filter: none !important; box-shadow: none !important; }
+
+    .ungani-btn.gold {
+      background: var(--gold);
       color: var(--navy);
-      box-shadow: 0 12px 24px rgba(212,166,58,0.22);
     }
 
-    .btn-dark {
-      background: rgba(255,255,255,0.08);
-      color: var(--white);
-      border: 1px solid rgba(212,166,58,0.30);
+    .ungani-btn.dark,
+    .ungani-btn.light {
+      background: transparent;
+      color: #FFFFFF;
+      border-color: rgba(255,255,255,0.45);
+      box-shadow: none;
     }
 
-    .btn-danger {
-      background: rgba(248,113,113,0.14);
-      color: #FCA5A5;
-      border: 1px solid rgba(248,113,113,0.28);
+    .ungani-btn.red { background: var(--red); color: #FFFFFF; }
+    .ungani-btn.green { background: var(--green); color: #FFFFFF; }
+    .ungani-btn.orange { background: var(--orange); color: #FFFFFF; }
+    .ungani-btn.blue { background: var(--blue); color: #FFFFFF; }
+
+    .ungani-btn.small {
+      min-height: 36px;
+      padding: 0 13px;
+      font-size: 12.5px;
+      border-radius: 10px;
     }
 
-    button:hover,
-    .btn:hover {
-      transform: translateY(-1px);
-      filter: brightness(1.04);
+    .ungani-btn-spinner {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.35);
+      border-top-color: currentColor;
+      animation: unganiBtnSpin 0.65s linear infinite;
+    }
+
+    @keyframes unganiBtnSpin {
+      to { transform: rotate(360deg); }
     }
 
     .notice {
@@ -580,8 +611,8 @@
         </div>
 
         <div class="actions">
-          <button class="btn-dark" onclick="loadDeletedRecords()">Refresh</button>
-          <a class="btn btn-primary" href="client.html?v=portal14s">Back to Dashboard</a>
+          <button class="ungani-btn green" onclick="refreshDeletedRecords(this)">Refresh</button>
+          <a class="ungani-btn light" href="client.html?v=portal14s">Back to Dashboard</a>
         </div>
       </div>
 
@@ -651,6 +682,28 @@
     const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    function withButtonLoading(button, asyncFn) {
+      if (!button) return asyncFn();
+      const originalHtml = button.innerHTML;
+      const originalWidth = button.offsetWidth;
+      button.style.width = originalWidth + "px";
+      button.disabled = true;
+      button.classList.add("is-loading");
+      button.innerHTML = '<span class="ungani-btn-spinner"></span>';
+
+      const restore = () => {
+        button.disabled = false;
+        button.classList.remove("is-loading");
+        button.innerHTML = originalHtml;
+        button.style.width = "";
+      };
+
+      return Promise.resolve(asyncFn()).then(
+        (result) => { restore(); return result; },
+        (error) => { restore(); throw error; }
+      );
+    }
 
     let deletedItems = [];
     let activeFilter = "all";
@@ -773,7 +826,7 @@
           </div>
 
           <div class="actions">
-            <button class="btn-primary" onclick="restoreRecord('${escapeHtml(item.table_name)}', '${escapeHtml(id)}')">
+            <button class="ungani-btn gold" onclick="restoreRecord('${escapeHtml(item.table_name)}', '${escapeHtml(id)}', this)">
               Restore
             </button>
           </div>
@@ -793,6 +846,10 @@
       }
 
       return true;
+    }
+
+    function refreshDeletedRecords(buttonEl) {
+      return withButtonLoading(buttonEl, loadDeletedRecords);
     }
 
     async function loadDeletedRecords() {
@@ -837,7 +894,7 @@
       showNotice("Recently deleted records loaded successfully.", "success");
     }
 
-    async function restoreRecord(tableName, recordId) {
+    async function restoreRecord(tableName, recordId, buttonEl) {
       if (!tableName || !recordId) {
         showNotice("Missing restore information for this record.", "error");
         return;
@@ -849,23 +906,25 @@
       clearNotice();
       showNotice("Restoring record...", "info");
 
-      const { data, error } = await supabaseClient.rpc("restore_my_ungani_deleted_record_v2", {
-        p_table_name: tableName,
-        p_record_id: recordId
+      await withButtonLoading(buttonEl, async () => {
+        const { data, error } = await supabaseClient.rpc("restore_my_ungani_deleted_record_v2", {
+          p_table_name: tableName,
+          p_record_id: recordId
+        });
+
+        if (error) {
+          showNotice("Restore failed: " + error.message, "error");
+          return;
+        }
+
+        if (!data || data.ok !== true) {
+          showNotice((data && data.message) ? data.message : "Restore failed.", "error");
+          return;
+        }
+
+        showNotice("Record restored successfully.", "success");
+        await loadDeletedRecords();
       });
-
-      if (error) {
-        showNotice("Restore failed: " + error.message, "error");
-        return;
-      }
-
-      if (!data || data.ok !== true) {
-        showNotice((data && data.message) ? data.message : "Restore failed.", "error");
-        return;
-      }
-
-      showNotice("Record restored successfully.", "success");
-      await loadDeletedRecords();
     }
 
     document.addEventListener("DOMContentLoaded", loadDeletedRecords);

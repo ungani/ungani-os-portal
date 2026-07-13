@@ -129,22 +129,58 @@
       flex-wrap: wrap;
     }
 
-    .top-btn {
-      border: 1px solid rgba(255, 255, 255, 0.18);
+    .ungani-btn {
+      position: relative;
+      border: 1.5px solid rgba(255,255,255,0.3);
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 0 18px;
       background: rgba(255, 255, 255, 0.08);
       color: #FFFFFF;
-      text-decoration: none;
-      padding: 10px 13px;
-      border-radius: 999px;
-      font-size: 13px;
       font-weight: 800;
+      font-size: 14px;
+      font-family: inherit;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+      text-decoration: none;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
     }
 
-    .top-btn.gold {
+    html[data-theme="light"] .ungani-btn {
+      border-color: var(--navy);
+      background: #FFFFFF;
+      color: var(--navy);
+    }
+
+    .ungani-btn:hover { transform: translateY(-2px); filter: brightness(1.06); }
+    .ungani-btn:active { transform: translateY(0); filter: brightness(0.98); }
+    .ungani-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .ungani-btn:disabled,
+    .ungani-btn.is-loading { cursor: not-allowed; opacity: 0.65; transform: none !important; filter: none !important; }
+
+    .ungani-btn.gold {
       background: var(--gold);
       color: var(--navy);
       border-color: var(--gold);
+      box-shadow: 0 10px 22px rgba(212,166,58,0.25);
+    }
+
+    .ungani-btn-spinner {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      border: 2px solid rgba(0,0,0,0.2);
+      border-top-color: currentColor;
+      animation: unganiBtnSpin 0.65s linear infinite;
+    }
+
+    @keyframes unganiBtnSpin {
+      to { transform: rotate(360deg); }
     }
 
     .content {
@@ -343,21 +379,6 @@
     .action-msg.success { color: var(--success-text); }
     .action-msg.error { color: var(--danger-text); }
 
-    .btn-save {
-      background: var(--gold);
-      color: var(--navy);
-      border: none;
-      padding: 11px 24px;
-      border-radius: 10px;
-      font-size: 14px;
-      font-weight: 800;
-      cursor: pointer;
-      transition: background 0.15s ease;
-    }
-
-    .btn-save:hover {
-      opacity: 0.9;
-    }
 
     .link-grid {
       display: grid;
@@ -512,9 +533,9 @@
         padding: 15px;
       }
 
-      .top-btn {
-        font-size: 12px;
-        padding: 9px 11px;
+      .ungani-btn {
+        font-size: 12.5px;
+        padding: 0 14px;
       }
 
       .info-row {
@@ -539,9 +560,9 @@
     </div>
 
     <div class="top-actions">
-      <a class="top-btn" href="my-package.html" data-i18n="nav_package">Package</a>
-      <a class="top-btn" href="my-billing.html" data-i18n="nav_billing">Billing</a>
-      <a class="top-btn gold" href="client.html" data-i18n="nav_back">Back to Dashboard</a>
+      <a class="ungani-btn" href="my-package.html" data-i18n="nav_package">Package</a>
+      <a class="ungani-btn" href="my-billing.html" data-i18n="nav_billing">Billing</a>
+      <a class="ungani-btn" href="client.html" data-i18n="nav_back">Back to Dashboard</a>
     </div>
   </header>
 
@@ -711,7 +732,7 @@
 
             <div class="form-actions">
               <span id="prefMessage" class="action-msg"></span>
-              <button type="submit" id="btnSavePrefs" class="btn-save" data-i18n="save_btn">Save Preferences</button>
+              <button type="submit" id="btnSavePrefs" class="ungani-btn gold" data-i18n="save_btn">Save Preferences</button>
             </div>
           </form>
         </div>
@@ -811,6 +832,32 @@
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     let currentUserId = null;
+
+    function withButtonLoading(button, asyncFn) {
+      if (!button || button.disabled || button.classList.contains("is-loading")) {
+        return Promise.resolve(typeof asyncFn === "function" ? asyncFn() : undefined);
+      }
+
+      const originalHtml = button.innerHTML;
+      const originalMinWidth = button.style.minWidth;
+
+      button.style.minWidth = button.offsetWidth + "px";
+      button.disabled = true;
+      button.classList.add("is-loading");
+      button.innerHTML = '<span class="ungani-btn-spinner"></span>';
+
+      const restore = function () {
+        button.disabled = false;
+        button.classList.remove("is-loading");
+        button.innerHTML = originalHtml;
+        button.style.minWidth = originalMinWidth;
+      };
+
+      return Promise.resolve()
+        .then(function () { return typeof asyncFn === "function" ? asyncFn() : undefined; })
+        .then(function (result) { restore(); return result; })
+        .catch(function (error) { restore(); throw error; });
+    }
 
     document.addEventListener("DOMContentLoaded", async () => {
       applyExistingThemeSetting();
@@ -934,39 +981,35 @@
       const theme = document.getElementById("prefTheme").value;
       const timezone = document.getElementById("prefTimezone").value;
 
-      btnSave.disabled = true;
-      btnSave.textContent = "Saving...";
+      await withButtonLoading(btnSave, async () => {
+        try {
+          const { error } = await supabaseClient
+            .from("user_preferences")
+            .upsert({
+              user_id: currentUserId,
+              language,
+              currency,
+              theme,
+              timezone,
+              updated_at: new Date().toISOString()
+            }, { onConflict: "user_id" });
 
-      try {
-        const { error } = await supabaseClient
-          .from("user_preferences")
-          .upsert({
-            user_id: currentUserId,
-            language,
-            currency,
-            theme,
-            timezone,
-            updated_at: new Date().toISOString()
-          }, { onConflict: "user_id" });
+          if (error) throw error;
 
-        if (error) throw error;
+          localStorage.setItem("ungani_theme", theme);
+          previewTheme(theme);
 
-        localStorage.setItem("ungani_theme", theme);
-        previewTheme(theme);
+          if (window.LanguageEngine && typeof window.LanguageEngine.changeLanguage === 'function') {
+            window.LanguageEngine.changeLanguage(language);
+          }
 
-        if (window.LanguageEngine && typeof window.LanguageEngine.changeLanguage === 'function') {
-          window.LanguageEngine.changeLanguage(language);
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = "Preferences saved successfully.";
+        } catch (err) {
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
         }
-
-        msgSpan.className = "action-msg success";
-        msgSpan.textContent = "Preferences saved successfully.";
-      } catch (err) {
-        msgSpan.className = "action-msg error";
-        msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
-      } finally {
-        btnSave.disabled = false;
-        btnSave.textContent = "Save Preferences";
-      }
+      });
     }
 
     function renderSettings(data) {

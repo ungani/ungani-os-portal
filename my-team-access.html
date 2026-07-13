@@ -19,8 +19,9 @@
       --offwhite: #F5F5F3;
       --white: #FFFFFF;
       --muted: #64748B;
-      --green: #16A34A;
-      --red: #DC2626;
+      --green: #15803D;
+      --red: #B91C1C;
+      --orange: #C77700;
       --blue: #2563EB;
 
       --page-bg:
@@ -107,56 +108,80 @@
       justify-content: flex-end;
     }
 
-    .btn {
-      border: 0;
-      border-radius: 999px;
-      padding: 11px 15px;
-      font-weight: 900;
+    .ungani-btn {
+      position: relative;
+      border: 1.5px solid transparent;
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 0 18px;
+      background: var(--navy);
+      color: #FFFFFF;
+      font-weight: 800;
+      font-size: 14px;
+      font-family: inherit;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: 0.2s;
-      font-size: 13px;
       white-space: nowrap;
+      text-decoration: none;
+      box-shadow: 0 10px 22px rgba(6,28,61,0.15);
+      transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
     }
 
-    .btn:hover {
-      transform: translateY(-1px);
-    }
+    .ungani-btn:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(6,28,61,0.22); filter: brightness(1.04); }
+    .ungani-btn:active { transform: translateY(0); box-shadow: 0 6px 14px rgba(6,28,61,0.18); filter: brightness(0.98); }
+    .ungani-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .ungani-btn:disabled,
+    .ungani-btn.is-loading { cursor: not-allowed; opacity: 0.65; transform: none !important; filter: none !important; box-shadow: none !important; }
 
-    .btn.gold {
+    .ungani-btn.gold {
       background: var(--gold);
       color: var(--navy);
     }
 
-    .btn.navy {
-      background: var(--navy);
-      color: white;
-    }
-
-    .btn.light {
-      background: white;
+    .ungani-btn.dark,
+    .ungani-btn.navy,
+    .ungani-btn.light {
+      background: #FFFFFF;
       color: var(--navy);
-      border: 1px solid rgba(6,28,61,0.08);
+      border-color: var(--navy);
+      box-shadow: none;
     }
 
-    body[data-theme="dark"] .btn.light,
-    body[data-theme="dark"] .btn.navy {
-      background: rgba(255,255,255,0.10);
-      color: white;
-      border: 1px solid rgba(255,255,255,0.14);
+    body[data-theme="dark"] .ungani-btn.dark,
+    body[data-theme="dark"] .ungani-btn.navy,
+    body[data-theme="dark"] .ungani-btn.light {
+      background: transparent;
+      color: #FFFFFF;
+      border-color: rgba(255,255,255,0.42);
     }
 
-    .btn.red {
+    .ungani-btn.red {
       background: var(--red);
-      color: white;
+      color: #FFFFFF;
     }
 
-    .btn.small {
-      padding: 8px 11px;
-      font-size: 12px;
+    .ungani-btn.small {
+      min-height: 36px;
+      padding: 0 13px;
+      font-size: 12.5px;
+      border-radius: 10px;
+    }
+
+    .ungani-btn-spinner {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      border: 2px solid rgba(0,0,0,0.2);
+      border-top-color: currentColor;
+      animation: unganiBtnSpin 0.65s linear infinite;
+    }
+
+    @keyframes unganiBtnSpin {
+      to { transform: rotate(360deg); }
     }
 
     .grid {
@@ -404,10 +429,10 @@
       </div>
 
       <div class="actions">
-        <a class="btn light" href="client.html">Dashboard</a>
-        <a class="btn light" href="my-tools.html">My Tools</a>
-        <button class="btn light" type="button" onclick="toggleTheme()" id="themeButton">Dark Mode</button>
-        <button class="btn gold" type="button" onclick="loadTeamMembers()">Refresh</button>
+        <a class="ungani-btn dark" href="client.html">Dashboard</a>
+        <a class="ungani-btn dark" href="my-tools.html">My Tools</a>
+        <button class="ungani-btn dark" type="button" onclick="toggleTheme()" id="themeButton">Dark Mode</button>
+        <button class="ungani-btn green" type="button" onclick="loadTeamMembers()" id="refreshTeamBtn">Refresh</button>
       </div>
     </header>
 
@@ -450,7 +475,7 @@
             </select>
           </label>
 
-          <button class="btn gold" type="submit">Save Staff Member</button>
+          <button class="ungani-btn gold" type="submit" id="saveStaffBtn">Save Staff Member</button>
         </form>
 
         <div class="notice">
@@ -475,6 +500,32 @@
     const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
     const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    function withButtonLoading(button, asyncFn) {
+      if (!button || button.disabled || button.classList.contains("is-loading")) {
+        return Promise.resolve(typeof asyncFn === "function" ? asyncFn() : undefined);
+      }
+
+      const originalHtml = button.innerHTML;
+      const originalMinWidth = button.style.minWidth;
+
+      button.style.minWidth = button.offsetWidth + "px";
+      button.disabled = true;
+      button.classList.add("is-loading");
+      button.innerHTML = '<span class="ungani-btn-spinner"></span>';
+
+      const restore = function () {
+        button.disabled = false;
+        button.classList.remove("is-loading");
+        button.innerHTML = originalHtml;
+        button.style.minWidth = originalMinWidth;
+      };
+
+      return Promise.resolve()
+        .then(function () { return typeof asyncFn === "function" ? asyncFn() : undefined; })
+        .then(function (result) { restore(); return result; })
+        .catch(function (error) { restore(); throw error; });
+    }
 
     const sections = [
       ["dashboard", "Dashboard"],
@@ -510,7 +561,7 @@
         document.getElementById("membersBox").innerHTML = `
           <div class="empty">
             Please log in first.
-            <div style="margin-top:12px;"><a class="btn gold" href="login.html?mode=client">Go to Login</a></div>
+            <div style="margin-top:12px;"><a class="ungani-btn gold" href="login.html?mode=client">Go to Login</a></div>
           </div>
         `;
         return;
@@ -599,7 +650,7 @@
             </div>
 
             <div class="actions" style="justify-content:flex-start;">
-              <button class="btn small red" type="button" onclick="disableMember('${attr(member.id)}')">Disable Staff</button>
+              <button class="ungani-btn small red" type="button" onclick="disableMember('${attr(member.id)}', this)">Disable Staff</button>
             </div>
           </div>
         `;
@@ -609,33 +660,37 @@
     async function saveTeamMember(event) {
       event.preventDefault();
 
-      const payload = {
-        p_full_name: document.getElementById("fullName").value,
-        p_email: document.getElementById("email").value,
-        p_phone: document.getElementById("phone").value,
-        p_role_key: document.getElementById("roleKey").value,
-        p_status: document.getElementById("status").value
-      };
+      const submitBtn = event.submitter || document.getElementById("saveStaffBtn");
 
-      const response = await supabaseClient.rpc("owner_upsert_ungani_team_member", payload);
+      await withButtonLoading(submitBtn, async () => {
+        const payload = {
+          p_full_name: document.getElementById("fullName").value,
+          p_email: document.getElementById("email").value,
+          p_phone: document.getElementById("phone").value,
+          p_role_key: document.getElementById("roleKey").value,
+          p_status: document.getElementById("status").value
+        };
 
-      if (response.error) {
-        alert("Could not save staff: " + response.error.message);
-        return;
-      }
+        const response = await supabaseClient.rpc("owner_upsert_ungani_team_member", payload);
 
-      if (!response.data || response.data.ok !== true) {
-        alert(getValue(response.data, ["message"], "Could not save staff."));
-        return;
-      }
+        if (response.error) {
+          alert("Could not save staff: " + response.error.message);
+          return;
+        }
 
-      document.getElementById("fullName").value = "";
-      document.getElementById("email").value = "";
-      document.getElementById("phone").value = "";
-      document.getElementById("roleKey").value = "staff";
-      document.getElementById("status").value = "active";
+        if (!response.data || response.data.ok !== true) {
+          alert(getValue(response.data, ["message"], "Could not save staff."));
+          return;
+        }
 
-      await loadTeamMembers();
+        document.getElementById("fullName").value = "";
+        document.getElementById("email").value = "";
+        document.getElementById("phone").value = "";
+        document.getElementById("roleKey").value = "staff";
+        document.getElementById("status").value = "active";
+
+        await loadTeamMembers();
+      });
     }
 
     async function savePermission(memberId, sectionKey) {
@@ -666,19 +721,21 @@
       }
     }
 
-    async function disableMember(memberId) {
+    async function disableMember(memberId, buttonEl) {
       if (!confirm("Disable this staff member?")) return;
 
-      const response = await supabaseClient.rpc("owner_disable_ungani_team_member", {
-        p_team_member_id: memberId
+      await withButtonLoading(buttonEl, async () => {
+        const response = await supabaseClient.rpc("owner_disable_ungani_team_member", {
+          p_team_member_id: memberId
+        });
+
+        if (response.error) {
+          alert("Could not disable staff: " + response.error.message);
+          return;
+        }
+
+        await loadTeamMembers();
       });
-
-      if (response.error) {
-        alert("Could not disable staff: " + response.error.message);
-        return;
-      }
-
-      await loadTeamMembers();
     }
 
     function getChecked(memberId, sectionKey, action) {
