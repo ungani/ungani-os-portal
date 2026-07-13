@@ -733,6 +733,25 @@
       return Array.from(boxes).map(function (box) { return box.value; });
     }
 
+    async function checkDuplicateRegistration(email, businessName) {
+      try {
+        const { data, error } = await supabaseClient.rpc("check_ungani_duplicate_registration", {
+          p_email: email,
+          p_business_name: businessName
+        });
+
+        if (error) {
+          console.warn("Duplicate registration check skipped:", error.message);
+          return { duplicate: false };
+        }
+
+        return data || { duplicate: false };
+      } catch (error) {
+        console.warn("Duplicate registration check failed:", error.message);
+        return { duplicate: false };
+      }
+    }
+
     async function submitRegistration(event) {
       event.preventDefault();
 
@@ -759,6 +778,17 @@
 
       setLoading(true);
 
+      const duplicateCheck = await checkDuplicateRegistration(email, businessName);
+
+      if (duplicateCheck.duplicate) {
+        setLoading(false);
+        showStatus(
+          "It looks like this email or business is already registered with UNGANI OS. If you already submitted a registration, please wait for approval or contact info@ungani.com instead of submitting again.",
+          "error"
+        );
+        return;
+      }
+
       let authUserId = null;
 
       const signupResponse = await supabaseClient.auth.signUp({
@@ -769,11 +799,18 @@
       if (signupResponse.error) {
         const message = String(signupResponse.error.message || "");
 
-        if (!message.toLowerCase().includes("already registered") && !message.toLowerCase().includes("already exists")) {
+        if (message.toLowerCase().includes("already registered") || message.toLowerCase().includes("already exists")) {
           setLoading(false);
-          showStatus(message, "error");
+          showStatus(
+            "This email is already registered with UNGANI OS. If you already submitted a registration, please wait for approval or contact info@ungani.com - resubmitting will not speed up review.",
+            "error"
+          );
           return;
         }
+
+        setLoading(false);
+        showStatus(message, "error");
+        return;
       } else if (signupResponse.data && signupResponse.data.user) {
         authUserId = signupResponse.data.user.id;
       }
@@ -806,9 +843,7 @@
     }
 
     async function insertRegistration(data) {
-      // Only real columns confirmed to exist on the registrations table.
-      // Removed: name, business_email, contact_email, account_status, message, user_id, source
-      const fullPayload = {
+      const payload = {
         business_name: data.businessName,
         company_name: data.businessName,
         contact_name: data.contactName,
@@ -823,46 +858,29 @@
         created_at: new Date().toISOString()
       };
 
-      const commonPayload = {
-        business_name: data.businessName,
-        contact_name: data.contactName,
-        phone: data.phone,
-        email: data.email,
-        business_type: data.businessType,
-        status: "pending",
-        notes: data.notes
-      };
+      try {
+        const response = await supabaseClient
+          .from("registrations")
+          .insert([payload])
+          .select()
+          .limit(1);
 
-      const simplePayload = {
-        business_name: data.businessName,
-        email: data.email,
-        status: "pending"
-      };
-
-      const attempts = [fullPayload, commonPayload, simplePayload];
-
-      for (let i = 0; i < attempts.length; i++) {
-        try {
-          const response = await supabaseClient
-            .from("registrations")
-            .insert([attempts[i]])
-            .select()
-            .limit(1);
-
-          if (!response.error) {
-            return { ok: true };
-          }
-
-          console.warn("Registration insert attempt failed:", response.error.message);
-        } catch (error) {
-          console.warn("Registration insert warning:", error.message);
+        if (response.error) {
+          console.error("Registration insert failed:", response.error.message);
+          return {
+            ok: false,
+            message: "Registration could not be saved (" + response.error.message + "). Please contact info@ungani.com so we can fix this - do not resubmit the form."
+          };
         }
-      }
 
-      return {
-        ok: false,
-        message: "Registration account was created, but the registration record could not be saved. Please contact info@ungani.com."
-      };
+        return { ok: true };
+      } catch (error) {
+        console.error("Registration insert failed:", error.message);
+        return {
+          ok: false,
+          message: "Registration could not be saved (" + error.message + "). Please contact info@ungani.com so we can fix this - do not resubmit the form."
+        };
+      }
     }
 
     function makeBusinessKey(value) {
