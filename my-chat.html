@@ -7,7 +7,35 @@
   <title>UNGANI OS - Chat with UNGANI</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="client-shared.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
 </head>
 
 <body>
@@ -45,11 +73,20 @@
         currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading chat messages...");
       }
 
-      const response = await currentContext.supabaseClient
-        .from("admin_client_messages")
-        .select("*")
-        .eq("tenant_id", currentContext.tenantId)
-        .order("created_at", { ascending: true });
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("admin_client_messages")
+          .select("*")
+          .eq("tenant_id", currentContext.tenantId)
+          .order("created_at", { ascending: true });
+      } catch (error) {
+        if (!silent) {
+          currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load chat", error.message || "Network error. Please check your connection.");
+        }
+        return;
+      }
 
       if (response.error) {
         if (!silent) {
@@ -274,9 +311,16 @@
         updated_at: new Date().toISOString()
       };
 
-      const response = await currentContext.supabaseClient
-        .from("admin_client_messages")
-        .insert(payload);
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("admin_client_messages")
+          .insert(payload);
+      } catch (error) {
+        alert(error.message || "Could not send message. Please check your connection.");
+        return;
+      }
 
       if (response.error) {
         alert(response.error.message);

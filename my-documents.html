@@ -7,7 +7,35 @@
   <title>UNGANI OS - Documents</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="client-shared.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
   <script src="ungani-analytics.js"></script>
   <script src="ungani-presets.js"></script>
 </head>
@@ -93,11 +121,20 @@
     async function loadDocumentRows() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading documents...");
 
-      const response = await currentContext.supabaseClient
-        .from("documents")
-        .select("*")
-        .eq("tenant_id", currentContext.tenantId)
-        .order("created_at", { ascending: false });
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("documents")
+          .select("*")
+          .eq("tenant_id", currentContext.tenantId)
+          .order("created_at", { ascending: false });
+      } catch (error) {
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load documents", error.message || "Network error. Please check your connection.")
+        );
+        return;
+      }
 
       if (response.error) {
         UnganiClientShared.setContent(
@@ -881,20 +918,25 @@
 
       let response;
 
-      if (editingDocumentId) {
-        response = await currentContext.supabaseClient
-          .from("documents")
-          .update(payload)
-          .eq("id", editingDocumentId)
-          .eq("tenant_id", currentContext.tenantId);
-      } else {
-        if (currentAuthUserId) {
-          payload.created_by = currentAuthUserId;
-        }
+      try {
+        if (editingDocumentId) {
+          response = await currentContext.supabaseClient
+            .from("documents")
+            .update(payload)
+            .eq("id", editingDocumentId)
+            .eq("tenant_id", currentContext.tenantId);
+        } else {
+          if (currentAuthUserId) {
+            payload.created_by = currentAuthUserId;
+          }
 
-        response = await currentContext.supabaseClient
-          .from("documents")
-          .insert([payload]);
+          response = await currentContext.supabaseClient
+            .from("documents")
+            .insert([payload]);
+        }
+      } catch (error) {
+        UnganiClientShared.showToast("Could not save document: " + (error.message || "Network error. Please check your connection."));
+        return;
       }
 
       if (response.error) {
@@ -941,11 +983,18 @@
 
       if (!confirmed) return;
 
-      const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
-        p_source_table: "documents",
-        p_source_record_id: id,
-        p_delete_reason: "Deleted from Documents page"
-      });
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+          p_source_table: "documents",
+          p_source_record_id: id,
+          p_delete_reason: "Deleted from Documents page"
+        });
+      } catch (error) {
+        UnganiClientShared.showToast("Could not delete document: " + (error.message || "Network error. Please check your connection."));
+        return;
+      }
 
       if (response.error) {
         UnganiClientShared.showToast("Could not delete document: " + response.error.message);
