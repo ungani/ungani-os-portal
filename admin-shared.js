@@ -309,6 +309,7 @@
         color: #FFFFFF;
         text-decoration: none;
         padding: 11px 12px;
+        min-height: 44px;
         border-radius: 14px;
         margin-bottom: 5px;
         transition: 0.2s ease;
@@ -373,6 +374,25 @@
         justify-content: flex-end;
       }
 
+      .ungani-admin-menu-btn {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text);
+        font-size: 19px;
+        cursor: pointer;
+        margin-bottom: 10px;
+      }
+
+      .ungani-admin-sidebar-overlay {
+        display: none;
+      }
+
       .ungani-card {
         background: var(--card);
         color: var(--text);
@@ -400,13 +420,16 @@
         border: none;
         border-radius: 12px;
         padding: 10px 14px;
+        min-height: 44px;
         font-weight: bold;
         cursor: pointer;
         background: var(--gold);
         color: #061C3D;
         margin: 4px 5px 4px 0;
         text-decoration: none;
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
       }
 
       .ungani-button.dark {
@@ -531,6 +554,18 @@
 
         .ungani-topbar-actions {
           justify-content: flex-start;
+        }
+
+        .ungani-admin-menu-btn {
+          display: inline-flex;
+        }
+
+        body.ungani-admin-sidebar-open .ungani-admin-sidebar-overlay {
+          display: block;
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.42);
+          z-index: 95;
         }
       }
     `;
@@ -673,11 +708,14 @@
       </div>
 
       <div id="unganiAppShell" class="ungani-admin-app hidden">
+        <div class="ungani-admin-sidebar-overlay" id="unganiAdminSidebarOverlay"></div>
+
         <aside id="adminSidebar"></aside>
 
         <main class="ungani-admin-main">
           <div class="ungani-topbar">
             <div>
+              <button class="ungani-admin-menu-btn" type="button" id="unganiAdminMenuBtn" aria-label="Toggle menu">☰</button>
               <h1>${safe(pageTitle)}</h1>
               <p>${safe(pageSubtitle)}</p>
             </div>
@@ -698,6 +736,8 @@
     document.getElementById("unganiAdminLoginButton")?.addEventListener("click", loginFromShell);
     document.getElementById("unganiAdminLogoutButton")?.addEventListener("click", logoutAdmin);
     document.getElementById("unganiBlockedLogoutButton")?.addEventListener("click", logoutAdmin);
+    document.getElementById("unganiAdminMenuBtn")?.addEventListener("click", toggleAdminSidebar);
+    document.getElementById("unganiAdminSidebarOverlay")?.addEventListener("click", closeAdminSidebar);
 
     renderSidebar("adminSidebar", {
       activeKey,
@@ -706,6 +746,24 @@
     });
 
     applyLanguage(target);
+  }
+
+  function toggleAdminSidebar() {
+    const sidebar = document.getElementById("adminSidebar");
+    const btn = document.getElementById("unganiAdminMenuBtn");
+    if (!sidebar) return;
+
+    const isOpen = sidebar.classList.toggle("open");
+    document.body.classList.toggle("ungani-admin-sidebar-open", isOpen);
+    if (btn) btn.textContent = isOpen ? "✕" : "☰";
+  }
+
+  function closeAdminSidebar() {
+    const sidebar = document.getElementById("adminSidebar");
+    const btn = document.getElementById("unganiAdminMenuBtn");
+    if (sidebar) sidebar.classList.remove("open");
+    document.body.classList.remove("ungani-admin-sidebar-open");
+    if (btn) btn.textContent = "☰";
   }
 
   function showShell(shellId) {
@@ -929,6 +987,8 @@
     injectBaseStyles,
     renderSidebar,
     renderShell,
+    toggleAdminSidebar,
+    closeAdminSidebar,
     requireAdmin,
     loadAdminProfile,
     getSession,
