@@ -888,21 +888,34 @@
     }
 
     async function deleteDocument(documentId) {
-      const confirmed = confirm("Delete this document record?");
+      const confirmed = confirm("Move this document to Recently Deleted? You can restore it within 30 days.");
 
       if (!confirmed) return;
 
-      const { error } = await supabaseClient
-        .from("documents")
-        .delete()
-        .eq("id", documentId);
+      let response;
 
-      if (error) {
-        alert(error.message);
+      try {
+        response = await supabaseClient.rpc("soft_delete_ungani_record", {
+          p_table_name: "documents",
+          p_record_id: documentId,
+          p_delete_reason: "Deleted from Admin Documents page"
+        });
+      } catch (error) {
+        alert(error.message || "Could not delete document. Please check your connection.");
         return;
       }
 
-      UnganiAdminShared.showToast("Document deleted ✓");
+      if (response.error) {
+        alert(response.error.message);
+        return;
+      }
+
+      if (response.data && response.data.ok === false) {
+        alert(response.data.message || "Could not delete document.");
+        return;
+      }
+
+      UnganiAdminShared.showToast("Document moved to Recently Deleted ✓");
       await loadPageData();
     }
   </script>
