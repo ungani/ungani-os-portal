@@ -960,6 +960,36 @@
     return true;
   }
 
+  function injectPwaMetaLinks() {
+    const links = [
+      { rel: "manifest", href: "/manifest.json" },
+      { rel: "icon", href: "/ungani-icon-32.png", type: "image/png" },
+      { rel: "icon", href: "/ungani-icon-192.png", type: "image/png", sizes: "192x192" },
+      { rel: "apple-touch-icon", href: "/ungani-icon-180.png" }
+    ];
+
+    links.forEach(function (linkInfo) {
+      const existing = document.querySelector(
+        `link[rel="${linkInfo.rel}"]` + (linkInfo.sizes ? `[sizes="${linkInfo.sizes}"]` : "")
+      );
+
+      if (existing) {
+        return;
+      }
+
+      const link = document.createElement("link");
+      Object.keys(linkInfo).forEach(function (key) {
+        link.setAttribute(key, linkInfo[key]);
+      });
+
+      if (document.head) {
+        document.head.appendChild(link);
+      }
+    });
+  }
+
+  injectPwaMetaLinks();
+
   function getCurrentAdmin() {
     return currentAdmin;
   }
