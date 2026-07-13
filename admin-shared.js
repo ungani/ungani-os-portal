@@ -7,8 +7,10 @@
   let supabaseClient = null;
   let currentAdmin = null;
   let currentAdminId = null;
-  let currentTheme = "light";
+  let currentTheme = localStorage.getItem("ungani_theme") || localStorage.getItem("ungani_client_theme") || "light";
   let currentLanguage = "en";
+
+  document.documentElement.dataset.unganiTheme = currentTheme;
 
   const translations = {
     en: {
@@ -207,32 +209,28 @@
     style.id = "ungani-admin-shared-styles";
     style.innerHTML = `
       :root {
-        --navy: #061C3D;
-        --gold: #D4A63A;
-        --green: #15803D;
-        --red: #B00020;
-        --orange: #EA580C;
-        --blue: #2563EB;
+        --ungani-navy: #061C3D;
+        --ungani-gold: #D4A63A;
+        --ungani-green: #15803D;
+        --ungani-red: #B91C1C;
+        --ungani-orange: #C77700;
+        --ungani-blue: #2563EB;
 
-        --bg: #F5F5F3;
-        --card: #FFFFFF;
-        --text: #061C3D;
-        --soft-text: #6B7280;
-        --border: #E5E7EB;
-        --sidebar: #061C3D;
-        --input-bg: #FFFFFF;
-        --shadow: rgba(6,28,61,0.08);
+        --ungani-bg: #F5F5F3;
+        --ungani-card: #FFFFFF;
+        --ungani-text: #061C3D;
+        --ungani-muted: #64748B;
+        --ungani-border: rgba(6, 28, 61, 0.12);
+        --ungani-shadow: 0 18px 45px rgba(6, 28, 61, 0.10);
       }
 
-      body.dark {
-        --bg: #0B1220;
-        --card: #111C33;
-        --text: #F5F5F3;
-        --soft-text: #AAB2C0;
-        --border: rgba(255,255,255,0.10);
-        --sidebar: #0B1220;
-        --input-bg: #0B1220;
-        --shadow: rgba(0,0,0,0.28);
+      html[data-ungani-theme="dark"] {
+        --ungani-bg: #061426;
+        --ungani-card: #0B2346;
+        --ungani-text: #FFFFFF;
+        --ungani-muted: #CBD5E1;
+        --ungani-border: rgba(255, 255, 255, 0.12);
+        --ungani-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
       }
 
       * {
@@ -242,8 +240,8 @@
       body {
         margin: 0;
         font-family: Arial, sans-serif;
-        background: var(--bg);
-        color: var(--text);
+        background: var(--ungani-bg);
+        color: var(--ungani-text);
       }
 
       .hidden {
@@ -254,11 +252,11 @@
         min-height: 100vh;
         display: grid;
         grid-template-columns: 290px 1fr;
-        background: var(--bg);
+        background: var(--ungani-bg);
       }
 
       .ungani-admin-sidebar {
-        background: var(--sidebar);
+        background: var(--ungani-navy);
         color: #FFFFFF;
         padding: 22px 16px;
         position: sticky;
@@ -320,7 +318,7 @@
       .ungani-side-link:hover,
       .ungani-side-link.active {
         background: rgba(212,166,58,0.18);
-        color: var(--gold);
+        color: var(--ungani-gold);
         transform: translateX(3px);
       }
 
@@ -339,15 +337,15 @@
       }
 
       .ungani-topbar {
-        background: var(--card);
-        border: 1px solid var(--border);
+        background: var(--ungani-card);
+        border: 1px solid var(--ungani-border);
         border-radius: 22px;
         padding: 16px;
         display: grid;
         grid-template-columns: 1fr auto;
         gap: 14px;
         align-items: center;
-        box-shadow: 0 10px 24px var(--shadow);
+        box-shadow: var(--ungani-shadow);
         margin-bottom: 18px;
         position: sticky;
         top: 16px;
@@ -357,12 +355,12 @@
       .ungani-topbar h1 {
         margin: 0 0 5px;
         font-size: 24px;
-        color: var(--text);
+        color: var(--ungani-text);
       }
 
       .ungani-topbar p {
         margin: 0;
-        color: var(--soft-text);
+        color: var(--ungani-muted);
         font-size: 14px;
       }
 
@@ -381,9 +379,9 @@
         width: 44px;
         height: 44px;
         border-radius: 12px;
-        border: 1px solid var(--border);
-        background: var(--card);
-        color: var(--text);
+        border: 1px solid var(--ungani-border);
+        background: var(--ungani-card);
+        color: var(--ungani-text);
         font-size: 19px;
         cursor: pointer;
         margin-bottom: 10px;
@@ -394,13 +392,13 @@
       }
 
       .ungani-card {
-        background: var(--card);
-        color: var(--text);
-        border: 1px solid var(--border);
+        background: var(--ungani-card);
+        color: var(--ungani-text);
+        border: 1px solid var(--ungani-border);
         border-radius: 22px;
         padding: 22px;
         margin-bottom: 18px;
-        box-shadow: 0 10px 24px var(--shadow);
+        box-shadow: var(--ungani-shadow);
       }
 
       .ungani-hero-card {
@@ -411,7 +409,7 @@
         position: relative;
       }
 
-      body.dark .ungani-hero-card {
+      html[data-ungani-theme="dark"] .ungani-hero-card {
         background: linear-gradient(135deg, #0B1220, #111C33);
         border: 1px solid rgba(212,166,58,0.22);
       }
@@ -423,7 +421,7 @@
         min-height: 44px;
         font-weight: bold;
         cursor: pointer;
-        background: var(--gold);
+        background: var(--ungani-gold);
         color: #061C3D;
         margin: 4px 5px 4px 0;
         text-decoration: none;
@@ -437,7 +435,7 @@
         color: #FFFFFF;
       }
 
-      body.dark .ungani-button.dark {
+      html[data-ungani-theme="dark"] .ungani-button.dark {
         background: #F5F5F3;
         color: #061C3D;
       }
@@ -453,9 +451,9 @@
         padding: 24px;
       }
 
-      body.dark .ungani-loading-shell,
-      body.dark .ungani-login-shell,
-      body.dark .ungani-blocked-shell {
+      html[data-ungani-theme="dark"] .ungani-loading-shell,
+      html[data-ungani-theme="dark"] .ungani-login-shell,
+      html[data-ungani-theme="dark"] .ungani-blocked-shell {
         background: linear-gradient(135deg, #0B1220, #111C33);
       }
 
@@ -463,13 +461,13 @@
       .ungani-loading-card {
         width: 100%;
         max-width: 460px;
-        background: var(--card);
-        color: var(--text);
+        background: var(--ungani-card);
+        color: var(--ungani-text);
         border-radius: 22px;
         padding: 28px;
         box-shadow: 0 20px 50px rgba(0,0,0,0.25);
         text-align: center;
-        border: 1px solid var(--border);
+        border: 1px solid var(--ungani-border);
       }
 
       .ungani-login-card input {
@@ -477,10 +475,10 @@
         padding: 12px;
         margin: 8px 0 12px;
         border-radius: 12px;
-        border: 1px solid var(--border);
+        border: 1px solid var(--ungani-border);
         font-size: 15px;
-        background: var(--input-bg);
-        color: var(--text);
+        background: var(--ungani-card);
+        color: var(--ungani-text);
       }
 
       .ungani-login-card label {
@@ -504,7 +502,7 @@
         bottom: 24px;
         background: #061C3D;
         color: #FFFFFF;
-        border: 1px solid var(--gold);
+        border: 1px solid var(--ungani-gold);
         padding: 14px 16px;
         border-radius: 14px;
         box-shadow: 0 12px 24px rgba(0,0,0,0.25);
@@ -516,7 +514,7 @@
         max-width: 330px;
       }
 
-      body.dark .ungani-toast {
+      html[data-ungani-theme="dark"] .ungani-toast {
         background: #111C33;
       }
 
@@ -575,8 +573,15 @@
 
   function applyTheme(theme) {
     currentTheme = theme === "dark" ? "dark" : "light";
-    document.body.classList.toggle("dark", currentTheme === "dark");
+    document.documentElement.dataset.unganiTheme = currentTheme;
     localStorage.setItem("ungani_theme", currentTheme);
+    localStorage.setItem("ungani_client_theme", currentTheme);
+  }
+
+  function toggleTheme() {
+    const nextTheme = currentTheme === "dark" ? "light" : "dark";
+    applyTheme(nextTheme);
+    showToast(nextTheme === "dark" ? "Dark mode enabled" : "Light mode enabled");
   }
 
   function applyLanguage(rootElement) {
@@ -649,8 +654,14 @@
         <strong>${safe(footerTitle)}</strong><br />
         ${safe(footerVersion)}<br />
         ungani.com
+
+        <div style="margin-top:12px;">
+          <button class="ungani-button" id="unganiAdminThemeBtn" type="button" data-i18n="theme">${safe(t("theme"))}</button>
+        </div>
       </div>
     `;
+
+    document.getElementById("unganiAdminThemeBtn")?.addEventListener("click", toggleTheme);
 
     applyLanguage(target);
   }
@@ -679,7 +690,7 @@
       <div id="unganiLoginShell" class="ungani-login-shell hidden">
         <div class="ungani-login-card">
           <img src="ungani-logo.png" alt="UNGANI Logo" class="ungani-logo" />
-          <h1>UNGANI <span style="color: var(--gold);">Admin</span></h1>
+          <h1>UNGANI <span style="color: var(--ungani-gold);">Admin</span></h1>
           <p data-i18n="adminLogin">${safe(t("adminLogin"))}</p>
 
           <label data-i18n="email">${safe(t("email"))}</label>
@@ -692,7 +703,7 @@
 
           <div id="unganiLoginMessage"></div>
 
-          <p style="font-size: 12px; color: var(--soft-text); margin-top: 18px;">
+          <p style="font-size: 12px; color: var(--ungani-muted); margin-top: 18px;">
             ungani.com | info@ungani.com
           </p>
         </div>
@@ -701,7 +712,7 @@
       <div id="unganiBlockedShell" class="ungani-blocked-shell hidden">
         <div class="ungani-login-card">
           <img src="ungani-logo.png" alt="UNGANI Logo" class="ungani-logo" />
-          <h2 style="color: var(--red);" data-i18n="accessBlocked">${safe(t("accessBlocked"))}</h2>
+          <h2 style="color: var(--ungani-red);" data-i18n="accessBlocked">${safe(t("accessBlocked"))}</h2>
           <p id="unganiBlockedReason"></p>
           <button class="ungani-button dark" id="unganiBlockedLogoutButton" data-i18n="logout">${safe(t("logout"))}</button>
         </div>
@@ -909,13 +920,13 @@
     });
 
     if (error) {
-      if (msg) msg.innerHTML = `<p style="color: var(--red); font-weight: bold;">${safe(error.message)}</p>`;
+      if (msg) msg.innerHTML = `<p style="color: var(--ungani-red); font-weight: bold;">${safe(error.message)}</p>`;
       return;
     }
 
     currentAdminId = data?.session?.user?.id || null;
 
-    if (msg) msg.innerHTML = `<p style="color: var(--green); font-weight: bold;">${safe(t("loginSuccess"))}</p>`;
+    if (msg) msg.innerHTML = `<p style="color: var(--ungani-green); font-weight: bold;">${safe(t("loginSuccess"))}</p>`;
 
     await loadAdminProfile();
     window.location.reload();
@@ -1024,6 +1035,7 @@
     getSession,
     isAdminByRpc,
     applyTheme,
+    toggleTheme,
     applyLanguage,
     updateAdminPreferences,
     logoutAdmin,

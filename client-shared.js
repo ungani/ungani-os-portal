@@ -11,7 +11,8 @@
     gray: "#E5E7EB",
     green: "#15803D",
     orange: "#C77700",
-    red: "#B91C1C"
+    red: "#B91C1C",
+    blue: "#2563EB"
   };
 
   const state = {
@@ -108,6 +109,7 @@
         --ungani-green: ${BRAND.green};
         --ungani-orange: ${BRAND.orange};
         --ungani-red: ${BRAND.red};
+        --ungani-blue: ${BRAND.blue};
 
         --ungani-bg: #F5F5F3;
         --ungani-card: #FFFFFF;
