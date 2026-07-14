@@ -462,9 +462,22 @@
       .ungani-top-actions {
         display: flex;
         align-items: center;
-        gap: 14px;
         flex-wrap: wrap;
         justify-content: flex-end;
+      }
+
+      .ungani-top-actions > * {
+        margin: 4px 0 4px 14px;
+      }
+
+      @supports (gap: 1px) {
+        .ungani-top-actions {
+          gap: 14px;
+        }
+
+        .ungani-top-actions > * {
+          margin: 0;
+        }
       }
 
       .ungani-mobile-menu {
