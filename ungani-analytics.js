@@ -1,18 +1,18 @@
 (function () {
   const COLORS = {
     navy: "#061C3D",
-    navyLight: "#0B2A55",
+    navyLight: "#0B2346",
     gold: "#D4A63A",
     offWhite: "#F5F5F3",
     white: "#FFFFFF",
-    green: "#16A34A",
+    green: "#15803D",
     blue: "#2563EB",
     violet: "#7C3AED",
     teal: "#0891B2",
-    orange: "#EA580C",
+    orange: "#C77700",
     amber: "#F59E0B",
     slate: "#64748B",
-    red: "#DC2626"
+    red: "#B91C1C"
   };
 
   const BUSINESS_PROFILES = [
@@ -1043,7 +1043,7 @@
   }
 
   function chartTextColor() {
-    return document.documentElement.dataset.unganiTheme === "dark" ? "#E5E7EB" : "#334155";
+    return document.documentElement.dataset.unganiTheme === "dark" ? "#F5F5F3" : "#061C3D";
   }
 
   function chartGridColor() {

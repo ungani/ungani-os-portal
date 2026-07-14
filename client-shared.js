@@ -124,8 +124,8 @@
       html[data-ungani-theme="dark"] {
         --ungani-bg: #061426;
         --ungani-card: #0B2346;
-        --ungani-text: #FFFFFF;
-        --ungani-muted: #CBD5E1;
+        --ungani-text: #F5F5F3;
+        --ungani-muted: #B8C3D6;
         --ungani-border: rgba(255, 255, 255, 0.12);
         --ungani-soft: rgba(255, 255, 255, 0.06);
         --ungani-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
@@ -462,7 +462,7 @@
       .ungani-top-actions {
         display: flex;
         align-items: center;
-        gap: 9px;
+        gap: 14px;
         flex-wrap: wrap;
         justify-content: flex-end;
       }
@@ -566,8 +566,8 @@
 
       .ungani-bell-count {
         position: absolute;
-        top: -7px;
-        right: -7px;
+        top: -6px;
+        right: -4px;
         min-width: 20px;
         height: 20px;
         border-radius: 999px;

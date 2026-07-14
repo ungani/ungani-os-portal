@@ -227,8 +227,8 @@
       html[data-ungani-theme="dark"] {
         --ungani-bg: #061426;
         --ungani-card: #0B2346;
-        --ungani-text: #FFFFFF;
-        --ungani-muted: #CBD5E1;
+        --ungani-text: #F5F5F3;
+        --ungani-muted: #B8C3D6;
         --ungani-border: rgba(255, 255, 255, 0.12);
         --ungani-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
       }

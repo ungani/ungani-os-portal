@@ -10,7 +10,11 @@
     "client-notifications.html"
   ];
 
-  window.addEventListener("load", runClientAccessGuard);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", runClientAccessGuard);
+  } else {
+    runClientAccessGuard();
+  }
 
   async function runClientAccessGuard() {
     try {
