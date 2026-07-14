@@ -772,6 +772,7 @@
       "rental car",
       "repair",
       "repairs",
+      "maintenance shop",
       "automotive"
     ],
     "dashboardTitle": "Automotive Operations Dashboard",
