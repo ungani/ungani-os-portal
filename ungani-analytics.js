@@ -44,8 +44,8 @@
   const chartInstances = {};
 
   function getBusinessProfile(tenant) {
-    const matched = window.UnganiBusinessConfig.resolve(tenant);
-    return Object.assign({}, window.UnganiBusinessConfig.GENERAL, matched || {});
+    const matched = window.UnganiBusinessConfig.resolveWithSections(tenant);
+    return window.UnganiBusinessConfig.mergeWithGeneral(matched);
   }
 
   function loadChartJs() {

@@ -1,15 +1,24 @@
 (function () {
   // Single source of truth for per-business-type dashboard labels, chart
-  // copy, and default categories. Both ungani-presets.js (dashboard
-  // labels/categories) and ungani-analytics.js (chart titles/copy) read
-  // from this file instead of maintaining their own separate lists, so
-  // every business type gets identical treatment everywhere it's used.
+  // copy, default categories, AND business sub-sections (e.g. Hotel,
+  // Restaurant, Bar within Hospitality). Both ungani-presets.js
+  // (dashboard labels/categories) and ungani-analytics.js (chart
+  // titles/copy) read from this file instead of maintaining their own
+  // separate lists, so every business type gets identical treatment
+  // everywhere it's used.
   //
   // Matching is fuzzy substring matching against the tenant's
   // business_type_key + business_type + business_name text, first match
-  // in TYPES order wins. This intentionally keeps the existing
-  // "one business type resolves to one config" behavior - merging
-  // multiple selected sections together is a separate, later phase.
+  // in TYPES order wins.
+  //
+  // Sections: a type may define a "sections" array (e.g. Hospitality has
+  // Hotel, Restaurant, Bar / Lounge, ...). Each section contributes
+  // additional item/people/task/record/document/calendar types and
+  // income/expense categories on top of the base type. When a tenant has
+  // multiple sections selected (tenant.selected_sections, an array of
+  // section labels), resolveWithSections() merges every matching
+  // section's additions into the base type - so Hotel + Restaurant
+  // genuinely combines both sets of categories, not just one.
 
   const TYPES = [
   {
@@ -136,7 +145,93 @@
     "calendarTitle": "Trip / Follow-up Activity",
     "previewTitle": "Fleet / Trips Preview",
     "availableText": "available",
-    "closedText": "completed"
+    "closedText": "completed",
+    "sections": [
+      {
+        "key": "transport",
+        "label": "Transport",
+        "itemTypes": [
+          "Truck",
+          "Vehicle",
+          "Trip"
+        ],
+        "peopleTypes": [
+          "Driver"
+        ],
+        "incomeCategories": [
+          "Trip Payment",
+          "Transport Income"
+        ],
+        "expenseCategories": [
+          "Fuel",
+          "Driver Allowance",
+          "Toll / Parking"
+        ],
+        "taskTypes": [
+          "Trip Follow-up",
+          "Delivery Confirmation"
+        ],
+        "documentTypes": [
+          "Delivery Note",
+          "Trip Document"
+        ],
+        "calendarTypes": [
+          "Trip Date",
+          "Delivery Date"
+        ]
+      },
+      {
+        "key": "cold_chain",
+        "label": "Cold Chain",
+        "itemTypes": [
+          "Genset",
+          "Reefer"
+        ],
+        "peopleTypes": [
+          "Mechanic"
+        ],
+        "incomeCategories": [
+          "Cold Chain Service Fee"
+        ],
+        "expenseCategories": [
+          "Genset / Reefer Maintenance"
+        ],
+        "taskTypes": [
+          "Maintenance Reminder"
+        ],
+        "documentTypes": [
+          "Insurance Document"
+        ],
+        "calendarTypes": [
+          "Vehicle Service"
+        ]
+      },
+      {
+        "key": "clearing_forwarding",
+        "label": "Clearing & Forwarding",
+        "itemTypes": [
+          "Container"
+        ],
+        "peopleTypes": [
+          "Supervisor"
+        ],
+        "incomeCategories": [
+          "Clearing / Forwarding Fee"
+        ],
+        "expenseCategories": [
+          "Documentation"
+        ],
+        "taskTypes": [
+          "Document Collection"
+        ],
+        "documentTypes": [
+          "Client Agreement"
+        ],
+        "calendarTypes": [
+          "Document Deadline"
+        ]
+      }
+    ]
   },
   {
     "key": "real_estate",
@@ -146,8 +241,7 @@
       "property",
       "properties",
       "housing",
-      "land",
-      "rental"
+      "land"
     ],
     "dashboardTitle": "Property Operations Dashboard",
     "chartsTitle": "Property Analytics",
@@ -383,6 +477,422 @@
       "Event Date",
       "Staff Shift",
       "Payment Reminder"
+    ],
+    "sections": [
+      {
+        "key": "hotel",
+        "label": "Hotel",
+        "itemTypes": [
+          "Room",
+          "Suite"
+        ],
+        "incomeCategories": [
+          "Room Booking Income"
+        ],
+        "expenseCategories": [
+          "Housekeeping Supplies"
+        ],
+        "taskTypes": [
+          "Housekeeping Task"
+        ],
+        "documentTypes": [
+          "Booking Confirmation"
+        ],
+        "calendarTypes": [
+          "Room Booking"
+        ]
+      },
+      {
+        "key": "guest_house",
+        "label": "Guest House",
+        "itemTypes": [
+          "Guest Room"
+        ],
+        "incomeCategories": [
+          "Guest House Booking Income"
+        ],
+        "expenseCategories": [
+          "Housekeeping Supplies"
+        ],
+        "taskTypes": [
+          "Guest Check-in / Check-out"
+        ],
+        "documentTypes": [
+          "Booking Confirmation"
+        ],
+        "calendarTypes": [
+          "Guest Booking"
+        ]
+      },
+      {
+        "key": "lodge",
+        "label": "Lodge",
+        "itemTypes": [
+          "Cabin",
+          "Room"
+        ],
+        "incomeCategories": [
+          "Lodge Booking Income"
+        ],
+        "expenseCategories": [
+          "Grounds Maintenance"
+        ],
+        "taskTypes": [
+          "Guest Request"
+        ],
+        "documentTypes": [
+          "Booking Confirmation"
+        ],
+        "calendarTypes": [
+          "Lodge Booking"
+        ]
+      },
+      {
+        "key": "resort",
+        "label": "Resort",
+        "itemTypes": [
+          "Villa",
+          "Suite",
+          "Recreational Facility"
+        ],
+        "incomeCategories": [
+          "Resort Package Income"
+        ],
+        "expenseCategories": [
+          "Facility Maintenance"
+        ],
+        "taskTypes": [
+          "Activity Booking"
+        ],
+        "documentTypes": [
+          "Package Agreement"
+        ],
+        "calendarTypes": [
+          "Resort Booking"
+        ]
+      },
+      {
+        "key": "hostel",
+        "label": "Hostel",
+        "itemTypes": [
+          "Dorm Bed",
+          "Shared Room"
+        ],
+        "incomeCategories": [
+          "Hostel Booking Income"
+        ],
+        "expenseCategories": [
+          "Shared Facility Supplies"
+        ],
+        "taskTypes": [
+          "Bed Assignment"
+        ],
+        "documentTypes": [
+          "Booking Confirmation"
+        ],
+        "calendarTypes": [
+          "Hostel Booking"
+        ]
+      },
+      {
+        "key": "airbnb",
+        "label": "Airbnb / Vacation Rental",
+        "itemTypes": [
+          "Rental Unit"
+        ],
+        "incomeCategories": [
+          "Vacation Rental Income"
+        ],
+        "expenseCategories": [
+          "Cleaning / Turnover Cost"
+        ],
+        "taskTypes": [
+          "Guest Check-in / Check-out",
+          "Turnover Cleaning"
+        ],
+        "documentTypes": [
+          "Rental Agreement"
+        ],
+        "calendarTypes": [
+          "Rental Booking"
+        ]
+      },
+      {
+        "key": "restaurant",
+        "label": "Restaurant",
+        "itemTypes": [
+          "Table",
+          "Menu Item"
+        ],
+        "peopleTypes": [
+          "Chef",
+          "Waiter"
+        ],
+        "incomeCategories": [
+          "Restaurant / Food Sales"
+        ],
+        "expenseCategories": [
+          "Food Supplies"
+        ],
+        "taskTypes": [
+          "Table Reservation"
+        ],
+        "documentTypes": [
+          "Menu"
+        ],
+        "calendarTypes": [
+          "Table Reservation"
+        ]
+      },
+      {
+        "key": "bar_lounge",
+        "label": "Bar / Lounge",
+        "itemTypes": [
+          "Beverage",
+          "Bar Stock"
+        ],
+        "peopleTypes": [
+          "Bartender"
+        ],
+        "incomeCategories": [
+          "Bar / Beverage Sales"
+        ],
+        "expenseCategories": [
+          "Beverage Supplies"
+        ],
+        "taskTypes": [
+          "Stock Restock"
+        ],
+        "documentTypes": [
+          "Supplier Invoice"
+        ],
+        "calendarTypes": [
+          "Event Night"
+        ]
+      },
+      {
+        "key": "catering",
+        "label": "Catering",
+        "itemTypes": [
+          "Catering Order",
+          "Equipment"
+        ],
+        "peopleTypes": [
+          "Caterer"
+        ],
+        "incomeCategories": [
+          "Catering Payment"
+        ],
+        "expenseCategories": [
+          "Food Supplies",
+          "Equipment Hire"
+        ],
+        "taskTypes": [
+          "Event Preparation"
+        ],
+        "documentTypes": [
+          "Catering Quotation"
+        ],
+        "calendarTypes": [
+          "Catering Event Date"
+        ]
+      }
+    ]
+  },
+  {
+    "key": "automotive",
+    "name": "Automotive Services",
+    "match": [
+      "car wash",
+      "auto detailing",
+      "detailing",
+      "car hire",
+      "car rental",
+      "rental car",
+      "repair",
+      "repairs",
+      "automotive"
+    ],
+    "dashboardTitle": "Automotive Operations Dashboard",
+    "chartsTitle": "Automotive Analytics",
+    "itemsLabel": "Vehicles / Services / Parts",
+    "peopleLabel": "Staff / Customers",
+    "tasksLabel": "Service / Booking Tasks",
+    "recordsLabel": "Service Records",
+    "calendarLabel": "Bookings / Service Schedule",
+    "documentsLabel": "Automotive Documents",
+    "incomeCategories": [
+      "Customer Payment",
+      "Other Automotive Income"
+    ],
+    "expenseCategories": [
+      "Staff Wages",
+      "Marketing / Advertising",
+      "Other Automotive Expense"
+    ],
+    "itemTypes": [
+      "Vehicle",
+      "Equipment"
+    ],
+    "peopleTypes": [
+      "Staff",
+      "Customer",
+      "Manager",
+      "Supplier"
+    ],
+    "taskTypes": [
+      "Customer Follow-up",
+      "Payment Reminder"
+    ],
+    "recordTypes": [
+      "Service Record",
+      "Customer Feedback"
+    ],
+    "documentTypes": [
+      "Receipt",
+      "Invoice"
+    ],
+    "calendarTypes": [
+      "Booking",
+      "Payment Reminder"
+    ],
+    "pageTitle": "Automotive Operations Dashboard",
+    "badge": "Automotive Workspace",
+    "hero": "Track vehicles, services, bookings, customers, staff, money records, tasks, and support in one place.",
+    "itemsTitle": "Vehicles / Services / Parts",
+    "itemSingular": "Vehicle / Service",
+    "itemPlural": "Vehicles / Services",
+    "statusTitle": "Vehicle / Service Status",
+    "progressTitle": "Booking / Service Progress",
+    "peopleTitle": "Staff / Customers",
+    "peoplePrimary": "staff",
+    "peopleSecondary": "customers",
+    "peoplePrimaryTypes": [
+      "staff",
+      "manager",
+      "technician"
+    ],
+    "peopleSecondaryTypes": [
+      "customer",
+      "client",
+      "lead"
+    ],
+    "pipelineTitle": "Customer / Booking Pipeline",
+    "topPerformerTitle": "Top Staff Member",
+    "calendarTitle": "Bookings / Service Schedule",
+    "previewTitle": "Vehicles / Services Preview",
+    "availableText": "available",
+    "closedText": "completed",
+    "sections": [
+      {
+        "key": "car_wash",
+        "label": "Car Wash / Detailing",
+        "itemTypes": [
+          "Service",
+          "Cleaning Product",
+          "Equipment",
+          "Package",
+          "Booking"
+        ],
+        "peopleTypes": [
+          "Washer",
+          "Detailer"
+        ],
+        "incomeCategories": [
+          "Car Wash Service",
+          "Detailing Service",
+          "Customer Payment",
+          "Package Payment",
+          "Other Car Wash Income"
+        ],
+        "expenseCategories": [
+          "Cleaning Supplies",
+          "Water",
+          "Electricity",
+          "Staff Wages",
+          "Equipment Maintenance",
+          "Marketing / Advertising",
+          "Other Car Wash Expense"
+        ],
+        "documentTypes": [
+          "Receipt"
+        ],
+        "calendarTypes": [
+          "Booking"
+        ]
+      },
+      {
+        "key": "car_hire",
+        "label": "Car Hire / Rental",
+        "itemTypes": [
+          "Vehicle",
+          "Booking",
+          "Asset",
+          "Service",
+          "Maintenance Record"
+        ],
+        "peopleTypes": [
+          "Driver"
+        ],
+        "incomeCategories": [
+          "Rental Payment",
+          "Booking Deposit",
+          "Driver Fee",
+          "Delivery Fee",
+          "Other Car Hire Income"
+        ],
+        "expenseCategories": [
+          "Vehicle Maintenance",
+          "Insurance",
+          "Fuel",
+          "Driver Payment",
+          "Cleaning",
+          "Licensing",
+          "Other Car Hire Expense"
+        ],
+        "documentTypes": [
+          "Rental Agreement"
+        ],
+        "calendarTypes": [
+          "Vehicle Return"
+        ]
+      },
+      {
+        "key": "repair_shop",
+        "label": "Repair Shop",
+        "itemTypes": [
+          "Repair Job",
+          "Spare Part",
+          "Tool",
+          "Equipment",
+          "Customer Item"
+        ],
+        "peopleTypes": [
+          "Technician"
+        ],
+        "incomeCategories": [
+          "Repair Service",
+          "Spare Part Sale",
+          "Customer Payment",
+          "Deposit",
+          "Other Repair Income"
+        ],
+        "expenseCategories": [
+          "Spare Parts",
+          "Tools",
+          "Staff Wages",
+          "Rent",
+          "Utilities",
+          "Transport",
+          "Other Repair Expense"
+        ],
+        "documentTypes": [
+          "Job Card"
+        ],
+        "calendarTypes": [
+          "Repair Deadline"
+        ]
+      }
     ]
   },
   {
@@ -492,112 +1002,83 @@
     "calendarTitle": "Appointments",
     "previewTitle": "Services / Products Preview",
     "availableText": "available",
-    "closedText": "completed"
-  },
-  {
-    "key": "car_wash",
-    "name": "Car Wash / Auto Detailing",
-    "match": [
-      "car wash",
-      "auto detailing",
-      "detailing"
-    ],
-    "dashboardTitle": "Car Wash Operations Dashboard",
-    "chartsTitle": "Car Wash Analytics",
-    "itemsLabel": "Services / Equipment",
-    "peopleLabel": "Staff / Customers",
-    "tasksLabel": "Bookings / Service Tasks",
-    "recordsLabel": "Service Records",
-    "calendarLabel": "Bookings / Services",
-    "documentsLabel": "Car Wash Documents",
-    "incomeCategories": [
-      "Car Wash Service",
-      "Detailing Service",
-      "Customer Payment",
-      "Package Payment",
-      "Other Car Wash Income"
-    ],
-    "expenseCategories": [
-      "Cleaning Supplies",
-      "Water",
-      "Electricity",
-      "Staff Wages",
-      "Equipment Maintenance",
-      "Marketing / Advertising",
-      "Other Car Wash Expense"
-    ],
-    "itemTypes": [
-      "Service",
-      "Equipment",
-      "Cleaning Product",
-      "Package",
-      "Booking"
-    ],
-    "peopleTypes": [
-      "Washer",
-      "Detailer",
-      "Manager",
-      "Staff",
-      "Customer",
-      "Supplier"
-    ],
-    "taskTypes": [
-      "Customer Booking",
-      "Service Follow-up",
-      "Equipment Maintenance",
-      "Product Restock",
-      "Payment Follow-up",
-      "Cleaning Task"
-    ],
-    "recordTypes": [
-      "Service Record",
-      "Customer Feedback",
-      "Daily Sales Note",
-      "Equipment Note",
-      "Incident Log"
-    ],
-    "documentTypes": [
-      "Receipt",
-      "Invoice",
-      "Supplier Document",
-      "Equipment Document",
-      "Business Document"
-    ],
-    "calendarTypes": [
-      "Booking",
-      "Service Appointment",
-      "Equipment Service",
-      "Customer Follow-up",
-      "Payment Reminder"
-    ],
-    "pageTitle": "Car Wash Operations Dashboard",
-    "badge": "Car Wash Workspace",
-    "hero": "Track services, bookings, customers, staff, equipment, money records, tasks, and support in one place.",
-    "itemsTitle": "Services / Equipment",
-    "itemSingular": "Service / Equipment",
-    "itemPlural": "Services / Equipment",
-    "statusTitle": "Service / Equipment Status",
-    "progressTitle": "Booking / Service Progress",
-    "peopleTitle": "Staff / Customers",
-    "peoplePrimary": "staff",
-    "peopleSecondary": "customers",
-    "peoplePrimaryTypes": [
-      "staff",
-      "washer",
-      "detailer",
-      "manager"
-    ],
-    "peopleSecondaryTypes": [
-      "customer",
-      "client",
-      "lead"
-    ],
-    "pipelineTitle": "Customer Pipeline",
-    "topPerformerTitle": "Top Staff Member",
-    "calendarTitle": "Bookings / Services",
-    "previewTitle": "Services / Equipment Preview",
-    "availableText": "available",
-    "closedText": "completed"
+    "closedText": "completed",
+    "sections": [
+      {
+        "key": "salon_sec",
+        "label": "Salon",
+        "itemTypes": [
+          "Hair Service"
+        ],
+        "peopleTypes": [
+          "Stylist"
+        ],
+        "incomeCategories": [
+          "Hair Service Income"
+        ],
+        "documentTypes": [
+          "Receipt"
+        ],
+        "calendarTypes": [
+          "Appointment"
+        ]
+      },
+      {
+        "key": "barber_sec",
+        "label": "Barber",
+        "itemTypes": [
+          "Barber Service"
+        ],
+        "peopleTypes": [
+          "Barber"
+        ],
+        "incomeCategories": [
+          "Barber Service Income"
+        ],
+        "documentTypes": [
+          "Receipt"
+        ],
+        "calendarTypes": [
+          "Appointment"
+        ]
+      },
+      {
+        "key": "spa_sec",
+        "label": "Spa",
+        "itemTypes": [
+          "Spa Treatment"
+        ],
+        "peopleTypes": [
+          "Therapist"
+        ],
+        "incomeCategories": [
+          "Spa Treatment Income"
+        ],
+        "documentTypes": [
+          "Receipt"
+        ],
+        "calendarTypes": [
+          "Appointment"
+        ]
+      },
+      {
+        "key": "beauty_sec",
+        "label": "Beauty Services",
+        "itemTypes": [
+          "Beauty Treatment",
+          "Cosmetic Product"
+        ],
+        "incomeCategories": [
+          "Beauty Service Income"
+        ],
+        "documentTypes": [
+          "Receipt"
+        ],
+        "calendarTypes": [
+          "Appointment"
+        ]
+      }
+    ]
   },
   {
     "key": "printing",
@@ -710,118 +1191,20 @@
     "closedText": "completed"
   },
   {
-    "key": "boutique",
-    "match": [
-      "boutique",
-      "fashion",
-      "clothing",
-      "apparel"
-    ],
-    "pageTitle": "Boutique Operations Dashboard",
-    "chartsTitle": "Boutique Analytics",
-    "badge": "Retail Fashion Workspace",
-    "hero": "Track stock, sales, customers, suppliers, staff, money records, tasks, and support in one place.",
-    "itemsTitle": "Stock / Products",
-    "itemSingular": "Product",
-    "itemPlural": "Products",
-    "statusTitle": "Stock Status",
-    "progressTitle": "Stock / Sales Progress",
-    "peopleTitle": "Staff / Customers",
-    "peoplePrimary": "staff",
-    "peopleSecondary": "customers",
-    "peoplePrimaryTypes": [
-      "staff",
-      "manager",
-      "sales"
-    ],
-    "peopleSecondaryTypes": [
-      "customer",
-      "client",
-      "supplier",
-      "lead"
-    ],
-    "pipelineTitle": "Customer / Sales Pipeline",
-    "topPerformerTitle": "Top Sales Staff",
-    "calendarTitle": "Sales / Restock Activity",
-    "previewTitle": "Stock / Products Preview",
-    "availableText": "in stock",
-    "closedText": "sold",
-    "name": "Boutique / Fashion Retail",
-    "dashboardTitle": "Boutique Operations Dashboard",
-    "itemsLabel": "Stock / Fashion Items",
-    "peopleLabel": "Staff / Customers",
-    "tasksLabel": "Stock / Sales Tasks",
-    "recordsLabel": "Sales / Stock Records",
-    "calendarLabel": "Sales / Restock Activity",
-    "documentsLabel": "Boutique Documents",
-    "incomeCategories": [
-      "Product Sale",
-      "Customer Payment",
-      "Bulk Sale",
-      "Online Sale",
-      "Other Boutique Income"
-    ],
-    "expenseCategories": [
-      "Stock Purchase",
-      "Supplier Payment",
-      "Staff Wages",
-      "Rent",
-      "Packaging",
-      "Marketing / Advertising",
-      "Other Boutique Expense"
-    ],
-    "itemTypes": [
-      "Clothing Item",
-      "Accessory",
-      "Footwear",
-      "Stock Item",
-      "Bundle"
-    ],
-    "peopleTypes": [
-      "Staff",
-      "Customer",
-      "Supplier",
-      "Manager",
-      "Sales Person",
-      "Lead"
-    ],
-    "taskTypes": [
-      "Restock Reminder",
-      "Supplier Follow-up",
-      "Customer Follow-up",
-      "Payment Reminder",
-      "Stock Count"
-    ],
-    "recordTypes": [
-      "Sales Note",
-      "Stock Update",
-      "Supplier Update",
-      "Customer Request",
-      "Daily Update"
-    ],
-    "documentTypes": [
-      "Receipt",
-      "Invoice",
-      "Supplier Invoice",
-      "Stock List",
-      "Business Document"
-    ],
-    "calendarTypes": [
-      "Restock Date",
-      "Supplier Follow-up",
-      "Delivery Date",
-      "Payment Reminder",
-      "Stock Count"
-    ]
-  },
-  {
     "key": "retail",
-    "name": "Retail Shop / Mini Market",
+    "name": "Retail",
     "match": [
       "retail",
       "mini market",
       "shop",
-      "store"
+      "store",
+      "pharmacy",
+      "chemist",
+      "medicine",
+      "agrovet",
+      "farm",
+      "farming",
+      "agriculture"
     ],
     "dashboardTitle": "Retail Operations Dashboard",
     "chartsTitle": "Retail Analytics",
@@ -921,114 +1304,279 @@
     "calendarTitle": "Sales / Restock Activity",
     "previewTitle": "Stock / Products Preview",
     "availableText": "in stock",
-    "closedText": "sold"
-  },
-  {
-    "key": "pharmacy",
-    "name": "Pharmacy",
-    "match": [
-      "pharmacy",
-      "chemist",
-      "medicine"
-    ],
-    "dashboardTitle": "Pharmacy Operations Dashboard",
-    "chartsTitle": "Pharmacy Analytics",
-    "itemsLabel": "Medicines / Stock",
-    "peopleLabel": "Staff / Suppliers",
-    "tasksLabel": "Pharmacy Tasks",
-    "recordsLabel": "Stock / Sales Records",
-    "calendarLabel": "Restock / Follow-ups",
-    "documentsLabel": "Pharmacy Documents",
-    "incomeCategories": [
-      "Medicine Sale",
-      "Customer Payment",
-      "Prescription Sale",
-      "Other Pharmacy Income"
-    ],
-    "expenseCategories": [
-      "Medicine Purchase",
-      "Supplier Payment",
-      "Staff Wages",
-      "Rent",
-      "Utilities",
-      "Licensing",
-      "Expired Stock Loss",
-      "Other Pharmacy Expense"
-    ],
-    "itemTypes": [
-      "Medicine",
-      "Medical Supply",
-      "Stock Item",
-      "Equipment",
-      "Supplier Item"
-    ],
-    "peopleTypes": [
-      "Pharmacist",
-      "Staff",
-      "Supplier",
-      "Customer",
-      "Doctor / Referral",
-      "Manager"
-    ],
-    "taskTypes": [
-      "Restock Reminder",
-      "Expiry Check",
-      "Supplier Follow-up",
-      "Payment Reminder",
-      "Stock Count",
-      "Customer Follow-up"
-    ],
-    "recordTypes": [
-      "Stock Update",
-      "Sales Note",
-      "Expired Stock",
-      "Supplier Update",
-      "Customer Request",
-      "Daily Update"
-    ],
-    "documentTypes": [
-      "Receipt",
-      "Invoice",
-      "Supplier Invoice",
-      "License",
-      "Stock List",
-      "Business Document"
-    ],
-    "calendarTypes": [
-      "Restock Date",
-      "Expiry Check",
-      "Supplier Follow-up",
-      "Payment Reminder",
-      "Stock Count"
-    ],
-    "pageTitle": "Pharmacy Operations Dashboard",
-    "badge": "Pharmacy Workspace",
-    "hero": "Track medicines, stock, suppliers, customers, staff, money records, tasks, and support in one place.",
-    "itemsTitle": "Medicines / Stock",
-    "itemSingular": "Medicine / Stock",
-    "itemPlural": "Medicines / Stock",
-    "statusTitle": "Medicine / Stock Status",
-    "progressTitle": "Stock / Restock Progress",
-    "peopleTitle": "Staff / Suppliers",
-    "peoplePrimary": "staff",
-    "peopleSecondary": "suppliers",
-    "peoplePrimaryTypes": [
-      "staff",
-      "pharmacist",
-      "manager"
-    ],
-    "peopleSecondaryTypes": [
-      "supplier",
-      "customer",
-      "client",
-      "lead"
-    ],
-    "pipelineTitle": "Supplier / Customer Pipeline",
-    "topPerformerTitle": "Top Staff Member",
-    "calendarTitle": "Restock / Follow-ups",
-    "previewTitle": "Medicines / Stock Preview",
-    "availableText": "in stock",
-    "closedText": "sold"
+    "closedText": "sold",
+    "sections": [
+      {
+        "key": "electronics",
+        "label": "Electronics & Computers",
+        "itemTypes": [
+          "Electronics",
+          "Computer",
+          "Accessory"
+        ],
+        "incomeCategories": [
+          "Electronics Sale"
+        ],
+        "expenseCategories": [
+          "Electronics Stock Purchase"
+        ],
+        "documentTypes": [
+          "Warranty Card"
+        ],
+        "calendarTypes": [
+          "Restock Date"
+        ]
+      },
+      {
+        "key": "mobile_phones",
+        "label": "Mobile Phones & Accessories",
+        "itemTypes": [
+          "Mobile Phone",
+          "Phone Accessory"
+        ],
+        "incomeCategories": [
+          "Mobile Phone Sale",
+          "Repair Service"
+        ],
+        "expenseCategories": [
+          "Phone Stock Purchase"
+        ],
+        "documentTypes": [
+          "Warranty Card"
+        ],
+        "calendarTypes": [
+          "Restock Date"
+        ]
+      },
+      {
+        "key": "supermarket",
+        "label": "Supermarket & Grocery",
+        "itemTypes": [
+          "Grocery Item",
+          "FMCG Product"
+        ],
+        "incomeCategories": [
+          "Grocery Sale"
+        ],
+        "expenseCategories": [
+          "Grocery Stock Purchase"
+        ],
+        "documentTypes": [
+          "Stock List"
+        ],
+        "calendarTypes": [
+          "Restock Date"
+        ]
+      },
+      {
+        "key": "hardware",
+        "label": "Hardware",
+        "itemTypes": [
+          "Hardware Item",
+          "Tool",
+          "Building Material"
+        ],
+        "incomeCategories": [
+          "Hardware Sale"
+        ],
+        "expenseCategories": [
+          "Hardware Stock Purchase"
+        ],
+        "documentTypes": [
+          "Stock List"
+        ],
+        "calendarTypes": [
+          "Restock Date"
+        ]
+      },
+      {
+        "key": "agrovet",
+        "label": "Agrovet",
+        "itemTypes": [
+          "Farm Supply",
+          "Feed",
+          "Medicine",
+          "Stock Item",
+          "Equipment",
+          "Supplier Item"
+        ],
+        "peopleTypes": [
+          "Farmer"
+        ],
+        "incomeCategories": [
+          "Agrovet Product Sale",
+          "Product Sale",
+          "Customer Payment",
+          "Bulk Sale",
+          "Other Agrovet Income"
+        ],
+        "expenseCategories": [
+          "Agrovet Stock Purchase",
+          "Stock Purchase",
+          "Supplier Payment",
+          "Transport",
+          "Staff Wages",
+          "Rent",
+          "Utilities",
+          "Other Agrovet Expense"
+        ],
+        "documentTypes": [
+          "Stock List"
+        ],
+        "calendarTypes": [
+          "Restock Date"
+        ]
+      },
+      {
+        "key": "pharmacy",
+        "label": "Pharmacy",
+        "itemTypes": [
+          "Medicine",
+          "Medical Supply",
+          "Stock Item",
+          "Equipment",
+          "Supplier Item"
+        ],
+        "peopleTypes": [
+          "Pharmacist"
+        ],
+        "incomeCategories": [
+          "Medicine Sale",
+          "Prescription Sale",
+          "Customer Payment",
+          "Other Pharmacy Income"
+        ],
+        "expenseCategories": [
+          "Medicine Purchase",
+          "Licensing",
+          "Expired Stock Loss",
+          "Supplier Payment",
+          "Staff Wages",
+          "Rent",
+          "Utilities",
+          "Other Pharmacy Expense"
+        ],
+        "documentTypes": [
+          "License"
+        ],
+        "calendarTypes": [
+          "Expiry Check"
+        ]
+      },
+      {
+        "key": "fashion",
+        "label": "Fashion & Boutique",
+        "itemTypes": [
+          "Clothing Item",
+          "Accessory",
+          "Footwear",
+          "Stock Item",
+          "Bundle"
+        ],
+        "incomeCategories": [
+          "Fashion Sale",
+          "Product Sale",
+          "Customer Payment",
+          "Bulk Sale",
+          "Online Sale",
+          "Other Boutique Income"
+        ],
+        "expenseCategories": [
+          "Fashion Stock Purchase",
+          "Stock Purchase",
+          "Supplier Payment",
+          "Staff Wages",
+          "Rent",
+          "Packaging",
+          "Marketing / Advertising",
+          "Other Boutique Expense"
+        ],
+        "documentTypes": [
+          "Stock List"
+        ],
+        "calendarTypes": [
+          "Restock Date"
+        ]
+      },
+      {
+        "key": "furniture_retail",
+        "label": "Furniture",
+        "itemTypes": [
+          "Furniture Item"
+        ],
+        "incomeCategories": [
+          "Furniture Sale"
+        ],
+        "expenseCategories": [
+          "Furniture Stock Purchase"
+        ],
+        "documentTypes": [
+          "Delivery Note"
+        ],
+        "calendarTypes": [
+          "Delivery Date"
+        ]
+      },
+      {
+        "key": "cosmetics",
+        "label": "Cosmetics",
+        "itemTypes": [
+          "Cosmetic Product"
+        ],
+        "incomeCategories": [
+          "Cosmetics Sale"
+        ],
+        "expenseCategories": [
+          "Cosmetics Stock Purchase"
+        ],
+        "documentTypes": [
+          "Stock List"
+        ],
+        "calendarTypes": [
+          "Restock Date"
+        ]
+      },
+      {
+        "key": "bookshop",
+        "label": "Bookshop",
+        "itemTypes": [
+          "Book",
+          "Stationery"
+        ],
+        "incomeCategories": [
+          "Book Sale",
+          "Stationery Sale"
+        ],
+        "expenseCategories": [
+          "Book Stock Purchase"
+        ],
+        "documentTypes": [
+          "Stock List"
+        ],
+        "calendarTypes": [
+          "Restock Date"
+        ]
+      },
+      {
+        "key": "general_retail",
+        "label": "General Retail",
+        "itemTypes": [
+          "Product"
+        ],
+        "incomeCategories": [
+          "Product Sale"
+        ],
+        "expenseCategories": [
+          "Stock Purchase"
+        ],
+        "documentTypes": [
+          "Stock List"
+        ],
+        "calendarTypes": [
+          "Restock Date"
+        ]
+      }
+    ]
   },
   {
     "key": "gym",
@@ -1564,16 +2112,16 @@
     "closedText": "completed"
   },
   {
-    "key": "clinic",
-    "name": "Clinic / Health Services",
+    "key": "healthcare",
+    "name": "Healthcare",
     "match": [
       "clinic",
       "health",
       "medical",
       "hospital"
     ],
-    "dashboardTitle": "Clinic Operations Dashboard",
-    "chartsTitle": "Clinic Analytics",
+    "dashboardTitle": "Healthcare Operations Dashboard",
+    "chartsTitle": "Healthcare Analytics",
     "itemsLabel": "Supplies / Equipment",
     "peopleLabel": "Staff / Patients",
     "tasksLabel": "Clinic Tasks",
@@ -1642,8 +2190,8 @@
       "Payment Reminder",
       "Equipment Service"
     ],
-    "pageTitle": "Clinic Operations Dashboard",
-    "badge": "Health Services Workspace",
+    "pageTitle": "Healthcare Operations Dashboard",
+    "badge": "Healthcare Workspace",
     "hero": "Track appointments, patients, staff, supplies, tasks, money records, documents, and support in one place.",
     "itemsTitle": "Supplies / Equipment",
     "itemSingular": "Supply / Equipment",
@@ -1670,7 +2218,113 @@
     "calendarTitle": "Appointments",
     "previewTitle": "Supplies / Equipment Preview",
     "availableText": "available",
-    "closedText": "completed"
+    "closedText": "completed",
+    "sections": [
+      {
+        "key": "clinic",
+        "label": "Clinic",
+        "itemTypes": [
+          "Consultation Room"
+        ],
+        "incomeCategories": [
+          "Consultation Fee"
+        ],
+        "documentTypes": [
+          "Patient Document"
+        ],
+        "calendarTypes": [
+          "Appointment"
+        ]
+      },
+      {
+        "key": "medical_centre",
+        "label": "Medical Centre",
+        "itemTypes": [
+          "Treatment Room",
+          "Diagnostic Equipment"
+        ],
+        "incomeCategories": [
+          "Treatment Fee"
+        ],
+        "documentTypes": [
+          "Referral Letter"
+        ],
+        "calendarTypes": [
+          "Appointment"
+        ]
+      },
+      {
+        "key": "hospital",
+        "label": "Hospital",
+        "itemTypes": [
+          "Ward Bed",
+          "Medical Equipment"
+        ],
+        "peopleTypes": [
+          "Surgeon"
+        ],
+        "incomeCategories": [
+          "Admission Fee",
+          "Surgery Fee"
+        ],
+        "expenseCategories": [
+          "Ward Supplies"
+        ],
+        "documentTypes": [
+          "Admission Form"
+        ],
+        "calendarTypes": [
+          "Surgery Schedule"
+        ]
+      },
+      {
+        "key": "dental",
+        "label": "Dental Clinic",
+        "itemTypes": [
+          "Dental Equipment",
+          "Dental Supply"
+        ],
+        "peopleTypes": [
+          "Dentist"
+        ],
+        "incomeCategories": [
+          "Dental Procedure Fee"
+        ],
+        "expenseCategories": [
+          "Dental Supplies"
+        ],
+        "documentTypes": [
+          "Patient Document"
+        ],
+        "calendarTypes": [
+          "Appointment"
+        ]
+      },
+      {
+        "key": "lab",
+        "label": "Diagnostic Laboratory",
+        "itemTypes": [
+          "Lab Equipment",
+          "Test Kit"
+        ],
+        "peopleTypes": [
+          "Lab Technician"
+        ],
+        "incomeCategories": [
+          "Lab Test Fee"
+        ],
+        "expenseCategories": [
+          "Lab Supplies",
+          "Reagents"
+        ],
+        "documentTypes": [
+          "Test Report"
+        ],
+        "calendarTypes": [
+          "Sample Collection"
+        ]
+      }
+    ]
   },
   {
     "key": "school",
@@ -1890,113 +2544,53 @@
     "calendarTitle": "Event Schedule",
     "previewTitle": "Events / Orders Preview",
     "availableText": "active",
-    "closedText": "completed"
-  },
-  {
-    "key": "repair",
-    "name": "Repair Shop",
-    "match": [
-      "repair",
-      "repairs",
-      "maintenance shop"
-    ],
-    "dashboardTitle": "Repair Shop Operations Dashboard",
-    "chartsTitle": "Repair Shop Analytics",
-    "itemsLabel": "Repair Jobs / Spare Parts",
-    "peopleLabel": "Staff / Customers",
-    "tasksLabel": "Repair Tasks",
-    "recordsLabel": "Repair Records",
-    "calendarLabel": "Repair Schedule",
-    "documentsLabel": "Repair Documents",
-    "incomeCategories": [
-      "Repair Service",
-      "Spare Part Sale",
-      "Customer Payment",
-      "Deposit",
-      "Other Repair Income"
-    ],
-    "expenseCategories": [
-      "Spare Parts",
-      "Tools",
-      "Staff Wages",
-      "Rent",
-      "Utilities",
-      "Transport",
-      "Other Repair Expense"
-    ],
-    "itemTypes": [
-      "Repair Job",
-      "Spare Part",
-      "Tool",
-      "Equipment",
-      "Customer Item"
-    ],
-    "peopleTypes": [
-      "Technician",
-      "Staff",
-      "Customer",
-      "Client",
-      "Supplier",
-      "Manager"
-    ],
-    "taskTypes": [
-      "Repair Follow-up",
-      "Customer Update",
-      "Spare Part Follow-up",
-      "Payment Reminder",
-      "Testing Task",
-      "Delivery Task"
-    ],
-    "recordTypes": [
-      "Repair Update",
-      "Customer Note",
-      "Spare Part Note",
-      "Payment Note",
-      "Issue Log",
-      "Daily Update"
-    ],
-    "documentTypes": [
-      "Receipt",
-      "Invoice",
-      "Job Card",
-      "Supplier Document",
-      "Customer Document"
-    ],
-    "calendarTypes": [
-      "Repair Deadline",
-      "Customer Pickup",
-      "Supplier Follow-up",
-      "Payment Reminder",
-      "Testing Date"
-    ],
-    "pageTitle": "Repair Shop Operations Dashboard",
-    "badge": "Repair Shop Workspace",
-    "hero": "Track repair jobs, customers, staff, spare parts, tasks, money records, and support in one place.",
-    "itemsTitle": "Repair Jobs / Spare Parts",
-    "itemSingular": "Repair Job / Part",
-    "itemPlural": "Repair Jobs / Parts",
-    "statusTitle": "Repair / Part Status",
-    "progressTitle": "Repair Progress",
-    "peopleTitle": "Staff / Customers",
-    "peoplePrimary": "staff",
-    "peopleSecondary": "customers",
-    "peoplePrimaryTypes": [
-      "staff",
-      "technician",
-      "manager"
-    ],
-    "peopleSecondaryTypes": [
-      "customer",
-      "client",
-      "supplier",
-      "lead"
-    ],
-    "pipelineTitle": "Repair / Customer Pipeline",
-    "topPerformerTitle": "Top Technician / Staff",
-    "calendarTitle": "Repair Schedule",
-    "previewTitle": "Repair Jobs / Parts Preview",
-    "availableText": "available",
-    "closedText": "completed"
+    "closedText": "completed",
+    "sections": [
+      {
+        "key": "events_sec",
+        "label": "Events / Functions",
+        "itemTypes": [
+          "Event"
+        ],
+        "peopleTypes": [
+          "Planner"
+        ],
+        "incomeCategories": [
+          "Event Payment"
+        ],
+        "expenseCategories": [
+          "Venue Cost"
+        ],
+        "documentTypes": [
+          "Event Document"
+        ],
+        "calendarTypes": [
+          "Event Date"
+        ]
+      },
+      {
+        "key": "catering_sec",
+        "label": "Catering",
+        "itemTypes": [
+          "Catering Order"
+        ],
+        "peopleTypes": [
+          "Chef"
+        ],
+        "incomeCategories": [
+          "Catering Payment"
+        ],
+        "expenseCategories": [
+          "Food Supplies"
+        ],
+        "documentTypes": [
+          "Catering Quotation"
+        ],
+        "calendarTypes": [
+          "Catering Event Date"
+        ]
+      }
+    ]
   },
   {
     "key": "photography",
@@ -2107,112 +2701,6 @@
     "closedText": "completed"
   },
   {
-    "key": "car_hire",
-    "name": "Car Hire / Car Rental",
-    "match": [
-      "car hire",
-      "car rental",
-      "rental car"
-    ],
-    "dashboardTitle": "Car Hire Operations Dashboard",
-    "chartsTitle": "Car Hire Analytics",
-    "itemsLabel": "Vehicles / Bookings",
-    "peopleLabel": "Drivers / Customers",
-    "tasksLabel": "Booking / Vehicle Tasks",
-    "recordsLabel": "Rental Records",
-    "calendarLabel": "Bookings / Vehicle Schedule",
-    "documentsLabel": "Vehicle / Rental Documents",
-    "incomeCategories": [
-      "Rental Payment",
-      "Booking Deposit",
-      "Driver Fee",
-      "Delivery Fee",
-      "Other Car Hire Income"
-    ],
-    "expenseCategories": [
-      "Fuel",
-      "Vehicle Maintenance",
-      "Insurance",
-      "Driver Payment",
-      "Cleaning",
-      "Licensing",
-      "Other Car Hire Expense"
-    ],
-    "itemTypes": [
-      "Vehicle",
-      "Booking",
-      "Asset",
-      "Service",
-      "Maintenance Record"
-    ],
-    "peopleTypes": [
-      "Driver",
-      "Staff",
-      "Customer",
-      "Client",
-      "Supplier",
-      "Mechanic"
-    ],
-    "taskTypes": [
-      "Booking Follow-up",
-      "Vehicle Service",
-      "Customer Follow-up",
-      "Payment Reminder",
-      "Document Collection",
-      "Vehicle Return"
-    ],
-    "recordTypes": [
-      "Booking Update",
-      "Vehicle Update",
-      "Customer Note",
-      "Maintenance Record",
-      "Payment Note",
-      "Incident Log"
-    ],
-    "documentTypes": [
-      "Rental Agreement",
-      "Vehicle Document",
-      "Insurance",
-      "Receipt",
-      "Invoice",
-      "Client ID"
-    ],
-    "calendarTypes": [
-      "Booking Date",
-      "Vehicle Return",
-      "Vehicle Service",
-      "Payment Reminder",
-      "Client Follow-up"
-    ],
-    "pageTitle": "Car Hire Operations Dashboard",
-    "badge": "Car Hire Workspace",
-    "hero": "Track vehicles, bookings, customers, drivers, tasks, money records, documents, and support in one place.",
-    "itemsTitle": "Vehicles / Bookings",
-    "itemSingular": "Vehicle / Booking",
-    "itemPlural": "Vehicles / Bookings",
-    "statusTitle": "Vehicle / Booking Status",
-    "progressTitle": "Booking Progress",
-    "peopleTitle": "Drivers / Customers",
-    "peoplePrimary": "drivers",
-    "peopleSecondary": "customers",
-    "peoplePrimaryTypes": [
-      "driver",
-      "staff",
-      "manager"
-    ],
-    "peopleSecondaryTypes": [
-      "customer",
-      "client",
-      "lead"
-    ],
-    "pipelineTitle": "Booking Pipeline",
-    "topPerformerTitle": "Top Driver / Staff",
-    "calendarTitle": "Bookings / Vehicle Schedule",
-    "previewTitle": "Vehicles / Bookings Preview",
-    "availableText": "available",
-    "closedText": "completed"
-  },
-  {
     "key": "furniture",
     "name": "Furniture / Carpentry",
     "match": [
@@ -2320,114 +2808,6 @@
     "previewTitle": "Orders / Materials Preview",
     "availableText": "available",
     "closedText": "completed"
-  },
-  {
-    "key": "agrovet",
-    "name": "Agrovet / Farm Supplies",
-    "match": [
-      "agrovet",
-      "farm",
-      "farming",
-      "agriculture"
-    ],
-    "dashboardTitle": "Agrovet Operations Dashboard",
-    "chartsTitle": "Agrovet Analytics",
-    "itemsLabel": "Farm Supplies / Stock",
-    "peopleLabel": "Staff / Suppliers",
-    "tasksLabel": "Stock / Supplier Tasks",
-    "recordsLabel": "Stock / Sales Records",
-    "calendarLabel": "Restock / Follow-ups",
-    "documentsLabel": "Agrovet Documents",
-    "incomeCategories": [
-      "Product Sale",
-      "Customer Payment",
-      "Bulk Sale",
-      "Other Agrovet Income"
-    ],
-    "expenseCategories": [
-      "Stock Purchase",
-      "Supplier Payment",
-      "Transport",
-      "Staff Wages",
-      "Rent",
-      "Utilities",
-      "Other Agrovet Expense"
-    ],
-    "itemTypes": [
-      "Farm Supply",
-      "Stock Item",
-      "Medicine",
-      "Feed",
-      "Equipment",
-      "Supplier Item"
-    ],
-    "peopleTypes": [
-      "Staff",
-      "Customer",
-      "Supplier",
-      "Farmer",
-      "Manager",
-      "Sales Person"
-    ],
-    "taskTypes": [
-      "Restock Reminder",
-      "Supplier Follow-up",
-      "Customer Follow-up",
-      "Payment Reminder",
-      "Stock Count",
-      "Delivery Follow-up"
-    ],
-    "recordTypes": [
-      "Sales Note",
-      "Stock Update",
-      "Supplier Update",
-      "Customer Request",
-      "Daily Update",
-      "Expired / Damaged Stock"
-    ],
-    "documentTypes": [
-      "Receipt",
-      "Invoice",
-      "Supplier Invoice",
-      "Stock List",
-      "Delivery Note",
-      "Business Document"
-    ],
-    "calendarTypes": [
-      "Restock Date",
-      "Supplier Follow-up",
-      "Delivery Date",
-      "Payment Reminder",
-      "Stock Count"
-    ],
-    "pageTitle": "Agrovet Operations Dashboard",
-    "badge": "Agrovet Workspace",
-    "hero": "Track stock, farm supplies, customers, suppliers, staff, money records, tasks, and support in one place.",
-    "itemsTitle": "Farm Supplies / Stock",
-    "itemSingular": "Supply / Stock",
-    "itemPlural": "Supplies / Stock",
-    "statusTitle": "Supply / Stock Status",
-    "progressTitle": "Stock / Restock Progress",
-    "peopleTitle": "Staff / Suppliers",
-    "peoplePrimary": "staff",
-    "peopleSecondary": "suppliers",
-    "peoplePrimaryTypes": [
-      "staff",
-      "manager",
-      "sales"
-    ],
-    "peopleSecondaryTypes": [
-      "supplier",
-      "customer",
-      "client",
-      "lead"
-    ],
-    "pipelineTitle": "Supplier / Customer Pipeline",
-    "topPerformerTitle": "Top Staff Member",
-    "calendarTitle": "Restock / Follow-ups",
-    "previewTitle": "Supplies / Stock Preview",
-    "availableText": "in stock",
-    "closedText": "sold"
   },
   {
     "key": "tourism",
@@ -2767,6 +3147,11 @@
   "closedText": "completed"
 };
 
+  const MERGEABLE_FIELDS = [
+    "itemTypes", "peopleTypes", "incomeCategories", "expenseCategories",
+    "taskTypes", "recordTypes", "documentTypes", "calendarTypes"
+  ];
+
   function getRawBusinessText(tenant) {
     return [
       getValue(tenant, ["business_type_key"], ""),
@@ -2793,6 +3178,92 @@
     return null;
   }
 
+  // Merges a resolved type (or null, for the no-match case) with GENERAL.
+  // List fields (categories/types) are unioned rather than overwritten, so
+  // every business type always has at least the universal General options
+  // available alongside its own specific ones. Both ungani-presets.js and
+  // ungani-analytics.js call this so their output can never drift apart
+  // on this again.
+  function mergeWithGeneral(type) {
+    const source = type || {};
+    const merged = Object.assign({}, GENERAL, source);
+
+    MERGEABLE_FIELDS.forEach(function (field) {
+      merged[field] = unique([].concat(source[field] || [], GENERAL[field] || []));
+    });
+
+    if (GENERAL.reportSections) {
+      merged.reportSections = unique([].concat(source.reportSections || [], GENERAL.reportSections || []));
+    }
+
+    return merged;
+  }
+
+  function resolveWithSections(tenant) {
+    const type = resolve(tenant);
+
+    if (!type) return null;
+    if (!type.sections || !type.sections.length) return type;
+
+    const selected = getSelectedSections(tenant);
+
+    if (!selected.length) return type;
+
+    const matchedSections = type.sections.filter(function (section) {
+      return selected.indexOf(section.label.toLowerCase()) !== -1;
+    });
+
+    if (!matchedSections.length) return type;
+
+    const merged = Object.assign({}, type);
+
+    MERGEABLE_FIELDS.forEach(function (field) {
+      const combined = (type[field] || []).slice();
+
+      matchedSections.forEach(function (section) {
+        combined.push.apply(combined, section[field] || []);
+      });
+
+      merged[field] = unique(combined);
+    });
+
+    merged.selectedSectionLabels = matchedSections.map(function (section) {
+      return section.label;
+    });
+
+    return merged;
+  }
+
+  function getSelectedSections(tenant) {
+    const raw = getValue(tenant, ["selected_sections"], null);
+
+    if (!raw || !raw.length) return [];
+
+    return raw
+      .map(function (value) { return String(value || "").trim().toLowerCase(); })
+      .filter(Boolean);
+  }
+
+  function unique(values) {
+    const seen = {};
+    const output = [];
+
+    (values || []).forEach(function (value) {
+      const clean = String(value || "").trim();
+
+      if (!clean) return;
+
+      const key = clean.toLowerCase();
+
+      if (!seen[key]) {
+        seen[key] = true;
+        output.push(clean);
+      }
+    });
+
+    return output;
+  }
+
   function getValue(obj, fields, fallback) {
     if (!obj) return fallback === undefined ? "" : fallback;
 
@@ -2816,7 +3287,10 @@
     TYPES,
     GENERAL,
     resolve,
+    resolveWithSections,
+    mergeWithGeneral,
     getRawBusinessText,
-    getValue
+    getValue,
+    unique
   };
 })();

@@ -19,6 +19,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="ungani-business-config.js"></script>
   <script src="pwa-register.js"></script>
 
   <style>
@@ -604,70 +605,15 @@
             <label for="businessType">Business Type</label>
             <select id="businessType" required onchange="updateSubSections()">
               <option value="">Select business type</option>
-              <option value="Logistics & Transport">Logistics & Transport</option>
-              <option value="Real Estate / Property Management">Real Estate / Property Management</option>
-              <option value="Hospitality / Restaurant / Venue">Hospitality / Restaurant / Venue</option>
-              <option value="Warehouse & Storage">Warehouse & Storage</option>
-              <option value="Wholesale & Distribution">Wholesale & Distribution</option>
-              <option value="Salon / Barber / Spa / Beauty">Salon / Barber / Spa / Beauty</option>
-              <option value="Car Wash / Auto Detailing">Car Wash / Auto Detailing</option>
-              <option value="Retail Shop / Mini Market">Retail Shop / Mini Market</option>
-              <option value="Boutique / Fashion Retail">Boutique / Fashion Retail</option>
-              <option value="Pharmacy">Pharmacy</option>
-              <option value="Agrovet / Farm Supplies">Agrovet / Farm Supplies</option>
-              <option value="Gym / Fitness Center">Gym / Fitness Center</option>
-              <option value="Printing / Branding">Printing / Branding</option>
-              <option value="Photography / Videography">Photography / Videography</option>
-              <option value="Car Hire / Car Rental">Car Hire / Car Rental</option>
-              <option value="Tour Company">Tour Company</option>
-              <option value="Tourism & Travel">Tourism & Travel</option>
-              <option value="Security / Guarding">Security / Guarding</option>
-              <option value="Cleaning / Facility Services">Cleaning / Facility Services</option>
-              <option value="Construction / Contractors">Construction / Contractors</option>
-              <option value="Clinic / Health Services">Clinic / Health Services</option>
-              <option value="School / Training Center">School / Training Center</option>
-              <option value="Events / Catering">Events / Catering</option>
-              <option value="Repair Shop">Repair Shop</option>
-              <option value="General Business Operations">General Business Operations</option>
-              <option value="Other">Other</option>
+              <!-- Populated dynamically from ungani-business-config.js on load,
+                   plus General Business Operations / Other appended below. -->
             </select>
           </div>
 
           <div class="field full">
-            <div id="logisticsSubSections" class="sub-section-box">
+            <div id="subSectionsContainer" class="sub-section-box">
               <p>Select what your business handles:</p>
-              <div class="sub-section-option">
-                <input type="checkbox" id="subTransport" value="Transport / Trips" />
-                <label for="subTransport">Transport / Trips</label>
-              </div>
-              <div class="sub-section-option">
-                <input type="checkbox" id="subColdChain" value="Cold Chain / Reefer & Gensets" />
-                <label for="subColdChain">Cold Chain / Reefer & Gensets</label>
-              </div>
-              <div class="sub-section-option">
-                <input type="checkbox" id="subClearing" value="Clearing & Forwarding" />
-                <label for="subClearing">Clearing & Forwarding</label>
-              </div>
-            </div>
-
-            <div id="hospitalitySubSections" class="sub-section-box">
-              <p>Select what your business handles:</p>
-              <div class="sub-section-option">
-                <input type="checkbox" id="subHotel" value="Hotel / Rooms" />
-                <label for="subHotel">Hotel / Rooms</label>
-              </div>
-              <div class="sub-section-option">
-                <input type="checkbox" id="subBnb" value="BnB" />
-                <label for="subBnb">BnB</label>
-              </div>
-              <div class="sub-section-option">
-                <input type="checkbox" id="subRestaurant" value="Restaurant" />
-                <label for="subRestaurant">Restaurant</label>
-              </div>
-              <div class="sub-section-option">
-                <input type="checkbox" id="subBar" value="Bar / Club" />
-                <label for="subBar">Bar / Club</label>
-              </div>
+              <div id="subSectionsOptions"></div>
             </div>
           </div>
 
@@ -714,25 +660,76 @@
 
     function initPage() {
       setupInstallBox();
+      populateBusinessTypeOptions();
+    }
+
+    function populateBusinessTypeOptions() {
+      const select = document.getElementById("businessType");
+
+      if (!window.UnganiBusinessConfig) {
+        console.warn("UnganiBusinessConfig failed to load; business type list will only show General/Other.");
+      }
+
+      const types = (window.UnganiBusinessConfig && window.UnganiBusinessConfig.TYPES) || [];
+
+      types.forEach(function (type) {
+        const option = document.createElement("option");
+        option.value = type.name;
+        option.textContent = type.name;
+        option.dataset.key = type.key;
+        select.appendChild(option);
+      });
+
+      const general = document.createElement("option");
+      general.value = "General Business Operations";
+      general.textContent = "General Business Operations";
+      select.appendChild(general);
+
+      const other = document.createElement("option");
+      other.value = "Other";
+      other.textContent = "Other";
+      select.appendChild(other);
     }
 
     function updateSubSections() {
-      const type = value("businessType");
-      const logisticsBox = document.getElementById("logisticsSubSections");
-      const hospitalityBox = document.getElementById("hospitalitySubSections");
+      const select = document.getElementById("businessType");
+      const container = document.getElementById("subSectionsContainer");
+      const optionsBox = document.getElementById("subSectionsOptions");
+      const selectedOption = select.options[select.selectedIndex];
+      const key = selectedOption ? selectedOption.dataset.key : "";
 
-      logisticsBox.classList.remove("show");
-      hospitalityBox.classList.remove("show");
+      optionsBox.innerHTML = "";
+      container.classList.remove("show");
 
-      if (type === "Logistics & Transport") {
-        logisticsBox.classList.add("show");
-      } else if (type === "Hospitality / Restaurant / Venue") {
-        hospitalityBox.classList.add("show");
-      }
+      if (!key || !window.UnganiBusinessConfig) return;
+
+      const type = window.UnganiBusinessConfig.TYPES.find(function (t) { return t.key === key; });
+
+      if (!type || !type.sections || !type.sections.length) return;
+
+      type.sections.forEach(function (section, index) {
+        const wrap = document.createElement("div");
+        wrap.className = "sub-section-option";
+
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.id = "subSection_" + index;
+        input.value = section.label;
+
+        const label = document.createElement("label");
+        label.setAttribute("for", input.id);
+        label.textContent = section.label;
+
+        wrap.appendChild(input);
+        wrap.appendChild(label);
+        optionsBox.appendChild(wrap);
+      });
+
+      container.classList.add("show");
     }
 
     function getSelectedSubSections() {
-      const boxes = document.querySelectorAll(".sub-section-box.show input[type='checkbox']:checked");
+      const boxes = document.querySelectorAll("#subSectionsOptions input[type='checkbox']:checked");
       return Array.from(boxes).map(function (box) { return box.value; });
     }
 

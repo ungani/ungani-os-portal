@@ -5,45 +5,9 @@
   // that already calls UnganiPresets.getPreset(...) keeps working exactly
   // as before, with no changes needed on their side.
 
-  function mergePreset(type) {
-    const GENERAL = window.UnganiBusinessConfig.GENERAL;
-
-    return Object.assign({}, GENERAL, type, {
-      incomeCategories: unique([...(type.incomeCategories || []), ...GENERAL.incomeCategories]),
-      expenseCategories: unique([...(type.expenseCategories || []), ...GENERAL.expenseCategories]),
-      itemTypes: unique([...(type.itemTypes || []), ...GENERAL.itemTypes]),
-      peopleTypes: unique([...(type.peopleTypes || []), ...GENERAL.peopleTypes]),
-      taskTypes: unique([...(type.taskTypes || []), ...GENERAL.taskTypes]),
-      recordTypes: unique([...(type.recordTypes || []), ...GENERAL.recordTypes]),
-      documentTypes: unique([...(type.documentTypes || []), ...GENERAL.documentTypes]),
-      calendarTypes: unique([...(type.calendarTypes || []), ...GENERAL.calendarTypes]),
-      reportSections: unique([...(type.reportSections || []), ...GENERAL.reportSections])
-    });
-  }
-
   function getPreset(tenant) {
-    const matched = window.UnganiBusinessConfig.resolve(tenant);
-    return mergePreset(matched || {});
-  }
-
-  function unique(values) {
-    const seen = {};
-    const output = [];
-
-    values.forEach(function (value) {
-      const clean = String(value || "").trim();
-
-      if (!clean) return;
-
-      const key = clean.toLowerCase();
-
-      if (!seen[key]) {
-        seen[key] = true;
-        output.push(clean);
-      }
-    });
-
-    return output;
+    const matched = window.UnganiBusinessConfig.resolveWithSections(tenant);
+    return window.UnganiBusinessConfig.mergeWithGeneral(matched);
   }
 
   function escapeHtml(value) {
@@ -103,7 +67,7 @@
   }
 
   window.UnganiPresets = {
-    get GENERAL() { return mergePreset({}); },
+    get GENERAL() { return window.UnganiBusinessConfig.mergeWithGeneral(null); },
     get PRESETS() { return window.UnganiBusinessConfig.TYPES; },
     getPreset,
     optionList,
