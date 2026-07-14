@@ -10,6 +10,7 @@
   <meta name="theme-color" content="#061C3D" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="ungani-business-config.js"></script>
   <!-- Hooking into your existing language engine foundation -->
   <script src="js/language.js"></script>
 
@@ -690,6 +691,27 @@
         </div>
       </section>
 
+      <section class="panel full" id="sectionsPanel" style="display: none;">
+        <div class="panel-head">
+          <h2 data-i18n="biz_sections">Business Sections</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Your business type is <strong id="sectionsBusinessTypeName">—</strong>.
+            Choose the sections that apply to your business. This controls your dashboard
+            layout, task types, and money categories - you can change this any time.
+          </p>
+
+          <div id="sectionsCheckboxList" style="display: grid; gap: 10px; margin-bottom: 18px;"></div>
+
+          <div class="form-actions">
+            <span id="sectionsMessage" class="action-msg"></span>
+            <button type="button" id="btnSaveSections" class="ungani-btn gold" onclick="saveSections()" data-i18n="save_sections_btn">Save Sections</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full">
         <div class="panel-head">
           <h2 data-i18n="user_prefs">User Preferences</h2>
@@ -832,6 +854,7 @@
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     let currentUserId = null;
+    let currentTenantId = null;
 
     function withButtonLoading(button, asyncFn) {
       if (!button || button.disabled || button.classList.contains("is-loading")) {
@@ -920,6 +943,7 @@
         if (!data || data.ok !== true) throw new Error((data && data.message) || "Unable to load settings.");
 
         renderSettings(data);
+        await renderSectionsPanel(data);
 
         loadingBox.style.display = "none";
         summaryGrid.style.display = "grid";
@@ -1057,6 +1081,113 @@
       document.getElementById("openSupport").textContent = Number(counts.open_support_count || 0).toLocaleString("en-KE");
       document.getElementById("pendingTasks").textContent = Number(counts.pending_task_count || 0).toLocaleString("en-KE");
       document.getElementById("pendingUpgrades").textContent = Number(counts.pending_upgrade_count || 0).toLocaleString("en-KE");
+    }
+
+    async function renderSectionsPanel(data) {
+      currentTenantId = data.tenant_id;
+
+      const panel = document.getElementById("sectionsPanel");
+      const nameEl = document.getElementById("sectionsBusinessTypeName");
+      const listEl = document.getElementById("sectionsCheckboxList");
+      const saveBtn = document.getElementById("btnSaveSections");
+
+      if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") {
+        panel.style.display = "none";
+        return;
+      }
+
+      // get_my_ungani_settings_summary() returns a stale/empty selected_sections
+      // regardless of the real saved value - read the tenant row directly instead,
+      // which reflects the true current state.
+      let tenantRow = null;
+
+      try {
+        const { data: row, error } = await supabaseClient
+          .from("tenants")
+          .select("business_type, business_type_key, company_name, selected_sections")
+          .eq("id", currentTenantId)
+          .maybeSingle();
+
+        if (!error) tenantRow = row;
+      } catch (err) {
+        console.warn("Could not load tenant row directly:", err.message);
+      }
+
+      const business = data.business || {};
+      const pseudoTenant = {
+        business_type: (tenantRow && tenantRow.business_type) || business.business_type,
+        business_type_key: tenantRow && tenantRow.business_type_key,
+        business_name: (tenantRow && tenantRow.company_name) || business.business_name
+      };
+
+      const resolvedType = UnganiBusinessConfig.resolve(pseudoTenant);
+
+      if (!resolvedType) {
+        panel.style.display = "none";
+        return;
+      }
+
+      nameEl.textContent = resolvedType.name;
+
+      const sections = resolvedType.sections || [];
+      const rawSelected = (tenantRow && tenantRow.selected_sections) || business.selected_sections || [];
+      const currentSelected = rawSelected.map(function (value) {
+        return String(value || "").trim().toLowerCase();
+      });
+
+      if (sections.length === 0) {
+        listEl.innerHTML = `<p style="margin: 0; color: var(--muted); font-size: 14px;">This business type does not have optional sections yet.</p>`;
+        saveBtn.style.display = "none";
+      } else {
+        listEl.innerHTML = sections.map(function (section) {
+          const checked = currentSelected.indexOf(section.label.toLowerCase()) !== -1 ? "checked" : "";
+
+          return `
+            <label style="display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--border); border-radius: 14px; cursor: pointer;">
+              <input type="checkbox" class="section-checkbox" value="${escapeHtml(section.label)}" ${checked} style="width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer;" />
+              <span style="color: var(--text);">${escapeHtml(section.label)}</span>
+            </label>
+          `;
+        }).join("");
+        saveBtn.style.display = "";
+      }
+
+      panel.style.display = "block";
+    }
+
+    async function saveSections() {
+      const msgSpan = document.getElementById("sectionsMessage");
+      const btn = document.getElementById("btnSaveSections");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const selected = Array.from(document.querySelectorAll(".section-checkbox:checked")).map(function (el) {
+        return el.value;
+      });
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { error } = await supabaseClient
+            .from("tenants")
+            .update({ selected_sections: selected })
+            .eq("id", currentTenantId);
+
+          if (error) throw error;
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = "Sections saved. Your dashboard will reflect this the next time you open it.";
+        } catch (err) {
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
     }
 
     function getStatusClass(status) {
