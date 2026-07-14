@@ -1605,8 +1605,8 @@
     const possible = [
       getValue(profile, ["tenant_id"], null),
       getValue(profile, ["client_id"], null),
-      getValue(authUser, ["user_metadata", "tenant_id"], null),
-      getValue(authUser, ["app_metadata", "tenant_id"], null)
+      authUser && authUser.user_metadata ? authUser.user_metadata.tenant_id : null,
+      authUser && authUser.app_metadata ? authUser.app_metadata.tenant_id : null
     ].filter(Boolean);
 
     if (possible.length > 0) {
