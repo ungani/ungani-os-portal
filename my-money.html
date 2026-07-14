@@ -51,6 +51,7 @@
     let editingMoneyId = null;
     let isRealEstate = false;
     let personOptions = [];
+    let sectionOptions = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -69,6 +70,7 @@
       }
 
       businessPreset = UnganiPresets.getPreset(context.tenant);
+      sectionOptions = businessPreset.selectedSectionLabels || [];
 
       isRealEstate = detectRealEstate(context.tenant);
 
@@ -646,6 +648,17 @@
                   </div>
                 ` : ""}
 
+                ${sectionOptions.length > 1 ? `
+                  <div>
+                    <label for="moneySection">Section</label>
+                    <select id="moneySection">
+                      ${sectionOptions.map(function (label) {
+                        return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+                ` : ""}
+
                 <div class="wide">
                   <label for="moneyNotes">Notes</label>
                   <textarea id="moneyNotes" rows="4" placeholder="Example: Client payment, supplier invoice, fuel expense, service income..."></textarea>
@@ -1194,12 +1207,16 @@
                 const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
                 const relatedPersonId = UnganiClientShared.getValue(row, ["related_person_id"], "");
                 const relatedPersonLabel = relatedPersonId ? getPersonLabel(relatedPersonId) : "";
+                const sectionLabel = UnganiClientShared.getValue(row, ["section_label"], "");
 
                 return `
                   <tr>
                     <td>${UnganiClientShared.safe(UnganiClientShared.formatDate(date))}</td>
                     <td>${typeBadge(type)}</td>
-                    <td><strong>${UnganiClientShared.safe(category)}</strong></td>
+                    <td>
+                      <strong>${UnganiClientShared.safe(category)}</strong>
+                      ${sectionLabel ? `<div><span class="ungani-badge blue" style="margin-top:4px;">${UnganiClientShared.safe(sectionLabel)}</span></div>` : ""}
+                    </td>
                     <td class="money-amount">${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(amount))}</td>
                     <td>${UnganiClientShared.safe(method || "—")}</td>
                     <td>${statusBadge(status)}</td>
@@ -1439,6 +1456,10 @@ const payload = {
         payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
       }
 
+      if (sectionOptions.length > 1) {
+        payload.section_label = UnganiClientShared.value("moneySection") || null;
+      }
+
       let response;
 
       try {
@@ -1585,6 +1606,10 @@ const payload = {
           document.getElementById("moneyRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person_id"], "");
         }
 
+        if (sectionOptions.length > 1 && document.getElementById("moneySection")) {
+          document.getElementById("moneySection").value = UnganiClientShared.getValue(row, ["section_label"], "");
+        }
+
         hideMoneyWarning();
       }, 150);
     }
@@ -1644,6 +1669,7 @@ const payload = {
 
       if (document.getElementById("moneyStatus")) document.getElementById("moneyStatus").value = "completed";
       if (document.getElementById("moneyRelatedPerson")) document.getElementById("moneyRelatedPerson").value = "";
+      if (document.getElementById("moneySection")) document.getElementById("moneySection").value = sectionOptions[0] || "";
 
       hideMoneyWarning();
     }

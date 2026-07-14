@@ -48,6 +48,7 @@
     let taskRows = [];
     let editingTaskId = null;
     let highlightApplied = false;
+    let sectionOptions = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -66,6 +67,7 @@
       }
 
       businessPreset = UnganiPresets.getPreset(context.tenant);
+      sectionOptions = businessPreset.selectedSectionLabels || [];
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -521,6 +523,17 @@
                   <input id="taskDueDate" type="date" />
                 </div>
 
+                ${sectionOptions.length > 1 ? `
+                  <div>
+                    <label for="taskSection">Section</label>
+                    <select id="taskSection">
+                      ${sectionOptions.map(function (label) {
+                        return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+                ` : ""}
+
                 <div>
                   <label for="taskAssignedTo">Assigned To</label>
                   <input id="taskAssignedTo" placeholder="Staff, driver, agent, stylist, manager..." />
@@ -665,6 +678,7 @@
             const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
             const relatedItem = UnganiClientShared.getValue(row, ["related_item"], "");
             const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
+            const sectionLabel = UnganiClientShared.getValue(row, ["section_label"], "");
 
             return `
               <div class="task-card" id="task-${UnganiClientShared.attr(row.id)}">
@@ -672,6 +686,7 @@
                   <div class="task-title-row">
                     ${statusBadge(status, due)}
                     ${priorityBadge(priority)}
+                    ${sectionLabel ? `<span class="ungani-badge blue">${UnganiClientShared.safe(sectionLabel)}</span>` : ""}
                     <h3>${UnganiClientShared.safe(title)}</h3>
                   </div>
 
@@ -870,6 +885,10 @@
           notes: UnganiClientShared.value("taskNotes") || null
         };
 
+        if (sectionOptions.length > 1) {
+          payload.section_label = UnganiClientShared.value("taskSection") || null;
+        }
+
         let response;
 
         try {
@@ -921,6 +940,11 @@
         document.getElementById("taskPriority").value = UnganiClientShared.getValue(row, ["priority"], "normal");
         document.getElementById("taskStatus").value = UnganiClientShared.getValue(row, ["status"], "pending");
         document.getElementById("taskDueDate").value = String(UnganiClientShared.getValue(row, ["due_date"], "")).slice(0, 10);
+
+        if (sectionOptions.length > 1 && document.getElementById("taskSection")) {
+          document.getElementById("taskSection").value = UnganiClientShared.getValue(row, ["section_label"], "");
+        }
+
         document.getElementById("taskAssignedTo").value = UnganiClientShared.getValue(row, ["assigned_to"], "");
         document.getElementById("taskRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person"], "");
         document.getElementById("taskRelatedItem").value = UnganiClientShared.getValue(row, ["related_item"], "");
@@ -1006,6 +1030,7 @@
       if (document.getElementById("taskPriority")) document.getElementById("taskPriority").value = "normal";
       if (document.getElementById("taskStatus")) document.getElementById("taskStatus").value = "pending";
       if (document.getElementById("taskDueDate")) document.getElementById("taskDueDate").value = "";
+      if (document.getElementById("taskSection")) document.getElementById("taskSection").value = sectionOptions[0] || "";
       if (document.getElementById("taskAssignedTo")) document.getElementById("taskAssignedTo").value = "";
       if (document.getElementById("taskRelatedPerson")) document.getElementById("taskRelatedPerson").value = "";
       if (document.getElementById("taskRelatedItem")) document.getElementById("taskRelatedItem").value = "";

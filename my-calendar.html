@@ -48,6 +48,7 @@
     let eventRows = [];
     let editingEventId = null;
     let highlightApplied = false;
+    let sectionOptions = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -66,6 +67,7 @@
       }
 
       businessPreset = UnganiPresets.getPreset(context.tenant);
+      sectionOptions = businessPreset.selectedSectionLabels || [];
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -566,6 +568,17 @@
                   </select>
                 </div>
 
+                ${sectionOptions.length > 1 ? `
+                  <div>
+                    <label for="eventSection">Section</label>
+                    <select id="eventSection">
+                      ${sectionOptions.map(function (label) {
+                        return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+                ` : ""}
+
                 <div>
                   <label for="eventLocation">Location</label>
                   <input id="eventLocation" placeholder="Office, client site, yard, shop, salon, project site..." />
@@ -712,6 +725,7 @@
             const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
             const relatedItem = UnganiClientShared.getValue(row, ["related_item"], "");
             const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
+            const sectionLabel = UnganiClientShared.getValue(row, ["section_label"], "");
 
             return `
               <div class="event-card" id="event-${UnganiClientShared.attr(row.id)}">
@@ -721,6 +735,7 @@
                   <div class="event-title-row">
                     ${statusBadge(status, date)}
                     ${priorityBadge(priority)}
+                    ${sectionLabel ? `<span class="ungani-badge blue">${UnganiClientShared.safe(sectionLabel)}</span>` : ""}
                     <h3>${UnganiClientShared.safe(title)}</h3>
                   </div>
 
@@ -959,6 +974,10 @@
         notes: UnganiClientShared.value("eventNotes") || null
       };
 
+      if (sectionOptions.length > 1) {
+        payload.section_label = UnganiClientShared.value("eventSection") || null;
+      }
+
       let response;
 
       try {
@@ -1011,6 +1030,11 @@
         document.getElementById("eventEndTime").value = String(UnganiClientShared.getValue(row, ["end_time"], "")).slice(0, 5);
         document.getElementById("eventStatus").value = UnganiClientShared.getValue(row, ["status"], "scheduled");
         document.getElementById("eventPriority").value = UnganiClientShared.getValue(row, ["priority"], "normal");
+
+        if (sectionOptions.length > 1 && document.getElementById("eventSection")) {
+          document.getElementById("eventSection").value = UnganiClientShared.getValue(row, ["section_label"], "");
+        }
+
         document.getElementById("eventLocation").value = UnganiClientShared.getValue(row, ["location"], "");
         document.getElementById("eventRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person"], "");
         document.getElementById("eventRelatedItem").value = UnganiClientShared.getValue(row, ["related_item"], "");
@@ -1094,6 +1118,7 @@
       if (document.getElementById("eventEndTime")) document.getElementById("eventEndTime").value = "";
       if (document.getElementById("eventStatus")) document.getElementById("eventStatus").value = "scheduled";
       if (document.getElementById("eventPriority")) document.getElementById("eventPriority").value = "normal";
+      if (document.getElementById("eventSection")) document.getElementById("eventSection").value = sectionOptions[0] || "";
       if (document.getElementById("eventLocation")) document.getElementById("eventLocation").value = "";
       if (document.getElementById("eventRelatedPerson")) document.getElementById("eventRelatedPerson").value = "";
       if (document.getElementById("eventRelatedItem")) document.getElementById("eventRelatedItem").value = "";

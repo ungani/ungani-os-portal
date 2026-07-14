@@ -350,7 +350,68 @@
     "calendarTitle": "Viewings / Site Visits",
     "previewTitle": "Property Grid Preview",
     "availableText": "available",
-    "closedText": "sold/rented"
+    "closedText": "sold/rented",
+    "sections": [
+      {
+        "key": "rentals",
+        "label": "Rentals",
+        "itemTypes": [
+          "Rental Unit",
+          "Apartment",
+          "House"
+        ],
+        "incomeCategories": [
+          "Rental Income",
+          "Booking Deposit"
+        ],
+        "expenseCategories": [
+          "Property Maintenance"
+        ],
+        "taskTypes": [
+          "Payment Reminder",
+          "Maintenance Follow-up"
+        ],
+        "documentTypes": [
+          "Lease Agreement"
+        ],
+        "calendarTypes": [
+          "Payment Reminder"
+        ]
+      },
+      {
+        "key": "sales",
+        "label": "Sales",
+        "itemTypes": [
+          "Apartment",
+          "House",
+          "Villa",
+          "Land",
+          "Commercial Unit"
+        ],
+        "incomeCategories": [
+          "Property Sale",
+          "Agency / Service Fee"
+        ],
+        "expenseCategories": [
+          "Agent Commission",
+          "Marketing / Advertising",
+          "Legal / Documentation Fees"
+        ],
+        "taskTypes": [
+          "Lead Follow-up",
+          "Viewing Schedule",
+          "Document Collection"
+        ],
+        "documentTypes": [
+          "Sale Agreement",
+          "Title Document"
+        ],
+        "calendarTypes": [
+          "Viewing",
+          "Client Meeting"
+        ]
+      }
+    ]
   },
   {
     "key": "hospitality",
