@@ -1497,6 +1497,35 @@
     state.contentEl = document.getElementById("unganiContent");
   }
 
+  function buildSectionNavGroup() {
+    if (
+      !window.UnganiBusinessConfig ||
+      typeof UnganiBusinessConfig.resolveWithSections !== "function" ||
+      typeof UnganiBusinessConfig.mergeWithGeneral !== "function"
+    ) {
+      return null;
+    }
+
+    const resolved = UnganiBusinessConfig.resolveWithSections(state.tenant);
+    const merged = UnganiBusinessConfig.mergeWithGeneral(resolved);
+    const labels = (merged && merged.selectedSectionLabels) || [];
+
+    if (labels.length <= 1) return null;
+
+    const items = [["dashboard", "client.html", "📊", "Overview"]];
+
+    labels.forEach(function (label) {
+      items.push([
+        "section-" + label.toLowerCase(),
+        "client.html?section=" + encodeURIComponent(label),
+        "🏷️",
+        label
+      ]);
+    });
+
+    return { title: "Sections", items: items };
+  }
+
   function renderSidebarNav() {
     const groups = [
       {
@@ -1507,7 +1536,13 @@
           ["activity", "my-activity.html", "🕒", "Activity Feed"],
           ["charts", "my-charts.html", "📊", "Charts"]
         ]
-      },
+      }
+    ];
+
+    const sectionGroup = buildSectionNavGroup();
+    if (sectionGroup) groups.push(sectionGroup);
+
+    groups.push(
       {
         title: "Operations",
         items: [
@@ -1538,7 +1573,7 @@
           ["account", "account.html", "⚙️", "Account Settings"]
         ]
       }
-    ];
+    );
 
     return groups.map(function (group) {
       return `

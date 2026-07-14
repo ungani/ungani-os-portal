@@ -1341,6 +1341,8 @@
         <span class="nav-main"><span class="nav-icon">📅</span><span class="nav-text">Calendar</span></span>
       </a>
 
+      <div id="sectionNavPlaceholder"></div>
+
       <div class="nav-section-title">Business</div>
 
       <a class="nav-link" href="my-items.html">
@@ -1444,6 +1446,7 @@
     let currentTenant = null;
     let businessPreset = null;
     let isRealEstate = false;
+    let currentSection = "";
 
     let dashboardData = {
       transactions: [],
@@ -1588,6 +1591,9 @@
           calendarLabel: "Calendar"
         };
       }
+
+      currentSection = new URLSearchParams(window.location.search).get("section") || "";
+      renderSectionSidebarNav();
 
       const tenantName = getTenantName();
 
@@ -1803,6 +1809,17 @@
 
     function renderDashboard() {
       if (isRealEstate) {
+        const sections = (businessPreset.selectedSectionLabels || []);
+
+        if (sections.length > 1) {
+          if (currentSection && sections.indexOf(currentSection) !== -1) {
+            renderPropertyDashboard(buildSectionScopedData(currentSection), currentSection);
+          } else {
+            renderPropertyOverview(sections);
+          }
+          return;
+        }
+
         renderPropertyDashboard();
         return;
       }
@@ -1972,7 +1989,217 @@
       updateNotificationCounts();
     }
 
-    function renderPropertyDashboard() {
+    function buildSectionScopedData(sectionLabel) {
+      function bySection(rows) {
+        return (rows || []).filter(function (row) {
+          return getValue(row, ["section_label"], "") === sectionLabel;
+        });
+      }
+
+      return {
+        transactions: bySection(dashboardData.transactions),
+        items: dashboardData.items,
+        people: dashboardData.people,
+        records: dashboardData.records,
+        tasks: bySection(dashboardData.tasks),
+        documents: dashboardData.documents,
+        events: bySection(dashboardData.events),
+        support: dashboardData.support
+      };
+    }
+
+    function renderPropertyDashboard(scopedData, scopeLabel) {
+      const data = scopedData || dashboardData;
+      const isScoped = !!scopeLabel;
+      const rentalConceptsApply = !isScoped || scopeLabel === "Rentals";
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const rentThisMonth = sumRentalIncome(data.transactions, monthKey);
+      const rentLastMonth = sumRentalIncome(data.transactions, lastMonthKey);
+      const rentDelta = rentThisMonth - rentLastMonth;
+
+      const linkedTenants = rentalConceptsApply ? (data.people || []).filter(function (person) {
+        return !!getValue(person, ["linked_item_id"], "");
+      }) : [];
+
+      const overdueRent = [];
+      let outstandingRentTotal = 0;
+
+      linkedTenants.forEach(function (person) {
+        const unit = (data.items || []).find(function (item) {
+          return String(item.id) === String(getValue(person, ["linked_item_id"], ""));
+        });
+
+        if (!unit) return;
+
+        const paidThisMonth = (data.transactions || []).some(function (t) {
+          const relatedId = getValue(t, ["related_person_id"], "");
+          const date = String(getValue(t, ["transaction_date", "created_at"], "")).slice(0, 7);
+          return String(relatedId) === String(person.id) && date === monthKey && isRentalIncome(t);
+        });
+
+        if (paidThisMonth) return;
+
+        const rentAmount = Number(getValue(unit, ["property_price"], 0) || 0);
+        outstandingRentTotal += rentAmount;
+
+        overdueRent.push({ person, unit, amount: rentAmount });
+      });
+
+      const totalUnits = (data.items || []).length;
+      const occupiedUnits = (data.items || []).filter(function (item) {
+        const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
+        return status.includes("rented") || status.includes("sold");
+      }).length;
+
+      const maintenanceOpen = (data.tasks || []).filter(function (task) {
+        const type = String(getValue(task, ["task_type", "type"], "")).toLowerCase();
+        const status = statusText(task);
+        return type.includes("maintenance") && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const todaysViewings = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], "")).toLowerCase();
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return (type.includes("viewing") || type.includes("site visit")) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+
+      const leasesExpiring = rentalConceptsApply ? (data.people || []).filter(function (person) {
+        const leaseEnd = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
+        return leaseEnd && leaseEnd >= todayStr && leaseEnd <= sevenDaysStr;
+      }).sort(function (a, b) {
+        return String(getValue(a, ["lease_end_date"], "")).localeCompare(String(getValue(b, ["lease_end_date"], "")));
+      }) : [];
+
+      const trendMonths = calculatePropertyRentTrend(data.transactions);
+      const calendarPreview = buildPropertyCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const sectionParam = isScoped ? "?section=" + encodeURIComponent(scopeLabel) : "";
+      const moneyHref = "my-money.html" + sectionParam;
+      const calendarHref = "my-calendar.html" + sectionParam;
+      const tasksHref = "my-tasks.html" + sectionParam;
+
+      document.getElementById("content").innerHTML = `
+        ${isScoped ? `
+          <section class="card" style="margin-bottom:14px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+            <a class="btn small light" href="client.html">← Back to Overview</a>
+          </section>
+        ` : ""}
+
+        <section class="hero">
+          <div class="hero-grid">
+            <div>
+              <span class="badge gold">${safe(isScoped ? scopeLabel : businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              <p class="desktop-only">
+                ${isScoped
+                  ? `Showing data tagged to the ${safe(scopeLabel)} section only. Switch sections from the sidebar or return to the combined Overview.`
+                  : `Here's what needs attention today across your properties. Use it to see overdue rent, today's viewings, open maintenance, and leases expiring soon, then click any card or row to open the right record.`
+                }
+              </p>
+              <p class="mobile-only">
+                Your property summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="${attr(moneyHref)}">Log Payment</a>
+                <a class="btn green" href="${attr(calendarHref)}">Schedule Viewing</a>
+                <a class="btn light" href="my-items.html">Properties</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("💰", "Overdue Rent", overdueRent.length, "tenant(s) unpaid", "my-people.html")}
+                ${todayItem("📅", "Today's Viewings", todaysViewings.length, "scheduled today", calendarHref)}
+                ${todayItem("🛠️", "Maintenance", maintenanceOpen.length, "open request(s)", tasksHref)}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("Rent Collected", compactMoney(rentThisMonth), rentTrendSubtitle(rentDelta, rentLastMonth), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626", moneyHref)}
+          ${kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " tenant(s) unpaid this month", overdueRent.length > 0 ? "#DC2626" : "#16A34A", "my-people.html")}
+          ${kpiCard("Occupied / Total Units", occupiedUnits + " / " + totalUnits, "Units currently occupied or sold", "#2563EB", "my-items.html")}
+          ${kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", tasksHref)}
+        </section>
+
+        <section class="grid-2">
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Needs Attention Today</h3>
+                <p>Overdue rent, today's viewings, open maintenance, and leases expiring soon — in priority order.</p>
+              </div>
+            </div>
+
+            ${renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring)}
+          </div>
+
+          <div class="card">
+            <div class="section-title">
+              <div>
+                <h3>Rent Collected — Last 6 Months</h3>
+                <p>Monthly rental income trend from your money records.</p>
+              </div>
+              <a class="btn small gold" href="${attr(moneyHref)}">Money</a>
+            </div>
+
+            <div style="position:relative;height:260px;">
+              <canvas id="propertyRentTrendChart"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("🏠", "Add Property", "List a new unit or property", "my-items.html")}
+          ${quickAction("💵", "Log Payment", "Record rent or other income", moneyHref)}
+          ${quickAction("📅", "Schedule Viewing", "Book a property viewing", calendarHref)}
+          ${quickAction("🧑", "Add Tenant", "Register a new tenant", "my-people.html")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Viewings, lease renewals, and maintenance coming up.</p>
+            </div>
+            <a class="btn small gold" href="${attr(calendarHref)}">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        <p class="footer">
+          Client Dashboard Version: Property Management Needs Attention Today · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderPropertyTrendChart(trendMonths);
+    }
+
+    function renderPropertyOverview(sections) {
       const today = new Date();
       const todayStr = today.toISOString().slice(0, 10);
       const monthKey = todayStr.slice(0, 7);
@@ -2044,6 +2271,10 @@
         return String(getValue(a, ["lease_end_date"], "")).localeCompare(String(getValue(b, ["lease_end_date"], "")));
       });
 
+      const sectionSummaries = sections.map(function (label) {
+        return calculateSectionSummary(label, monthKey, todayStr);
+      });
+
       const trendMonths = calculatePropertyRentTrend(dashboardData.transactions);
       const calendarPreview = buildPropertyCalendarPreview(today);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
@@ -2055,10 +2286,10 @@
               <span class="badge gold">${safe(businessPreset.name)}</span>
               <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
               <p class="desktop-only">
-                Here's what needs attention today across your properties. Use it to see overdue rent, today's viewings, open maintenance, and leases expiring soon, then click any card or row to open the right record.
+                Combined view across all your sections: ${safe(sections.join(", "))}. Compare performance below, or switch to a single section from the sidebar.
               </p>
               <p class="mobile-only">
-                Your property summary for today. Tap any card or use ☰ for full sections.
+                Your combined property summary for today. Tap any card or use ☰ for full sections.
               </p>
 
               <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
@@ -2088,29 +2319,41 @@
           ${kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html")}
         </section>
 
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Section Comparison</h3>
+              <p>Same metrics, side by side, so you can compare how each section is performing.</p>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-bottom:0;">
+            ${sectionSummaries.map(sectionComparisonCard).join("")}
+          </div>
+        </section>
+
         <section class="grid-2">
           <div class="card">
             <div class="section-title">
               <div>
                 <h3>Needs Attention Today</h3>
-                <p>Overdue rent, today's viewings, open maintenance, and leases expiring soon — in priority order.</p>
+                <p>Overdue rent, today's viewings, open maintenance, and leases expiring soon — tagged by section.</p>
               </div>
             </div>
 
-            ${renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring)}
+            ${renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, true)}
           </div>
 
           <div class="card">
             <div class="section-title">
               <div>
-                <h3>Rent Collected — Last 6 Months</h3>
-                <p>Monthly rental income trend from your money records.</p>
+                <h3>Revenue by Section — This Month</h3>
+                <p>Relative performance across your sections.</p>
               </div>
-              <a class="btn small gold" href="my-money.html">Money</a>
             </div>
 
             <div style="position:relative;height:260px;">
-              <canvas id="propertyRentTrendChart"></canvas>
+              <canvas id="sectionComparisonChart"></canvas>
             </div>
           </div>
         </section>
@@ -2126,22 +2369,115 @@
           <div class="section-title">
             <div>
               <h3>Calendar — Next 5 Days</h3>
-              <p>Viewings, lease renewals, and maintenance coming up.</p>
+              <p>Viewings, lease renewals, and maintenance coming up, tagged by section.</p>
             </div>
             <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
           </div>
 
-          ${renderCalendarPreview(calendarPreview)}
+          ${renderCalendarPreview(calendarPreview, true)}
         </section>
 
         <p class="footer">
-          Client Dashboard Version: Property Management Needs Attention Today · ungani.com · info@ungani.com
+          Client Dashboard Version: Property Management Multi-Section Overview · ungani.com · info@ungani.com
         </p>
       `;
 
       updateThemeButton();
       updateNotificationCounts();
       renderPropertyTrendChart(trendMonths);
+      renderSectionComparisonChart(sectionSummaries);
+    }
+
+    function calculateSectionSummary(label, monthKey, todayStr) {
+      const sectionTransactions = (dashboardData.transactions || []).filter(function (row) {
+        return getValue(row, ["section_label"], "") === label;
+      });
+
+      const sectionTasks = (dashboardData.tasks || []).filter(function (row) {
+        return getValue(row, ["section_label"], "") === label;
+      });
+
+      const sectionEvents = (dashboardData.events || []).filter(function (row) {
+        return getValue(row, ["section_label"], "") === label;
+      });
+
+      let revenue = 0;
+
+      sectionTransactions.forEach(function (row) {
+        const date = String(getValue(row, ["transaction_date", "created_at"], "")).slice(0, 7);
+        if (date === monthKey && isIncome(row)) {
+          revenue += Number(getValue(row, ["amount"], 0) || 0);
+        }
+      });
+
+      const openTasks = sectionTasks.filter(function (row) {
+        const status = statusText(row);
+        return !status.includes("completed") && !status.includes("cancelled");
+      }).length;
+
+      const todayActivity = sectionEvents.filter(function (row) {
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(row);
+        return date === todayStr && !status.includes("cancelled");
+      }).length;
+
+      return { label: label, revenue: revenue, openTasks: openTasks, todayActivity: todayActivity };
+    }
+
+    function sectionComparisonCard(summary) {
+      const sectionParam = "?section=" + encodeURIComponent(summary.label);
+
+      return `
+        <div class="card" style="box-shadow:none;">
+          <div class="section-title">
+            <div>
+              <h3>${safe(summary.label)}</h3>
+              <p>Section performance summary.</p>
+            </div>
+            <a class="btn small gold" href="client.html${sectionParam}">Open</a>
+          </div>
+
+          <div class="summary-list">
+            ${summaryRow("Revenue (this month)", compactMoney(summary.revenue), "Income tagged to this section", "my-money.html" + sectionParam)}
+            ${summaryRow("Open Tasks", summary.openTasks, "Not yet completed", "my-tasks.html" + sectionParam)}
+            ${summaryRow("Today's Activity", summary.todayActivity, "Calendar activities today", "my-calendar.html" + sectionParam)}
+          </div>
+        </div>
+      `;
+    }
+
+    async function renderSectionComparisonChart(summaries) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      try {
+        await UnganiAnalytics.createChart("sectionComparisonChart", {
+          type: "bar",
+          data: {
+            labels: summaries.map(function (s) { return s.label; }),
+            datasets: [
+              {
+                label: "Revenue (this month)",
+                data: summaries.map(function (s) { return s.revenue; }),
+                backgroundColor: ["#D4A63A", "#2563EB", "#16A34A", "#DC2626"],
+                borderRadius: 10
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: function (v) { return compactMoney(v); } }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("Section comparison chart warning:", error.message);
+      }
     }
 
     function isRentalIncome(row) {
@@ -2249,7 +2585,7 @@
       }
     }
 
-    function renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring) {
+    function renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, taggedMode) {
       const groups = [];
 
       if (overdueRent.length > 0) {
@@ -2265,7 +2601,8 @@
               unitName + " · " + compactMoney(row.amount) + " due",
               "Overdue",
               "red",
-              "my-people.html?highlight=" + row.person.id
+              "my-people.html?highlight=" + row.person.id,
+              taggedMode ? "Rentals" : null
             );
           })
         });
@@ -2277,6 +2614,7 @@
           rows: todaysViewings.map(function (row) {
             const title = getValue(row, ["event_title", "title", "name"], "Viewing");
             const time = getValue(row, ["start_time"], "");
+            const rowSection = getValue(row, ["section_label"], "");
 
             return attentionRow(
               "📅",
@@ -2284,7 +2622,8 @@
               time ? "Today at " + String(time).slice(0, 5) : "Scheduled today",
               "Today",
               "gold",
-              "my-calendar.html?highlight=" + row.id
+              "my-calendar.html?highlight=" + row.id,
+              taggedMode ? (rowSection || "Untagged") : null
             );
           })
         });
@@ -2296,6 +2635,7 @@
           rows: maintenanceOpen.map(function (row) {
             const title = getValue(row, ["task_title", "title", "name"], "Maintenance request");
             const due = getValue(row, ["due_date"], "");
+            const rowSection = getValue(row, ["section_label"], "");
 
             return attentionRow(
               "🛠️",
@@ -2303,7 +2643,8 @@
               due ? "Due " + formatDate(due) : "No due date set",
               "Open",
               "blue",
-              "my-tasks.html?highlight=" + row.id
+              "my-tasks.html?highlight=" + row.id,
+              taggedMode ? (rowSection || "Untagged") : null
             );
           })
         });
@@ -2322,7 +2663,8 @@
               "Lease ends " + formatDate(leaseEnd),
               "Expiring",
               "gold",
-              "my-people.html?highlight=" + row.id
+              "my-people.html?highlight=" + row.id,
+              taggedMode ? "Rentals" : null
             );
           })
         });
@@ -2347,7 +2689,7 @@
       }).join("");
     }
 
-    function attentionRow(icon, title, subtitle, badgeText, badgeColor, href) {
+    function attentionRow(icon, title, subtitle, badgeText, badgeColor, href, sectionTag) {
       return `
         <a class="property-attention-row" href="${attr(href)}">
           <div class="property-attention-icon">${safe(icon)}</div>
@@ -2355,12 +2697,16 @@
             <strong>${safe(title)}</strong>
             <small>${safe(subtitle)}</small>
           </div>
-          <span class="status ${attr(badgeColor)}">${safe(badgeText)}</span>
+          <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+            ${sectionTag ? `<span class="status blue">${safe(sectionTag)}</span>` : ""}
+            <span class="status ${attr(badgeColor)}">${safe(badgeText)}</span>
+          </div>
         </a>
       `;
     }
 
-    function buildPropertyCalendarPreview(today) {
+    function buildPropertyCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
       const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const days = [];
 
@@ -2372,7 +2718,7 @@
 
       const items = [];
 
-      (dashboardData.events || []).forEach(function (row) {
+      (data.events || []).forEach(function (row) {
         const status = statusText(row);
         if (status.includes("cancelled") || status.includes("completed")) return;
 
@@ -2383,11 +2729,12 @@
           date,
           title: getValue(row, ["event_title", "title", "name"], "Calendar Activity"),
           type: getValue(row, ["event_type", "type"], "Activity"),
+          section: getValue(row, ["section_label"], ""),
           href: "my-calendar.html?highlight=" + row.id
         });
       });
 
-      (dashboardData.people || []).forEach(function (row) {
+      (data.people || []).forEach(function (row) {
         const leaseEnd = String(getValue(row, ["lease_end_date"], "")).slice(0, 10);
         if (!leaseEnd || !days.includes(leaseEnd)) return;
 
@@ -2395,6 +2742,7 @@
           date: leaseEnd,
           title: "Lease ends — " + getValue(row, ["full_name", "name"], "Tenant"),
           type: "Lease Renewal",
+          section: "Rentals",
           href: "my-people.html?highlight=" + row.id
         });
       });
@@ -2404,7 +2752,7 @@
       return items;
     }
 
-    function renderCalendarPreview(items) {
+    function renderCalendarPreview(items, taggedMode) {
       if (!items || items.length === 0) {
         return `
           <div class="empty">
@@ -2414,10 +2762,10 @@
         `;
       }
 
-      return `<div class="property-attention-list">${items.map(calendarPreviewRow).join("")}</div>`;
+      return `<div class="property-attention-list">${items.map(function (item) { return calendarPreviewRow(item, taggedMode); }).join("")}</div>`;
     }
 
-    function calendarPreviewRow(item) {
+    function calendarPreviewRow(item, taggedMode) {
       const d = new Date(item.date);
       const dayLabel = isNaN(d.getTime()) ? item.date : d.toLocaleDateString("en-KE", { weekday: "short", day: "2-digit", month: "short" });
 
@@ -2428,7 +2776,10 @@
             <strong>${safe(item.title)}</strong>
             <small>${safe(dayLabel)} · ${safe(item.type)}</small>
           </div>
-          <span class="status blue">Open</span>
+          <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+            ${taggedMode && item.section ? `<span class="status blue">${safe(item.section)}</span>` : ""}
+            <span class="status blue">Open</span>
+          </div>
         </a>
       `;
     }
@@ -2441,6 +2792,38 @@
       if (lower.includes("lease")) return "📄";
 
       return "🗓️";
+    }
+
+    function renderSectionSidebarNav() {
+      const placeholder = document.getElementById("sectionNavPlaceholder");
+      if (!placeholder) return;
+
+      const labels = (businessPreset && businessPreset.selectedSectionLabels) || [];
+
+      if (labels.length <= 1) {
+        placeholder.innerHTML = "";
+        return;
+      }
+
+      const overviewActive = !currentSection ? "active" : "";
+
+      placeholder.innerHTML = `
+        <div class="nav-section-title">Sections</div>
+
+        <a class="nav-link ${overviewActive}" href="client.html">
+          <span class="nav-main"><span class="nav-icon">📊</span><span class="nav-text">Overview</span></span>
+        </a>
+
+        ${labels.map(function (label) {
+          const active = currentSection === label ? "active" : "";
+
+          return `
+            <a class="nav-link ${active}" href="client.html?section=${encodeURIComponent(label)}">
+              <span class="nav-main"><span class="nav-icon">🏷️</span><span class="nav-text">${safe(label)}</span></span>
+            </a>
+          `;
+        }).join("")}
+      `;
     }
 
     function detectRealEstate(tenant) {

@@ -52,6 +52,7 @@
     let isRealEstate = false;
     let personOptions = [];
     let sectionOptions = [];
+    let currentSectionFilter = "";
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -71,6 +72,7 @@
 
       businessPreset = UnganiPresets.getPreset(context.tenant);
       sectionOptions = businessPreset.selectedSectionLabels || [];
+      currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
 
       isRealEstate = detectRealEstate(context.tenant);
 
@@ -451,6 +453,8 @@
                 <button class="ungani-btn green" onclick="loadMoneyRows()">Refresh</button>
                 <a class="ungani-btn light" href="my-charts.html">View Charts</a>
               </div>
+
+              ${renderSectionSwitcher()}
             </div>
 
             <div class="money-preset-box">
@@ -653,7 +657,8 @@
                     <label for="moneySection">Section</label>
                     <select id="moneySection">
                       ${sectionOptions.map(function (label) {
-                        return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
+                        const selected = label === currentSectionFilter ? "selected" : "";
+                        return `<option value="${UnganiClientShared.attr(label)}" ${selected}>${UnganiClientShared.safe(label)}</option>`;
                       }).join("")}
                     </select>
                   </div>
@@ -1300,6 +1305,7 @@
         const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
         const haystack = JSON.stringify(row || {}).toLowerCase();
 
+        if (currentSectionFilter && UnganiClientShared.getValue(row, ["section_label"], "") !== currentSectionFilter) return false;
         if (filterType && !type.includes(filterType)) return false;
         if (filterStatus && !status.includes(filterStatus)) return false;
         if (search && !haystack.includes(search)) return false;
@@ -1669,7 +1675,7 @@ const payload = {
 
       if (document.getElementById("moneyStatus")) document.getElementById("moneyStatus").value = "completed";
       if (document.getElementById("moneyRelatedPerson")) document.getElementById("moneyRelatedPerson").value = "";
-      if (document.getElementById("moneySection")) document.getElementById("moneySection").value = sectionOptions[0] || "";
+      if (document.getElementById("moneySection")) document.getElementById("moneySection").value = currentSectionFilter || sectionOptions[0] || "";
 
       hideMoneyWarning();
     }
@@ -1730,6 +1736,35 @@ const payload = {
       }
 
       return `<span class="ungani-badge gold">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status || "pending"))}</span>`;
+    }
+
+    function renderSectionSwitcher() {
+      if (sectionOptions.length <= 1) return "";
+
+      const pills = [{ label: "All Sections", value: "" }].concat(
+        sectionOptions.map(function (label) { return { label: label, value: label }; })
+      );
+
+      return `
+        <div class="ungani-button-row" style="margin-top:10px;">
+          ${pills.map(function (pill) {
+            const active = currentSectionFilter === pill.value;
+            return `<button class="ungani-btn ${active ? "gold" : "dark"}" type="button" onclick="switchSection('${UnganiClientShared.attr(pill.value)}')">${UnganiClientShared.safe(pill.label)}</button>`;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function switchSection(value) {
+      const url = new URL(window.location.href);
+
+      if (value) {
+        url.searchParams.set("section", value);
+      } else {
+        url.searchParams.delete("section");
+      }
+
+      window.location.href = url.toString();
     }
 
     function detectRealEstate(tenant) {

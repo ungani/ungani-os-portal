@@ -49,6 +49,7 @@
     let editingEventId = null;
     let highlightApplied = false;
     let sectionOptions = [];
+    let currentSectionFilter = "";
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -68,6 +69,7 @@
 
       businessPreset = UnganiPresets.getPreset(context.tenant);
       sectionOptions = businessPreset.selectedSectionLabels || [];
+      currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -404,6 +406,8 @@
                 <button class="ungani-btn green" onclick="loadEventRows()">Refresh</button>
                 <a class="ungani-btn light" href="my-charts.html">View Charts</a>
               </div>
+
+              ${renderSectionSwitcher()}
             </div>
 
             <div class="calendar-preset-box">
@@ -573,7 +577,8 @@
                     <label for="eventSection">Section</label>
                     <select id="eventSection">
                       ${sectionOptions.map(function (label) {
-                        return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
+                        const selected = label === currentSectionFilter ? "selected" : "";
+                        return `<option value="${UnganiClientShared.attr(label)}" ${selected}>${UnganiClientShared.safe(label)}</option>`;
                       }).join("")}
                     </select>
                   </div>
@@ -886,6 +891,7 @@
         const status = String(UnganiClientShared.getValue(row, ["status"], "scheduled")).toLowerCase();
         const haystack = JSON.stringify(row || {}).toLowerCase();
 
+        if (currentSectionFilter && UnganiClientShared.getValue(row, ["section_label"], "") !== currentSectionFilter) return false;
         if (filterType && !type.includes(filterType)) return false;
         if (filterStatus && !status.includes(filterStatus)) return false;
         if (search && !haystack.includes(search)) return false;
@@ -1118,7 +1124,7 @@
       if (document.getElementById("eventEndTime")) document.getElementById("eventEndTime").value = "";
       if (document.getElementById("eventStatus")) document.getElementById("eventStatus").value = "scheduled";
       if (document.getElementById("eventPriority")) document.getElementById("eventPriority").value = "normal";
-      if (document.getElementById("eventSection")) document.getElementById("eventSection").value = sectionOptions[0] || "";
+      if (document.getElementById("eventSection")) document.getElementById("eventSection").value = currentSectionFilter || sectionOptions[0] || "";
       if (document.getElementById("eventLocation")) document.getElementById("eventLocation").value = "";
       if (document.getElementById("eventRelatedPerson")) document.getElementById("eventRelatedPerson").value = "";
       if (document.getElementById("eventRelatedItem")) document.getElementById("eventRelatedItem").value = "";
@@ -1180,6 +1186,35 @@
       return (rows || []).some(function (row) {
         return Number(row.value || 0) > 0;
       });
+    }
+
+    function renderSectionSwitcher() {
+      if (sectionOptions.length <= 1) return "";
+
+      const pills = [{ label: "All Sections", value: "" }].concat(
+        sectionOptions.map(function (label) { return { label: label, value: label }; })
+      );
+
+      return `
+        <div class="ungani-button-row" style="margin-top:10px;">
+          ${pills.map(function (pill) {
+            const active = currentSectionFilter === pill.value;
+            return `<button class="ungani-btn ${active ? "gold" : "dark"}" type="button" onclick="switchSection('${UnganiClientShared.attr(pill.value)}')">${UnganiClientShared.safe(pill.label)}</button>`;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function switchSection(value) {
+      const url = new URL(window.location.href);
+
+      if (value) {
+        url.searchParams.set("section", value);
+      } else {
+        url.searchParams.delete("section");
+      }
+
+      window.location.href = url.toString();
     }
   </script>
 </body>
