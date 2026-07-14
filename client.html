@@ -848,6 +848,53 @@
       box-shadow: 0 16px 38px rgba(0,0,0,0.14);
     }
 
+    @keyframes unganiUrgentPulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(220,38,38,0.42);
+        border-color: rgba(220,38,38,0.55);
+      }
+      50% {
+        box-shadow: 0 0 0 7px rgba(220,38,38,0);
+        border-color: rgba(220,38,38,0.85);
+      }
+    }
+
+    .property-attention-row.pulse-urgent {
+      animation: unganiUrgentPulse 2.2s ease-in-out infinite;
+    }
+
+    .property-attention-row.pulse-urgent:hover {
+      animation-play-state: paused;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .property-attention-row.pulse-urgent {
+        animation: none;
+        border-color: rgba(220,38,38,0.7);
+        box-shadow: 0 0 0 2px rgba(220,38,38,0.25);
+      }
+    }
+
+    .section-scroll-row {
+      display: flex;
+      gap: 16px;
+      overflow-x: auto;
+      padding: 4px 4px 12px;
+      scroll-snap-type: x proximity;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .section-compare-card {
+      flex: 0 0 clamp(260px, 82vw, 310px);
+      scroll-snap-align: start;
+    }
+
+    @media (min-width: 640px) {
+      .section-compare-card {
+        flex-basis: 300px;
+      }
+    }
+
     .property-attention-icon {
       width: 42px;
       height: 42px;
@@ -1447,6 +1494,7 @@
     let businessPreset = null;
     let isRealEstate = false;
     let currentSection = "";
+    let acknowledgedSet = new Set();
 
     let dashboardData = {
       transactions: [],
@@ -1594,6 +1642,7 @@
 
       currentSection = new URLSearchParams(window.location.search).get("section") || "";
       renderSectionSidebarNav();
+      acknowledgedSet = loadAcknowledgedSet();
 
       const tenantName = getTenantName();
 
@@ -2137,10 +2186,10 @@
         </section>
 
         <section class="kpi-grid">
-          ${kpiCard("Rent Collected", compactMoney(rentThisMonth), rentTrendSubtitle(rentDelta, rentLastMonth), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626", moneyHref)}
-          ${kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " tenant(s) unpaid this month", overdueRent.length > 0 ? "#DC2626" : "#16A34A", "my-people.html")}
-          ${kpiCard("Occupied / Total Units", occupiedUnits + " / " + totalUnits, "Units currently occupied or sold", "#2563EB", "my-items.html")}
-          ${kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", tasksHref)}
+          ${kpiCard("Rent Collected", compactMoney(rentThisMonth), rentTrendSubtitle(rentDelta, rentLastMonth), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626", moneyHref, countSpan(rentThisMonth, "money"))}
+          ${kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " tenant(s) unpaid this month", overdueRent.length > 0 ? "#DC2626" : "#16A34A", "my-people.html", countSpan(outstandingRentTotal, "money"))}
+          ${kpiCard("Occupied / Total Units", occupiedUnits + " / " + totalUnits, "Units currently occupied or sold", "#2563EB", "my-items.html", countSpan(occupiedUnits, "ratio", " / " + totalUnits))}
+          ${kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", tasksHref, countSpan(maintenanceOpen.length, "plain"))}
         </section>
 
         <section class="grid-2">
@@ -2197,6 +2246,7 @@
       updateThemeButton();
       updateNotificationCounts();
       renderPropertyTrendChart(trendMonths);
+      initCountAnimations();
     }
 
     function renderPropertyOverview(sections) {
@@ -2313,10 +2363,10 @@
         </section>
 
         <section class="kpi-grid">
-          ${kpiCard("Rent Collected", compactMoney(rentThisMonth), rentTrendSubtitle(rentDelta, rentLastMonth), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626", "my-money.html")}
-          ${kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " tenant(s) unpaid this month", overdueRent.length > 0 ? "#DC2626" : "#16A34A", "my-people.html")}
-          ${kpiCard("Occupied / Total Units", occupiedUnits + " / " + totalUnits, "Units currently occupied or sold", "#2563EB", "my-items.html")}
-          ${kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html")}
+          ${kpiCard("Rent Collected", compactMoney(rentThisMonth), rentTrendSubtitle(rentDelta, rentLastMonth), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626", "my-money.html", countSpan(rentThisMonth, "money"))}
+          ${kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " tenant(s) unpaid this month", overdueRent.length > 0 ? "#DC2626" : "#16A34A", "my-people.html", countSpan(outstandingRentTotal, "money"))}
+          ${kpiCard("Occupied / Total Units", occupiedUnits + " / " + totalUnits, "Units currently occupied or sold", "#2563EB", "my-items.html", countSpan(occupiedUnits, "ratio", " / " + totalUnits))}
+          ${kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(maintenanceOpen.length, "plain"))}
         </section>
 
         <section class="card">
@@ -2327,35 +2377,24 @@
             </div>
           </div>
 
-          <div class="grid-2" style="margin-bottom:0;">
+          <div style="position:relative;height:${Math.max(140, sectionSummaries.length * 56)}px;margin-bottom:20px;">
+            <canvas id="sectionComparisonChart"></canvas>
+          </div>
+
+          <div class="section-scroll-row">
             ${sectionSummaries.map(sectionComparisonCard).join("")}
           </div>
         </section>
 
-        <section class="grid-2">
-          <div class="card">
-            <div class="section-title">
-              <div>
-                <h3>Needs Attention Today</h3>
-                <p>Overdue rent, today's viewings, open maintenance, and leases expiring soon — tagged by section.</p>
-              </div>
-            </div>
-
-            ${renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, true)}
-          </div>
-
-          <div class="card">
-            <div class="section-title">
-              <div>
-                <h3>Revenue by Section — This Month</h3>
-                <p>Relative performance across your sections.</p>
-              </div>
-            </div>
-
-            <div style="position:relative;height:260px;">
-              <canvas id="sectionComparisonChart"></canvas>
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue rent, today's viewings, open maintenance, and leases expiring soon — tagged by section.</p>
             </div>
           </div>
+
+          ${renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, true)}
         </section>
 
         <section class="quick-actions">
@@ -2386,6 +2425,7 @@
       updateNotificationCounts();
       renderPropertyTrendChart(trendMonths);
       renderSectionComparisonChart(sectionSummaries);
+      initCountAnimations();
     }
 
     function calculateSectionSummary(label, monthKey, todayStr) {
@@ -2428,7 +2468,7 @@
       const sectionParam = "?section=" + encodeURIComponent(summary.label);
 
       return `
-        <div class="card" style="box-shadow:none;">
+        <div class="card section-compare-card" style="box-shadow:none;">
           <div class="section-title">
             <div>
               <h3>${safe(summary.label)}</h3>
@@ -2438,9 +2478,9 @@
           </div>
 
           <div class="summary-list">
-            ${summaryRow("Revenue (this month)", compactMoney(summary.revenue), "Income tagged to this section", "my-money.html" + sectionParam)}
-            ${summaryRow("Open Tasks", summary.openTasks, "Not yet completed", "my-tasks.html" + sectionParam)}
-            ${summaryRow("Today's Activity", summary.todayActivity, "Calendar activities today", "my-calendar.html" + sectionParam)}
+            ${summaryRow("Revenue (this month)", compactMoney(summary.revenue), "Income tagged to this section", "my-money.html" + sectionParam, countSpan(summary.revenue, "money"))}
+            ${summaryRow("Open Tasks", summary.openTasks, "Not yet completed", "my-tasks.html" + sectionParam, countSpan(summary.openTasks, "plain"))}
+            ${summaryRow("Today's Activity", summary.todayActivity, "Calendar activities today", "my-calendar.html" + sectionParam, countSpan(summary.todayActivity, "plain"))}
           </div>
         </div>
       `;
@@ -2448,6 +2488,9 @@
 
     async function renderSectionComparisonChart(summaries) {
       if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      const palette = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0891B2", "#C77700", "#DB2777"];
+      const reduceMotion = prefersReducedMotion();
 
       try {
         await UnganiAnalytics.createChart("sectionComparisonChart", {
@@ -2458,19 +2501,25 @@
               {
                 label: "Revenue (this month)",
                 data: summaries.map(function (s) { return s.revenue; }),
-                backgroundColor: ["#D4A63A", "#2563EB", "#16A34A", "#DC2626"],
-                borderRadius: 10
+                backgroundColor: summaries.map(function (s, i) { return palette[i % palette.length]; }),
+                borderRadius: 10,
+                barThickness: 26
               }
             ]
           },
           options: {
+            indexAxis: "y",
             responsive: true,
             maintainAspectRatio: false,
+            animation: reduceMotion ? false : { duration: 900, easing: "easeOutQuart" },
             plugins: { legend: { display: false } },
             scales: {
-              y: {
+              x: {
                 beginAtZero: true,
                 ticks: { callback: function (v) { return compactMoney(v); } }
+              },
+              y: {
+                ticks: { font: { weight: "bold" } }
               }
             }
           }
@@ -2586,6 +2635,8 @@
     }
 
     function renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, taggedMode) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
       const groups = [];
 
       if (overdueRent.length > 0) {
@@ -2602,7 +2653,8 @@
               "Overdue",
               "red",
               "my-people.html?highlight=" + row.person.id,
-              taggedMode ? "Rentals" : null
+              taggedMode ? "Rentals" : null,
+              "rent:" + row.person.id + ":" + monthKey
             );
           })
         });
@@ -2623,7 +2675,8 @@
               "Today",
               "gold",
               "my-calendar.html?highlight=" + row.id,
-              taggedMode ? (rowSection || "Untagged") : null
+              taggedMode ? (rowSection || "Untagged") : null,
+              "event:" + row.id
             );
           })
         });
@@ -2636,6 +2689,7 @@
             const title = getValue(row, ["task_title", "title", "name"], "Maintenance request");
             const due = getValue(row, ["due_date"], "");
             const rowSection = getValue(row, ["section_label"], "");
+            const isOverdue = due && String(due).slice(0, 10) < todayStr;
 
             return attentionRow(
               "🛠️",
@@ -2644,7 +2698,8 @@
               "Open",
               "blue",
               "my-tasks.html?highlight=" + row.id,
-              taggedMode ? (rowSection || "Untagged") : null
+              taggedMode ? (rowSection || "Untagged") : null,
+              isOverdue ? ("task:" + row.id) : null
             );
           })
         });
@@ -2664,7 +2719,8 @@
               "Expiring",
               "gold",
               "my-people.html?highlight=" + row.id,
-              taggedMode ? "Rentals" : null
+              taggedMode ? "Rentals" : null,
+              null
             );
           })
         });
@@ -2689,9 +2745,13 @@
       }).join("");
     }
 
-    function attentionRow(icon, title, subtitle, badgeText, badgeColor, href, sectionTag) {
+    function attentionRow(icon, title, subtitle, badgeText, badgeColor, href, sectionTag, ackKey) {
+      const urgent = ackKey && !isAcknowledged(ackKey);
+      const pulseClass = urgent ? " pulse-urgent" : "";
+      const onclickAttr = ackKey ? ` onclick="acknowledgeItem('${attr(ackKey)}'); this.classList.remove('pulse-urgent');"` : "";
+
       return `
-        <a class="property-attention-row" href="${attr(href)}">
+        <a class="property-attention-row${pulseClass}" href="${attr(href)}"${onclickAttr}>
           <div class="property-attention-icon">${safe(icon)}</div>
           <div>
             <strong>${safe(title)}</strong>
@@ -2730,6 +2790,7 @@
           title: getValue(row, ["event_title", "title", "name"], "Calendar Activity"),
           type: getValue(row, ["event_type", "type"], "Activity"),
           section: getValue(row, ["section_label"], ""),
+          ackKey: "event:" + row.id,
           href: "my-calendar.html?highlight=" + row.id
         });
       });
@@ -2768,9 +2829,14 @@
     function calendarPreviewRow(item, taggedMode) {
       const d = new Date(item.date);
       const dayLabel = isNaN(d.getTime()) ? item.date : d.toLocaleDateString("en-KE", { weekday: "short", day: "2-digit", month: "short" });
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const isToday = item.date === todayStr;
+      const urgent = isToday && item.ackKey && !isAcknowledged(item.ackKey);
+      const pulseClass = urgent ? " pulse-urgent" : "";
+      const onclickAttr = item.ackKey ? ` onclick="acknowledgeItem('${attr(item.ackKey)}'); this.classList.remove('pulse-urgent');"` : "";
 
       return `
-        <a class="property-attention-row" href="${attr(item.href)}">
+        <a class="property-attention-row${pulseClass}" href="${attr(item.href)}"${onclickAttr}>
           <div class="property-attention-icon">${calendarPreviewIcon(item.type)}</div>
           <div>
             <strong>${safe(item.title)}</strong>
@@ -2826,6 +2892,89 @@
       `;
     }
 
+    function getAckStorageKey() {
+      return "ungani_ack_" + (currentTenantId || "anon");
+    }
+
+    function loadAcknowledgedSet() {
+      try {
+        const raw = localStorage.getItem(getAckStorageKey());
+        const parsed = raw ? JSON.parse(raw) : [];
+        return new Set(Array.isArray(parsed) ? parsed : []);
+      } catch (error) {
+        return new Set();
+      }
+    }
+
+    function isAcknowledged(key) {
+      return !!key && acknowledgedSet.has(key);
+    }
+
+    function acknowledgeItem(key) {
+      if (!key || acknowledgedSet.has(key)) return;
+
+      acknowledgedSet.add(key);
+
+      try {
+        localStorage.setItem(getAckStorageKey(), JSON.stringify(Array.from(acknowledgedSet)));
+      } catch (error) {
+        console.warn("Could not save acknowledgment:", error.message);
+      }
+    }
+
+    function prefersReducedMotion() {
+      return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    }
+
+    function formatCount(value, format, suffix) {
+      const num = Math.round(Number(value) || 0);
+
+      if (format === "money") return compactMoney(num);
+      if (format === "ratio") return num + (suffix || "");
+
+      return num.toLocaleString("en-KE");
+    }
+
+    function initCountAnimations(root) {
+      const scope = root || document;
+      const elements = scope.querySelectorAll(".ungani-count[data-target]");
+      const reduceMotion = prefersReducedMotion();
+
+      elements.forEach(function (el) {
+        const target = Number(el.getAttribute("data-target")) || 0;
+        const format = el.getAttribute("data-format") || "plain";
+        const suffix = el.getAttribute("data-suffix") || "";
+
+        if (reduceMotion) {
+          el.textContent = formatCount(target, format, suffix);
+          return;
+        }
+
+        const duration = 900;
+        const startTime = performance.now();
+
+        function tick(now) {
+          const elapsed = now - startTime;
+          const progress = Math.min(1, elapsed / duration);
+          const eased = 1 - Math.pow(1 - progress, 3);
+
+          el.textContent = formatCount(target * eased, format, suffix);
+
+          if (progress < 1) {
+            requestAnimationFrame(tick);
+          } else {
+            el.textContent = formatCount(target, format, suffix);
+          }
+        }
+
+        requestAnimationFrame(tick);
+      });
+    }
+
+    function countSpan(target, format, suffix) {
+      return `<span class="ungani-count" data-target="${attr(target)}" data-format="${attr(format || "plain")}" data-suffix="${attr(suffix || "")}">${safe(formatCount(0, format, suffix))}</span>`;
+    }
+
     function detectRealEstate(tenant) {
       if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
         const matched = UnganiBusinessConfig.resolve(tenant);
@@ -2861,24 +3010,24 @@
       `;
     }
 
-    function kpiCard(title, value, subtitle, accent, href) {
+    function kpiCard(title, value, subtitle, accent, href, countHtml) {
       return `
         <a class="kpi-card" href="${attr(href || "my-reports.html")}" style="--accent:${attr(accent)};">
           <span>${safe(title)}</span>
-          <h3>${safe(value)}</h3>
+          <h3>${countHtml || safe(value)}</h3>
           <p>${safe(subtitle)}</p>
         </a>
       `;
     }
 
-    function summaryRow(label, value, sub, href) {
+    function summaryRow(label, value, sub, href, countHtml) {
       return `
         <a class="summary-row" href="${attr(href || "my-tools.html")}">
           <div>
             <strong>${safe(label)}</strong>
             <p>${safe(sub || "")}</p>
           </div>
-          <div class="summary-value">${safe(value)}</div>
+          <div class="summary-value">${countHtml || safe(value)}</div>
         </a>
       `;
     }
