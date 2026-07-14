@@ -49,6 +49,8 @@
     let categorySuggestions = [];
     let recurringRows = [];
     let editingMoneyId = null;
+    let isRealEstate = false;
+    let personOptions = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -67,6 +69,8 @@
       }
 
       businessPreset = UnganiPresets.getPreset(context.tenant);
+
+      isRealEstate = detectRealEstate(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -109,12 +113,43 @@
 
       moneyRows = response.data || [];
 
-      await Promise.all([
+      const loaders = [
         loadCategorySuggestions(),
         loadRecurringRows()
-      ]);
+      ];
+
+      if (isRealEstate) {
+        loaders.push(loadPersonOptions());
+      }
+
+      await Promise.all(loaders);
 
       renderMoneyPage();
+    }
+
+    async function loadPersonOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, name, person_type")
+          .eq("tenant_id", currentContext.tenantId)
+          .order("full_name", { ascending: true });
+
+        personOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Person options skipped:", error.message);
+        personOptions = [];
+      }
+    }
+
+    function getPersonLabel(id) {
+      const person = personOptions.find(function (row) {
+        return String(row.id) === String(id);
+      });
+
+      if (!person) return "";
+
+      return UnganiClientShared.getValue(person, ["full_name", "name"], "Person");
     }
 
     async function loadCategorySuggestions() {
@@ -597,6 +632,19 @@
                     <option value="cancelled">Cancelled</option>
                   </select>
                 </div>
+
+                ${isRealEstate ? `
+                  <div>
+                    <label for="moneyRelatedPerson">Related Tenant / Person</label>
+                    <select id="moneyRelatedPerson">
+                      <option value="">Not linked</option>
+                      ${personOptions.map(function (person) {
+                        const label = UnganiClientShared.getValue(person, ["full_name", "name"], "Person");
+                        return `<option value="${UnganiClientShared.attr(person.id)}">${UnganiClientShared.safe(label)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+                ` : ""}
 
                 <div class="wide">
                   <label for="moneyNotes">Notes</label>
@@ -1144,6 +1192,8 @@
                 const method = UnganiClientShared.getValue(row, ["payment_method"], "");
                 const status = UnganiClientShared.getValue(row, ["status"], "completed");
                 const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
+                const relatedPersonId = UnganiClientShared.getValue(row, ["related_person_id"], "");
+                const relatedPersonLabel = relatedPersonId ? getPersonLabel(relatedPersonId) : "";
 
                 return `
                   <tr>
@@ -1153,7 +1203,7 @@
                     <td class="money-amount">${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(amount))}</td>
                     <td>${UnganiClientShared.safe(method || "—")}</td>
                     <td>${statusBadge(status)}</td>
-                    <td>${UnganiClientShared.safe(notes || "—")}</td>
+                    <td>${UnganiClientShared.safe(notes || (relatedPersonLabel ? "Tenant: " + relatedPersonLabel : "—"))}</td>
                     <td>
                       <div class="money-actions">
                         <button class="ungani-btn small gold" onclick="editMoneyRecord('${UnganiClientShared.attr(row.id)}')">Edit</button>
@@ -1385,6 +1435,10 @@ const payload = {
   updated_at: new Date().toISOString()
 };
 
+      if (isRealEstate) {
+        payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
+      }
+
       let response;
 
       try {
@@ -1526,6 +1580,11 @@ const payload = {
         document.getElementById("moneyMethod").value = UnganiClientShared.getValue(row, ["payment_method"], "");
         document.getElementById("moneyStatus").value = UnganiClientShared.getValue(row, ["status"], "completed");
         document.getElementById("moneyNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
+
+        if (isRealEstate && document.getElementById("moneyRelatedPerson")) {
+          document.getElementById("moneyRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person_id"], "");
+        }
+
         hideMoneyWarning();
       }, 150);
     }
@@ -1584,6 +1643,7 @@ const payload = {
       });
 
       if (document.getElementById("moneyStatus")) document.getElementById("moneyStatus").value = "completed";
+      if (document.getElementById("moneyRelatedPerson")) document.getElementById("moneyRelatedPerson").value = "";
 
       hideMoneyWarning();
     }
@@ -1644,6 +1704,18 @@ const payload = {
       }
 
       return `<span class="ungani-badge gold">${UnganiClientShared.safe(UnganiAnalytics.toTitle(status || "pending"))}</span>`;
+    }
+
+    function detectRealEstate(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "real_estate";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
     }
   </script>
 </body>

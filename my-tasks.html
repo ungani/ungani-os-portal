@@ -47,6 +47,7 @@
     let businessPreset = null;
     let taskRows = [];
     let editingTaskId = null;
+    let highlightApplied = false;
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -281,6 +282,16 @@
 
           .task-card:hover {
             border-color: rgba(212,166,58,0.55);
+          }
+
+          @keyframes unganiHighlightPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(212,166,58,0.55); }
+            50% { box-shadow: 0 0 0 9px rgba(212,166,58,0); }
+          }
+
+          .ungani-highlighted {
+            border-color: rgba(212,166,58,0.9) !important;
+            animation: unganiHighlightPulse 1.4s ease-out 2;
           }
 
           .task-title-row {
@@ -593,6 +604,29 @@
       setTimeout(function () {
         renderTaskCharts(statusRows, priorityRows);
       }, 150);
+
+      applyHighlightFromUrl();
+    }
+
+    function applyHighlightFromUrl() {
+      if (highlightApplied) return;
+
+      const highlightId = new URLSearchParams(window.location.search).get("highlight");
+      if (!highlightId) return;
+
+      setTimeout(function () {
+        const el = document.getElementById("task-" + highlightId);
+
+        if (!el) return;
+
+        highlightApplied = true;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ungani-highlighted");
+
+        setTimeout(function () {
+          el.classList.remove("ungani-highlighted");
+        }, 3000);
+      }, 250);
     }
 
     async function renderTaskCharts(statusRows, priorityRows) {
@@ -633,7 +667,7 @@
             const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
             return `
-              <div class="task-card">
+              <div class="task-card" id="task-${UnganiClientShared.attr(row.id)}">
                 <div>
                   <div class="task-title-row">
                     ${statusBadge(status, due)}

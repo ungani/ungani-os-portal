@@ -47,6 +47,7 @@
     let businessPreset = null;
     let eventRows = [];
     let editingEventId = null;
+    let highlightApplied = false;
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -283,6 +284,16 @@
 
           .event-card:hover {
             border-color: rgba(212,166,58,0.55);
+          }
+
+          @keyframes unganiHighlightPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(212,166,58,0.55); }
+            50% { box-shadow: 0 0 0 9px rgba(212,166,58,0); }
+          }
+
+          .ungani-highlighted {
+            border-color: rgba(212,166,58,0.9) !important;
+            animation: unganiHighlightPulse 1.4s ease-out 2;
           }
 
           .event-date-box {
@@ -638,6 +649,29 @@
       setTimeout(function () {
         renderCalendarCharts(typeRows, statusRows, priorityRows);
       }, 150);
+
+      applyHighlightFromUrl();
+    }
+
+    function applyHighlightFromUrl() {
+      if (highlightApplied) return;
+
+      const highlightId = new URLSearchParams(window.location.search).get("highlight");
+      if (!highlightId) return;
+
+      setTimeout(function () {
+        const el = document.getElementById("event-" + highlightId);
+
+        if (!el) return;
+
+        highlightApplied = true;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ungani-highlighted");
+
+        setTimeout(function () {
+          el.classList.remove("ungani-highlighted");
+        }, 3000);
+      }, 250);
     }
 
     async function renderCalendarCharts(typeRows, statusRows, priorityRows) {
@@ -680,7 +714,7 @@
             const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
             return `
-              <div class="event-card">
+              <div class="event-card" id="event-${UnganiClientShared.attr(row.id)}">
                 ${eventDateBox(date)}
 
                 <div>

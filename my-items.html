@@ -36,6 +36,7 @@
       }
     })();
   </script>
+  <script src="ungani-business-config.js"></script>
 </head>
 
 <body>
@@ -57,10 +58,7 @@
     async function startItemsPage(context) {
       currentContext = context;
 
-      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
-      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
-
-      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+      isRealEstate = detectRealEstate(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -1125,6 +1123,18 @@
       if (text.length <= max) return text;
 
       return text.slice(0, max) + "...";
+    }
+
+    function detectRealEstate(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "real_estate";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
     }
   </script>
 </body>

@@ -47,6 +47,9 @@
     let businessPreset = null;
     let peopleRows = [];
     let editingPersonId = null;
+    let highlightApplied = false;
+    let isRealEstate = false;
+    let unitOptions = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -65,6 +68,8 @@
       }
 
       businessPreset = UnganiPresets.getPreset(context.tenant);
+
+      isRealEstate = detectRealEstate(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -106,7 +111,40 @@
       }
 
       peopleRows = response.data || [];
+
+      if (isRealEstate) {
+        await loadUnitOptions();
+      }
+
       renderPeoplePage();
+    }
+
+    async function loadUnitOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, property_name, item_name, name, property_location, listing_type")
+          .eq("tenant_id", currentContext.tenantId)
+          .order("created_at", { ascending: false });
+
+        unitOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Unit options skipped:", error.message);
+        unitOptions = [];
+      }
+    }
+
+    function getUnitLabel(id) {
+      const item = unitOptions.find(function (row) {
+        return String(row.id) === String(id);
+      });
+
+      if (!item) return "";
+
+      const name = UnganiClientShared.getValue(item, ["property_name", "item_name", "name"], "Unit");
+      const location = UnganiClientShared.getValue(item, ["property_location"], "");
+
+      return location ? name + " — " + location : name;
     }
 
     function renderPeoplePage() {
@@ -283,6 +321,16 @@
 
           .person-card:hover {
             border-color: rgba(212,166,58,0.55);
+          }
+
+          @keyframes unganiHighlightPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(212,166,58,0.55); }
+            50% { box-shadow: 0 0 0 9px rgba(212,166,58,0); }
+          }
+
+          .ungani-highlighted {
+            border-color: rgba(212,166,58,0.9) !important;
+            animation: unganiHighlightPulse 1.4s ease-out 2;
           }
 
           .person-avatar {
@@ -564,6 +612,31 @@
                   <input id="personAssignedWork" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)} or task related to this person" />
                 </div>
 
+                ${isRealEstate ? `
+                  <div>
+                    <label for="personLinkedItem">Linked Unit / Property</label>
+                    <select id="personLinkedItem">
+                      <option value="">Not linked</option>
+                      ${unitOptions.map(function (item) {
+                        const label = UnganiClientShared.getValue(item, ["property_name", "item_name", "name"], "Unit") +
+                          (UnganiClientShared.getValue(item, ["property_location"], "") ? " — " + UnganiClientShared.getValue(item, ["property_location"], "") : "");
+
+                        return `<option value="${UnganiClientShared.attr(item.id)}">${UnganiClientShared.safe(label)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="personLeaseStart">Lease Start Date</label>
+                    <input id="personLeaseStart" type="date" />
+                  </div>
+
+                  <div>
+                    <label for="personLeaseEnd">Lease End Date</label>
+                    <input id="personLeaseEnd" type="date" />
+                  </div>
+                ` : ""}
+
                 <div class="wide">
                   <label for="personNotes">Notes</label>
                   <textarea id="personNotes" rows="5" placeholder="Add contact notes, follow-up details, responsibilities, client needs, supplier info..."></textarea>
@@ -632,6 +705,29 @@
       setTimeout(function () {
         renderPeopleCharts(typeRows, statusRows, relationshipRows);
       }, 150);
+
+      applyHighlightFromUrl();
+    }
+
+    function applyHighlightFromUrl() {
+      if (highlightApplied) return;
+
+      const highlightId = new URLSearchParams(window.location.search).get("highlight");
+      if (!highlightId) return;
+
+      setTimeout(function () {
+        const el = document.getElementById("person-" + highlightId);
+
+        if (!el) return;
+
+        highlightApplied = true;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ungani-highlighted");
+
+        setTimeout(function () {
+          el.classList.remove("ungani-highlighted");
+        }, 3000);
+      }, 250);
     }
 
     async function renderPeopleCharts(typeRows, statusRows, relationshipRows) {
@@ -672,9 +768,12 @@
             const followUp = UnganiClientShared.getValue(row, ["last_follow_up_date"], "");
             const assignedWork = UnganiClientShared.getValue(row, ["assigned_work", "properties_assigned"], "");
             const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
+            const linkedItemId = UnganiClientShared.getValue(row, ["linked_item_id"], "");
+            const linkedItemLabel = linkedItemId ? getUnitLabel(linkedItemId) : "";
+            const leaseEnd = UnganiClientShared.getValue(row, ["lease_end_date"], "");
 
             return `
-              <div class="person-card">
+              <div class="person-card" id="person-${UnganiClientShared.attr(row.id)}">
                 <div class="person-avatar">${UnganiClientShared.safe(makeInitials(name))}</div>
 
                 <div>
@@ -697,6 +796,8 @@
                     ${email ? `<span class="ungani-badge blue">${UnganiClientShared.safe(email)}</span>` : ""}
                     ${followUp ? `<span class="ungani-badge gold">Follow-up: ${UnganiClientShared.safe(UnganiClientShared.formatDate(followUp))}</span>` : ""}
                     ${assignedWork ? `<span class="ungani-badge blue">Work: ${UnganiClientShared.safe(assignedWork)}</span>` : ""}
+                    ${linkedItemLabel ? `<span class="ungani-badge gold">Unit: ${UnganiClientShared.safe(linkedItemLabel)}</span>` : ""}
+                    ${leaseEnd ? `<span class="ungani-badge blue">Lease ends: ${UnganiClientShared.safe(UnganiClientShared.formatDate(leaseEnd))}</span>` : ""}
                   </div>
 
                   <div class="person-actions">
@@ -888,6 +989,12 @@
         notes: UnganiClientShared.value("personNotes") || null
       };
 
+      if (isRealEstate) {
+        payload.linked_item_id = UnganiClientShared.value("personLinkedItem") || null;
+        payload.lease_start_date = UnganiClientShared.value("personLeaseStart") || null;
+        payload.lease_end_date = UnganiClientShared.value("personLeaseEnd") || null;
+      }
+
       let response;
 
       try {
@@ -945,6 +1052,12 @@
         document.getElementById("personLocation").value = UnganiClientShared.getValue(row, ["location"], "");
         document.getElementById("personAssignedWork").value = UnganiClientShared.getValue(row, ["assigned_work", "properties_assigned"], "");
         document.getElementById("personNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
+
+        if (isRealEstate) {
+          if (document.getElementById("personLinkedItem")) document.getElementById("personLinkedItem").value = UnganiClientShared.getValue(row, ["linked_item_id"], "");
+          if (document.getElementById("personLeaseStart")) document.getElementById("personLeaseStart").value = String(UnganiClientShared.getValue(row, ["lease_start_date"], "")).slice(0, 10);
+          if (document.getElementById("personLeaseEnd")) document.getElementById("personLeaseEnd").value = String(UnganiClientShared.getValue(row, ["lease_end_date"], "")).slice(0, 10);
+        }
       }, 150);
     }
 
@@ -1006,6 +1119,9 @@
       if (document.getElementById("personLocation")) document.getElementById("personLocation").value = "";
       if (document.getElementById("personAssignedWork")) document.getElementById("personAssignedWork").value = "";
       if (document.getElementById("personNotes")) document.getElementById("personNotes").value = "";
+      if (document.getElementById("personLinkedItem")) document.getElementById("personLinkedItem").value = "";
+      if (document.getElementById("personLeaseStart")) document.getElementById("personLeaseStart").value = "";
+      if (document.getElementById("personLeaseEnd")) document.getElementById("personLeaseEnd").value = "";
     }
 
     function getPersonName(row) {
@@ -1043,6 +1159,18 @@
       return (rows || []).some(function (row) {
         return Number(row.value || 0) > 0;
       });
+    }
+
+    function detectRealEstate(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "real_estate";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
     }
   </script>
 </body>
