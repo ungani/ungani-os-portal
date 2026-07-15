@@ -458,6 +458,7 @@
                 <option value="scheduled">Scheduled</option>
                 <option value="in progress">In Progress</option>
                 <option value="completed">Completed</option>
+                <option value="no show">No-show</option>
                 <option value="cancelled">Cancelled</option>
               </select>
             </div>
@@ -548,6 +549,7 @@
                     <option value="scheduled">Scheduled</option>
                     <option value="in progress">In Progress</option>
                     <option value="completed">Completed</option>
+                    <option value="no show">No-show</option>
                     <option value="cancelled">Cancelled</option>
                   </select>
                 </div>
@@ -716,6 +718,8 @@
         `;
       }
 
+      const todayStr = new Date().toISOString().slice(0, 10);
+
       return `
         <div class="calendar-list">
           ${rows.map(function (row) {
@@ -758,7 +762,21 @@
                 </div>
 
                 <div class="event-actions">
-                  ${String(status).toLowerCase() !== "completed" ? `<button class="ungani-btn small green" onclick="markEventCompleted('${UnganiClientShared.attr(row.id)}')">Done</button>` : ""}
+                  ${(function () {
+                    const lowerStatus = String(status).toLowerCase();
+                    const isUnresolved = !lowerStatus.includes("completed") && !lowerStatus.includes("cancelled") && !lowerStatus.includes("no show");
+                    const isPastDue = date && String(date).slice(0, 10) < todayStr;
+
+                    if (isPastDue && isUnresolved) {
+                      return `
+                        <button class="ungani-btn small green" onclick="markEventOutcome('${UnganiClientShared.attr(row.id)}', 'completed')">✅ Completed</button>
+                        <button class="ungani-btn small red" onclick="markEventOutcome('${UnganiClientShared.attr(row.id)}', 'no show')">🚫 No-show</button>
+                        <button class="ungani-btn small gold" onclick="rescheduleEvent('${UnganiClientShared.attr(row.id)}')">🔁 Reschedule</button>
+                      `;
+                    }
+
+                    return isUnresolved ? `<button class="ungani-btn small green" onclick="markEventCompleted('${UnganiClientShared.attr(row.id)}')">Done</button>` : "";
+                  })()}
                   <button class="ungani-btn small gold" onclick="editEvent('${UnganiClientShared.attr(row.id)}')">Edit</button>
                   <button class="ungani-btn small red" onclick="deleteEvent('${UnganiClientShared.attr(row.id)}')">Delete</button>
                 </div>
@@ -809,6 +827,7 @@
       let todayCount = 0;
       let completed = 0;
       let overdue = 0;
+      let noShow = 0;
 
       rows.forEach(function (row) {
         const status = String(UnganiClientShared.getValue(row, ["status"], "scheduled")).toLowerCase();
@@ -816,6 +835,11 @@
 
         if (status.includes("completed")) {
           completed++;
+          return;
+        }
+
+        if (status.includes("no show")) {
+          noShow++;
           return;
         }
 
@@ -832,7 +856,8 @@
         upcoming,
         today: todayCount,
         completed,
-        overdue
+        overdue,
+        noShow
       };
     }
 
@@ -1049,12 +1074,16 @@
     }
 
     async function markEventCompleted(id) {
+      await markEventOutcome(id, "completed");
+    }
+
+    async function markEventOutcome(id, outcomeStatus) {
       let response;
 
       try {
         response = await currentContext.supabaseClient
           .from("business_events")
-          .update({ status: "completed" })
+          .update({ status: outcomeStatus })
           .eq("id", id)
           .eq("tenant_id", currentContext.tenantId);
       } catch (error) {
@@ -1067,8 +1096,19 @@
         return;
       }
 
-      UnganiClientShared.showToast("Calendar activity marked completed ✓");
+      const outcomeLabel = outcomeStatus === "no show" ? "marked as no-show" : "marked completed ✓";
+      UnganiClientShared.showToast("Calendar activity " + outcomeLabel);
       await loadEventRows();
+    }
+
+    function rescheduleEvent(id) {
+      editEvent(id);
+
+      setTimeout(function () {
+        const dateField = document.getElementById("eventDate");
+        if (dateField) dateField.focus();
+        UnganiClientShared.showToast("Pick a new date and save to reschedule.");
+      }, 250);
     }
 
     async function deleteEvent(id) {
@@ -1139,6 +1179,10 @@
       const lower = String(status || "").toLowerCase();
       const date = String(dateValue || "").slice(0, 10);
       const today = new Date().toISOString().slice(0, 10);
+
+      if (lower.includes("no show") || lower.includes("no-show")) {
+        return `<span class="ungani-badge red">No-show</span>`;
+      }
 
       if (date && date < today && !lower.includes("completed") && !lower.includes("cancelled")) {
         return `<span class="ungani-badge red">Overdue</span>`;

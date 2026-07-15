@@ -3894,6 +3894,15 @@
         return (type.includes("viewing") || type.includes("site visit")) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
       });
 
+      const viewingsNeedingOutcome = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], "")).toLowerCase();
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return (type.includes("viewing") || type.includes("site visit")) && date && date < todayStr && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
+      }).sort(function (a, b) {
+        return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
+      });
+
       const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
 
       const leasesExpiring = rentalConceptsApply ? (data.people || []).filter(function (person) {
@@ -3992,11 +4001,11 @@
           <div class="section-title">
             <div>
               <h3>Needs Attention Today</h3>
-              <p>Overdue rent, today's viewings, open maintenance, and leases expiring soon — in priority order.</p>
+              <p>Overdue rent, today's viewings, past viewings needing an outcome, open maintenance, and leases expiring soon — in priority order.</p>
             </div>
           </div>
 
-          ${renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring)}
+          ${renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, null, viewingsNeedingOutcome)}
         </section>
 
         <section class="quick-actions">
@@ -4523,10 +4532,11 @@
       }
     }
 
-    function renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, taggedMode) {
+    function renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, taggedMode, viewingsNeedingOutcome) {
       const todayStr = new Date().toISOString().slice(0, 10);
       const monthKey = todayStr.slice(0, 7);
       const groups = [];
+      const outcomeViewings = viewingsNeedingOutcome || [];
 
       if (overdueRent.length > 0) {
         groups.push({
@@ -4563,6 +4573,28 @@
               time ? "Today at " + String(time).slice(0, 5) : "Scheduled today",
               "Today",
               "gold",
+              "my-calendar.html?highlight=" + row.id,
+              taggedMode ? (rowSection || "Untagged") : null,
+              "event:" + row.id
+            );
+          })
+        });
+      }
+
+      if (outcomeViewings.length > 0) {
+        groups.push({
+          title: "Viewings Needing Outcome",
+          rows: outcomeViewings.map(function (row) {
+            const title = getValue(row, ["event_title", "title", "name"], "Viewing");
+            const date = getValue(row, ["event_date", "date", "start_date"], "");
+            const rowSection = getValue(row, ["section_label"], "");
+
+            return attentionRow(
+              "❓",
+              title,
+              "Was " + formatDate(date) + " — confirm what happened",
+              "Needs Outcome",
+              "red",
               "my-calendar.html?highlight=" + row.id,
               taggedMode ? (rowSection || "Untagged") : null,
               "event:" + row.id
@@ -5432,7 +5464,7 @@
 
         if (date === today && !status.includes("cancelled")) todayCount++;
         if (date && date > today && !status.includes("cancelled")) upcoming++;
-        if (date && date < today && !status.includes("completed") && !status.includes("cancelled")) overdue++;
+        if (date && date < today && !status.includes("completed") && !status.includes("cancelled") && !status.includes("no show")) overdue++;
       });
 
       return {
