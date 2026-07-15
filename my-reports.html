@@ -247,11 +247,23 @@
     }
 
     .summary-card {
+      position: relative;
       background: rgba(255, 255, 255, 0.08);
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 17px;
-      padding: 15px;
+      padding: 15px 15px 15px 19px;
       min-height: 112px;
+    }
+
+    .summary-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 12px;
+      bottom: 12px;
+      width: 4px;
+      border-radius: 0 999px 999px 0;
+      background: var(--accent, #64748B);
     }
 
     .summary-card label {
@@ -330,10 +342,22 @@
     }
 
     .metric-box {
+      position: relative;
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 17px;
-      padding: 15px;
+      padding: 15px 15px 15px 19px;
+    }
+
+    .metric-box::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 12px;
+      bottom: 12px;
+      width: 4px;
+      border-radius: 0 999px 999px 0;
+      background: var(--accent, #64748B);
     }
 
     .metric-box label {
@@ -460,6 +484,10 @@
 
     td {
       color: var(--text-soft);
+    }
+
+    td:first-child {
+      border-left: 4px solid var(--accent, #64748B);
     }
 
     .chip {
@@ -665,25 +693,25 @@
       </div>
 
       <div class="summary-grid" id="summaryGrid" style="display: none;">
-        <div class="summary-card">
+        <div class="summary-card" style="--accent:#16A34A;">
           <label>Total Income</label>
           <strong id="incomeTotal">KSh 0</strong>
           <span>Money recorded as income, sales, revenue, service fees, deposits, or similar categories.</span>
         </div>
 
-        <div class="summary-card">
+        <div class="summary-card" style="--accent:#D4A63A;">
           <label>Total Expenses</label>
           <strong id="expenseTotal">KSh 0</strong>
           <span>Money recorded as expenses, costs, maintenance, commissions, marketing, petty cash, or similar categories.</span>
         </div>
 
-        <div class="summary-card">
+        <div class="summary-card" id="netBalanceCard" style="--accent:#16A34A;">
           <label>Net Balance</label>
           <strong id="netBalance">KSh 0</strong>
           <span>Income minus expenses from the available business records.</span>
         </div>
 
-        <div class="summary-card">
+        <div class="summary-card" style="--accent:#2563EB;">
           <label>Transactions</label>
           <strong id="transactionCount">0</strong>
           <span>All money records captured in the workspace.</span>
@@ -707,37 +735,37 @@
 
           <div class="panel-body">
             <div class="metric-grid">
-              <div class="metric-box">
+              <div class="metric-box" style="--accent:#2563EB;">
                 <label>Tasks</label>
                 <strong id="taskTotal">0</strong>
                 <span id="taskDetail">Pending: 0 · Completed: 0</span>
               </div>
 
-              <div class="metric-box">
+              <div class="metric-box" style="--accent:#C77700;">
                 <label>Items / Assets / Stock</label>
                 <strong id="itemTotal">0</strong>
                 <span id="itemDetail">Active: 0</span>
               </div>
 
-              <div class="metric-box">
+              <div class="metric-box" style="--accent:#7C3AED;">
                 <label>Business Records</label>
                 <strong id="recordTotal">0</strong>
                 <span>Saved business notes, activities, and operational records.</span>
               </div>
 
-              <div class="metric-box">
+              <div class="metric-box" style="--accent:#14B8A6;">
                 <label>Documents</label>
                 <strong id="documentTotal">0</strong>
                 <span>Files and documents uploaded to the workspace.</span>
               </div>
 
-              <div class="metric-box">
+              <div class="metric-box" style="--accent:#DB2777;">
                 <label>Support Issues</label>
                 <strong id="supportTotal">0</strong>
                 <span id="supportDetail">Open: 0</span>
               </div>
 
-              <div class="metric-box">
+              <div class="metric-box" style="--accent:#D4A63A;">
                 <label>Generated</label>
                 <strong id="generatedTime">—</strong>
                 <span>Latest report refresh time.</span>
@@ -914,6 +942,8 @@
       document.getElementById("netBalance").textContent = formatMoney(summary.net_balance);
       document.getElementById("transactionCount").textContent = Number(summary.total_transactions || 0).toLocaleString("en-KE");
 
+      document.getElementById("netBalanceCard").style.setProperty("--accent", Number(summary.net_balance || 0) >= 0 ? "#16A34A" : "#DC2626");
+
       document.getElementById("taskTotal").textContent = Number(summary.total_tasks || 0).toLocaleString("en-KE");
       document.getElementById("taskDetail").textContent =
         "Pending: " + Number(summary.pending_tasks || 0).toLocaleString("en-KE") +
@@ -1025,6 +1055,7 @@
 
       items.forEach(item => {
         const row = document.createElement("tr");
+        row.style.setProperty("--accent", statusAccentHex(item.status));
 
         row.innerHTML = `
           <td>
@@ -1064,6 +1095,11 @@
       }
 
       return "info";
+    }
+
+    function statusAccentHex(status) {
+      const map = { success: "#16A34A", warning: "#D4A63A", danger: "#DC2626", info: "#2563EB" };
+      return map[getStatusChipClass(status)] || "#64748B";
     }
 
     function formatMoney(value) {

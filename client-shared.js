@@ -798,6 +798,15 @@
         pointer-events: none;
       }
 
+      /* .ungani-hero has overflow:hidden above and inherits .ungani-card:hover's
+         transform via the shared "ungani-card ungani-hero" class combo - that's
+         the exact combination that caused the dashboard flicker bug. Neutralize
+         the inherited movement here; a large banner shouldn't shift under the
+         cursor anyway. */
+      .ungani-hero.ungani-hero:hover {
+        transform: none;
+      }
+
       .ungani-hero h2,
       .ungani-hero h3 {
         margin-top: 0;
@@ -829,6 +838,7 @@
         overflow: hidden;
         min-height: 142px;
         cursor: default;
+        --accent: #64748B;
       }
 
       .ungani-metric::before {
@@ -842,17 +852,37 @@
         transition: transform 0.22s ease, opacity 0.22s ease;
       }
 
+      .ungani-metric::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 18px;
+        bottom: 18px;
+        width: 4px;
+        border-radius: 0 999px 999px 0;
+        background: var(--accent);
+      }
+
       .ungani-metric:hover::before {
         transform: scale(1.18);
         opacity: 0.95;
       }
 
+      .ungani-metric.green { --accent: var(--ungani-green); }
+      .ungani-metric.gold, .ungani-metric.orange { --accent: var(--ungani-gold); }
+      .ungani-metric.red { --accent: var(--ungani-red); }
+      .ungani-metric.blue { --accent: var(--ungani-blue); }
+
       .ungani-metric.clickable {
         cursor: pointer;
       }
 
+      /* .ungani-metric has overflow:hidden above - a hover transform on this same
+         element is the exact combo that caused the dashboard flicker bug (the box
+         shifts out from under the cursor, un-hovers, reverts, re-hovers). Color/
+         glow only here, never movement. */
       .ungani-metric.clickable:hover {
-        transform: translateY(-6px);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.18);
       }
 
       .ungani-metric-top {

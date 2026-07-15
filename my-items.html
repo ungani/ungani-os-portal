@@ -115,8 +115,28 @@
           }
 
           .property-card {
+            position: relative;
             overflow: hidden;
             padding: 0;
+          }
+
+          .property-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18px;
+            bottom: 18px;
+            width: 4px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent, #64748B);
+            z-index: 2;
+          }
+
+          /* .property-card inherits .ungani-card:hover's transform, which combined with
+             overflow:hidden here is the exact combo that caused the dashboard flicker bug -
+             neutralize it so hover only shows a border/shadow change, never movement. */
+          .property-card.property-card:hover {
+            transform: none;
           }
 
           .property-photo {
@@ -226,12 +246,24 @@
           }
 
           .property-list-row {
+            position: relative;
             display: grid;
             grid-template-columns: minmax(180px, 1.4fr) 120px 140px 130px 130px auto;
             gap: 12px;
             align-items: center;
             border-bottom: 1px solid var(--ungani-border);
-            padding: 12px 0;
+            padding: 12px 0 12px 14px;
+          }
+
+          .property-list-row::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 8px;
+            bottom: 8px;
+            width: 4px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent, #64748B);
           }
 
           @media (max-width: 1180px) {
@@ -479,7 +511,7 @@
       const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
       return `
-        <article class="ungani-card property-card">
+        <article class="ungani-card property-card" style="--accent:${UnganiClientShared.attr(statusAccentHex(status))};">
           <div class="property-photo">
             ${photo ? `<img src="${UnganiClientShared.attr(photo)}" alt="${UnganiClientShared.attr(name)}" onerror="this.style.display='none';" />` : ""}
             <div class="property-photo-content">
@@ -680,7 +712,7 @@
         const type = UnganiClientShared.getValue(row, ["listing_type", "item_type", "type"], "property");
 
         return `
-          <div class="property-list-row">
+          <div class="property-list-row" style="--accent:${UnganiClientShared.attr(statusAccentHex(status))};">
             <div>
               <strong>${UnganiClientShared.safe(name)}</strong>
               <p class="ungani-small" style="margin:4px 0 0;">${UnganiClientShared.safe(project || "No project")}</p>
@@ -1047,6 +1079,11 @@
       if (lower.includes("maintenance") || lower.includes("inactive") || lower.includes("cancelled") || lower.includes("lost")) return "red";
 
       return "blue";
+    }
+
+    function statusAccentHex(status) {
+      const map = { green: "#16A34A", gold: "#D4A63A", red: "#DC2626", blue: "#2563EB" };
+      return map[statusColor(status)] || "#64748B";
     }
 
     function progressColor(percent) {

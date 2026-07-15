@@ -273,15 +273,27 @@
           }
 
           .task-card {
+            position: relative;
             border: 1px solid var(--ungani-border);
             border-radius: 22px;
-            padding: 16px;
+            padding: 16px 16px 16px 20px;
             background: var(--ungani-card);
             box-shadow: var(--ungani-shadow);
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
             gap: 14px;
             align-items: start;
+          }
+
+          .task-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 14px;
+            bottom: 14px;
+            width: 4px;
+            border-radius: 0 999px 999px 0;
+            background: var(--accent, #64748B);
           }
 
           .task-card:hover {
@@ -686,7 +698,7 @@
             const sectionLabel = UnganiClientShared.getValue(row, ["section_label"], "");
 
             return `
-              <div class="task-card" id="task-${UnganiClientShared.attr(row.id)}">
+              <div class="task-card" id="task-${UnganiClientShared.attr(row.id)}" style="--accent:${UnganiClientShared.attr(statusAccent(status, due))};">
                 <div>
                   <div class="task-title-row">
                     ${statusBadge(status, due)}
@@ -1069,6 +1081,19 @@
       }
 
       return `<span class="ungani-badge gold">Pending</span>`;
+    }
+
+    function statusAccent(status, dueDate) {
+      const lower = String(status || "").toLowerCase();
+      const due = String(dueDate || "").slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+
+      if (due && due < today && !lower.includes("completed") && !lower.includes("cancelled")) return "#DC2626";
+      if (lower.includes("completed")) return "#16A34A";
+      if (lower.includes("progress")) return "#2563EB";
+      if (lower.includes("cancelled")) return "#DC2626";
+
+      return "#D4A63A";
     }
 
     function priorityBadge(priority) {
