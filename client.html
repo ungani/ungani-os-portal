@@ -3629,6 +3629,15 @@
       const mostRecentRecord = findMostRecentRecord(dashboardData);
       const greetingMessages = [];
 
+      const todayStrGeneric = new Date().toISOString().slice(0, 10);
+      const eventsNeedingOutcome = (dashboardData.events || []).filter(function (event) {
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return date && date < todayStrGeneric && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
+      }).sort(function (a, b) {
+        return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
+      });
+
       if (tasksDueToday > 0) {
         greetingMessages.push({ text: tasksDueToday === 1 ? "You have 1 task due today" : "You have " + tasksDueToday + " tasks due today", href: "my-tasks.html" });
       }
@@ -3699,6 +3708,19 @@
             { value: unreadNotifications, color: "#16A34A" }
           ], attentionTotal > 0 ? "Tasks, calendar, docs, support, alerts" : "All caught up"), "🔔")}
         </section>
+
+        ${eventsNeedingOutcome.length > 0 ? `
+          <section class="card">
+            <div class="section-title">
+              <div>
+                <h3>Needs Attention Today</h3>
+                <p>Past calendar activities still waiting on an outcome.</p>
+              </div>
+            </div>
+
+            ${renderEventsNeedingOutcomeCard(eventsNeedingOutcome)}
+          </section>
+        ` : ""}
 
         <section class="grid-3">
           <div class="card">
@@ -4664,6 +4686,29 @@
           </div>
         `;
       }).join("");
+    }
+
+    function renderEventsNeedingOutcomeCard(events) {
+      return `
+        <div class="property-attention-group-title">Needs Outcome</div>
+        <div class="property-attention-list">
+          ${events.map(function (row) {
+            const title = getValue(row, ["event_title", "title", "name"], "Calendar Activity");
+            const date = getValue(row, ["event_date", "date", "start_date"], "");
+
+            return attentionRow(
+              "❓",
+              title,
+              "Was " + formatDate(date) + " — confirm what happened",
+              "Needs Outcome",
+              "red",
+              "my-calendar.html?highlight=" + row.id,
+              null,
+              "event:" + row.id
+            );
+          }).join("")}
+        </div>
+      `;
     }
 
     function attentionRow(icon, title, subtitle, badgeText, badgeColor, href, sectionTag, ackKey) {
