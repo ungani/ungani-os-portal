@@ -144,6 +144,9 @@
       color: rgba(255,255,255,0.65);
       font-size: 11px;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
     }
 
     .mobile-actions {
@@ -2081,6 +2084,10 @@
         max-width: 145px;
       }
 
+      .mobile-brand span {
+        max-width: 145px;
+      }
+
       .health-gauge {
         width: 72px;
         height: 72px;
@@ -3651,7 +3658,12 @@
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
 
-      const health = computeGenericHealthScore({ tasks: tasks, money: money, support: support, dashboardData: dashboardData });
+      let health;
+      try {
+        health = computeGenericHealthScore({ tasks: tasks, money: money, support: support, dashboardData: dashboardData });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -3964,7 +3976,12 @@
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
 
-      const health = computePropertyHealthScore({ linkedTenants: linkedTenants, overdueRent: overdueRent, occupiedUnits: occupiedUnits, totalUnits: totalUnits, maintenanceOpen: maintenanceOpen, leasesExpiring: leasesExpiring });
+      let health;
+      try {
+        health = computePropertyHealthScore({ linkedTenants: linkedTenants, overdueRent: overdueRent, occupiedUnits: occupiedUnits, totalUnits: totalUnits, maintenanceOpen: maintenanceOpen, leasesExpiring: leasesExpiring });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
 
       document.getElementById("content").innerHTML = `
         ${isScoped ? `
@@ -5031,60 +5048,104 @@
       return Math.max(0, Math.min(100, Math.round(weighted / totalWeight)));
     }
 
+    // TEMPORARY diagnostic build - visibly reports gauge render/animate state on-page
+    // (no dev tools needed) while we track down a Safari-only "gauge doesn't show" bug.
+    // Safe to remove renderHealthGaugeDebugLine()/#healthGaugeDebug once resolved.
     function renderHealthGaugeHtml(score, summary) {
-      const band = healthBandFor(score);
-      const radius = 42;
-      const circumference = 2 * Math.PI * radius;
-      const offset = circumference * (1 - score / 100);
-      const gaugeId = "healthArc" + Math.random().toString(36).slice(2, 10);
+      try {
+        const band = healthBandFor(score);
+        const radius = 42;
+        const circumference = 2 * Math.PI * radius;
+        const offset = circumference * (1 - score / 100);
+        const gaugeId = "healthArc" + Math.random().toString(36).slice(2, 10);
 
-      return `
-        <div class="health-gauge-block">
-          <div class="health-gauge">
-            <svg viewBox="0 0 100 100" class="health-gauge-svg" aria-hidden="true">
-              <g class="health-gauge-rotate">
-                <circle class="health-gauge-track" cx="50" cy="50" r="${radius}" stroke-width="10"></circle>
-                <circle
-                  id="${gaugeId}"
-                  class="health-gauge-arc"
-                  cx="50" cy="50" r="${radius}"
-                  stroke-width="10"
-                  stroke="${band.color}"
-                  style="stroke-dasharray:${circumference.toFixed(2)};stroke-dashoffset:${circumference.toFixed(2)};"
-                  data-target-offset="${offset.toFixed(2)}"
-                ></circle>
-              </g>
-            </svg>
-            <div class="health-gauge-center">
-              <strong>${score}</strong>
-              <span>${safe(band.label)}</span>
+        return `
+          <div class="health-gauge-block">
+            <div class="health-gauge">
+              <svg viewBox="0 0 100 100" class="health-gauge-svg" aria-hidden="true">
+                <g class="health-gauge-rotate">
+                  <circle class="health-gauge-track" cx="50" cy="50" r="${radius}" stroke-width="10"></circle>
+                  <circle
+                    id="${gaugeId}"
+                    class="health-gauge-arc"
+                    cx="50" cy="50" r="${radius}"
+                    stroke-width="10"
+                    stroke="${band.color}"
+                    style="stroke-dasharray:${circumference.toFixed(2)};stroke-dashoffset:${circumference.toFixed(2)};"
+                    data-target-offset="${offset.toFixed(2)}"
+                  ></circle>
+                </g>
+              </svg>
+              <div class="health-gauge-center">
+                <strong>${score}</strong>
+                <span>${safe(band.label)}</span>
+              </div>
+            </div>
+            <p class="health-gauge-summary">${safe(summary)}</p>
+          </div>
+          <div id="healthGaugeDebug" style="font-size:9px;font-family:monospace;color:rgba(255,255,255,0.55);margin-top:6px;line-height:1.5;word-break:break-all;">gauge debug: render ok, waiting on animate...</div>
+        `;
+      } catch (error) {
+        return `
+          <div class="health-gauge-block">
+            <div style="padding:12px;background:rgba(220,38,38,0.18);border:1px solid #DC2626;border-radius:10px;font-size:11px;font-family:monospace;color:#fff;word-break:break-all;">
+              GAUGE RENDER ERROR: ${safe(String((error && error.message) || error))}
             </div>
           </div>
-          <p class="health-gauge-summary">${safe(summary)}</p>
-        </div>
-      `;
+        `;
+      }
     }
 
     function animateHealthGauges() {
-      const arcs = document.querySelectorAll(".health-gauge-arc[data-target-offset]");
-      if (!arcs.length) return;
+      const debugEl = document.getElementById("healthGaugeDebug");
 
-      if (prefersReducedMotion()) {
-        arcs.forEach(function (arc) { arc.style.setProperty("stroke-dashoffset", arc.dataset.targetOffset); });
-        return;
-      }
+      try {
+        const arcs = document.querySelectorAll(".health-gauge-arc[data-target-offset]");
 
-      // Force layout so the initial (fully-hidden) dashoffset is committed as the
-      // transition's "before" state - Safari has been unreliable about picking up a
-      // freshly-inserted SVG element's starting value otherwise, and without this the
-      // arc can jump straight to its target with no transition, or fail to paint at all.
-      arcs.forEach(function (arc) { arc.getBoundingClientRect(); });
+        if (!arcs.length) {
+          if (debugEl) debugEl.textContent = "gauge debug: no .health-gauge-arc[data-target-offset] found in DOM";
+          return;
+        }
 
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
+        if (prefersReducedMotion()) {
           arcs.forEach(function (arc) { arc.style.setProperty("stroke-dashoffset", arc.dataset.targetOffset); });
+          if (debugEl) debugEl.textContent = "gauge debug: reduced-motion path, dashoffset set directly";
+          return;
+        }
+
+        // Force layout so the initial (fully-hidden) dashoffset is committed as the
+        // transition's "before" state - Safari has been unreliable about picking up a
+        // freshly-inserted SVG element's starting value otherwise, and without this the
+        // arc can jump straight to its target with no transition, or fail to paint at all.
+        arcs.forEach(function (arc) { arc.getBoundingClientRect(); });
+
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            try {
+              arcs.forEach(function (arc) { arc.style.setProperty("stroke-dashoffset", arc.dataset.targetOffset); });
+
+              if (debugEl) {
+                const arc = arcs[0];
+                const rect = arc.getBoundingClientRect();
+                const g = arc.closest(".health-gauge-rotate");
+                const gRect = g ? g.getBoundingClientRect() : null;
+                const cs = getComputedStyle(arc);
+                debugEl.textContent = "gauge debug: arcs=" + arcs.length +
+                  " arcRect=" + Math.round(rect.width) + "x" + Math.round(rect.height) +
+                  " gRect=" + (gRect ? Math.round(gRect.width) + "x" + Math.round(gRect.height) : "n/a") +
+                  " dashoffset=" + cs.strokeDashoffset +
+                  " target=" + arc.dataset.targetOffset +
+                  " stroke=" + cs.stroke +
+                  " gTransform=" + (g ? getComputedStyle(g).transform : "n/a");
+              }
+            } catch (innerError) {
+              if (debugEl) debugEl.textContent = "gauge debug ERROR (inner rAF): " + ((innerError && innerError.message) || innerError);
+            }
+          });
         });
-      });
+      } catch (error) {
+        if (debugEl) debugEl.textContent = "gauge debug ERROR: " + ((error && error.message) || error);
+      }
     }
 
     function healthSummaryFromWeakest(entries, allStrongText) {
