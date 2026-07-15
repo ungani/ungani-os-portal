@@ -879,6 +879,11 @@
     .health-gauge-svg {
       width: 100%;
       height: 100%;
+    }
+
+    .health-gauge-rotate {
+      transform-box: fill-box;
+      transform-origin: center;
       transform: rotate(-90deg);
     }
 
@@ -4960,16 +4965,18 @@
         <div class="health-gauge-block">
           <div class="health-gauge">
             <svg viewBox="0 0 100 100" class="health-gauge-svg" aria-hidden="true">
-              <circle class="health-gauge-track" cx="50" cy="50" r="${radius}"></circle>
-              <circle
-                id="${gaugeId}"
-                class="health-gauge-arc"
-                cx="50" cy="50" r="${radius}"
-                stroke="${band.color}"
-                stroke-dasharray="${circumference.toFixed(2)}"
-                stroke-dashoffset="${circumference.toFixed(2)}"
-                data-target-offset="${offset.toFixed(2)}"
-              ></circle>
+              <g class="health-gauge-rotate">
+                <circle class="health-gauge-track" cx="50" cy="50" r="${radius}" stroke-width="10"></circle>
+                <circle
+                  id="${gaugeId}"
+                  class="health-gauge-arc"
+                  cx="50" cy="50" r="${radius}"
+                  stroke-width="10"
+                  stroke="${band.color}"
+                  style="stroke-dasharray:${circumference.toFixed(2)};stroke-dashoffset:${circumference.toFixed(2)};"
+                  data-target-offset="${offset.toFixed(2)}"
+                ></circle>
+              </g>
             </svg>
             <div class="health-gauge-center">
               <strong>${score}</strong>
@@ -4986,13 +4993,19 @@
       if (!arcs.length) return;
 
       if (prefersReducedMotion()) {
-        arcs.forEach(function (arc) { arc.style.strokeDashoffset = arc.dataset.targetOffset; });
+        arcs.forEach(function (arc) { arc.style.setProperty("stroke-dashoffset", arc.dataset.targetOffset); });
         return;
       }
 
+      // Force layout so the initial (fully-hidden) dashoffset is committed as the
+      // transition's "before" state - Safari has been unreliable about picking up a
+      // freshly-inserted SVG element's starting value otherwise, and without this the
+      // arc can jump straight to its target with no transition, or fail to paint at all.
+      arcs.forEach(function (arc) { arc.getBoundingClientRect(); });
+
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
-          arcs.forEach(function (arc) { arc.style.strokeDashoffset = arc.dataset.targetOffset; });
+          arcs.forEach(function (arc) { arc.style.setProperty("stroke-dashoffset", arc.dataset.targetOffset); });
         });
       });
     }
