@@ -521,6 +521,150 @@
         animation: unganiFadeUp 0.18s ease both;
       }
 
+      .ungani-teamchat-panel {
+        display: flex;
+        flex-direction: column;
+        height: min(500px, 72vh);
+        width: min(400px, 92vw);
+      }
+
+      .ungani-teamchat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .ungani-teamchat-bubble {
+        max-width: 82%;
+        padding: 10px 14px;
+        border-radius: 16px;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .ungani-teamchat-bubble .ungani-teamchat-sender {
+        display: block;
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 3px;
+        opacity: 0.7;
+      }
+
+      .ungani-teamchat-bubble .ungani-teamchat-time {
+        display: block;
+        font-size: 10px;
+        margin-top: 4px;
+        opacity: 0.6;
+      }
+
+      .ungani-teamchat-bubble.mine {
+        align-self: flex-end;
+        background: var(--ungani-gold);
+        color: var(--ungani-navy);
+        border-bottom-right-radius: 4px;
+      }
+
+      .ungani-teamchat-bubble.theirs {
+        align-self: flex-start;
+        background: var(--ungani-soft);
+        color: var(--ungani-text);
+        border: 1px solid var(--ungani-border);
+        border-bottom-left-radius: 4px;
+      }
+
+      .ungani-teamchat-input-row {
+        display: flex;
+        gap: 8px;
+        padding: 12px;
+        border-top: 1px solid var(--ungani-border);
+        background: var(--ungani-soft);
+      }
+
+      .ungani-teamchat-input-row input {
+        flex: 1;
+        border-radius: 999px;
+        border: 1px solid var(--ungani-border);
+        background: var(--ungani-card);
+        color: var(--ungani-text);
+        padding: 10px 16px;
+        font-size: 13px;
+        outline: none;
+      }
+
+      .ungani-teamchat-input-row input:focus {
+        border-color: var(--ungani-gold);
+      }
+
+      .ungani-teamchat-send {
+        width: 40px;
+        height: 40px;
+        border-radius: 999px;
+        border: 0;
+        background: var(--ungani-gold);
+        color: var(--ungani-navy);
+        font-weight: 900;
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+
+      .ungani-teamchat-toast {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 99999;
+        max-width: min(340px, calc(100vw - 32px));
+        background: linear-gradient(135deg, rgba(8,38,84,0.98), rgba(6,28,61,0.98));
+        color: #FFFFFF;
+        border: 1px solid rgba(212,166,58,0.35);
+        border-radius: 18px;
+        box-shadow: 0 18px 45px rgba(0,0,0,0.35);
+        padding: 14px;
+        display: flex;
+        gap: 11px;
+        align-items: flex-start;
+        cursor: pointer;
+        transform: translateY(14px);
+        opacity: 0;
+        transition: 0.28s ease;
+      }
+
+      .ungani-teamchat-toast.show {
+        transform: translateY(0);
+        opacity: 1;
+      }
+
+      .ungani-teamchat-toast strong {
+        display: block;
+        color: #D4A63A;
+        font-size: 13px;
+        margin-bottom: 3px;
+      }
+
+      .ungani-teamchat-toast p {
+        margin: 0;
+        font-size: 13px;
+        color: #F5F5F3;
+        line-height: 1.4;
+      }
+
+      @media (max-width: 640px) {
+        .ungani-teamchat-panel {
+          position: fixed;
+          top: auto;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          width: 100%;
+          height: min(78vh, 560px);
+          border-radius: 22px 22px 0 0;
+        }
+      }
+
       .ungani-global-results {
         left: 0;
         right: auto;
@@ -1267,6 +1411,7 @@
 
       renderShell(config);
       loadNotificationBadge();
+      startTeamChatPolling();
 
       const context = makeContext();
 
@@ -1475,6 +1620,14 @@
                   <span id="unganiBellCount" class="ungani-bell-count">0</span>
                 </button>
                 <div id="unganiNotificationPanel" class="ungani-notification-panel" style="display:none;"></div>
+              </div>
+
+              <div class="ungani-bell-holder">
+                <button id="unganiChatBtn" class="ungani-icon-button" type="button" onclick="UnganiClientShared.toggleTeamChat()" title="Team Chat">
+                  💬
+                  <span id="unganiChatCount" class="ungani-bell-count">0</span>
+                </button>
+                <div id="unganiTeamChatPanel" class="ungani-notification-panel ungani-teamchat-panel" style="display:none;"></div>
               </div>
 
               <div class="ungani-quickadd-holder">
@@ -1949,6 +2102,9 @@
       return;
     }
 
+    closeTeamChat();
+    closeQuickAdd();
+
     panel.style.display = "block";
     panel.innerHTML = `
       <div class="ungani-panel-head">
@@ -2002,6 +2158,13 @@
         href: "my-records.html",
         titleFields: ["record_title", "title", "name"],
         detailFields: ["record_type", "status", "property_name", "project_name", "assigned_agent"]
+      },
+      {
+        table: "transactions",
+        label: "Money Record",
+        href: "my-money.html",
+        titleFields: ["category_name", "category", "description"],
+        detailFields: ["transaction_type", "type", "payment_method", "status"]
       }
     ];
 
@@ -2103,6 +2266,270 @@
     countEl.style.display = count > 0 ? "inline-flex" : "none";
   }
 
+  let teamChatState = {
+    messages: [],
+    isOpen: false,
+    pollTimer: null,
+    firstLoadDone: false
+  };
+
+  async function loadTeamChatMessages(silent) {
+    if (!state.supabaseClient || !state.tenantId) return;
+
+    try {
+      const response = await state.supabaseClient
+        .from("team_chat_messages")
+        .select("*")
+        .eq("tenant_id", state.tenantId)
+        .order("created_at", { ascending: true })
+        .limit(100);
+
+      if (response.error) {
+        console.warn("Team chat load skipped:", response.error.message);
+        return;
+      }
+
+      const previousMessages = teamChatState.messages;
+      teamChatState.messages = response.data || [];
+
+      if (teamChatState.firstLoadDone) {
+        checkForNewTeamChatMessages(previousMessages, teamChatState.messages);
+      }
+
+      teamChatState.firstLoadDone = true;
+      updateTeamChatBadge();
+
+      if (teamChatState.isOpen) {
+        renderTeamChatMessages();
+
+        if (!silent) {
+          scrollTeamChatToBottom();
+        }
+      }
+    } catch (error) {
+      console.warn("Team chat load skipped:", error.message);
+    }
+  }
+
+  function checkForNewTeamChatMessages(previousMessages, newMessages) {
+    const previousIds = new Set(previousMessages.map(function (m) { return m.id; }));
+    const myUserId = state.authUser ? state.authUser.id : null;
+
+    const freshOnes = newMessages.filter(function (m) {
+      return !previousIds.has(m.id) && m.sender_user_id !== myUserId;
+    });
+
+    if (freshOnes.length > 0 && !teamChatState.isOpen) {
+      showTeamChatToast(freshOnes[freshOnes.length - 1]);
+    }
+  }
+
+  function updateTeamChatBadge() {
+    const countEl = document.getElementById("unganiChatCount");
+    if (!countEl) return;
+
+    const myUserId = state.authUser ? state.authUser.id : null;
+    const unread = teamChatState.messages.filter(function (m) {
+      return m.sender_user_id !== myUserId && !m.is_read;
+    }).length;
+
+    countEl.textContent = String(unread);
+    countEl.style.display = unread > 0 ? "inline-flex" : "none";
+  }
+
+  function showTeamChatToast(message) {
+    const existing = document.getElementById("unganiTeamChatToast");
+    if (existing) existing.remove();
+
+    const toast = document.createElement("div");
+    toast.id = "unganiTeamChatToast";
+    toast.className = "ungani-teamchat-toast";
+
+    const senderName = getValue(message, ["sender_name"], "Team Member");
+    const rawBody = String(getValue(message, ["message_body", "message", "body"], "New team message"));
+    const body = rawBody.length > 90 ? rawBody.slice(0, 90) + "..." : rawBody;
+
+    toast.innerHTML = `
+      <div style="font-size:20px;">💬</div>
+      <div>
+        <strong>${safe(senderName)}</strong>
+        <p>${safe(body)}</p>
+      </div>
+    `;
+
+    toast.addEventListener("click", function () {
+      toast.remove();
+      toggleTeamChat();
+    });
+
+    document.body.appendChild(toast);
+
+    setTimeout(function () { toast.classList.add("show"); }, 30);
+    setTimeout(function () {
+      toast.classList.remove("show");
+      setTimeout(function () { toast.remove(); }, 300);
+    }, 7000);
+  }
+
+  async function toggleTeamChat() {
+    const panel = document.getElementById("unganiTeamChatPanel");
+    if (!panel) return;
+
+    closeGlobalSearch();
+    closeQuickAdd();
+
+    const notificationPanel = document.getElementById("unganiNotificationPanel");
+    if (notificationPanel) notificationPanel.style.display = "none";
+
+    if (teamChatState.isOpen) {
+      closeTeamChat();
+      return;
+    }
+
+    teamChatState.isOpen = true;
+    panel.style.display = "flex";
+    panel.innerHTML = renderTeamChatShell();
+
+    await markTeamChatRead();
+    renderTeamChatMessages();
+    scrollTeamChatToBottom();
+
+    const input = document.getElementById("unganiTeamChatInput");
+    if (input) input.focus();
+  }
+
+  function closeTeamChat() {
+    const panel = document.getElementById("unganiTeamChatPanel");
+    teamChatState.isOpen = false;
+
+    if (panel) {
+      panel.style.display = "none";
+    }
+  }
+
+  function renderTeamChatShell() {
+    return `
+      <div class="ungani-panel-head">
+        <strong>Team Chat</strong>
+        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeTeamChat()">Close</button>
+      </div>
+      <div id="unganiTeamChatMessages" class="ungani-teamchat-messages"></div>
+      <form class="ungani-teamchat-input-row" onsubmit="UnganiClientShared.sendTeamChatMessage(event); return false;">
+        <input id="unganiTeamChatInput" type="text" placeholder="Message your team..." autocomplete="off" />
+        <button class="ungani-teamchat-send" type="submit" title="Send">➤</button>
+      </form>
+    `;
+  }
+
+  function renderTeamChatMessages() {
+    const box = document.getElementById("unganiTeamChatMessages");
+    if (!box) return;
+
+    if (!teamChatState.messages.length) {
+      box.innerHTML = `
+        <div class="ungani-empty" style="margin:auto;">
+          <h3>No messages yet</h3>
+          <p>Send a quick note to your team to get started.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const myUserId = state.authUser ? state.authUser.id : null;
+
+    box.innerHTML = teamChatState.messages.map(function (row) {
+      const isMine = row.sender_user_id === myUserId;
+      const senderName = getValue(row, ["sender_name"], isMine ? "You" : "Team Member");
+      const body = getValue(row, ["message_body", "message", "body"], "");
+      const time = formatDateTime(getValue(row, ["created_at"], ""));
+
+      return `
+        <div class="ungani-teamchat-bubble ${isMine ? "mine" : "theirs"}">
+          ${isMine ? "" : `<span class="ungani-teamchat-sender">${safe(senderName)}</span>`}
+          <span>${safe(body)}</span>
+          <span class="ungani-teamchat-time">${safe(time)}</span>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function scrollTeamChatToBottom() {
+    const box = document.getElementById("unganiTeamChatMessages");
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+
+  async function markTeamChatRead() {
+    if (!state.supabaseClient || !state.tenantId || !state.authUser) return;
+
+    try {
+      await state.supabaseClient
+        .from("team_chat_messages")
+        .update({ is_read: true, updated_at: new Date().toISOString() })
+        .eq("tenant_id", state.tenantId)
+        .neq("sender_user_id", state.authUser.id)
+        .eq("is_read", false);
+
+      teamChatState.messages.forEach(function (m) {
+        if (m.sender_user_id !== state.authUser.id) m.is_read = true;
+      });
+
+      updateTeamChatBadge();
+    } catch (error) {
+      console.warn("Could not mark team chat read:", error.message);
+    }
+  }
+
+  async function sendTeamChatMessage(event) {
+    if (event && event.preventDefault) event.preventDefault();
+
+    const input = document.getElementById("unganiTeamChatInput");
+    const body = input ? String(input.value || "").trim() : "";
+
+    if (!body || !state.authUser) return;
+
+    const senderName = getValue(state.userProfile, ["full_name", "name"], "") ||
+      getValue(state.authUser, ["email"], "Team Member");
+
+    const payload = {
+      tenant_id: state.tenantId,
+      sender_user_id: state.authUser.id,
+      sender_name: senderName,
+      sender_role: "team",
+      message_type: "message",
+      message_body: body,
+      message: body,
+      body: body,
+      is_read: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (input) input.value = "";
+
+    try {
+      const response = await state.supabaseClient.from("team_chat_messages").insert(payload);
+
+      if (response.error) {
+        showToast("Could not send message: " + response.error.message);
+        return;
+      }
+
+      await loadTeamChatMessages(true);
+    } catch (error) {
+      showToast("Could not send message: " + error.message);
+    }
+  }
+
+  function startTeamChatPolling() {
+    if (teamChatState.pollTimer) clearInterval(teamChatState.pollTimer);
+
+    loadTeamChatMessages(true);
+
+    teamChatState.pollTimer = setInterval(function () {
+      loadTeamChatMessages(true);
+    }, 12000);
+  }
+
   async function toggleNotifications() {
     const panel = document.getElementById("unganiNotificationPanel");
 
@@ -2110,6 +2537,7 @@
 
     closeGlobalSearch();
     closeQuickAdd();
+    closeTeamChat();
 
     if (panel.style.display === "block") {
       panel.style.display = "none";
@@ -2262,6 +2690,7 @@
     if (!panel) return;
 
     closeGlobalSearch();
+    closeTeamChat();
 
     const notificationPanel = document.getElementById("unganiNotificationPanel");
 
@@ -2747,6 +3176,9 @@
       handleGlobalSearchInput,
       closeGlobalSearch,
       toggleNotifications,
+      toggleTeamChat,
+      closeTeamChat,
+      sendTeamChatMessage,
       openQuickAdd,
       closeQuickAdd,
       changeQuickAddType,
