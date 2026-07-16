@@ -120,11 +120,13 @@
       loadScriptOnce("admin-access-guard.js");
       loadScriptOnce("admin-ui-polish.js");
       loadScriptOnce("admin-dashboard-clicks.js");
+      loadScriptOnce("session-inactivity-guard.js");
       return;
     }
 
     if (clientPages.includes(page)) {
       loadScriptOnce("client-access-guard.js");
+      loadScriptOnce("session-inactivity-guard.js");
 
       if (portalMode === "staff") {
         loadScriptOnce("staff-permission-guard.js");

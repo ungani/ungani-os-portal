@@ -592,8 +592,32 @@
         <label for="password">Password</label>
         <input id="password" type="password" placeholder="Enter password" autocomplete="current-password" required />
 
+        <div style="text-align:right;margin-top:8px;">
+          <a href="#" onclick="showView('reset-request'); return false;" style="font-size:12px;font-weight:900;color:var(--muted);">Forgot password?</a>
+        </div>
+
         <div class="button-row">
           <button id="loginButton" class="btn gold" type="submit">Login</button>
+        </div>
+      </form>
+
+      <form id="resetRequestForm" onsubmit="requestPasswordReset(event)" style="display:none;">
+        <label for="resetEmail">Email</label>
+        <input id="resetEmail" type="email" placeholder="you@example.com" autocomplete="email" required />
+        <p style="margin:8px 0 0;color:var(--muted);font-size:13px;line-height:1.45;">We'll email you a link to reset your password.</p>
+
+        <div class="button-row">
+          <button id="resetRequestButton" class="btn gold" type="submit">Send Reset Link</button>
+          <button class="btn light" type="button" onclick="showView('login')">Back to Login</button>
+        </div>
+      </form>
+
+      <form id="newPasswordForm" onsubmit="saveNewPassword(event)" style="display:none;">
+        <label for="newPassword">New Password</label>
+        <input id="newPassword" type="password" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required />
+
+        <div class="button-row">
+          <button id="newPasswordButton" class="btn gold" type="submit">Save New Password</button>
         </div>
       </form>
 
@@ -632,6 +656,7 @@
     async function initLoginPage() {
       const params = new URLSearchParams(window.location.search);
       const mode = params.get("mode");
+      const reason = params.get("reason");
 
       if (mode === "admin") {
         setMode("admin");
@@ -639,14 +664,49 @@
         setMode("client");
       }
 
+      const url = window.location.href;
+      const isRecovery = url.includes("type=recovery") || url.includes("access_token") || url.includes("refresh_token") || url.includes("code=");
+
+      if (isRecovery) {
+        showView("reset-new-password");
+      } else if (reason === "inactivity") {
+        showStatus("You were logged out due to inactivity. Please log in again.", "error");
+      } else if (reason === "signed-out") {
+        showStatus("You were signed out in another tab.", "error");
+      }
+
       const userResponse = await supabaseClient.auth.getUser();
       currentUser = userResponse && userResponse.data ? userResponse.data.user : null;
 
-      if (currentUser) {
+      if (currentUser && !isRecovery) {
         showSignedIn(currentUser);
       }
 
       setupInstallBox();
+    }
+
+    function showView(view) {
+      clearStatus();
+
+      document.getElementById("loginForm").style.display = view === "login" ? "block" : "none";
+      document.getElementById("resetRequestForm").style.display = view === "reset-request" ? "block" : "none";
+      document.getElementById("newPasswordForm").style.display = view === "reset-new-password" ? "block" : "none";
+
+      const modeTabs = document.querySelector(".mode-tabs");
+      if (modeTabs) modeTabs.style.display = view === "login" ? "grid" : "none";
+
+      const signedInBox = document.getElementById("signedInBox");
+      if (signedInBox) signedInBox.classList.remove("show");
+
+      if (view === "reset-request") {
+        document.getElementById("loginTitle").innerText = "Reset Password";
+        document.getElementById("loginSubtitle").innerText = "Enter your email and we'll send you a reset link.";
+      } else if (view === "reset-new-password") {
+        document.getElementById("loginTitle").innerText = "Set New Password";
+        document.getElementById("loginSubtitle").innerText = "Choose a new password for your account.";
+      } else {
+        setMode(currentMode);
+      }
     }
 
     function setMode(mode) {
@@ -683,6 +743,14 @@
 
       setLoading(true);
 
+      const lockStatus = await checkLoginLockout(email);
+
+      if (lockStatus && lockStatus.locked) {
+        setLoading(false);
+        showLockoutMessage(lockStatus.seconds_remaining);
+        return;
+      }
+
       const response = await supabaseClient.auth.signInWithPassword({
         email,
         password
@@ -691,9 +759,20 @@
       setLoading(false);
 
       if (response.error) {
-        showStatus(response.error.message, "error");
+        const attemptResult = await recordFailedLogin(email);
+
+        if (attemptResult && attemptResult.locked) {
+          showLockoutMessage(attemptResult.seconds_remaining);
+        } else {
+          const remaining = attemptResult && typeof attemptResult.attempts_remaining === "number" ? attemptResult.attempts_remaining : null;
+          const suffix = remaining !== null ? (" (" + remaining + " attempt" + (remaining === 1 ? "" : "s") + " remaining before a temporary lockout)") : "";
+          showStatus(response.error.message + suffix, "error");
+        }
+
         return;
       }
+
+      recordSuccessfulLogin(email);
 
       currentUser = response.data.user;
 
@@ -750,6 +829,117 @@
       showStatus("This signed-in account is not an UNGANI admin. Log out and use the admin email.", "error");
     }
 
+    // These RPCs (check_login_lockout / record_failed_login / record_successful_login) require
+    // the login_attempts table + functions to be created in Supabase first. Until then, every
+    // call below fails gracefully and returns null, so login itself is never blocked.
+    async function checkLoginLockout(email) {
+      try {
+        const response = await supabaseClient.rpc("check_login_lockout", { p_email: email });
+        if (response.error) return null;
+        return response.data;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    async function recordFailedLogin(email) {
+      try {
+        const response = await supabaseClient.rpc("record_failed_login", { p_email: email });
+        if (response.error) return null;
+        return response.data;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    async function recordSuccessfulLogin(email) {
+      try {
+        await supabaseClient.rpc("record_successful_login", { p_email: email });
+      } catch (error) {
+        // non-critical - never block a successful login on this
+      }
+    }
+
+    function showLockoutMessage(secondsRemaining) {
+      const minutes = Math.max(1, Math.ceil((Number(secondsRemaining) || 900) / 60));
+
+      showStatusHtml(
+        "Too many failed attempts. This account is temporarily locked for about " + minutes +
+        " more minute" + (minutes === 1 ? "" : "s") + ". " +
+        "<a href=\"#\" onclick=\"showView('reset-request'); return false;\" style=\"color:#991B1B;font-weight:900;text-decoration:underline;\">Reset your password</a> to regain access immediately.",
+        "error"
+      );
+    }
+
+    async function requestPasswordReset(event) {
+      event.preventDefault();
+      clearStatus();
+
+      const email = value("resetEmail");
+
+      if (!email) {
+        showStatus("Enter your email address.", "error");
+        return;
+      }
+
+      const button = document.getElementById("resetRequestButton");
+      button.disabled = true;
+      button.innerText = "Sending...";
+
+      try {
+        const response = await supabaseClient.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + "/login.html"
+        });
+
+        if (response.error) {
+          showStatus(response.error.message, "error");
+          return;
+        }
+
+        showStatus("If an account exists for that email, a password reset link has been sent. Check your inbox.", "success");
+      } finally {
+        button.disabled = false;
+        button.innerText = "Send Reset Link";
+      }
+    }
+
+    async function saveNewPassword(event) {
+      event.preventDefault();
+      clearStatus();
+
+      const newPassword = value("newPassword");
+
+      if (!newPassword || newPassword.length < 8) {
+        showStatus("Enter a new password with at least 8 characters.", "error");
+        return;
+      }
+
+      const button = document.getElementById("newPasswordButton");
+      button.disabled = true;
+      button.innerText = "Saving...";
+
+      try {
+        const response = await supabaseClient.auth.updateUser({ password: newPassword });
+
+        if (response.error) {
+          showStatus(response.error.message, "error");
+          return;
+        }
+
+        showStatus("Password updated. Opening your dashboard...", "success");
+
+        currentUser = response.data.user;
+        const adminCheck = await checkAdmin();
+
+        setTimeout(function () {
+          window.location.href = adminCheck ? "admin-home.html" : "client.html";
+        }, 1200);
+      } finally {
+        button.disabled = false;
+        button.innerText = "Save New Password";
+      }
+    }
+
     function openClient() {
       window.location.href = "client.html";
     }
@@ -776,6 +966,15 @@
       const box = document.getElementById("statusBox");
 
       box.innerText = message;
+      box.className = "status-box show " + (type || "");
+    }
+
+    // Only ever pass fixed, developer-constructed strings here (never raw Supabase/user
+    // input) - showStatus() above uses innerText specifically to avoid that XSS risk.
+    function showStatusHtml(html, type) {
+      const box = document.getElementById("statusBox");
+
+      box.innerHTML = html;
       box.className = "status-box show " + (type || "");
     }
 
