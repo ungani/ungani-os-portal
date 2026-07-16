@@ -948,6 +948,103 @@
       overflow: visible;
     }
 
+    .attention-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .attention-row {
+      position: relative;
+      display: block;
+      padding: 13px 13px 13px 16px;
+      border: 1px solid var(--border);
+      background: var(--card-solid);
+      border-radius: 18px;
+      transition: 0.2s ease;
+    }
+
+    .attention-row-inner {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      transition: transform 0.2s ease;
+    }
+
+    .attention-row:hover .attention-row-inner {
+      transform: translateY(-2px);
+    }
+
+    .attention-row::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 4px;
+      border-radius: 0 999px 999px 0;
+      background: var(--accent, var(--muted));
+    }
+
+    .attention-row:hover {
+      border-color: rgba(212,166,58,0.45);
+      box-shadow: 0 16px 38px rgba(0,0,0,0.14);
+    }
+
+    .attention-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: var(--accent-20, rgba(100,116,139,0.20));
+      color: var(--accent, var(--text-soft));
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 19px;
+      box-shadow: 0 0 0 1px var(--accent-28, rgba(100,116,139,0.28)) inset;
+    }
+
+    .attention-row strong {
+      display: block;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .attention-row small {
+      display: block;
+      color: var(--text-soft);
+      margin-top: 2px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    @keyframes unganiUrgentPulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(220,38,38,0.42);
+        border-color: rgba(220,38,38,0.55);
+      }
+      50% {
+        box-shadow: 0 0 0 7px rgba(220,38,38,0);
+        border-color: rgba(220,38,38,0.85);
+      }
+    }
+
+    .attention-row.pulse-urgent {
+      animation: unganiUrgentPulse 2.2s ease-in-out infinite;
+    }
+
+    .attention-row.pulse-urgent:hover {
+      animation-play-state: paused;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .attention-row.pulse-urgent {
+        animation: none;
+        border-color: rgba(220,38,38,0.7);
+        box-shadow: 0 0 0 2px rgba(220,38,38,0.25);
+      }
+    }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -1965,6 +2062,19 @@
             <div class="card">
               <div class="section-title">
                 <div>
+                  <h3 data-i18n="sec_attention_title">Needs Attention</h3>
+                  <p data-i18n="sec_attention_desc">Prioritized action items from the system health check.</p>
+                </div>
+                <a class="btn small light" href="admin-health.html" data-i18n="btn_view_all">View All</a>
+              </div>
+              <div id="attentionList" class="attention-list">
+                <div class="loading" data-i18n="loading_attention">Loading action items...</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="section-title">
+                <div>
                   <h3 data-i18n="sec_ledger_title">Global Activity Ledger</h3>
                   <p data-i18n="sec_ledger_desc">Cross-tenant unified transaction pipeline logging</p>
                 </div>
@@ -2063,6 +2173,9 @@
         kpi_tracked_assets_desc: "Physical inventory & logistical items",
         kpi_ledger_vol: "Ledger Volume",
         kpi_ledger_vol_desc: "Aggregated monetary transaction flow",
+        sec_attention_title: "Needs Attention",
+        sec_attention_desc: "Prioritized action items from the system health check.",
+        loading_attention: "Loading action items...",
         sec_tenants_title: "Recent Tenant Registrations",
         sec_tenants_desc: "Awaiting operational profile verification or recent approvals",
         btn_view_all: "View All",
@@ -2167,6 +2280,9 @@
         kpi_tracked_assets_desc: "Hesabu ya vitu vya kimwili & vifaa",
         kpi_ledger_vol: "Kiwango cha Sura ya Hesabu",
         kpi_ledger_vol_desc: "Ukusanyaji wa mtiririko wa miamala ya kifedha",
+        sec_attention_title: "Yanayohitaji Uangalizi",
+        sec_attention_desc: "Vitendo vya kipaumbele kutoka kwa ukaguzi wa afya ya mfumo.",
+        loading_attention: "Inapakia vitendo...",
         sec_tenants_title: "Usajili wa Hivi Karibuni wa Wapangaji",
         sec_tenants_desc: "Inasubiri uhakiki wa wasifu wa uendeshaji au idhini za hivi karibuni",
         btn_view_all: "Angalia Zote",
@@ -2252,6 +2368,7 @@
       currentLang = localStorage.getItem('ungani_admin_lang') || 'en';
       applyLanguage();
       applyTheme();
+      acknowledgedSet = loadAcknowledgedSet();
 
       // Initialization Wrapper logic ensuring resilience
       (async function initPipeline() {
@@ -2319,6 +2436,7 @@
     function loadAdminData() {
       loadPlatformHealth();
       loadKPIs();
+      loadNeedsAttention();
       loadTenants();
       loadSupport();
       loadTransactions();
@@ -3060,6 +3178,120 @@
       });
 
       return buckets.map(function (b) { return b.value; });
+    }
+
+    // ---- Needs Attention (mirrors client.html's attentionRow/pulse-until-acknowledged pattern) ----
+
+    var actionItems = {};
+    var acknowledgedSet = new Set();
+
+    function getAckStorageKey() {
+      return 'ungani_admin_ack';
+    }
+
+    function loadAcknowledgedSet() {
+      try {
+        var raw = localStorage.getItem(getAckStorageKey());
+        var parsed = raw ? JSON.parse(raw) : [];
+        return new Set(Array.isArray(parsed) ? parsed : []);
+      } catch (error) {
+        return new Set();
+      }
+    }
+
+    function isAcknowledged(key) {
+      return !!key && acknowledgedSet.has(key);
+    }
+
+    function acknowledgeItem(key) {
+      if (!key || acknowledgedSet.has(key)) return;
+      acknowledgedSet.add(key);
+      try {
+        localStorage.setItem(getAckStorageKey(), JSON.stringify(Array.from(acknowledgedSet)));
+      } catch (error) {
+        console.warn('Could not save acknowledgment:', error.message);
+      }
+    }
+
+    function priorityIcon(priority) {
+      if (priority === 'high') return '🚨';
+      if (priority === 'medium') return '⚠️';
+      if (priority === 'low') return '🔔';
+      return '✅';
+    }
+
+    function attentionBadgeColor(priority) {
+      if (priority === 'high') return 'red';
+      if (priority === 'low') return 'blue';
+      return 'gold';
+    }
+
+    function attentionRow(icon, title, subtitle, badgeText, badgeColor, href, ackKey) {
+      var urgent = ackKey && !isAcknowledged(ackKey);
+      var pulseClass = urgent ? ' pulse-urgent' : '';
+      var onclickAttr = ackKey ? ' onclick="acknowledgeItem(\'' + String(ackKey).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); this.classList.remove(\'pulse-urgent\');"' : '';
+      var accentMap = { red: '#B91C1C', gold: '#D4A63A', blue: '#2563EB', green: '#15803D' };
+      var accent = accentMap[badgeColor] || '#64748B';
+
+      return '' +
+        '<a class="attention-row' + pulseClass + '" href="' + escapeHtml(href) + '"' + onclickAttr + ' style="' + accentVars(accent) + '">' +
+          '<div class="attention-row-inner">' +
+            '<div class="attention-icon">' + icon + '</div>' +
+            '<div><strong>' + escapeHtml(title) + '</strong><small>' + escapeHtml(subtitle) + '</small></div>' +
+            '<span class="status ' + badgeColor + '">' + escapeHtml(badgeText) + '</span>' +
+          '</div>' +
+        '</a>';
+    }
+
+    function renderNeedsAttention() {
+      var container = document.getElementById('attentionList');
+      if (!container) return;
+
+      var items = (actionItems && Array.isArray(actionItems.action_items)) ? actionItems.action_items.slice() : [];
+      items.sort(function (a, b) { return (Number(b.priority_score) || 0) - (Number(a.priority_score) || 0); });
+
+      if (!items.length) {
+        container.innerHTML = '<div class="empty">All caught up ✓ — no action items need attention right now.</div>';
+        return;
+      }
+
+      var shown = items.slice(0, 5);
+      var remaining = items.length - shown.length;
+
+      var html = shown.map(function (item) {
+        var priority = String(item.priority || 'medium').toLowerCase();
+        var page = item.recommended_page || 'admin-health.html';
+        var count = item.count;
+        var badgeText = (count !== undefined && count !== null && count !== '') ? String(count) : (priority.charAt(0).toUpperCase() + priority.slice(1));
+
+        return attentionRow(
+          priorityIcon(priority),
+          item.title || 'Action item',
+          item.message || item.recommended_action || '',
+          badgeText,
+          attentionBadgeColor(priority),
+          page,
+          'action:' + (item.title || page)
+        );
+      }).join('');
+
+      if (remaining > 0) {
+        html += '<a class="btn small light" href="admin-health.html" style="width:100%;justify-content:center;margin-top:2px;">+' + remaining + ' more - Open System Health</a>';
+      }
+
+      container.innerHTML = html;
+    }
+
+    function loadNeedsAttention() {
+      var container = document.getElementById('attentionList');
+      safeDataFetch(async function () {
+        var res = await supabase.rpc('get_admin_ungani_system_action_items');
+        if (res.error) throw res.error;
+        actionItems = res.data || {};
+        renderNeedsAttention();
+      }, function () {
+        if (container) container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
+      });
     }
 
     function toggleTheme() {
