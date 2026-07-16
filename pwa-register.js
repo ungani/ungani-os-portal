@@ -118,8 +118,6 @@
 
     if (adminPages.includes(page)) {
       loadScriptOnce("admin-access-guard.js");
-      loadScriptOnce("admin-ui-polish.js");
-      loadScriptOnce("admin-dashboard-clicks.js");
       loadScriptOnce("session-inactivity-guard.js");
       return;
     }
