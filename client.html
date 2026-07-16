@@ -2456,6 +2456,7 @@
     let businessPreset = null;
     let isRealEstate = false;
     let isHospitality = false;
+    let isRetail = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3324,6 +3325,7 @@
     function setupBusinessLabels() {
       isRealEstate = detectRealEstate(currentTenant);
       isHospitality = detectHospitality(currentTenant);
+      isRetail = detectRetail(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -3641,6 +3643,22 @@
         }
 
         renderHospitalityDashboard();
+        return;
+      }
+
+      if (isRetail) {
+        const sections = (businessPreset.selectedSectionLabels || []);
+
+        if (sections.length > 1) {
+          if (currentSection && sections.indexOf(currentSection) !== -1) {
+            renderRetailDashboard(buildSectionScopedData(currentSection), currentSection);
+          } else {
+            renderRetailOverview(sections);
+          }
+          return;
+        }
+
+        renderRetailDashboard();
         return;
       }
 
@@ -4344,6 +4362,398 @@
           </div>
         </section>
       `;
+    }
+
+    function renderRetailDashboard(scopedData, scopeLabel) {
+      const data = scopedData || dashboardData;
+      const isScoped = !!scopeLabel;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const salesThisMonth = sumRetailSales(data.transactions, monthKey);
+      const salesLastMonth = sumRetailSales(data.transactions, lastMonthKey);
+      const salesDelta = salesThisMonth - salesLastMonth;
+
+      const outOfStockItems = (data.items || []).filter(isOutOfStockItem);
+      const lowStockItems = (data.items || []).filter(isLowStockItem);
+      const needsRestockCount = outOfStockItems.length + lowStockItems.length;
+
+      const overdueSupplierPayments = (data.transactions || []).filter(function (row) {
+        if (!isSupplierPaymentTransaction(row)) return false;
+
+        const status = statusText(row);
+        if (!status.includes("pending")) return false;
+
+        const date = String(getValue(row, ["transaction_date", "created_at"], "")).slice(0, 10);
+        return date && date < todayStr;
+      }).sort(function (a, b) {
+        return String(getValue(a, ["transaction_date", "created_at"], "")).localeCompare(String(getValue(b, ["transaction_date", "created_at"], "")));
+      });
+
+      const outstandingSupplierTotal = (data.transactions || []).filter(function (row) {
+        return isSupplierPaymentTransaction(row) && statusText(row).includes("pending");
+      }).reduce(function (sum, row) { return sum + Number(getValue(row, ["amount"], 0) || 0); }, 0);
+
+      const restockTasks = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isRestockOrSupplierTask(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const customerTasks = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isCustomerFollowUpTask(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const salesTrendMonths = calculateRetailSalesTrend(data.transactions);
+      const hasAnySalesHistory = salesTrendMonths.some(function (m) { return m.value > 0; });
+      const restockTrend = buildMonthlyTrend(data.tasks, ["created_at"], function (task) {
+        return isRestockOrSupplierTask(getValue(task, ["task_type", "type"], ""));
+      });
+      const calendarPreview = buildRetailCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const sectionParam = isScoped ? "?section=" + encodeURIComponent(scopeLabel) : "";
+      const moneyHref = "my-money.html" + sectionParam;
+      const itemsHref = "my-items.html" + sectionParam;
+      const tasksHref = "my-tasks.html" + sectionParam;
+      const peopleHref = "my-people.html" + sectionParam;
+
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+
+      if (outOfStockItems.length > 0) {
+        greetingMessages.push({ text: outOfStockItems.length === 1 ? "1 item is out of stock" : outOfStockItems.length + " items are out of stock", href: itemsHref });
+      }
+      if (lowStockItems.length > 0) {
+        greetingMessages.push({ text: lowStockItems.length === 1 ? "1 item is running low on stock" : lowStockItems.length + " items are running low on stock", href: itemsHref });
+      }
+      if (overdueSupplierPayments.length > 0) {
+        greetingMessages.push({ text: overdueSupplierPayments.length === 1 ? "1 supplier payment is overdue" : overdueSupplierPayments.length + " supplier payments are overdue", href: moneyHref });
+      }
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      const tasksSummary = calculateTaskSummary(data.tasks);
+      const moneySummary = calculateMoneySummary(data.transactions);
+      const supportSummary = calculateSupportSummary(data.support);
+
+      let health;
+      try {
+        health = computeGenericHealthScore({ tasks: tasksSummary, money: moneySummary, support: supportSummary, dashboardData: data });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
+      document.getElementById("content").innerHTML = `
+        ${isScoped ? `
+          <section class="card" style="margin-bottom:14px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+            <a class="btn small light" href="client.html">← Back to Overview</a>
+          </section>
+        ` : ""}
+
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(isScoped ? scopeLabel : businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                ${isScoped
+                  ? `Showing data tagged to the ${safe(scopeLabel)} section only. Switch sections from the sidebar or return to the combined Overview.`
+                  : `Here's what needs attention today across your stock and sales. Use it to see out-of-stock and low-stock items, overdue supplier payments, and open restock/customer tasks, then click any card or row to open the right record.`
+                }
+              </p>
+              <p class="mobile-only">
+                Your retail summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="${attr(moneyHref)}">New Sale</a>
+                <a class="btn green" href="${attr(itemsHref)}">Receive Stock</a>
+                <a class="btn light" href="my-items.html">Stock / Products</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("📦", "Out of Stock", outOfStockItems.length, "item(s)", itemsHref)}
+                ${todayItem("🧾", "Supplier Payments", overdueSupplierPayments.length, "overdue", moneyHref)}
+                ${todayItem("🧑", "Customer Follow-ups", customerTasks.length, "open", tasksHref)}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("Sales (This Month)", compactMoney(salesThisMonth), rentTrendSubtitle(salesDelta, salesLastMonth, "sales"), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626", moneyHref, countSpan(salesThisMonth, "money"), sparklineSvg(salesTrendMonths.map(function (m) { return m.value; }), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626"), "💰")}
+          ${kpiCard("Low / Out of Stock", needsRestockCount, outOfStockItems.length + " out of stock · " + lowStockItems.length + " low", needsRestockCount > 0 ? "#DC2626" : "#16A34A", itemsHref, countSpan(needsRestockCount, "plain"), null, "📦")}
+          ${kpiCard("Outstanding Supplier Payments", compactMoney(outstandingSupplierTotal), overdueSupplierPayments.length + " overdue payment(s)", outstandingSupplierTotal > 0 ? "#DC2626" : "#16A34A", moneyHref, countSpan(outstandingSupplierTotal, "money"), null, "🧾")}
+          ${kpiCard("Open Restock / Supplier Tasks", restockTasks.length, "Requests needing action", restockTasks.length > 0 ? "#DC2626" : "#16A34A", tasksHref, countSpan(restockTasks.length, "plain"), sparklineSvg(restockTrend, restockTasks.length > 0 ? "#DC2626" : "#16A34A"), "🚚")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Out-of-stock and low-stock items, overdue supplier payments, and open restock/customer tasks — in priority order.</p>
+            </div>
+          </div>
+
+          ${renderRetailAttentionList(outOfStockItems, lowStockItems, overdueSupplierPayments, restockTasks, customerTasks)}
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("📦", "Add Product", "List a new product or stock item", "my-items.html", "#D4A63A")}
+          ${quickAction("💵", "New Sale", "Record a customer sale", moneyHref, "#16A34A")}
+          ${quickAction("🚚", "Receive Stock", "Update stock after a delivery", "my-items.html", "#2563EB")}
+          ${quickAction("🧑", "Add Supplier", "Register a new supplier", peopleHref, "#14B8A6")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Sales — Last 6 Months</h3>
+              <p>Monthly sales trend from your money records.</p>
+            </div>
+            <a class="btn small gold" href="${attr(moneyHref)}">Money</a>
+          </div>
+
+          ${hasAnySalesHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="retailSalesTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge("💰", "Put your numbers here", "Log your first sale and this chart will start tracking your monthly sales trend.", "New Sale", moneyHref)}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Restocks, deliveries, and payment reminders coming up.</p>
+            </div>
+            <a class="btn small gold" href="${attr("my-calendar.html" + sectionParam)}">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview, false, "Restock dates, deliveries, supplier follow-ups, and payment reminders will appear here.")}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Retail Needs Attention Today · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderRetailSalesChart(salesTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
+    function renderRetailOverview(sections) {
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const salesThisMonth = sumRetailSales(dashboardData.transactions, monthKey);
+      const salesLastMonth = sumRetailSales(dashboardData.transactions, lastMonthKey);
+      const salesDelta = salesThisMonth - salesLastMonth;
+
+      const outOfStockItems = (dashboardData.items || []).filter(isOutOfStockItem);
+      const lowStockItems = (dashboardData.items || []).filter(isLowStockItem);
+      const needsRestockCount = outOfStockItems.length + lowStockItems.length;
+
+      const overdueSupplierPayments = (dashboardData.transactions || []).filter(function (row) {
+        if (!isSupplierPaymentTransaction(row)) return false;
+
+        const status = statusText(row);
+        if (!status.includes("pending")) return false;
+
+        const date = String(getValue(row, ["transaction_date", "created_at"], "")).slice(0, 10);
+        return date && date < todayStr;
+      }).sort(function (a, b) {
+        return String(getValue(a, ["transaction_date", "created_at"], "")).localeCompare(String(getValue(b, ["transaction_date", "created_at"], "")));
+      });
+
+      const outstandingSupplierTotal = (dashboardData.transactions || []).filter(function (row) {
+        return isSupplierPaymentTransaction(row) && statusText(row).includes("pending");
+      }).reduce(function (sum, row) { return sum + Number(getValue(row, ["amount"], 0) || 0); }, 0);
+
+      const restockTasks = (dashboardData.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isRestockOrSupplierTask(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const customerTasks = (dashboardData.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isCustomerFollowUpTask(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const sectionSummaries = sections.map(function (label) {
+        return calculateSectionSummary(label, monthKey, todayStr);
+      });
+
+      const salesTrendMonths = calculateRetailSalesTrend(dashboardData.transactions);
+      const restockTrend = buildMonthlyTrend(dashboardData.tasks, ["created_at"], function (task) {
+        return isRestockOrSupplierTask(getValue(task, ["task_type", "type"], ""));
+      });
+      const calendarPreview = buildRetailCalendarPreview(today);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const mostRecentRecord = findMostRecentRecord(dashboardData);
+      const greetingMessages = [];
+
+      if (outOfStockItems.length > 0) {
+        greetingMessages.push({ text: outOfStockItems.length === 1 ? "1 item is out of stock" : outOfStockItems.length + " items are out of stock", href: "my-items.html" });
+      }
+      if (lowStockItems.length > 0) {
+        greetingMessages.push({ text: lowStockItems.length === 1 ? "1 item is running low on stock" : lowStockItems.length + " items are running low on stock", href: "my-items.html" });
+      }
+      if (overdueSupplierPayments.length > 0) {
+        greetingMessages.push({ text: overdueSupplierPayments.length === 1 ? "1 supplier payment is overdue" : overdueSupplierPayments.length + " supplier payments are overdue", href: "my-money.html" });
+      }
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                Combined view across all your sections: ${safe(sections.join(", "))}. Compare performance below, or switch to a single section from the sidebar.
+              </p>
+              <p class="mobile-only">
+                Your combined retail summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-money.html">New Sale</a>
+                <a class="btn green" href="my-items.html">Receive Stock</a>
+                <a class="btn light" href="my-items.html">Stock / Products</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("📦", "Out of Stock", outOfStockItems.length, "item(s)", "my-items.html")}
+                ${todayItem("🧾", "Supplier Payments", overdueSupplierPayments.length, "overdue", "my-money.html")}
+                ${todayItem("🧑", "Customer Follow-ups", customerTasks.length, "open", "my-tasks.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("Sales (This Month)", compactMoney(salesThisMonth), rentTrendSubtitle(salesDelta, salesLastMonth, "sales"), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626", "my-money.html", countSpan(salesThisMonth, "money"), sparklineSvg(salesTrendMonths.map(function (m) { return m.value; }), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626"), "💰")}
+          ${kpiCard("Low / Out of Stock", needsRestockCount, outOfStockItems.length + " out of stock · " + lowStockItems.length + " low", needsRestockCount > 0 ? "#DC2626" : "#16A34A", "my-items.html", countSpan(needsRestockCount, "plain"), null, "📦")}
+          ${kpiCard("Outstanding Supplier Payments", compactMoney(outstandingSupplierTotal), overdueSupplierPayments.length + " overdue payment(s)", outstandingSupplierTotal > 0 ? "#DC2626" : "#16A34A", "my-money.html", countSpan(outstandingSupplierTotal, "money"), null, "🧾")}
+          ${kpiCard("Open Restock / Supplier Tasks", restockTasks.length, "Requests needing action", restockTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(restockTasks.length, "plain"), sparklineSvg(restockTrend, restockTasks.length > 0 ? "#DC2626" : "#16A34A"), "🚚")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Out-of-stock and low-stock items, overdue supplier payments, and open restock/customer tasks — tagged by section.</p>
+            </div>
+          </div>
+
+          ${renderRetailAttentionList(outOfStockItems, lowStockItems, overdueSupplierPayments, restockTasks, customerTasks, true)}
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("📦", "Add Product", "List a new product or stock item", "my-items.html", "#D4A63A")}
+          ${quickAction("💵", "New Sale", "Record a customer sale", "my-money.html", "#16A34A")}
+          ${quickAction("🚚", "Receive Stock", "Update stock after a delivery", "my-items.html", "#2563EB")}
+          ${quickAction("🧑", "Add Supplier", "Register a new supplier", "my-people.html", "#14B8A6")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Section Comparison</h3>
+              <p>Same metrics, side by side, so you can compare how each section is performing.</p>
+            </div>
+          </div>
+
+          <div style="position:relative;height:${Math.max(140, sectionSummaries.length * 56)}px;margin-bottom:20px;">
+            <canvas id="sectionComparisonChart"></canvas>
+          </div>
+
+          <div class="section-scroll-row">
+            ${sectionSummaries.map(sectionComparisonCard).join("")}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Restocks, deliveries, and payment reminders coming up, tagged by section.</p>
+            </div>
+            <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview, true, "Restock dates, deliveries, supplier follow-ups, and payment reminders will appear here.")}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Retail Multi-Section Overview · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderRetailSalesChart(salesTrendMonths);
+      renderSectionComparisonChart(sectionSummaries);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
     }
 
     function renderHospitalityDashboard(scopedData, scopeLabel) {
@@ -5142,6 +5552,127 @@
       }
     }
 
+    const LOW_STOCK_THRESHOLD = 5;
+
+    function getStockQuantity(item) {
+      const raw = getValue(item, ["units_available"], null);
+      if (raw === null || raw === "") return null;
+      const num = Number(raw);
+      return isNaN(num) ? null : num;
+    }
+
+    function isOutOfStockItem(item) {
+      const qty = getStockQuantity(item);
+      return qty !== null && qty <= 0;
+    }
+
+    function isLowStockItem(item) {
+      const qty = getStockQuantity(item);
+      return qty !== null && qty > 0 && qty <= LOW_STOCK_THRESHOLD;
+    }
+
+    function isSupplierPaymentTransaction(row) {
+      const category = String(getValue(row, ["category", "category_name"], "")).toLowerCase();
+      const type = String(getValue(row, ["transaction_type", "type"], "")).toLowerCase();
+      return category.includes("supplier") || type.includes("supplier");
+    }
+
+    function isRestockOrSupplierTask(value) {
+      const lower = String(value || "").toLowerCase();
+      return lower.includes("restock") || lower.includes("supplier") || lower.includes("delivery") || lower.includes("stock count");
+    }
+
+    function isCustomerFollowUpTask(value) {
+      const lower = String(value || "").toLowerCase();
+      return lower.includes("customer");
+    }
+
+    function sumRetailSales(rows, targetMonthKey) {
+      let total = 0;
+
+      (rows || []).forEach(function (row) {
+        if (!isIncome(row)) return;
+
+        const raw = getValue(row, ["transaction_date", "created_at"], "");
+        if (!raw) return;
+
+        const date = new Date(raw);
+        if (isNaN(date.getTime())) return;
+
+        const key = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0");
+        if (key === targetMonthKey) total += Number(getValue(row, ["amount"], 0) || 0);
+      });
+
+      return total;
+    }
+
+    function calculateRetailSalesTrend(transactionRows) {
+      const now = new Date();
+      const months = [];
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+
+        months.push({
+          key: d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"),
+          label: d.toLocaleDateString("en-KE", { month: "short", year: "numeric" }),
+          value: 0
+        });
+      }
+
+      (transactionRows || []).forEach(function (row) {
+        if (!isIncome(row)) return;
+
+        const raw = getValue(row, ["transaction_date", "created_at"], "");
+        if (!raw) return;
+
+        const date = new Date(raw);
+        if (isNaN(date.getTime())) return;
+
+        const key = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0");
+        const amount = Number(getValue(row, ["amount"], 0) || 0);
+        const month = months.find(function (m) { return m.key === key; });
+
+        if (month) month.value += amount;
+      });
+
+      return months;
+    }
+
+    async function renderRetailSalesChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      try {
+        await UnganiAnalytics.createChart("retailSalesTrendChart", {
+          type: "bar",
+          data: {
+            labels: months.map(function (m) { return m.label; }),
+            datasets: [
+              {
+                label: "Sales",
+                data: months.map(function (m) { return m.value; }),
+                backgroundColor: "#D4A63A",
+                borderRadius: 10
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: function (v) { return compactMoney(v); } }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("Retail trend chart warning:", error.message);
+      }
+    }
+
     function renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, taggedMode, viewingsNeedingOutcome) {
       const todayStr = new Date().toISOString().slice(0, 10);
       const monthKey = todayStr.slice(0, 7);
@@ -5432,6 +5963,141 @@
       }).join("");
     }
 
+    function renderRetailAttentionList(outOfStockItems, lowStockItems, overdueSupplierPayments, restockTasks, customerTasks, taggedMode) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const groups = [];
+
+      if (outOfStockItems.length > 0) {
+        groups.push({
+          title: "Out of Stock Items",
+          rows: outOfStockItems.map(function (row) {
+            const title = getValue(row, ["property_name", "item_name", "name"], "Product");
+            const rowSection = getValue(row, ["section_label"], "");
+
+            return attentionRow(
+              "📦",
+              title,
+              "0 units available",
+              "Out of Stock",
+              "red",
+              "my-items.html?highlight=" + row.id,
+              taggedMode ? (rowSection || "Untagged") : null,
+              "stock:" + row.id
+            );
+          })
+        });
+      }
+
+      if (lowStockItems.length > 0) {
+        groups.push({
+          title: "Low Stock Items",
+          rows: lowStockItems.map(function (row) {
+            const title = getValue(row, ["property_name", "item_name", "name"], "Product");
+            const qty = getStockQuantity(row);
+            const rowSection = getValue(row, ["section_label"], "");
+
+            return attentionRow(
+              "📦",
+              title,
+              qty + " unit(s) left",
+              "Low Stock",
+              "orange",
+              "my-items.html?highlight=" + row.id,
+              taggedMode ? (rowSection || "Untagged") : null,
+              "stock:" + row.id
+            );
+          })
+        });
+      }
+
+      if (overdueSupplierPayments.length > 0) {
+        groups.push({
+          title: "Overdue Supplier Payments",
+          rows: overdueSupplierPayments.map(function (row) {
+            const title = getValue(row, ["category", "description"], "Supplier payment");
+            const amount = Number(getValue(row, ["amount"], 0) || 0);
+            const date = getValue(row, ["transaction_date", "created_at"], "");
+            const rowSection = getValue(row, ["section_label"], "");
+
+            return attentionRow(
+              "🧾",
+              title,
+              compactMoney(amount) + " · was due " + formatDate(date),
+              "Overdue",
+              "red",
+              "my-money.html?highlight=" + row.id,
+              taggedMode ? (rowSection || "Untagged") : null,
+              "supplier:" + row.id
+            );
+          })
+        });
+      }
+
+      if (restockTasks.length > 0) {
+        groups.push({
+          title: "Open Restock / Supplier Tasks (Oldest First)",
+          rows: restockTasks.map(function (row) {
+            const title = getValue(row, ["task_title", "title", "name"], "Restock / supplier task");
+            const due = getValue(row, ["due_date"], "");
+            const rowSection = getValue(row, ["section_label"], "");
+            const isOverdue = due && String(due).slice(0, 10) < todayStr;
+
+            return attentionRow(
+              "🚚",
+              title,
+              due ? "Due " + formatDate(due) : "No due date set",
+              isOverdue ? "Overdue" : "Open",
+              isOverdue ? "red" : "blue",
+              "my-tasks.html?highlight=" + row.id,
+              taggedMode ? (rowSection || "Untagged") : null,
+              isOverdue ? ("task:" + row.id) : null
+            );
+          })
+        });
+      }
+
+      if (customerTasks.length > 0) {
+        groups.push({
+          title: "Open Customer Follow-ups (Oldest First)",
+          rows: customerTasks.map(function (row) {
+            const title = getValue(row, ["task_title", "title", "name"], "Customer follow-up");
+            const due = getValue(row, ["due_date"], "");
+            const rowSection = getValue(row, ["section_label"], "");
+            const isOverdue = due && String(due).slice(0, 10) < todayStr;
+
+            return attentionRow(
+              "🧑",
+              title,
+              due ? "Due " + formatDate(due) : "No due date set",
+              isOverdue ? "Overdue" : "Open",
+              isOverdue ? "red" : "blue",
+              "my-tasks.html?highlight=" + row.id,
+              taggedMode ? (rowSection || "Untagged") : null,
+              isOverdue ? ("task:" + row.id) : null
+            );
+          })
+        });
+      }
+
+      if (groups.length === 0) {
+        return `
+          <div class="empty card-accent" style="--accent:#16A34A;">
+            <h3>All caught up ✓</h3>
+            <p>No out-of-stock or low-stock items, overdue supplier payments, or open restock/customer tasks right now.</p>
+          </div>
+        `;
+      }
+
+      return groups.map(function (group) {
+        return `
+          <div class="property-attention-group-title">${safe(group.title)}</div>
+          <div class="property-attention-list">
+            ${group.rows.join("")}
+          </div>
+        `;
+      }).join("");
+    }
+
     function attentionRow(icon, title, subtitle, badgeText, badgeColor, href, sectionTag, ackKey) {
       const urgent = ackKey && !isAcknowledged(ackKey);
       const pulseClass = urgent ? " pulse-urgent" : "";
@@ -5552,6 +6218,41 @@
       return items;
     }
 
+    function buildRetailCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+
+      const items = [];
+
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+
+        items.push({
+          date,
+          title: getValue(row, ["event_title", "title", "name"], "Calendar Activity"),
+          type: getValue(row, ["event_type", "type"], "Activity"),
+          section: getValue(row, ["section_label"], ""),
+          ackKey: "event:" + row.id,
+          href: "my-calendar.html?highlight=" + row.id
+        });
+      });
+
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+
+      return items;
+    }
+
     function renderCalendarPreview(items, taggedMode, emptyText) {
       if (!items || items.length === 0) {
         return `
@@ -5601,6 +6302,10 @@
       if (lower.includes("checkout")) return { emoji: "🚪", color: "#2563EB" };
       if (lower.includes("lease")) return { emoji: "📄", color: "#2563EB" };
       if (lower.includes("booking") || lower.includes("reservation") || lower.includes("check-in") || lower.includes("checkin")) return { emoji: "🛎️", color: "#D4A63A" };
+      if (lower.includes("restock") || lower.includes("stock count")) return { emoji: "📦", color: "#D4A63A" };
+      if (lower.includes("delivery")) return { emoji: "🚚", color: "#2563EB" };
+      if (lower.includes("expiry")) return { emoji: "⏳", color: "#DC2626" };
+      if (lower.includes("supplier")) return { emoji: "🚚", color: "#C77700" };
 
       return { emoji: "🗓️", color: "#64748B" };
     }
@@ -5742,6 +6447,18 @@
       const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("hospitality") || businessType.includes("hotel") || businessTypeKey.includes("hospitality");
+    }
+
+    function detectRetail(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "retail";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("retail") || businessType.includes("shop") || businessTypeKey.includes("retail");
     }
 
     function todayItem(icon, title, value, subtitle, href) {
@@ -6374,6 +7091,10 @@
       const type = String(getValue(row, ["transaction_type", "type"], "")).toLowerCase();
       const category = String(getValue(row, ["category"], "")).toLowerCase();
       const combined = type + " " + category;
+
+      // "Supplier Payment" is a defined expense category (Retail and others) that would
+      // otherwise match the "payment" keyword below and get miscounted as income.
+      if (combined.includes("supplier")) return false;
 
       return combined.includes("income") ||
         combined.includes("sale") ||
