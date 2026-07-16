@@ -49,6 +49,7 @@
     let editingPersonId = null;
     let highlightApplied = false;
     let isRealEstate = false;
+    let isHospitality = false;
     let unitOptions = [];
 
     window.addEventListener("load", function () {
@@ -70,6 +71,7 @@
       businessPreset = UnganiPresets.getPreset(context.tenant);
 
       isRealEstate = detectRealEstate(context.tenant);
+      isHospitality = detectHospitality(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -112,7 +114,7 @@
 
       peopleRows = response.data || [];
 
-      if (isRealEstate) {
+      if (isRealEstate || isHospitality) {
         await loadUnitOptions();
       }
 
@@ -624,9 +626,9 @@
                   <input id="personAssignedWork" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)} or task related to this person" />
                 </div>
 
-                ${isRealEstate ? `
+                ${(isRealEstate || isHospitality) ? `
                   <div>
-                    <label for="personLinkedItem">Linked Unit / Property</label>
+                    <label for="personLinkedItem">${isHospitality ? "Linked Room / Table" : "Linked Unit / Property"}</label>
                     <select id="personLinkedItem">
                       <option value="">Not linked</option>
                       ${unitOptions.map(function (item) {
@@ -639,12 +641,12 @@
                   </div>
 
                   <div>
-                    <label for="personLeaseStart">Lease Start Date</label>
+                    <label for="personLeaseStart">${isHospitality ? "Check-in Date" : "Lease Start Date"}</label>
                     <input id="personLeaseStart" type="date" />
                   </div>
 
                   <div>
-                    <label for="personLeaseEnd">Lease End Date</label>
+                    <label for="personLeaseEnd">${isHospitality ? "Checkout Date" : "Lease End Date"}</label>
                     <input id="personLeaseEnd" type="date" />
                   </div>
                 ` : ""}
@@ -808,8 +810,8 @@
                     ${email ? `<span class="ungani-badge blue">${UnganiClientShared.safe(email)}</span>` : ""}
                     ${followUp ? `<span class="ungani-badge gold">Follow-up: ${UnganiClientShared.safe(UnganiClientShared.formatDate(followUp))}</span>` : ""}
                     ${assignedWork ? `<span class="ungani-badge blue">Work: ${UnganiClientShared.safe(assignedWork)}</span>` : ""}
-                    ${linkedItemLabel ? `<span class="ungani-badge gold">Unit: ${UnganiClientShared.safe(linkedItemLabel)}</span>` : ""}
-                    ${leaseEnd ? `<span class="ungani-badge blue">Lease ends: ${UnganiClientShared.safe(UnganiClientShared.formatDate(leaseEnd))}</span>` : ""}
+                    ${linkedItemLabel ? `<span class="ungani-badge gold">${isHospitality ? "Room" : "Unit"}: ${UnganiClientShared.safe(linkedItemLabel)}</span>` : ""}
+                    ${leaseEnd ? `<span class="ungani-badge blue">${isHospitality ? "Checkout" : "Lease ends"}: ${UnganiClientShared.safe(UnganiClientShared.formatDate(leaseEnd))}</span>` : ""}
                   </div>
 
                   <div class="person-actions">
@@ -1001,7 +1003,7 @@
         notes: UnganiClientShared.value("personNotes") || null
       };
 
-      if (isRealEstate) {
+      if (isRealEstate || isHospitality) {
         payload.linked_item_id = UnganiClientShared.value("personLinkedItem") || null;
         payload.lease_start_date = UnganiClientShared.value("personLeaseStart") || null;
         payload.lease_end_date = UnganiClientShared.value("personLeaseEnd") || null;
@@ -1065,7 +1067,7 @@
         document.getElementById("personAssignedWork").value = UnganiClientShared.getValue(row, ["assigned_work", "properties_assigned"], "");
         document.getElementById("personNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
-        if (isRealEstate) {
+        if (isRealEstate || isHospitality) {
           if (document.getElementById("personLinkedItem")) document.getElementById("personLinkedItem").value = UnganiClientShared.getValue(row, ["linked_item_id"], "");
           if (document.getElementById("personLeaseStart")) document.getElementById("personLeaseStart").value = String(UnganiClientShared.getValue(row, ["lease_start_date"], "")).slice(0, 10);
           if (document.getElementById("personLeaseEnd")) document.getElementById("personLeaseEnd").value = String(UnganiClientShared.getValue(row, ["lease_end_date"], "")).slice(0, 10);
@@ -1193,6 +1195,18 @@
       const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+    }
+
+    function detectHospitality(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "hospitality";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("hospitality") || businessType.includes("hotel") || businessTypeKey.includes("hospitality");
     }
   </script>
 </body>
