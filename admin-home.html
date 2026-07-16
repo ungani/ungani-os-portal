@@ -828,6 +828,126 @@
       margin-top: 2px;
     }
 
+    .health-gauge-block {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .health-gauge {
+      position: relative;
+      width: 84px;
+      height: 84px;
+      flex: none;
+    }
+
+    .health-gauge-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .health-gauge-rotate {
+      transform-box: fill-box;
+      transform-origin: center;
+      transform: rotate(-90deg);
+    }
+
+    .health-gauge-track {
+      fill: none;
+      stroke: rgba(255,255,255,0.16);
+      stroke-width: 10;
+    }
+
+    .health-gauge-arc {
+      fill: none;
+      stroke-width: 10;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.9s ease-out;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .health-gauge-arc {
+        transition: none;
+      }
+    }
+
+    .health-gauge-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .health-gauge-center strong {
+      color: white;
+      font-size: 22px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .health-gauge-center span {
+      display: block;
+      margin-top: 3px;
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.68);
+    }
+
+    .health-gauge-summary {
+      margin: 0;
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: rgba(255,255,255,0.78);
+    }
+
+    .hero-mini-divider {
+      height: 1px;
+      background: rgba(255,255,255,0.14);
+      margin: 0 0 14px;
+    }
+
+    .kpi-card-inner {
+      transition: transform 0.24s ease;
+    }
+
+    .kpi-card:hover .kpi-card-inner {
+      transform: translateY(-3px);
+    }
+
+    .kpi-icon-badge {
+      width: 38px;
+      height: 38px;
+      border-radius: 13px;
+      background: var(--accent-22, rgba(212,166,58,0.22));
+      color: var(--accent, var(--gold));
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      margin-bottom: 12px;
+      box-shadow: 0 0 0 1px var(--accent-30, rgba(212,166,58,0.30)) inset;
+    }
+
+    .kpi-spark {
+      width: 100%;
+      height: 30px;
+      line-height: 0;
+      margin-top: 10px;
+    }
+
+    .kpi-spark svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -904,7 +1024,6 @@
     }
 
     .kpi-card:hover {
-      transform: translateY(-3px);
       border-color: var(--accent-45, rgba(212,166,58,0.45));
       box-shadow: 0 30px 80px rgba(0,0,0,0.20), 0 0 34px var(--accent-22, rgba(212,166,58,0.22));
     }
@@ -1718,6 +1837,8 @@
             </div>
             
             <div class="hero-mini">
+              <div id="platformHealthGaugeWrap"></div>
+              <div class="hero-mini-divider"></div>
               <h4 data-i18n="hero_mini_title">Today / Attention</h4>
               <div class="today-list">
                 <div class="today-item">
@@ -1782,7 +1903,7 @@
         </div>
 
         <!-- CORE DATA KPI METRICS -->
-        <div class="kpi-grid">
+        <div class="kpi-grid" id="kpiGridWrap">
           <div class="kpi-card" style="--accent: var(--gold);">
             <span data-i18n="kpi_active_biz">Active Businesses</span>
             <h3 id="kpiTenants">—</h3>
@@ -2196,6 +2317,7 @@
     }
 
     function loadAdminData() {
+      loadPlatformHealth();
       loadKPIs();
       loadTenants();
       loadSupport();
@@ -2204,37 +2326,43 @@
     }
 
     function loadKPIs() {
-      safeDataFetch(async function() {
-        var res = await supabase.from('tenants').select('*', { count: 'exact', head: true });
-        if (res.error) throw res.error;
-        document.getElementById('kpiTenants').textContent = (res.count !== null && res.count !== undefined) ? res.count.toLocaleString() : "0";
-      }, function() {
-        document.getElementById('kpiTenants').textContent = "0";
-      });
+      var grid = document.getElementById('kpiGridWrap');
 
       safeDataFetch(async function() {
-        var res = await supabase.from('users').select('*', { count: 'exact', head: true });
-        if (res.error) throw res.error;
-        document.getElementById('kpiUsers').textContent = (res.count !== null && res.count !== undefined) ? res.count.toLocaleString() : "0";
-      }, function() {
-        document.getElementById('kpiUsers').textContent = "0";
-      });
+        var tenantsCount = await supabase.from('tenants').select('*', { count: 'exact', head: true });
+        var tenantsTrend = await supabase.from('tenants').select('created_at');
+        var usersCount = await supabase.from('users').select('*', { count: 'exact', head: true });
+        var usersTrend = await supabase.from('users').select('created_at');
+        var itemsCount = await supabase.from('business_items').select('*', { count: 'exact', head: true });
+        var itemsTrend = await supabase.from('business_items').select('created_at');
+        var txRes = await supabase.from('transactions').select('amount, created_at');
 
-      safeDataFetch(async function() {
-        var res = await supabase.from('business_items').select('*', { count: 'exact', head: true });
-        if (res.error) throw res.error;
-        document.getElementById('kpiItems').textContent = (res.count !== null && res.count !== undefined) ? res.count.toLocaleString() : "0";
-      }, function() {
-        document.getElementById('kpiItems').textContent = "0";
-      });
+        if (tenantsCount.error || usersCount.error || itemsCount.error || txRes.error) {
+          throw (tenantsCount.error || usersCount.error || itemsCount.error || txRes.error);
+        }
 
-      safeDataFetch(async function() {
-        var res = await supabase.from('transactions').select('amount');
-        if (res.error) throw res.error;
-        var volume = (res.data || []).reduce(function(sum, tx) { return sum + (parseFloat(tx.amount) || 0); }, 0);
-        document.getElementById('kpiLedger').textContent = formatMoney(volume);
+        var tenantsTotal = (tenantsCount.count !== null && tenantsCount.count !== undefined) ? tenantsCount.count : 0;
+        var usersTotal = (usersCount.count !== null && usersCount.count !== undefined) ? usersCount.count : 0;
+        var itemsTotal = (itemsCount.count !== null && itemsCount.count !== undefined) ? itemsCount.count : 0;
+        var ledgerVolume = (txRes.data || []).reduce(function(sum, tx) { return sum + (parseFloat(tx.amount) || 0); }, 0);
+
+        var tenantsSpark = buildMonthlyTrend(tenantsTrend.data || [], 'created_at', null, 6);
+        var usersSpark = buildMonthlyTrend(usersTrend.data || [], 'created_at', null, 6);
+        var itemsSpark = buildMonthlyTrend(itemsTrend.data || [], 'created_at', null, 6);
+        var ledgerSpark = buildMonthlyTrend(txRes.data || [], 'created_at', function (tx) { return parseFloat(tx.amount) || 0; }, 6);
+
+        if (grid) {
+          grid.innerHTML =
+            kpiCard(translations[currentLang].kpi_active_biz, tenantsTotal.toLocaleString(), translations[currentLang].kpi_active_biz_desc, '#D4A63A', 'admin-profiles.html', sparklineSvg(tenantsSpark, '#D4A63A'), '🏢') +
+            kpiCard(translations[currentLang].kpi_sys_users, usersTotal.toLocaleString(), translations[currentLang].kpi_sys_users_desc, '#2563EB', 'users.html', sparklineSvg(usersSpark, '#2563EB'), '👤') +
+            kpiCard(translations[currentLang].kpi_tracked_assets, itemsTotal.toLocaleString(), translations[currentLang].kpi_tracked_assets_desc, '#C77700', 'admin-items.html', sparklineSvg(itemsSpark, '#C77700'), '📦') +
+            kpiCard(translations[currentLang].kpi_ledger_vol, formatMoney(ledgerVolume), translations[currentLang].kpi_ledger_vol_desc, '#15803D', 'admin-money.html', sparklineSvg(ledgerSpark, '#15803D'), '💰');
+        }
       }, function() {
-        document.getElementById('kpiLedger').textContent = formatMoney(0);
+        document.getElementById('kpiTenants') && (document.getElementById('kpiTenants').textContent = "0");
+        document.getElementById('kpiUsers') && (document.getElementById('kpiUsers').textContent = "0");
+        document.getElementById('kpiItems') && (document.getElementById('kpiItems').textContent = "0");
+        document.getElementById('kpiLedger') && (document.getElementById('kpiLedger').textContent = formatMoney(0));
       });
 
       safeDataFetch(async function() {
@@ -2718,6 +2846,220 @@
         var el = document.getElementById(id);
         if (el) el.textContent = displayRole;
       });
+    }
+
+    // ---- Platform Health Score (mirrors client.html's computeGenericHealthScore pattern) ----
+
+    var healthSnapshot = {};
+
+    function tierScore(count, tiers) {
+      var n = Number(count) || 0;
+      for (var i = 0; i < tiers.length; i++) {
+        if (n <= tiers[i][0]) return tiers[i][1];
+      }
+      return tiers[tiers.length - 1][1];
+    }
+
+    function weightedHealthScore(factors) {
+      var applicable = factors.filter(function (f) { return f.applicable !== false; });
+      var totalWeight = applicable.reduce(function (sum, f) { return sum + f.weight; }, 0);
+      if (totalWeight <= 0) return 100;
+      var weighted = applicable.reduce(function (sum, f) { return sum + (f.score * f.weight); }, 0);
+      return Math.max(0, Math.min(100, Math.round(weighted / totalWeight)));
+    }
+
+    function healthSummaryFromWeakest(entries, allStrongText) {
+      var weak = entries.filter(function (e) { return e.applicable !== false && e.score < 65; })
+        .sort(function (a, b) { return a.score - b.score; });
+      if (!weak.length) return allStrongText;
+      if (weak.length === 1) return weak[0].text;
+      var labels = weak.slice(0, 2).map(function (e) { return e.label; });
+      return 'A few areas need attention - check ' + labels.join(' and ') + '.';
+    }
+
+    var PLATFORM_HEALTH_BANDS = [
+      { min: 85, label: 'Thriving', color: '#15803D' },
+      { min: 65, label: 'Steady', color: '#D4A63A' },
+      { min: 45, label: 'Needs Attention', color: '#C77700' },
+      { min: 0, label: 'At Risk', color: '#B91C1C' }
+    ];
+
+    function healthBandFor(score) {
+      return PLATFORM_HEALTH_BANDS.find(function (band) { return score >= band.min; }) || PLATFORM_HEALTH_BANDS[PLATFORM_HEALTH_BANDS.length - 1];
+    }
+
+    function computePlatformHealthScore(summary, flags) {
+      var pendingReg = summary.pending_registrations || 0;
+      var openSupport = summary.open_support_issues || 0;
+      var warnings = summary.warning_logs_last_7_days || 0;
+      var pendingEmail = summary.pending_email_queue || 0;
+      var unreadNotif = summary.unread_notifications || 0;
+
+      var regScore = tierScore(pendingReg, [[0, 100], [3, 80], [8, 55], [Infinity, 30]]);
+      var supportScore = tierScore(openSupport, [[0, 100], [3, 80], [8, 55], [Infinity, 30]]);
+      var warningScore = tierScore(warnings, [[0, 100], [3, 80], [10, 55], [Infinity, 30]]);
+      var emailScore = tierScore(pendingEmail, [[0, 100], [5, 80], [20, 55], [Infinity, 30]]);
+      var notifScore = tierScore(unreadNotif, [[0, 100], [10, 80], [30, 55], [Infinity, 30]]);
+
+      var factors = [
+        { key: 'support', weight: 30, score: supportScore },
+        { key: 'registrations', weight: 25, score: regScore },
+        { key: 'warnings', weight: 25, score: warningScore },
+        { key: 'email', weight: 10, score: emailScore },
+        { key: 'notifications', weight: 10, score: notifScore }
+      ];
+
+      var score = weightedHealthScore(factors);
+
+      var summaryText = healthSummaryFromWeakest([
+        { label: 'open support issues', score: supportScore, text: openSupport === 1 ? '1 open support issue is waiting on a response.' : openSupport + ' open support issues are waiting on a response.' },
+        { label: 'pending registrations', score: regScore, text: pendingReg === 1 ? '1 registration is waiting for review.' : pendingReg + ' registrations are waiting for review.' },
+        { label: 'recent warnings', score: warningScore, text: warnings + ' warning/error log(s) in the last 7 days need a look.' },
+        { label: 'email queue backlog', score: emailScore, text: pendingEmail + ' email(s) queued and waiting to send.' },
+        { label: 'unread notifications', score: notifScore, text: unreadNotif + ' unread notification(s) across the platform.' }
+      ], 'Registrations, support, and system checks are all in good shape.');
+
+      return { score: score, summary: summaryText };
+    }
+
+    function renderHealthGaugeHtml(score, summary) {
+      var band = healthBandFor(score);
+      var radius = 42;
+      var circumference = 2 * Math.PI * radius;
+      var offset = circumference * (1 - score / 100);
+      var gaugeId = 'healthArc' + Math.random().toString(36).slice(2, 10);
+
+      return '' +
+        '<div class="health-gauge-block">' +
+          '<div class="health-gauge">' +
+            '<svg viewBox="0 0 100 100" class="health-gauge-svg" aria-hidden="true">' +
+              '<g class="health-gauge-rotate">' +
+                '<circle class="health-gauge-track" cx="50" cy="50" r="' + radius + '" stroke-width="10"></circle>' +
+                '<circle id="' + gaugeId + '" class="health-gauge-arc" cx="50" cy="50" r="' + radius + '" stroke-width="10" stroke="' + band.color + '" ' +
+                  'style="stroke-dasharray:' + circumference.toFixed(2) + ';stroke-dashoffset:' + circumference.toFixed(2) + ';" ' +
+                  'data-target-offset="' + offset.toFixed(2) + '"></circle>' +
+              '</g>' +
+            '</svg>' +
+            '<div class="health-gauge-center"><strong>' + score + '</strong><span>' + escapeHtml(band.label) + '</span></div>' +
+          '</div>' +
+          '<p class="health-gauge-summary">' + escapeHtml(summary) + '</p>' +
+        '</div>';
+    }
+
+    function animateHealthGauges() {
+      var arcs = document.querySelectorAll('.health-gauge-arc[data-target-offset]');
+      if (!arcs.length) return;
+
+      var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (reducedMotion) {
+        arcs.forEach(function (arc) { arc.style.setProperty('stroke-dashoffset', arc.dataset.targetOffset); });
+        return;
+      }
+
+      arcs.forEach(function (arc) { arc.getBoundingClientRect(); });
+
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          arcs.forEach(function (arc) { arc.style.setProperty('stroke-dashoffset', arc.dataset.targetOffset); });
+        });
+      });
+    }
+
+    async function loadPlatformHealth() {
+      var wrap = document.getElementById('platformHealthGaugeWrap');
+      safeDataFetch(async function () {
+        var res = await supabase.rpc('get_admin_ungani_system_health_snapshot');
+        if (res.error) throw res.error;
+        healthSnapshot = res.data || {};
+        var summary = healthSnapshot.summary || {};
+        var flags = healthSnapshot.status_flags || {};
+        var health = computePlatformHealthScore(summary, flags);
+        if (wrap) wrap.innerHTML = renderHealthGaugeHtml(health.score, health.summary);
+        animateHealthGauges();
+      }, function () {
+        if (wrap) wrap.innerHTML = renderHealthGaugeHtml(0, 'Health snapshot is unavailable right now.');
+        animateHealthGauges();
+      });
+    }
+
+    // ---- KPI cards with sparklines (mirrors client.html's kpiCard/sparklineSvg/buildMonthlyTrend) ----
+
+    function kpiCard(title, value, subtitle, accent, href, sparkHtml, icon) {
+      return '' +
+        '<a class="kpi-card" href="' + escapeHtml(href || '#') + '" style="' + accentVars(accent) + '">' +
+          '<div class="kpi-card-inner">' +
+            (icon ? '<div class="kpi-icon-badge">' + icon + '</div>' : '') +
+            '<span>' + escapeHtml(title) + '</span>' +
+            '<h3>' + escapeHtml(String(value)) + '</h3>' +
+            '<p>' + escapeHtml(subtitle) + '</p>' +
+            (sparkHtml || '') +
+          '</div>' +
+        '</a>';
+    }
+
+    function sparklineSvg(values, color) {
+      var nums = (values || []).map(function (v) { return Number(v) || 0; });
+      if (nums.length < 2) return '';
+
+      var width = 100;
+      var height = 30;
+      var pad = 3;
+      var max = Math.max.apply(null, nums);
+      var min = Math.min.apply(null, nums);
+      var range = max - min;
+      var isFlat = range === 0;
+      var strokeColor = (isFlat && max === 0) ? 'rgba(148,163,184,0.55)' : color;
+
+      var points = nums.map(function (v, i) {
+        var x = pad + (i / (nums.length - 1)) * (width - pad * 2);
+        var y = isFlat ? height / 2 : height - pad - ((v - min) / range) * (height - pad * 2);
+        return { x: x, y: y };
+      });
+
+      var linePath = points.map(function (p, i) {
+        return (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1);
+      }).join(' ');
+
+      var areaPath = linePath + ' L' + points[points.length - 1].x.toFixed(1) + ',' + height + ' L' + points[0].x.toFixed(1) + ',' + height + ' Z';
+      var last = points[points.length - 1];
+      var gradientId = 'spk' + Math.random().toString(36).slice(2, 10);
+
+      return '' +
+        '<div class="kpi-spark">' +
+          '<svg viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none" aria-hidden="true">' +
+            '<defs><linearGradient id="' + gradientId + '" x1="0" y1="0" x2="0" y2="1">' +
+              '<stop offset="0%" stop-color="' + strokeColor + '" stop-opacity="0.30"></stop>' +
+              '<stop offset="100%" stop-color="' + strokeColor + '" stop-opacity="0"></stop>' +
+            '</linearGradient></defs>' +
+            '<path d="' + areaPath + '" fill="url(#' + gradientId + ')" stroke="none"></path>' +
+            '<path d="' + linePath + '" fill="none" stroke="' + strokeColor + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>' +
+            '<circle cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="2.4" fill="' + strokeColor + '"></circle>' +
+          '</svg>' +
+        '</div>';
+    }
+
+    function buildMonthlyTrend(rows, dateField, valueFn, months) {
+      months = months || 6;
+      var now = new Date();
+      var buckets = [];
+
+      for (var i = months - 1; i >= 0; i--) {
+        var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        buckets.push({ key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), value: 0 });
+      }
+
+      (rows || []).forEach(function (row) {
+        var raw = row[dateField];
+        if (!raw) return;
+        var date = new Date(raw);
+        if (isNaN(date.getTime())) return;
+        var key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+        var bucket = buckets.find(function (b) { return b.key === key; });
+        if (bucket) bucket.value += (valueFn ? valueFn(row) : 1);
+      });
+
+      return buckets.map(function (b) { return b.value; });
     }
 
     function toggleTheme() {
