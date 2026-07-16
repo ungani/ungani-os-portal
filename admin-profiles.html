@@ -201,6 +201,111 @@
         grid-template-columns: 1fr;
       }
     }
+
+    .ungani-table-wrap {
+      overflow-x: auto;
+    }
+
+    .ungani-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      min-width: 720px;
+    }
+
+    .ungani-table thead th {
+      text-align: left;
+      padding: 10px 12px;
+      color: var(--ungani-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--ungani-border);
+      white-space: nowrap;
+    }
+
+    .ungani-table tbody tr {
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .ungani-table tbody tr:hover {
+      background: rgba(212, 166, 58, 0.08);
+    }
+
+    .ungani-table td {
+      padding: 12px;
+      border-bottom: 1px solid var(--ungani-border);
+      vertical-align: middle;
+    }
+
+    .ungani-table td:first-child {
+      border-left: 4px solid var(--accent, #64748B);
+      font-weight: bold;
+      color: var(--ungani-text);
+    }
+
+    .ungani-table .row-sub {
+      display: block;
+      font-weight: normal;
+      color: var(--ungani-muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .ungani-table .row-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: nowrap;
+      justify-content: flex-end;
+    }
+
+    .ungani-table .row-actions .ungani-btn {
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    .modal-form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+
+    .modal-form-grid-full {
+      grid-column: 1 / -1;
+    }
+
+    .modal-section-title {
+      margin: 22px 0 12px;
+      font-size: 15px;
+      color: var(--ungani-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .modal-section-title:first-child {
+      margin-top: 0;
+    }
+
+    .delete-zone {
+      margin-top: 22px;
+      padding: 16px;
+      border: 1px solid rgba(185, 28, 28, 0.35);
+      background: rgba(185, 28, 28, 0.06);
+      border-radius: 16px;
+    }
+
+    .delete-zone h4 {
+      margin: 0 0 6px;
+      color: var(--ungani-red);
+    }
+
+    .delete-zone p {
+      margin: 0 0 10px;
+      color: var(--ungani-muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
   </style>
 </head>
 
@@ -276,29 +381,15 @@
         </div>
       </section>
 
-      <section class="two-col">
-        <div class="ungani-card">
-          <div class="section-title-row">
-            <h2>Client Profile Summary</h2>
-          </div>
-          <div id="summaryBox">
-            <div class="empty">
-              <h3>Loading summary...</h3>
-              <p>Please wait.</p>
-            </div>
-          </div>
+      <section class="ungani-card">
+        <div class="section-title-row">
+          <h2>Needs Attention</h2>
+          <p class="small-text">Clients with the lowest profile completeness.</p>
         </div>
-
-        <div class="ungani-card">
-          <div class="section-title-row">
-            <h2 id="selectedProfileTitle">Selected Client Profile</h2>
-          </div>
-
-          <div id="selectedProfileBox">
-            <div class="empty">
-              <h3>No client selected</h3>
-              <p>Select a client profile below to view or update details.</p>
-            </div>
+        <div id="summaryBox">
+          <div class="empty">
+            <h3>Loading summary...</h3>
+            <p>Please wait.</p>
           </div>
         </div>
       </section>
@@ -452,6 +543,17 @@
       return `<span class="badge blue">${safe(cleanText(clean))}</span>`;
     }
 
+    function statusAccent(status) {
+      const clean = String(status || "trial").toLowerCase();
+
+      if (clean === "active") return "#15803D";
+      if (clean === "trial") return "#D4A63A";
+      if (clean === "suspended") return "#C77700";
+      if (clean === "cancelled" || clean === "inactive") return "#B91C1C";
+
+      return "#2563EB";
+    }
+
     function profileCardClass(row) {
       const status = getTenantStatus(row);
 
@@ -511,14 +613,12 @@
         safeSelect("users")
       ]);
 
-      tenants = tenantRows.sort((a, b) => new Date(getCreatedDate(b) || 0) - new Date(getCreatedDate(a) || 0));
+      tenants = tenantRows
+        .filter(row => !row.deleted_at)
+        .sort((a, b) => new Date(getCreatedDate(b) || 0) - new Date(getCreatedDate(a) || 0));
       users = userRows;
 
       renderProfilesPage();
-
-      if (selectedTenantId) {
-        renderSelectedProfile(selectedTenantId);
-      }
 
       UnganiAdminShared.showToast("Client profiles updated ✓");
     }
@@ -648,7 +748,7 @@
           ${profileScoreBadge(item.score)}
           ${statusBadge(getTenantStatus(item.row))}
           <div class="button-row">
-            <button class="ungani-btn" onclick="renderSelectedProfile('${safe(item.row.id)}')">Open Profile</button>
+            <button class="ungani-btn" onclick="openProfileModal('${safe(item.row.id)}')">Open Profile</button>
           </div>
         </div>
       `).join("");
@@ -669,50 +769,55 @@
         return;
       }
 
-      document.getElementById("profilesListBox").innerHTML = rows.map(row => {
-        const score = profileScore(row);
-        const linkedUsers = getLinkedUsers(row.id);
+      document.getElementById("profilesListBox").innerHTML = `
+        <div class="ungani-table-wrap">
+          <table class="ungani-table">
+            <thead>
+              <tr>
+                <th>Business</th>
+                <th>Status</th>
+                <th>Profile</th>
+                <th>Linked Users</th>
+                <th>Created</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => {
+                const score = profileScore(row);
+                const linkedUsers = getLinkedUsers(row.id);
 
-        return `
-          <div class="row-card ${safe(profileCardClass(row))}">
-            <div class="row-title">${safe(getTenantName(row))}</div>
-            <p class="row-detail"><strong>Contact Person:</strong> ${safe(getContactPerson(row) || "N/A")}</p>
-            <p class="row-detail"><strong>Email:</strong> ${safe(getBusinessEmail(row) || "N/A")}</p>
-            <p class="row-detail"><strong>Phone:</strong> ${safe(getBusinessPhone(row) || "N/A")}</p>
-            <p class="row-detail"><strong>Location:</strong> ${safe(getBusinessLocation(row) || "N/A")}</p>
-            <p class="row-detail"><strong>Linked Users:</strong> ${safe(linkedUsers.length)}</p>
-            <p class="row-detail"><strong>Created:</strong> ${safe(formatDateTime(getCreatedDate(row)))}</p>
-
-            <div class="profile-score-wrap">
-              <div class="profile-score-bar" style="width: ${safe(score)}%;"></div>
-            </div>
-
-            ${statusBadge(getTenantStatus(row))}
-            ${profileScoreBadge(score)}
-
-            <div class="button-row">
-              <button class="ungani-btn" onclick="renderSelectedProfile('${safe(row.id)}')">Open / Edit Profile</button>
-              <button class="ungani-btn green" onclick="quickUpdateStatus('${safe(row.id)}','active')">Active</button>
-              <button class="ungani-btn orange" onclick="quickUpdateStatus('${safe(row.id)}','trial')">Trial</button>
-              <button class="ungani-btn red" onclick="quickUpdateStatus('${safe(row.id)}','suspended')">Suspend</button>
-            </div>
-          </div>
-        `;
-      }).join("");
+                return `
+                  <tr style="--accent:${safe(statusAccent(getTenantStatus(row)))};" onclick="openProfileModal('${safe(row.id)}')">
+                    <td>
+                      ${safe(getTenantName(row))}
+                      <span class="row-sub">${safe(getContactPerson(row) || getBusinessEmail(row) || "No contact on file")}</span>
+                    </td>
+                    <td>${statusBadge(getTenantStatus(row))}</td>
+                    <td>${safe(score)}% ${profileScoreBadge(score)}</td>
+                    <td>${safe(linkedUsers.length)}</td>
+                    <td>${safe(formatDateTime(getCreatedDate(row)))}</td>
+                    <td onclick="event.stopPropagation();">
+                      <div class="row-actions">
+                        <button class="ungani-btn green" onclick="quickUpdateStatus('${safe(row.id)}','active')">Active</button>
+                        <button class="ungani-btn orange" onclick="quickUpdateStatus('${safe(row.id)}','trial')">Trial</button>
+                        <button class="ungani-btn red" onclick="quickUpdateStatus('${safe(row.id)}','suspended')">Suspend</button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
     }
 
-    function renderSelectedProfile(tenantId) {
+    function openProfileModal(tenantId) {
       const row = tenants.find(item => String(item.id) === String(tenantId));
 
       if (!row) {
-        selectedTenantId = null;
-        document.getElementById("selectedProfileTitle").innerText = "Selected Client Profile";
-        document.getElementById("selectedProfileBox").innerHTML = `
-          <div class="empty">
-            <h3>Client profile not found</h3>
-            <p>Please refresh the client profile list.</p>
-          </div>
-        `;
+        UnganiAdminShared.showToast("Client profile not found - refresh and try again.");
         return;
       }
 
@@ -720,97 +825,95 @@
 
       const linkedUsers = getLinkedUsers(row.id);
       const score = profileScore(row);
+      const status = getTenantStatus(row);
+      const canDelete = status !== "active";
 
-      document.getElementById("selectedProfileTitle").innerText = getTenantName(row);
-
-      document.getElementById("selectedProfileBox").innerHTML = `
-        <div class="row-card ${safe(profileCardClass(row))}">
-          <div class="row-title">${safe(getTenantName(row))}</div>
-          <p class="row-detail"><strong>Status:</strong> ${safe(cleanText(getTenantStatus(row)))}</p>
-          <p class="row-detail"><strong>Profile Score:</strong> ${safe(score)}%</p>
-          <p class="row-detail"><strong>Linked Users:</strong> ${safe(linkedUsers.length)}</p>
-
-          <div class="profile-score-wrap">
-            <div class="profile-score-bar" style="width: ${safe(score)}%;"></div>
+      UnganiAdminShared.openModal({
+        title: getTenantName(row),
+        bodyHtml: `
+          <div class="row-card ${safe(profileCardClass(row))}" style="margin-bottom:18px;">
+            <p class="row-detail"><strong>Profile Score:</strong> ${safe(score)}%</p>
+            <div class="profile-score-wrap">
+              <div class="profile-score-bar" style="width: ${safe(score)}%;"></div>
+            </div>
+            <p class="row-detail"><strong>Linked Users:</strong> ${safe(linkedUsers.length)}</p>
+            ${statusBadge(status)}
+            ${profileScoreBadge(score)}
           </div>
 
-          ${statusBadge(getTenantStatus(row))}
-          ${profileScoreBadge(score)}
-        </div>
+          <div class="modal-section-title">Business Profile</div>
+          <div class="modal-form-grid">
+            <div>
+              <label for="editBusinessName">Business Name</label>
+              <input id="editBusinessName" value="${safe(getTenantName(row))}" />
+            </div>
 
-        <div class="form-grid">
-          <div>
-            <label for="editBusinessName">Business Name</label>
-            <input id="editBusinessName" value="${safe(getTenantName(row))}" />
+            <div>
+              <label for="editCompanyName">Company Name</label>
+              <input id="editCompanyName" value="${safe(getField(row, ["company_name"], getTenantName(row)))}" />
+            </div>
+
+            <div>
+              <label for="editContactPerson">Contact Person</label>
+              <input id="editContactPerson" value="${safe(getContactPerson(row))}" />
+            </div>
+
+            <div>
+              <label for="editEmail">Business Email</label>
+              <input id="editEmail" type="email" value="${safe(getBusinessEmail(row))}" />
+            </div>
+
+            <div>
+              <label for="editPhone">Business Phone</label>
+              <input id="editPhone" value="${safe(getBusinessPhone(row))}" />
+            </div>
+
+            <div>
+              <label for="editLocation">Business Location</label>
+              <input id="editLocation" value="${safe(getBusinessLocation(row))}" />
+            </div>
+
+            <div>
+              <label for="editStatus">Account Status</label>
+              <select id="editStatus">
+                <option value="trial">Trial</option>
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="editDriveFolder">Google Drive Folder URL</label>
+              <input id="editDriveFolder" value="${safe(getField(row, ["google_drive_folder_url"], ""))}" />
+            </div>
+
+            <div class="modal-form-grid-full">
+              <label for="editDescription">Business Description</label>
+              <textarea id="editDescription">${safe(getBusinessDescription(row))}</textarea>
+            </div>
+
+            <div class="modal-form-grid-full">
+              <label for="editNotes">Business Notes</label>
+              <textarea id="editNotes">${safe(getBusinessNotes(row))}</textarea>
+            </div>
+
+            <div class="modal-form-grid-full">
+              <label for="editDriveNotes">Shared Drive Notes</label>
+              <textarea id="editDriveNotes">${safe(getField(row, ["shared_drive_notes"], ""))}</textarea>
+            </div>
           </div>
 
-          <div>
-            <label for="editCompanyName">Company Name</label>
-            <input id="editCompanyName" value="${safe(getField(row, ["company_name"], getTenantName(row)))}" />
+          <div class="button-row">
+            <button class="ungani-btn green" onclick="saveSelectedProfile()">Save Profile</button>
+            <button class="ungani-btn blue" onclick="quickUpdateStatus('${safe(row.id)}','active')">Set Active</button>
+            <button class="ungani-btn orange" onclick="quickUpdateStatus('${safe(row.id)}','trial')">Set Trial</button>
+            <button class="ungani-btn red" onclick="quickUpdateStatus('${safe(row.id)}','suspended')">Suspend</button>
+            <button class="ungani-btn dark" onclick="quickUpdateStatus('${safe(row.id)}','cancelled')">Cancel Account</button>
           </div>
 
-          <div>
-            <label for="editContactPerson">Contact Person</label>
-            <input id="editContactPerson" value="${safe(getContactPerson(row))}" />
-          </div>
-
-          <div>
-            <label for="editEmail">Business Email</label>
-            <input id="editEmail" type="email" value="${safe(getBusinessEmail(row))}" />
-          </div>
-
-          <div>
-            <label for="editPhone">Business Phone</label>
-            <input id="editPhone" value="${safe(getBusinessPhone(row))}" />
-          </div>
-
-          <div>
-            <label for="editLocation">Business Location</label>
-            <input id="editLocation" value="${safe(getBusinessLocation(row))}" />
-          </div>
-
-          <div>
-            <label for="editStatus">Account Status</label>
-            <select id="editStatus">
-              <option value="trial">Trial</option>
-              <option value="active">Active</option>
-              <option value="suspended">Suspended</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-
-          <div>
-            <label for="editDriveFolder">Google Drive Folder URL</label>
-            <input id="editDriveFolder" value="${safe(getField(row, ["google_drive_folder_url"], ""))}" />
-          </div>
-
-          <div class="form-grid-full">
-            <label for="editDescription">Business Description</label>
-            <textarea id="editDescription">${safe(getBusinessDescription(row))}</textarea>
-          </div>
-
-          <div class="form-grid-full">
-            <label for="editNotes">Business Notes</label>
-            <textarea id="editNotes">${safe(getBusinessNotes(row))}</textarea>
-          </div>
-
-          <div class="form-grid-full">
-            <label for="editDriveNotes">Shared Drive Notes</label>
-            <textarea id="editDriveNotes">${safe(getField(row, ["shared_drive_notes"], ""))}</textarea>
-          </div>
-        </div>
-
-        <div class="button-row">
-          <button class="ungani-btn green" onclick="saveSelectedProfile()">Save Profile</button>
-          <button class="ungani-btn blue" onclick="quickUpdateStatus('${safe(row.id)}','active')">Set Active</button>
-          <button class="ungani-btn orange" onclick="quickUpdateStatus('${safe(row.id)}','trial')">Set Trial</button>
-          <button class="ungani-btn red" onclick="quickUpdateStatus('${safe(row.id)}','suspended')">Suspend</button>
-          <button class="ungani-btn dark" onclick="quickUpdateStatus('${safe(row.id)}','cancelled')">Cancel Account</button>
-        </div>
-
-        <div style="margin-top: 18px;">
-          <h3>Linked Users</h3>
+          <div class="modal-section-title">Linked Users</div>
           ${linkedUsers.length === 0 ? `
             <div class="empty">
               <h3>No linked users</h3>
@@ -824,12 +927,23 @@
               <p class="row-detail"><strong>Status:</strong> ${safe(user.status || "active")}</p>
             </div>
           `).join("")}
-        </div>
-      `;
 
-      document.getElementById("editStatus").value = getTenantStatus(row);
-
-      window.scrollTo({ top: 0, behavior: "smooth" });
+          <div class="delete-zone">
+            <h4>Delete This Client</h4>
+            <p>
+              ${canDelete
+                ? "Permanently removes this business from the active client list. This cannot be undone from this screen - the record is soft-deleted and stays recoverable by support for a limited time."
+                : "This account is currently Active. Set it to Trial, Suspended, or Cancelled before it can be deleted, so a live paying client can never be removed by accident."}
+            </p>
+            <button class="ungani-btn red" ${canDelete ? "" : "disabled"} onclick="promptDeleteTenant('${safe(row.id)}')">
+              Delete Client
+            </button>
+          </div>
+        `,
+        onOpen: function () {
+          document.getElementById("editStatus").value = status;
+        }
+      });
     }
 
     async function updateTenantStatus(tenantId, status) {
@@ -857,7 +971,56 @@
 
       selectedTenantId = tenantId;
 
+      UnganiAdminShared.closeModal();
       UnganiAdminShared.showToast("Client status updated ✓");
+      await loadPageData();
+    }
+
+    async function promptDeleteTenant(tenantId) {
+      const row = tenants.find(item => String(item.id) === String(tenantId));
+
+      if (!row) {
+        UnganiAdminShared.showToast("Client not found - refresh and try again.");
+        return;
+      }
+
+      const status = getTenantStatus(row);
+
+      if (status === "active") {
+        alert("This account is Active. Set it to Trial, Suspended, or Cancelled first, then delete.");
+        return;
+      }
+
+      const businessName = getTenantName(row);
+      const typed = prompt(
+        `This permanently removes "${businessName}" from your active client list. This cannot be undone from this screen.\n\nType the exact business name to confirm:\n${businessName}`
+      );
+
+      if (typed === null) return;
+
+      if (typed.trim() !== businessName.trim()) {
+        alert("The name you typed doesn't match. Deletion cancelled.");
+        return;
+      }
+
+      const response = await supabaseClient.rpc("delete_ungani_tenant", {
+        p_tenant_id: tenantId,
+        p_delete_reason: "Deleted from Admin Profiles page"
+      });
+
+      if (response.error) {
+        alert(response.error.message || "Could not delete this client.");
+        return;
+      }
+
+      if (response.data && response.data.ok === false) {
+        alert(response.data.message || "Could not delete this client.");
+        return;
+      }
+
+      selectedTenantId = null;
+      UnganiAdminShared.closeModal();
+      UnganiAdminShared.showToast("Client deleted ✓");
       await loadPageData();
     }
 
@@ -910,6 +1073,7 @@
         return;
       }
 
+      UnganiAdminShared.closeModal();
       UnganiAdminShared.showToast("Client profile saved ✓");
       await loadPageData();
     }
