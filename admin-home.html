@@ -1364,6 +1364,55 @@
       color: var(--text-soft);
     }
 
+    .card-accent {
+      position: relative;
+      overflow: hidden;
+      border-style: solid;
+    }
+
+    .card-accent::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 18px;
+      bottom: 18px;
+      width: 5px;
+      border-radius: 0 999px 999px 0;
+      background: var(--accent, var(--gold));
+    }
+
+    .nudge-empty h3 {
+      margin: 0 0 6px;
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .nudge-empty p {
+      margin: 0 auto 14px;
+      max-width: 340px;
+      font-size: 13px;
+    }
+
+    .nudge-icon {
+      font-size: 32px;
+      display: inline-block;
+      margin-bottom: 8px;
+      animation: unganiNudgeFloat 6s ease-in-out infinite;
+    }
+
+    @keyframes unganiNudgeFloat {
+      0%, 12% { opacity: 0.5; transform: translateY(0); }
+      22% { opacity: 1; transform: translateY(-6px); }
+      32%, 100% { opacity: 0.5; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .nudge-icon {
+        animation: none;
+        opacity: 0.85;
+      }
+    }
+
     .footer {
       color: var(--text-soft);
       font-size: 12px;
@@ -2773,7 +2822,7 @@
       if (!list) return;
 
       if (!conversations.length) {
-        list.innerHTML = '<div class="empty">' + translations[currentLang].no_chat + '</div>';
+        list.innerHTML = emptyStateNudge('💬', 'No client conversations yet', 'Messages between admin and clients will show up here.', null, null);
         return;
       }
 
@@ -2839,7 +2888,7 @@
       var container = document.getElementById('tenantsSummaryList');
       if (!container) return;
       if (!data || data.length === 0) {
-        container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
+        container.innerHTML = emptyStateNudge('🏢', 'No client registrations yet', 'New tenant signups will show up here as businesses register on the platform.', 'Review Registrations', 'admin.html');
         return;
       }
       var html = '';
@@ -2867,7 +2916,7 @@
       var container = document.getElementById('supportSummaryList');
       if (!container) return;
       if (!data || data.length === 0) {
-        container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
+        container.innerHTML = emptyStateNudge('🛠️', 'No support tickets', 'Client support issues will appear here as they come in.', 'Open Support Desk', 'support.html');
         return;
       }
       var html = '';
@@ -2894,7 +2943,7 @@
       var container = document.getElementById('activitySummaryList');
       if (!container) return;
       if (!data || data.length === 0) {
-        container.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
+        container.innerHTML = emptyStateNudge('💰', 'No transactions yet', 'Platform-wide income and expenses will show up here once clients start recording them.', 'View Money Records', 'admin-money.html');
         return;
       }
       var html = '';
@@ -3187,6 +3236,22 @@
         '--accent-28:' + hexToRgba(color, 0.28) + ';' +
         '--accent-30:' + hexToRgba(color, 0.30) + ';' +
         '--accent-45:' + hexToRgba(color, 0.45) + ';';
+    }
+
+    function emptyStateNudge(icon, title, message, actionLabel, actionHref) {
+      return '<div class="empty nudge-empty">' +
+        '<div class="nudge-icon" aria-hidden="true">' + icon + '</div>' +
+        '<h3>' + escapeHtml(title) + '</h3>' +
+        '<p>' + escapeHtml(message) + '</p>' +
+        (actionLabel ? '<a class="btn small gold" href="' + escapeHtml(actionHref || '#') + '" style="display:inline-flex;">' + escapeHtml(actionLabel) + '</a>' : '') +
+        '</div>';
+    }
+
+    function allCaughtUpState(message) {
+      return '<div class="empty card-accent" style="--accent:#15803D;">' +
+        '<h3>All caught up ✓</h3>' +
+        '<p>' + escapeHtml(message) + '</p>' +
+        '</div>';
     }
 
     function updateAdminProfileChip(name, role) {
@@ -3493,7 +3558,7 @@
       items.sort(function (a, b) { return (Number(b.priority_score) || 0) - (Number(a.priority_score) || 0); });
 
       if (!items.length) {
-        container.innerHTML = '<div class="empty">All caught up ✓ — no action items need attention right now.</div>';
+        container.innerHTML = allCaughtUpState('No action items need attention right now.');
         return;
       }
 
