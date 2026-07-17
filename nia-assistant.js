@@ -133,6 +133,18 @@
       match: ["add a task", "add task", "create a task", "new task", "add a reminder", "add a follow-up"],
       pageKey: "tasks",
       steps: ["Open Tasks.", "Select \"+ Add Task\".", "Fill in the title, type, due date, and who it's assigned to.", "Select Save."]
+    },
+    {
+      key: "add-property",
+      match: ["add a property", "add property", "create a property", "new property", "add an item", "add item", "new item"],
+      pageKey: "items",
+      steps: ["Open Items.", "Select \"Add Property\".", "Fill in the name, listing type, location, and price.", "Select Save."]
+    },
+    {
+      key: "add-record",
+      match: ["add a record", "add record", "create a record", "new record", "log a record"],
+      pageKey: "records",
+      steps: ["Open Records.", "Select \"+ Add Record\".", "Fill in the title, record type, and status.", "Select Save."]
     }
   ];
 
@@ -156,7 +168,8 @@
     { key: "createTask", match: ["create task", "add task", "new task", "create a follow-up", "add a follow-up"], href: "my-tasks.html", params: { action: "add" }, confirm: "Opening Tasks with a new task ready to fill in." },
     { key: "createCustomer", match: ["create customer", "add customer", "new customer", "create client", "add client"], href: "my-people.html", params: { action: "add" }, confirm: "Opening People with a new person ready to fill in." },
     { key: "createEmployee", match: ["create employee", "add employee", "new employee", "add staff", "create staff"], href: "my-people.html", params: { action: "add" }, confirm: "Opening People with a new person ready to fill in." },
-    { key: "createProperty", match: ["create property", "add property", "new property", "add item", "create item", "new item"], href: "my-items.html", params: {}, confirm: "Opening Items so you can add a new property or item." },
+    { key: "createProperty", match: ["create property", "add property", "new property", "add item", "create item", "new item"], href: "my-items.html", params: { action: "add" }, confirm: "Opening Items with a new property ready to fill in." },
+    { key: "createRecord", match: ["create record", "add record", "new record", "log a record"], href: "my-records.html", params: { action: "add" }, confirm: "Opening Records with a new record ready to fill in." },
     { key: "uploadDocument", match: ["upload document", "upload a document", "add document"], href: "my-documents.html", params: { action: "add" }, confirm: "Opening Documents with a new document ready to fill in." },
     { key: "openCalendar", match: ["open calendar"], href: "my-calendar.html", params: {}, confirm: "Opening Calendar." },
     { key: "openReports", match: ["open reports"], href: "reports.html", params: {}, confirm: "Opening Reports." },
@@ -216,6 +229,36 @@
         { label: "Add Task", type: "create", actionKey: "createTask" },
         { label: "Find a Task", type: "search-prompt" },
         { label: "Insights & Tools", type: "insights" },
+        { label: "How do I add a task?", type: "howto", key: "add-task" },
+        { label: "Dashboard", type: "nav", key: "dashboard" },
+        { label: "Help", type: "help" }
+      ]
+    },
+    items: {
+      greeting: "Welcome back! Here's what I can help with on Items.",
+      chips: [
+        { label: "Add Property", type: "create", actionKey: "createProperty" },
+        { label: "Find a Property", type: "search-prompt" },
+        { label: "How do I add a property?", type: "howto", key: "add-property" },
+        { label: "Dashboard", type: "nav", key: "dashboard" },
+        { label: "Help", type: "help" }
+      ]
+    },
+    records: {
+      greeting: "Welcome back! Here's what I can help with on Records.",
+      chips: [
+        { label: "Add Record", type: "create", actionKey: "createRecord" },
+        { label: "Find a Record", type: "search-prompt" },
+        { label: "How do I add a record?", type: "howto", key: "add-record" },
+        { label: "Dashboard", type: "nav", key: "dashboard" },
+        { label: "Help", type: "help" }
+      ]
+    },
+    calendar: {
+      greeting: "Welcome back! Here's what I can help with on Calendar.",
+      chips: [
+        { label: "Add Calendar Activity", type: "call", fnName: "scrollToEventForm", confirm: "Scrolling to the Add Calendar Activity form for you." },
+        { label: "Find an Event", type: "search-prompt" },
         { label: "How do I add a task?", type: "howto", key: "add-task" },
         { label: "Dashboard", type: "nav", key: "dashboard" },
         { label: "Help", type: "help" }
@@ -845,6 +888,19 @@
       addUserMessage(item.label);
       replyWithDelay(function () {
         if (topic) answerHowTo(topic); else showFallback();
+      });
+      return;
+    }
+
+    if (item.type === "call") {
+      addUserMessage(item.label);
+      replyWithDelay(function () {
+        if (typeof window[item.fnName] === "function") {
+          addNiaMessage(safe(item.confirm || "Done."));
+          window[item.fnName]();
+        } else {
+          addNiaMessage("That's not available on this page right now.");
+        }
       });
       return;
     }
