@@ -12,51 +12,9 @@
     blue: "#2563EB"
   };
 
-  // Flat-illustration avatar: professional woman with a headset, navy/gold/
-  // off-white to match the brand palette. The mic tip and headset earpiece
-  // carry class hooks so CSS can drive the idle-pulse and typing-state animations.
-  const NIA_AVATAR_SVG = `
-    <svg class="nia-avatar-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Nia">
-      <defs>
-        <linearGradient id="niaBgGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${BRAND.navy2}"/>
-          <stop offset="100%" stop-color="${BRAND.navy}"/>
-        </linearGradient>
-      </defs>
-
-      <circle cx="50" cy="50" r="50" fill="url(#niaBgGrad)"/>
-
-      <ellipse cx="50" cy="50" rx="25" ry="35" fill="#2A2118"/>
-
-      <path d="M16,102 Q18,70 50,66 Q82,70 84,102 Z" fill="${BRAND.navy}"/>
-      <path d="M35,71 L48,68 L43,92 Z" fill="#0B2346"/>
-      <path d="M65,71 L52,68 L57,92 Z" fill="#0B2346"/>
-      <path d="M40,74 L50,89 L60,74 L53,67 L47,67 Z" fill="${BRAND.offWhite}"/>
-
-      <rect x="42" y="57" width="16" height="17" rx="6" fill="#C48A63"/>
-
-      <circle cx="50" cy="43" r="18" fill="#D9A377"/>
-
-      <path d="M32,38 Q31,24 50,22 Q69,24 68,38 Q68,30 61,27 Q58,24 50,24 Q42,24 39,27 Q32,30 32,38 Z" fill="#2A2118"/>
-
-      <circle cx="43" cy="44" r="6" fill="#E3B98D" opacity="0.55"/>
-      <circle cx="57" cy="44" r="6" fill="#E3B98D" opacity="0.55"/>
-
-      <path d="M40.5,40.2 Q42.5,39.2 44.5,40.2" stroke="#3A2A1E" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-      <path d="M55.5,40.2 Q57.5,39.2 59.5,40.2" stroke="#3A2A1E" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-      <circle cx="42.5" cy="43.5" r="1.6" fill="#2A1D14"/>
-      <circle cx="57.5" cy="43.5" r="1.6" fill="#2A1D14"/>
-      <path d="M44,42.7 L45.6,41.2" stroke="#2A1D14" stroke-width="1" fill="none" stroke-linecap="round"/>
-      <path d="M56,42.7 L54.4,41.2" stroke="#2A1D14" stroke-width="1" fill="none" stroke-linecap="round"/>
-      <path d="M43,50.5 Q50,55.5 57,50.5" stroke="#9A5A42" stroke-width="1.7" fill="none" stroke-linecap="round"/>
-
-      <path d="M27,40 Q50,9 73,40" stroke="#171310" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-      <circle cx="27.4" cy="41.5" r="3.6" fill="#171310"/>
-      <circle class="nia-headset-ear" cx="72.6" cy="41.5" r="4.2" fill="${BRAND.gold}"/>
-      <path d="M72.6,45 Q69,55 57,59" stroke="#171310" stroke-width="2.3" fill="none" stroke-linecap="round"/>
-      <circle class="nia-mic-tip" cx="57" cy="59" r="2.7" fill="${BRAND.gold}"/>
-    </svg>
-  `;
+  // Photographic avatar (replaces the earlier flat-illustration SVG draft).
+  // Square, pre-cropped to center the face for a circular crop at any size.
+  const NIA_AVATAR_IMG = '<img class="nia-avatar-img" src="nia-avatar.jpg" alt="Nia" draggable="false" />';
 
   const SEEN_KEY = "ungani_nia_seen";
 
@@ -192,6 +150,21 @@
       pageKey: "records",
       steps: ["Open Records.", "Select \"+ Add Record\".", "Fill in the title, record type, and status.", "Select Save."]
     }
+  ];
+
+  // Quick "show me around" overview — a lightweight stand-in for a real
+  // guided tour (see memory: a proper step-by-step spotlight tour is a
+  // separate, bigger feature for later). This just gives a useful,
+  // linked summary of the main sections instead of a dead-end button.
+  const OVERVIEW_SECTIONS = [
+    { key: "money", blurb: "Track your income and expenses." },
+    { key: "documents", blurb: "Store and organize your files." },
+    { key: "tasks", blurb: "Your to-do list and follow-ups." },
+    { key: "people", blurb: "Manage customers, staff, and contacts." },
+    { key: "items", blurb: "Track properties, assets, and stock." },
+    { key: "records", blurb: "Operational notes and updates." },
+    { key: "calendar", blurb: "See your schedule and activities." },
+    { key: "reports", blurb: "Generate and export reports." }
   ];
 
   const QUICK_SUGGESTIONS = [
@@ -383,12 +356,15 @@
         width: 100%;
         height: 100%;
         line-height: 0;
+        border-radius: 50%;
       }
 
-      .nia-avatar-svg {
+      .nia-avatar-img {
         display: block;
         width: 100%;
         height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
       }
 
       .nia-avatar-graphic {
@@ -400,23 +376,18 @@
         50% { transform: scale(1.035); }
       }
 
-      .nia-mic-tip {
-        transform-origin: center;
-        transform-box: fill-box;
+      .nia-avatar-thinking {
+        animation: niaThinkingRing 0.9s ease-in-out infinite;
       }
 
-      .nia-avatar-thinking .nia-mic-tip {
-        animation: niaMicPulse 0.75s ease-in-out infinite;
-      }
-
-      @keyframes niaMicPulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.55; transform: scale(1.45); }
+      @keyframes niaThinkingRing {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(212,166,58,0.55); }
+        50% { box-shadow: 0 0 0 5px rgba(212,166,58,0); }
       }
 
       @media (prefers-reduced-motion: reduce) {
         .nia-avatar-graphic,
-        .nia-avatar-thinking .nia-mic-tip {
+        .nia-avatar-thinking {
           animation: none;
         }
       }
@@ -435,6 +406,42 @@
         border-radius: 50%;
         background: ${BRAND.red};
         border: 2px solid ${BRAND.white};
+      }
+
+      .nia-tagline {
+        position: fixed;
+        right: 88px;
+        bottom: 34px;
+        z-index: 99997;
+        background: ${BRAND.white};
+        color: ${BRAND.navy};
+        border: none;
+        font-size: 12.5px;
+        font-weight: 800;
+        font-family: inherit;
+        padding: 9px 15px;
+        border-radius: 999px;
+        box-shadow: 0 10px 24px rgba(6,28,61,0.22);
+        white-space: nowrap;
+        cursor: pointer;
+      }
+
+      .nia-tagline::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -5px;
+        width: 10px;
+        height: 10px;
+        background: ${BRAND.white};
+        transform: translateY(-50%) rotate(45deg);
+        border-radius: 2px;
+      }
+
+      @media (max-width: 640px) {
+        .nia-tagline {
+          display: none;
+        }
       }
 
       .nia-panel {
@@ -740,9 +747,17 @@
     btn.className = "nia-fab";
     btn.type = "button";
     btn.title = "Nia — Your UNGANI Business Assistant";
-    btn.innerHTML = '<span class="nia-avatar-graphic nia-fab-avatar">' + NIA_AVATAR_SVG + '</span>' + (hasSeenNia() ? "" : '<span class="nia-fab-dot"></span>');
+    btn.innerHTML = '<span class="nia-avatar-graphic nia-fab-avatar">' + NIA_AVATAR_IMG + '</span>' + (hasSeenNia() ? "" : '<span class="nia-fab-dot"></span>');
     btn.addEventListener("click", toggleNia);
     document.body.appendChild(btn);
+
+    const tagline = document.createElement("button");
+    tagline.id = "niaTagline";
+    tagline.className = "nia-tagline";
+    tagline.type = "button";
+    tagline.textContent = "Ask Nia anything!";
+    tagline.addEventListener("click", toggleNia);
+    document.body.appendChild(tagline);
 
     const panel = document.createElement("div");
     panel.id = "niaPanel";
@@ -785,6 +800,9 @@
     const dot = document.querySelector(".nia-fab-dot");
     if (dot) dot.remove();
 
+    const tagline = document.getElementById("niaTagline");
+    if (tagline) tagline.style.display = "none";
+
     if (!state.messages.length) {
       renderShell();
 
@@ -808,6 +826,9 @@
     const panel = document.getElementById("niaPanel");
     if (panel) panel.classList.remove("open");
     state.open = false;
+
+    const tagline = document.getElementById("niaTagline");
+    if (tagline) tagline.style.display = "";
   }
 
   function renderShell() {
@@ -817,7 +838,7 @@
     panel.innerHTML = `
       <div class="nia-panel-head">
         <div class="nia-title">
-          <div class="nia-avatar nia-avatar-graphic" id="niaHeaderAvatar">${NIA_AVATAR_SVG}</div>
+          <div class="nia-avatar nia-avatar-graphic" id="niaHeaderAvatar">${NIA_AVATAR_IMG}</div>
           <div>
             <strong>Nia</strong>
             <span>Your UNGANI Business Assistant</span>
@@ -1007,6 +1028,18 @@
     }).join("<br>");
 
     addNiaMessage("Here are common questions I can help with:<br><br>" + lines + "<br><br>Type your question, or tap Contact Support if you'd like a person.");
+  }
+
+  function showOverview() {
+    const lines = OVERVIEW_SECTIONS.map(function (section) {
+      const navItem = NAV_BY_KEY[section.key];
+      if (!navItem) return "";
+
+      return `<div style="margin-top:7px;">${safe(navItem.icon)} <strong>${safe(navItem.label)}</strong> — ${safe(section.blurb)} ` +
+        `<a href="${attr(navItem.href)}" style="color:${BRAND.gold};font-weight:800;text-decoration:none;">Open →</a></div>`;
+    }).join("");
+
+    addNiaMessage("Here's a quick overview of UNGANI OS:" + lines);
   }
 
   function isVoiceSupported() {
@@ -1397,7 +1430,7 @@
       if (el) {
         el.addEventListener("click", function (event) {
           event.preventDefault();
-          showQuickActions();
+          showOverview();
         });
       }
     }, 0);
