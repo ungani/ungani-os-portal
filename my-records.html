@@ -47,6 +47,9 @@
     let businessPreset = null;
     let recordRows = [];
     let editingRecordId = null;
+    let activeRecordCategory = "all";
+
+    const TILE_PALETTE = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#DB2777"];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -221,13 +224,6 @@
             grid-column: span 3;
           }
 
-          .record-main-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(320px, 0.52fr);
-            gap: 18px;
-            align-items: start;
-          }
-
           .record-chart-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -263,69 +259,96 @@
             border-color: rgba(212,166,58,0.65);
           }
 
-          .record-list {
+          .category-tiles {
             display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
             gap: 12px;
+            margin-bottom: 18px;
           }
 
-          .record-card {
-            position: relative;
-            border: 1px solid var(--ungani-border);
-            border-radius: 22px;
-            padding: 16px 16px 16px 20px;
+          .category-tile {
             background: var(--ungani-card);
-            box-shadow: var(--ungani-shadow);
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 14px;
-            align-items: start;
+            border: 1px solid var(--ungani-border);
+            border-left: 5px solid var(--tile-accent, var(--ungani-gold));
+            border-radius: 18px;
+            padding: 14px 16px;
+            cursor: pointer;
+            text-align: left;
+            font-family: inherit;
+            transition: 0.18s ease;
           }
 
-          .record-card::before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 14px;
-            bottom: 14px;
-            width: 4px;
-            border-radius: 0 999px 999px 0;
-            background: var(--accent, #64748B);
+          .category-tile:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ungani-shadow);
           }
 
-          .record-card:hover {
-            border-color: rgba(212,166,58,0.55);
+          .category-tile.active {
+            box-shadow: 0 0 0 2px var(--tile-accent, var(--ungani-gold));
           }
 
-          .record-title-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            align-items: center;
-            margin-bottom: 8px;
+          .category-tile .tile-count {
+            display: block;
+            font-size: 22px;
+            font-weight: 900;
+            color: var(--ungani-text);
           }
 
-          .record-title-row h3 {
-            margin: 0;
-            font-size: 18px;
+          .category-tile .tile-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--ungani-muted);
+            margin-top: 4px;
           }
 
-          .record-meta-grid {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 10px;
+          .record-table-wrap {
+            overflow-x: auto;
           }
 
-          .record-actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            justify-content: flex-end;
+          .record-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 780px;
+          }
+
+          .record-table th {
+            text-align: left;
+            color: var(--ungani-muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 13px 12px;
+            border-bottom: 1px solid var(--ungani-border);
+          }
+
+          .record-table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--ungani-border);
+            vertical-align: top;
+          }
+
+          .record-table td:first-child {
+            border-left: 4px solid var(--accent, #64748B);
+          }
+
+          .record-table tbody tr {
+            cursor: pointer;
+          }
+
+          .record-table tbody tr:hover td {
+            background: var(--ungani-soft);
+          }
+
+          .record-table .row-sub {
+            display: block;
+            color: var(--ungani-muted);
+            font-size: 12px;
+            margin-top: 2px;
           }
 
           @media (max-width: 1180px) {
             .records-hero-grid,
-            .record-main-grid,
             .record-chart-grid {
               grid-template-columns: 1fr;
             }
@@ -337,17 +360,12 @@
 
           @media (max-width: 720px) {
             .record-kpi-grid,
-            .record-form-grid,
-            .record-card {
+            .record-form-grid {
               grid-template-columns: 1fr;
             }
 
             .record-form-grid .wide {
               grid-column: span 1;
-            }
-
-            .record-actions {
-              justify-content: flex-start;
             }
           }
         </style>
@@ -364,7 +382,7 @@
               </p>
 
               <div class="ungani-button-row">
-                <button class="ungani-btn gold" onclick="scrollToRecordForm()">Add Record</button>
+                <button class="ungani-btn gold" onclick="openRecordModal()">Add Record</button>
                 <button class="ungani-btn green" onclick="loadRecordRows()">Refresh</button>
                 <a class="ungani-btn light" href="my-charts.html">View Charts</a>
               </div>
@@ -382,6 +400,8 @@
             </div>
           </div>
         </section>
+
+        ${renderCategoryTiles()}
 
         <section class="record-kpi-grid">
           ${recordKpi("Total Records", summary.total, "All records in view", "#2563EB")}
@@ -472,110 +492,33 @@
           </div>
         </section>
 
-        <section class="record-main-grid">
-          <div class="ungani-card" id="recordFormCard">
-            <div class="ungani-section-title">
-              <div>
-                <h3 id="recordFormTitle">${editingRecordId ? "Edit Record" : "Add Record"}</h3>
-                <p class="ungani-small">Use business-specific record types so reports and charts make sense.</p>
-              </div>
-
-              <button class="ungani-btn dark" onclick="clearRecordForm()">Clear</button>
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Record Guide</h3>
+              <p class="ungani-small">How to keep updates useful.</p>
             </div>
-
-            <form onsubmit="saveRecord(event)">
-              <div class="record-form-grid">
-                <div class="wide">
-                  <label for="recordTitle">Record Title</label>
-                  <input id="recordTitle" placeholder="Example: Client update, trip update, viewing note, job update..." required />
-                </div>
-
-                <div>
-                  <label for="recordType">Record Type</label>
-                  <select id="recordType">
-                    ${businessPreset.recordTypes.map(function (item) {
-                      return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
-                    }).join("")}
-                  </select>
-                </div>
-
-                <div>
-                  <label for="recordDate">Record Date</label>
-                  <input id="recordDate" type="date" />
-                </div>
-
-                <div>
-                  <label for="recordStatus">Status</label>
-                  <select id="recordStatus">
-                    <option value="open">Open</option>
-                    <option value="in progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="closed">Closed</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label for="recordPriority">Priority</label>
-                  <select id="recordPriority">
-                    <option value="low">Low</option>
-                    <option value="normal" selected>Normal</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label for="recordRelatedPerson">Related Person</label>
-                  <input id="recordRelatedPerson" placeholder="Client, supplier, driver, agent, customer..." />
-                </div>
-
-                <div>
-                  <label for="recordRelatedItem">Related Item / Work</label>
-                  <input id="recordRelatedItem" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)}" />
-                </div>
-
-                <div class="wide">
-                  <label for="recordNotes">Notes</label>
-                  <textarea id="recordNotes" rows="5" placeholder="Write the full update, observation, issue, progress note, or client feedback..."></textarea>
-                </div>
-              </div>
-
-              <div class="ungani-button-row" style="margin-top:16px;">
-                <button class="ungani-btn gold" type="submit">${editingRecordId ? "Update Record" : "Save Record"}</button>
-                <button class="ungani-btn dark" type="button" onclick="clearRecordForm()">Cancel</button>
-              </div>
-            </form>
           </div>
 
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <div>
-                <h3>Record Guide</h3>
-                <p class="ungani-small">How to keep updates useful.</p>
-              </div>
+          <div class="ungani-empty" style="text-align:left;">
+            <h3>Record the important details</h3>
+            <p>Use records for updates that should not be lost in WhatsApp, calls, or memory.</p>
+          </div>
+
+          <div style="display:grid;gap:10px;margin-top:12px;">
+            <div class="ungani-card" style="box-shadow:none;">
+              <strong>Example record</strong>
+              <p class="ungani-small">${UnganiClientShared.safe(businessPreset.recordTypes[0] || "Daily Update")}</p>
             </div>
 
-            <div class="ungani-empty" style="text-align:left;">
-              <h3>Record the important details</h3>
-              <p>Use records for updates that should not be lost in WhatsApp, calls, or memory.</p>
+            <div class="ungani-card" style="box-shadow:none;">
+              <strong>Best use</strong>
+              <p class="ungani-small">Add notes after calls, visits, deliveries, jobs, service work, or client follow-ups.</p>
             </div>
 
-            <div style="display:grid;gap:10px;margin-top:12px;">
-              <div class="ungani-card" style="box-shadow:none;">
-                <strong>Example record</strong>
-                <p class="ungani-small">${UnganiClientShared.safe(businessPreset.recordTypes[0] || "Daily Update")}</p>
-              </div>
-
-              <div class="ungani-card" style="box-shadow:none;">
-                <strong>Best use</strong>
-                <p class="ungani-small">Add notes after calls, visits, deliveries, jobs, service work, or client follow-ups.</p>
-              </div>
-
-              <div class="ungani-card" style="box-shadow:none;">
-                <strong>Reports</strong>
-                <p class="ungani-small">Important updates can appear in reports and activity summaries.</p>
-              </div>
+            <div class="ungani-card" style="box-shadow:none;">
+              <strong>Reports</strong>
+              <p class="ungani-small">Important updates can appear in reports and activity summaries.</p>
             </div>
           </div>
         </section>
@@ -587,7 +530,10 @@
               <p class="ungani-small">${filteredRows.length} record(s) shown.</p>
             </div>
 
-            <button class="ungani-btn green" onclick="loadRecordRows()">Refresh</button>
+            <div class="ungani-button-row" style="margin-top:0;">
+              <button class="ungani-btn gold" onclick="openRecordModal()">+ Add Record</button>
+              <button class="ungani-btn green" onclick="loadRecordRows()">Refresh</button>
+            </div>
           </div>
 
           ${renderRecordList(filteredRows)}
@@ -630,48 +576,52 @@
       }
 
       return `
-        <div class="record-list">
-          ${rows.map(function (row) {
-            const title = getRecordTitle(row);
-            const type = UnganiClientShared.getValue(row, ["record_type", "type"], "General Record");
-            const status = UnganiClientShared.getValue(row, ["status"], "open");
-            const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
-            const date = UnganiClientShared.getValue(row, ["record_date", "created_at"], "");
-            const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
-            const relatedItem = UnganiClientShared.getValue(row, ["related_item"], "");
-            const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
+        <div class="record-table-wrap">
+          <table class="record-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Related</th>
+                <th>Date</th>
+                <th>Priority</th>
+                <th>Status</th>
+              </tr>
+            </thead>
 
-            return `
-              <div class="record-card" style="--accent:${UnganiClientShared.attr(statusAccent(status))};">
-                <div>
-                  <div class="record-title-row">
-                    ${statusBadge(status)}
-                    ${priorityBadge(priority)}
-                    <h3>${UnganiClientShared.safe(title)}</h3>
-                  </div>
+            <tbody>
+              ${rows.map(function (row) {
+                const title = getRecordTitle(row);
+                const type = getRecordType(row);
+                const status = UnganiClientShared.getValue(row, ["status"], "open");
+                const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
+                const date = UnganiClientShared.getValue(row, ["record_date", "created_at"], "");
+                const relatedPerson = UnganiClientShared.getValue(row, ["related_person"], "");
+                const relatedItem = UnganiClientShared.getValue(row, ["related_item"], "");
 
-                  <p class="ungani-small" style="margin:0;">
-                    ${UnganiClientShared.safe(notes || "No notes added.")}
-                  </p>
-
-                  <div class="record-meta-grid">
-                    <span class="ungani-badge gold">${UnganiClientShared.safe(type)}</span>
-                    <span class="ungani-badge blue">Date: ${UnganiClientShared.safe(date ? UnganiClientShared.formatDate(date) : "No date")}</span>
-                    ${relatedPerson ? `<span class="ungani-badge green">Person: ${UnganiClientShared.safe(relatedPerson)}</span>` : ""}
-                    ${relatedItem ? `<span class="ungani-badge blue">Related: ${UnganiClientShared.safe(relatedItem)}</span>` : ""}
-                  </div>
-                </div>
-
-                <div class="record-actions">
-                  ${status.toLowerCase() !== "completed" && status.toLowerCase() !== "closed" ? `<button class="ungani-btn small green" onclick="markRecordCompleted('${UnganiClientShared.attr(row.id)}')">Complete</button>` : ""}
-                  <button class="ungani-btn small gold" onclick="editRecord('${UnganiClientShared.attr(row.id)}')">Edit</button>
-                  <button class="ungani-btn small red" onclick="deleteRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>
-                </div>
-              </div>
-            `;
-          }).join("")}
+                return `
+                  <tr style="--accent:${UnganiClientShared.attr(statusAccent(status))};" onclick="openRecordModal('${UnganiClientShared.attr(row.id)}')">
+                    <td>
+                      ${UnganiClientShared.safe(title)}
+                      <span class="row-sub">${UnganiClientShared.safe(getValueOrNotes(row))}</span>
+                    </td>
+                    <td>${UnganiClientShared.safe(type)}</td>
+                    <td>${UnganiClientShared.safe(relatedPerson || relatedItem || "—")}</td>
+                    <td>${UnganiClientShared.safe(date ? UnganiClientShared.formatDate(date) : "No date")}</td>
+                    <td>${priorityBadge(priority)}</td>
+                    <td>${statusBadge(status)}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
         </div>
       `;
+    }
+
+    function getValueOrNotes(row) {
+      const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
+      return notes || "No notes added.";
     }
 
     function recordKpi(title, value, subtitle, accent) {
@@ -751,7 +701,11 @@
       return UnganiAnalytics.mapToRows(map);
     }
 
-    function getFilteredRows() {
+    function getRecordType(row) {
+      return UnganiClientShared.getValue(row, ["record_type", "type"], "General Record");
+    }
+
+    function getBaseFilteredRows() {
       const filterStatus = getStoredOrInput("filterStatus", "ungani_record_filter_status").toLowerCase();
       const filterPriority = getStoredOrInput("filterPriority", "ungani_record_filter_priority").toLowerCase();
       const search = getStoredOrInput("filterSearch", "ungani_record_filter_search").toLowerCase();
@@ -767,6 +721,64 @@
 
         return true;
       });
+    }
+
+    function buildRecordCategories() {
+      const knownTypes = businessPreset.recordTypes || [];
+
+      const categories = [
+        { key: "all", label: "All Records", accent: "#061C3D", match: function () { return true; } }
+      ];
+
+      knownTypes.forEach(function (type, index) {
+        categories.push({
+          key: "type-" + index,
+          label: type,
+          accent: TILE_PALETTE[index % TILE_PALETTE.length],
+          match: function (row) { return getRecordType(row) === type; }
+        });
+      });
+
+      categories.push({
+        key: "other",
+        label: "Other",
+        accent: "#64748B",
+        match: function (row) { return knownTypes.indexOf(getRecordType(row)) === -1; }
+      });
+
+      return categories;
+    }
+
+    function getFilteredRows() {
+      const categories = buildRecordCategories();
+      const category = categories.find(function (item) { return item.key === activeRecordCategory; }) || categories[0];
+      return getBaseFilteredRows().filter(category.match);
+    }
+
+    function selectRecordCategory(key) {
+      activeRecordCategory = key;
+      renderRecordsPage();
+    }
+
+    function renderCategoryTiles() {
+      const categories = buildRecordCategories();
+      const base = getBaseFilteredRows();
+
+      return `
+        <section class="category-tiles">
+          ${categories.map(function (category) {
+            const count = base.filter(category.match).length;
+            const active = category.key === activeRecordCategory ? " active" : "";
+
+            return `
+              <button type="button" class="category-tile${active}" style="--tile-accent:${category.accent};" onclick="selectRecordCategory('${category.key}')">
+                <span class="tile-count">${count}</span>
+                <span class="tile-label">${UnganiClientShared.safe(category.label)}</span>
+              </button>
+            `;
+          }).join("")}
+        </section>
+      `;
     }
 
     function getStoredOrInput(inputId, storageKey) {
@@ -795,27 +807,112 @@
       sessionStorage.removeItem("ungani_record_filter_status");
       sessionStorage.removeItem("ungani_record_filter_priority");
       sessionStorage.removeItem("ungani_record_filter_search");
+      activeRecordCategory = "all";
       renderRecordsPage();
       UnganiClientShared.showToast("Record filters reset ✓");
     }
 
     function quickRecordType(recordType) {
-      scrollToRecordForm();
-
-      setTimeout(function () {
-        const el = document.getElementById("recordType");
-        if (el) el.value = recordType;
-      }, 150);
-
+      openRecordModal(null, { recordType: recordType });
       UnganiClientShared.showToast("Record type selected ✓");
     }
 
-    function scrollToRecordForm() {
-      const el = document.getElementById("recordFormCard");
+    function openRecordModal(id, presetValues) {
+      const row = id ? recordRows.find(function (item) { return String(item.id) === String(id); }) : null;
 
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (id && !row) {
+        UnganiClientShared.showToast("Record not found.");
+        return;
       }
+
+      editingRecordId = row ? row.id : null;
+
+      const currentStatus = row ? String(UnganiClientShared.getValue(row, ["status"], "open")).toLowerCase() : "";
+      const showMarkCompleted = row && currentStatus !== "completed" && currentStatus !== "closed";
+
+      const bodyHtml = `
+        <form onsubmit="saveRecord(event)">
+          <div class="record-form-grid">
+            <div class="wide">
+              <label for="recordTitle">Record Title</label>
+              <input id="recordTitle" placeholder="Example: Client update, trip update, viewing note, job update..." required value="${row ? UnganiClientShared.attr(getRecordTitle(row)) : ""}" />
+            </div>
+
+            <div>
+              <label for="recordType">Record Type</label>
+              <select id="recordType">
+                ${businessPreset.recordTypes.map(function (item) {
+                  return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+                }).join("")}
+                ${row && businessPreset.recordTypes.indexOf(getRecordType(row)) === -1
+                  ? `<option value="${UnganiClientShared.attr(getRecordType(row))}">${UnganiClientShared.safe(getRecordType(row))}</option>`
+                  : ""}
+              </select>
+            </div>
+
+            <div>
+              <label for="recordDate">Record Date</label>
+              <input id="recordDate" type="date" value="${row ? UnganiClientShared.attr(String(UnganiClientShared.getValue(row, ["record_date", "created_at"], "")).slice(0, 10)) : ""}" />
+            </div>
+
+            <div>
+              <label for="recordStatus">Status</label>
+              <select id="recordStatus">
+                <option value="open">Open</option>
+                <option value="in progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="closed">Closed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="recordPriority">Priority</label>
+              <select id="recordPriority">
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="recordRelatedPerson">Related Person</label>
+              <input id="recordRelatedPerson" placeholder="Client, supplier, driver, agent, customer..." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["related_person"], "")) : ""}" />
+            </div>
+
+            <div>
+              <label for="recordRelatedItem">Related Item / Work</label>
+              <input id="recordRelatedItem" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)}" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["related_item"], "")) : ""}" />
+            </div>
+
+            <div class="wide">
+              <label for="recordNotes">Notes</label>
+              <textarea id="recordNotes" rows="5" placeholder="Write the full update, observation, issue, progress note, or client feedback...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
+            </div>
+          </div>
+
+          <div class="ungani-button-row" style="margin-top:16px;">
+            <button class="ungani-btn gold" type="submit">${row ? "Update Record" : "Save Record"}</button>
+            ${showMarkCompleted ? `<button class="ungani-btn blue" type="button" onclick="markRecordCompleted('${UnganiClientShared.attr(row.id)}')">Mark Completed</button>` : ""}
+            ${row ? `<button class="ungani-btn red" type="button" onclick="deleteRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
+            <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({
+        title: row ? "Edit Record" : "Add Record",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          document.getElementById("recordType").value = row
+            ? getRecordType(row)
+            : ((presetValues && presetValues.recordType) || businessPreset.recordTypes[0] || "General Record");
+
+          document.getElementById("recordStatus").value = row ? UnganiClientShared.getValue(row, ["status"], "open") : "open";
+          document.getElementById("recordPriority").value = row ? UnganiClientShared.getValue(row, ["priority"], "normal") : "normal";
+        }
+      });
     }
 
     async function saveRecord(event) {
@@ -865,35 +962,9 @@
       }
 
       UnganiClientShared.showToast(editingRecordId ? "Record updated ✓" : "Record added ✓");
-      clearRecordForm();
+      editingRecordId = null;
+      UnganiClientShared.closeModal();
       await loadRecordRows();
-    }
-
-    function editRecord(id) {
-      const row = recordRows.find(function (item) {
-        return String(item.id) === String(id);
-      });
-
-      if (!row) {
-        UnganiClientShared.showToast("Record not found.");
-        return;
-      }
-
-      editingRecordId = row.id;
-
-      scrollToRecordForm();
-
-      setTimeout(function () {
-        document.getElementById("recordFormTitle").innerText = "Edit Record";
-        document.getElementById("recordTitle").value = getRecordTitle(row);
-        document.getElementById("recordType").value = UnganiClientShared.getValue(row, ["record_type", "type"], "");
-        document.getElementById("recordDate").value = String(UnganiClientShared.getValue(row, ["record_date", "created_at"], "")).slice(0, 10);
-        document.getElementById("recordStatus").value = UnganiClientShared.getValue(row, ["status"], "open");
-        document.getElementById("recordPriority").value = UnganiClientShared.getValue(row, ["priority"], "normal");
-        document.getElementById("recordRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person"], "");
-        document.getElementById("recordRelatedItem").value = UnganiClientShared.getValue(row, ["related_item"], "");
-        document.getElementById("recordNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
-      }, 150);
     }
 
     async function markRecordCompleted(id) {
@@ -916,6 +987,8 @@
       }
 
       UnganiClientShared.showToast("Record marked completed ✓");
+      editingRecordId = null;
+      UnganiClientShared.closeModal();
       await loadRecordRows();
     }
 
@@ -956,23 +1029,9 @@
       }
 
       UnganiClientShared.showToast("Record moved to Recently Deleted ✓");
-      await loadRecordRows();
-    }
-
-    function clearRecordForm() {
       editingRecordId = null;
-
-      const title = document.getElementById("recordFormTitle");
-      if (title) title.innerText = "Add Record";
-
-      if (document.getElementById("recordTitle")) document.getElementById("recordTitle").value = "";
-      if (document.getElementById("recordType")) document.getElementById("recordType").value = businessPreset.recordTypes[0] || "General Record";
-      if (document.getElementById("recordDate")) document.getElementById("recordDate").value = "";
-      if (document.getElementById("recordStatus")) document.getElementById("recordStatus").value = "open";
-      if (document.getElementById("recordPriority")) document.getElementById("recordPriority").value = "normal";
-      if (document.getElementById("recordRelatedPerson")) document.getElementById("recordRelatedPerson").value = "";
-      if (document.getElementById("recordRelatedItem")) document.getElementById("recordRelatedItem").value = "";
-      if (document.getElementById("recordNotes")) document.getElementById("recordNotes").value = "";
+      UnganiClientShared.closeModal();
+      await loadRecordRows();
     }
 
     function getRecordTitle(row) {
