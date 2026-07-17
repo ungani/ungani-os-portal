@@ -45,6 +45,21 @@
     let items = [];
     let currentEditId = null;
     let isRealEstate = false;
+    let activeItemCategory = "all";
+
+    const LISTING_TYPES = ["sale", "rent", "lease", "project", "land", "commercial", "other"];
+    const STATUS_OPTIONS = ["available", "reserved", "under negotiation", "sold", "rented", "maintenance", "inactive"];
+
+    const ITEM_CATEGORIES = [
+      { key: "all", label: "All", accent: "#061C3D", match: function () { return true; } },
+      { key: "sale", label: "Sale", accent: "#D4A63A", match: function (row) { return getListingType(row) === "sale"; } },
+      { key: "rent", label: "Rent", accent: "#2563EB", match: function (row) { return getListingType(row) === "rent"; } },
+      { key: "lease", label: "Lease", accent: "#7C3AED", match: function (row) { return getListingType(row) === "lease"; } },
+      { key: "project", label: "Project", accent: "#16A34A", match: function (row) { return getListingType(row) === "project"; } },
+      { key: "land", label: "Land", accent: "#EA580C", match: function (row) { return getListingType(row) === "land"; } },
+      { key: "commercial", label: "Commercial", accent: "#0EA5E9", match: function (row) { return getListingType(row) === "commercial"; } },
+      { key: "other", label: "Other", accent: "#64748B", match: function (row) { return LISTING_TYPES.indexOf(getListingType(row)) === -1 || getListingType(row) === "other"; } }
+    ];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -245,35 +260,57 @@
             gap: 16px;
           }
 
-          .property-list-row {
-            position: relative;
+          .category-tiles {
             display: grid;
-            grid-template-columns: minmax(180px, 1.4fr) 120px 140px 130px 130px auto;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
             gap: 12px;
-            align-items: center;
-            border-bottom: 1px solid var(--ungani-border);
-            padding: 12px 0 12px 14px;
+            margin-bottom: 18px;
           }
 
-          .property-list-row::before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 8px;
-            bottom: 8px;
-            width: 4px;
-            border-radius: 0 999px 999px 0;
-            background: var(--accent, #64748B);
+          .category-tile {
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            border-left: 5px solid var(--tile-accent, var(--ungani-gold));
+            border-radius: 18px;
+            padding: 14px 16px;
+            cursor: pointer;
+            text-align: left;
+            font-family: inherit;
+            transition: 0.18s ease;
+          }
+
+          .category-tile:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ungani-shadow);
+          }
+
+          .category-tile.active {
+            box-shadow: 0 0 0 2px var(--tile-accent, var(--ungani-gold));
+          }
+
+          .category-tile .tile-count {
+            display: block;
+            font-size: 22px;
+            font-weight: 900;
+            color: var(--ungani-text);
+          }
+
+          .category-tile .tile-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--ungani-muted);
+            margin-top: 4px;
+          }
+
+          .property-card {
+            cursor: pointer;
           }
 
           @media (max-width: 1180px) {
             .property-grid,
             .project-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
-            .property-list-row {
-              grid-template-columns: 1fr 1fr;
             }
           }
 
@@ -286,10 +323,6 @@
 
             .property-photo {
               min-height: 165px;
-            }
-
-            .property-list-row {
-              grid-template-columns: 1fr;
             }
 
             .property-price {
@@ -308,11 +341,13 @@
           </p>
 
           <div class="ungani-button-row">
-            <button class="ungani-btn gold" onclick="scrollToForm()">${currentEditId ? "Update Property" : "Add Property"}</button>
+            <button class="ungani-btn gold" onclick="openItemModal()">Add Property</button>
             <button class="ungani-btn green" onclick="loadItems()">Refresh</button>
             <a class="ungani-btn dark" href="client.html">Dashboard</a>
           </div>
         </section>
+
+        ${renderCategoryTiles()}
 
         <section class="ungani-grid">
           ${UnganiClientShared.metricCard(isRealEstate ? "Total Properties" : "Total Items", filtered.length, "Current records shown", "blue")}
@@ -361,19 +396,6 @@
             </div>
 
             <div>
-              <label for="filterListingType">Listing Type</label>
-              <select id="filterListingType" onchange="saveFilters(); renderItemsPage();">
-                <option value="">All Types</option>
-                <option value="sale">Sale</option>
-                <option value="rent">Rent</option>
-                <option value="lease">Lease</option>
-                <option value="project">Project</option>
-                <option value="land">Land</option>
-                <option value="commercial">Commercial</option>
-              </select>
-            </div>
-
-            <div>
               <label for="filterProject">Project</label>
               <select id="filterProject" onchange="saveFilters(); renderItemsPage();">
                 <option value="">All Projects</option>
@@ -387,37 +409,13 @@
           <div class="ungani-section-title">
             <div>
               <h3>${isRealEstate ? "Properties / Listings" : "Items / Assets"}</h3>
-              <p class="ungani-small">${filtered.length} record(s) shown. This is now the primary browse view.</p>
+              <p class="ungani-small">${filtered.length} record(s) shown.</p>
             </div>
 
-            <button class="ungani-btn gold" onclick="scrollToForm()">Add New</button>
+            <button class="ungani-btn gold" onclick="openItemModal()">+ Add New</button>
           </div>
 
           ${renderPropertyGrid(filtered)}
-        </section>
-
-        <section id="itemFormCard" class="ungani-card">
-          <div class="ungani-section-title">
-            <div>
-              <h3>${currentEditId ? "Update Property / Listing" : "Add Property / Listing"}</h3>
-              <p class="ungani-small">Add property details, project progress, status, price, photo link, and assigned agent.</p>
-            </div>
-
-            ${currentEditId ? '<button class="ungani-btn dark" onclick="cancelEdit()">Cancel Edit</button>' : ""}
-          </div>
-
-          ${renderItemForm()}
-        </section>
-
-        <section class="ungani-card">
-          <div class="ungani-section-title">
-            <div>
-              <h3>Compact List View</h3>
-              <p class="ungani-small">A simple list for quick scanning and editing.</p>
-            </div>
-          </div>
-
-          ${renderListView(filtered)}
         </section>
 
         <p class="ungani-small">
@@ -426,7 +424,6 @@
       `);
 
       restoreFilters();
-      fillEditForm();
     }
 
     function renderProjectProgress(projects) {
@@ -511,7 +508,7 @@
       const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
 
       return `
-        <article class="ungani-card property-card" style="--accent:${UnganiClientShared.attr(statusAccentHex(status))};">
+        <article class="ungani-card property-card" style="--accent:${UnganiClientShared.attr(statusAccentHex(status))};" onclick="openItemModal('${UnganiClientShared.attr(id)}')">
           <div class="property-photo">
             ${photo ? `<img src="${UnganiClientShared.attr(photo)}" alt="${UnganiClientShared.attr(name)}" onerror="this.style.display='none';" />` : ""}
             <div class="property-photo-content">
@@ -563,41 +560,42 @@
                 <p class="ungani-small">${unitsSold} / ${totalUnits} units sold · ${progress}% progress</p>
               </div>
             ` : ""}
-
-            <div class="ungani-button-row">
-              <button class="ungani-btn" onclick="editItem('${UnganiClientShared.attr(id)}')">Edit</button>
-              <button class="ungani-btn green" onclick="quickStatus('${UnganiClientShared.attr(id)}', 'available')">Available</button>
-              <button class="ungani-btn gold" onclick="quickStatus('${UnganiClientShared.attr(id)}', 'reserved')">Reserved</button>
-              <button class="ungani-btn dark" onclick="quickStatus('${UnganiClientShared.attr(id)}', 'sold')">Sold</button>
-              <button class="ungani-btn red" onclick="deleteItem('${UnganiClientShared.attr(id)}')">Delete</button>
-            </div>
           </div>
         </article>
       `;
     }
 
-    function renderItemForm() {
-      return `
+    function openItemModal(id) {
+      const row = id ? items.find(function (item) { return String(item.id) === String(id); }) : null;
+
+      if (id && !row) {
+        UnganiClientShared.showToast("Property not found.");
+        return;
+      }
+
+      currentEditId = row ? row.id : null;
+
+      const bodyHtml = `
         <form id="itemForm" onsubmit="saveItem(event)">
           <div class="ungani-form-grid">
             <div>
               <label for="propertyName">Property / Listing Name</label>
-              <input id="propertyName" required placeholder="Example: Clove Garden A12" />
+              <input id="propertyName" required placeholder="Example: Clove Garden A12" value="${row ? UnganiClientShared.attr(getItemName(row)) : ""}" />
             </div>
 
             <div>
               <label for="projectName">Project / Development</label>
-              <input id="projectName" placeholder="Example: Clove Garden" />
+              <input id="projectName" placeholder="Example: Clove Garden" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["project_name"], "")) : ""}" />
             </div>
 
             <div>
               <label for="propertyLocation">Location</label>
-              <input id="propertyLocation" placeholder="Example: Nyali, Mombasa" />
+              <input id="propertyLocation" placeholder="Example: Nyali, Mombasa" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_location", "location"], "")) : ""}" />
             </div>
 
             <div>
               <label for="propertyPrice">Price / Value</label>
-              <input id="propertyPrice" type="number" min="0" step="1" placeholder="Amount in Ksh" />
+              <input id="propertyPrice" type="number" min="0" step="1" placeholder="Amount in Ksh" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], "")) : ""}" />
             </div>
 
             <div>
@@ -610,6 +608,9 @@
                 <option value="land">Land</option>
                 <option value="commercial">Commercial</option>
                 <option value="other">Other</option>
+                ${row && LISTING_TYPES.indexOf(getListingType(row)) === -1
+                  ? `<option value="${UnganiClientShared.attr(getListingType(row))}">${UnganiClientShared.safe(toTitle(getListingType(row)))}</option>`
+                  : ""}
               </select>
             </div>
 
@@ -623,113 +624,90 @@
                 <option value="rented">Rented</option>
                 <option value="maintenance">Maintenance</option>
                 <option value="inactive">Inactive</option>
+                ${row && STATUS_OPTIONS.indexOf(getStatus(row).toLowerCase()) === -1
+                  ? `<option value="${UnganiClientShared.attr(getStatus(row))}">${UnganiClientShared.safe(toTitle(getStatus(row)))}</option>`
+                  : ""}
               </select>
             </div>
 
             <div>
               <label for="bedrooms">Bedrooms</label>
-              <input id="bedrooms" type="number" min="0" step="1" placeholder="Example: 3" />
+              <input id="bedrooms" type="number" min="0" step="1" placeholder="Example: 3" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["bedrooms"], "")) : ""}" />
             </div>
 
             <div>
               <label for="bathrooms">Bathrooms</label>
-              <input id="bathrooms" type="number" min="0" step="1" placeholder="Example: 2" />
+              <input id="bathrooms" type="number" min="0" step="1" placeholder="Example: 2" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["bathrooms"], "")) : ""}" />
             </div>
 
             <div>
               <label for="propertySize">Property Size</label>
-              <input id="propertySize" placeholder="Example: 1,250 sq ft" />
+              <input id="propertySize" placeholder="Example: 1,250 sq ft" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_size"], "")) : ""}" />
             </div>
 
             <div>
               <label for="assignedAgent">Assigned Agent</label>
-              <input id="assignedAgent" placeholder="Example: Brian Otieno" />
+              <input id="assignedAgent" placeholder="Example: Brian Otieno" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["assigned_agent"], "")) : ""}" />
             </div>
 
             <div>
               <label for="photoUrl">Photo URL</label>
-              <input id="photoUrl" type="url" placeholder="Optional image link. If empty, placeholder is used." />
+              <input id="photoUrl" type="url" placeholder="Optional image link. If empty, placeholder is used." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["photo_url", "image_url", "thumbnail_url"], "")) : ""}" />
             </div>
 
             <div>
               <label for="dateListed">Date Listed</label>
-              <input id="dateListed" type="date" />
+              <input id="dateListed" type="date" value="${row ? UnganiClientShared.attr(String(UnganiClientShared.getValue(row, ["date_listed"], "")).slice(0, 10)) : ""}" />
             </div>
 
             <div>
               <label for="totalUnits">Total Units</label>
-              <input id="totalUnits" type="number" min="0" step="1" placeholder="Example: 20" />
+              <input id="totalUnits" type="number" min="0" step="1" placeholder="Example: 20" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["total_units"], "")) : ""}" />
             </div>
 
             <div>
               <label for="unitsSold">Units Sold</label>
-              <input id="unitsSold" type="number" min="0" step="1" placeholder="Example: 8" />
+              <input id="unitsSold" type="number" min="0" step="1" placeholder="Example: 8" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["units_sold"], "")) : ""}" />
             </div>
 
             <div>
               <label for="unitsAvailable">Units Available</label>
-              <input id="unitsAvailable" type="number" min="0" step="1" placeholder="Example: 12" />
+              <input id="unitsAvailable" type="number" min="0" step="1" placeholder="Example: 12" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["units_available"], "")) : ""}" />
             </div>
 
             <div>
               <label for="projectProgress">Project Progress %</label>
-              <input id="projectProgress" type="number" min="0" max="100" step="1" placeholder="Example: 65" />
+              <input id="projectProgress" type="number" min="0" max="100" step="1" placeholder="Example: 65" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["project_progress_percent"], "")) : ""}" />
             </div>
 
             <div>
               <label for="completionStatus">Completion Status</label>
-              <input id="completionStatus" placeholder="Example: Ongoing / Ready / Completed" />
+              <input id="completionStatus" placeholder="Example: Ongoing / Ready / Completed" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["completion_status"], "")) : ""}" />
             </div>
           </div>
 
           <label for="notes">Notes</label>
-          <textarea id="notes" placeholder="Short property, project, or listing notes..."></textarea>
+          <textarea id="notes" placeholder="Short property, project, or listing notes...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
 
           <div class="ungani-button-row">
-            <button class="ungani-btn green" type="submit">${currentEditId ? "Update Property" : "Save Property"}</button>
-            ${currentEditId ? '<button class="ungani-btn dark" type="button" onclick="cancelEdit()">Cancel</button>' : ""}
+            <button class="ungani-btn green" type="submit">${row ? "Update Property" : "Save Property"}</button>
+            ${row ? `<button class="ungani-btn gold" type="button" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'available')">Available</button>` : ""}
+            ${row ? `<button class="ungani-btn gold" type="button" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'reserved')">Reserved</button>` : ""}
+            ${row ? `<button class="ungani-btn gold" type="button" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'sold')">Sold</button>` : ""}
+            ${row ? `<button class="ungani-btn red" type="button" onclick="deleteItem('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
+            <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
           </div>
         </form>
       `;
-    }
 
-    function renderListView(rows) {
-      if (rows.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No list records</h3>
-            <p>Properties will appear here after they are added.</p>
-          </div>
-        `;
-      }
-
-      return rows.map(function (row) {
-        const name = getItemName(row);
-        const project = UnganiClientShared.getValue(row, ["project_name"], "");
-        const price = Number(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
-        const status = getStatus(row);
-        const agent = UnganiClientShared.getValue(row, ["assigned_agent"], "");
-        const type = UnganiClientShared.getValue(row, ["listing_type", "item_type", "type"], "property");
-
-        return `
-          <div class="property-list-row" style="--accent:${UnganiClientShared.attr(statusAccentHex(status))};">
-            <div>
-              <strong>${UnganiClientShared.safe(name)}</strong>
-              <p class="ungani-small" style="margin:4px 0 0;">${UnganiClientShared.safe(project || "No project")}</p>
-            </div>
-
-            <div>${price > 0 ? UnganiClientShared.safe(UnganiClientShared.formatKES(price)) : "—"}</div>
-            <div>${statusBadge(status)}</div>
-            <div>${UnganiClientShared.safe(toTitle(type))}</div>
-            <div>${UnganiClientShared.safe(agent || "—")}</div>
-
-            <div class="ungani-button-row" style="margin-top:0;">
-              <button class="ungani-btn" onclick="editItem('${UnganiClientShared.attr(row.id)}')">Edit</button>
-              <button class="ungani-btn red" onclick="deleteItem('${UnganiClientShared.attr(row.id)}')">Delete</button>
-            </div>
-          </div>
-        `;
-      }).join("");
+      UnganiClientShared.openModal({
+        title: row ? "Update Property / Listing" : "Add Property / Listing",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          document.getElementById("listingType").value = row ? getListingType(row) : "sale";
+          document.getElementById("propertyStatus").value = row ? getStatus(row) : "available";
+        }
+      });
     }
 
     function calculateSummary(rows) {
@@ -806,25 +784,56 @@
       });
     }
 
-    function filterItems() {
+    function getListingType(row) {
+      return String(UnganiClientShared.getValue(row, ["listing_type", "item_type", "type"], "")).toLowerCase();
+    }
+
+    function baseFilterItems() {
       const search = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
       const status = document.getElementById("filterStatus") ? UnganiClientShared.value("filterStatus").toLowerCase() : "";
-      const type = document.getElementById("filterListingType") ? UnganiClientShared.value("filterListingType").toLowerCase() : "";
       const project = document.getElementById("filterProject") ? UnganiClientShared.value("filterProject").toLowerCase() : "";
 
       return items.filter(function (row) {
         const rowStatus = getStatus(row).toLowerCase();
-        const rowType = String(UnganiClientShared.getValue(row, ["listing_type", "item_type", "type"], "")).toLowerCase();
         const rowProject = String(UnganiClientShared.getValue(row, ["project_name"], "")).toLowerCase();
         const haystack = JSON.stringify(row || {}).toLowerCase();
 
         if (status && rowStatus !== status) return false;
-        if (type && rowType !== type) return false;
         if (project && rowProject !== project) return false;
         if (search && !haystack.includes(search)) return false;
 
         return true;
       });
+    }
+
+    function filterItems() {
+      const category = ITEM_CATEGORIES.find(function (item) { return item.key === activeItemCategory; }) || ITEM_CATEGORIES[0];
+      return baseFilterItems().filter(category.match);
+    }
+
+    function selectItemCategory(key) {
+      activeItemCategory = key;
+      renderItemsPage();
+    }
+
+    function renderCategoryTiles() {
+      const base = baseFilterItems();
+
+      return `
+        <section class="category-tiles">
+          ${ITEM_CATEGORIES.map(function (category) {
+            const count = base.filter(category.match).length;
+            const active = category.key === activeItemCategory ? " active" : "";
+
+            return `
+              <button type="button" class="category-tile${active}" style="--tile-accent:${category.accent};" onclick="selectItemCategory('${category.key}')">
+                <span class="tile-count">${count}</span>
+                <span class="tile-label">${UnganiClientShared.safe(category.label)}</span>
+              </button>
+            `;
+          }).join("")}
+        </section>
+      `;
     }
 
     async function saveItem(event) {
@@ -925,6 +934,7 @@
 
       currentEditId = null;
       UnganiClientShared.showToast("Property saved ✓");
+      UnganiClientShared.closeModal();
       await loadItems();
     }
 
@@ -953,6 +963,8 @@
       }
 
       UnganiClientShared.showToast("Status updated ✓");
+      currentEditId = null;
+      UnganiClientShared.closeModal();
       await loadItems();
     }
 
@@ -995,52 +1007,9 @@
 
       UnganiClientShared.showToast(isRealEstate ? "Property moved to Recently Deleted ✓" : "Item moved to Recently Deleted ✓");
 
-      if (currentEditId && String(currentEditId) === String(id)) {
-        currentEditId = null;
-      }
-
-      await loadItems();
-    }
-
-    function editItem(id) {
-      currentEditId = id;
-      renderItemsPage();
-      scrollToForm();
-    }
-
-    function cancelEdit() {
       currentEditId = null;
-      renderItemsPage();
-      UnganiClientShared.showToast("Edit cancelled");
-    }
-
-    function fillEditForm() {
-      if (!currentEditId) return;
-
-      const row = items.find(function (item) {
-        return String(item.id) === String(currentEditId);
-      });
-
-      if (!row) return;
-
-      setValue("propertyName", getItemName(row));
-      setValue("projectName", UnganiClientShared.getValue(row, ["project_name"], ""));
-      setValue("propertyLocation", UnganiClientShared.getValue(row, ["property_location", "location"], ""));
-      setValue("propertyPrice", UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], ""));
-      setValue("listingType", UnganiClientShared.getValue(row, ["listing_type", "item_category", "category"], "sale"));
-      setValue("propertyStatus", getStatus(row));
-      setValue("bedrooms", UnganiClientShared.getValue(row, ["bedrooms"], ""));
-      setValue("bathrooms", UnganiClientShared.getValue(row, ["bathrooms"], ""));
-      setValue("propertySize", UnganiClientShared.getValue(row, ["property_size"], ""));
-      setValue("assignedAgent", UnganiClientShared.getValue(row, ["assigned_agent"], ""));
-      setValue("photoUrl", UnganiClientShared.getValue(row, ["photo_url", "image_url", "thumbnail_url"], ""));
-      setValue("dateListed", String(UnganiClientShared.getValue(row, ["date_listed"], "")).slice(0, 10));
-      setValue("totalUnits", UnganiClientShared.getValue(row, ["total_units"], ""));
-      setValue("unitsSold", UnganiClientShared.getValue(row, ["units_sold"], ""));
-      setValue("unitsAvailable", UnganiClientShared.getValue(row, ["units_available"], ""));
-      setValue("projectProgress", UnganiClientShared.getValue(row, ["project_progress_percent"], ""));
-      setValue("completionStatus", UnganiClientShared.getValue(row, ["completion_status"], ""));
-      setValue("notes", UnganiClientShared.getValue(row, ["notes", "description"], ""));
+      UnganiClientShared.closeModal();
+      await loadItems();
     }
 
     function getItemName(row) {
@@ -1107,42 +1076,22 @@
     function restoreFilters() {
       if (document.getElementById("searchBox")) document.getElementById("searchBox").value = sessionStorage.getItem("ungani_items_search") || "";
       if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_items_status") || "";
-      if (document.getElementById("filterListingType")) document.getElementById("filterListingType").value = sessionStorage.getItem("ungani_items_type") || "";
       if (document.getElementById("filterProject")) document.getElementById("filterProject").value = sessionStorage.getItem("ungani_items_project") || "";
     }
 
     function saveFilters() {
       if (document.getElementById("searchBox")) sessionStorage.setItem("ungani_items_search", UnganiClientShared.value("searchBox"));
       if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_items_status", UnganiClientShared.value("filterStatus"));
-      if (document.getElementById("filterListingType")) sessionStorage.setItem("ungani_items_type", UnganiClientShared.value("filterListingType"));
       if (document.getElementById("filterProject")) sessionStorage.setItem("ungani_items_project", UnganiClientShared.value("filterProject"));
     }
 
     function resetFilters() {
       sessionStorage.removeItem("ungani_items_search");
       sessionStorage.removeItem("ungani_items_status");
-      sessionStorage.removeItem("ungani_items_type");
       sessionStorage.removeItem("ungani_items_project");
+      activeItemCategory = "all";
       renderItemsPage();
       UnganiClientShared.showToast("Property filters reset ✓");
-    }
-
-    function scrollToForm() {
-      setTimeout(function () {
-        const form = document.getElementById("itemFormCard");
-
-        if (form) {
-          form.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 100);
-    }
-
-    function setValue(id, value) {
-      const el = document.getElementById(id);
-
-      if (el) {
-        el.value = value === null || value === undefined ? "" : value;
-      }
     }
 
     function toTitle(value) {
