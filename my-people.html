@@ -52,6 +52,8 @@
     let isHospitality = false;
     let unitOptions = [];
     let activePersonCategory = "all";
+    let lastTypeRows = [];
+    let lastStatusRows = [];
 
     const TILE_PALETTE = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#DB2777"];
 
@@ -144,7 +146,9 @@
       const summary = calculatePeopleSummary(filteredRows);
       const typeRows = buildTypeRows(filteredRows);
       const statusRows = buildStatusRows(filteredRows);
-      const relationshipRows = buildRelationshipRows(filteredRows);
+
+      lastTypeRows = typeRows;
+      lastStatusRows = statusRows;
 
       UnganiClientShared.setContent(`
         <style>
@@ -367,6 +371,48 @@
             background: var(--ungani-soft);
           }
 
+          .insights-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            width: 100%;
+            text-align: left;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            border-left: 6px solid var(--ungani-gold);
+            border-radius: 20px;
+            padding: 16px 18px;
+            margin-bottom: 18px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.18s ease;
+          }
+
+          .insights-banner:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ungani-shadow);
+          }
+
+          .insights-banner strong {
+            font-size: 16px;
+            color: var(--ungani-text);
+          }
+
+          .insights-banner .insights-sub {
+            display: block;
+            margin-top: 3px;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .insights-banner .insights-cta {
+            color: var(--ungani-gold);
+            font-weight: 800;
+            font-size: 13px;
+            white-space: nowrap;
+          }
+
           .people-table .row-sub {
             display: block;
             color: var(--ungani-muted);
@@ -467,32 +513,66 @@
           </div>
         </section>
 
-        <section class="people-chart-grid">
-          <div class="ungani-card ungani-chart-card">
+        <button type="button" class="insights-banner" onclick="openInsightsModal()">
+          <span>
+            <strong>📊 Insights &amp; Tools</strong>
+            <span class="insights-sub">Charts, quick-fill people roles, and the people guide</span>
+          </span>
+          <span class="insights-cta">Open →</span>
+        </button>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>People List</h3>
+              <p class="ungani-small">${filteredRows.length} people record(s) shown.</p>
+            </div>
+
+            <div class="ungani-button-row" style="margin-top:0;">
+              <button class="ungani-btn gold" onclick="openPersonModal()">+ Add Person</button>
+              <button class="ungani-btn green" onclick="loadPeopleRows()">Refresh</button>
+            </div>
+          </div>
+
+          ${renderPeopleList(filteredRows)}
+        </section>
+
+        <p class="ungani-small">
+          People Version: Step 310B-4 Business-Type People Presets · ungani.com · info@ungani.com
+        </p>
+      `);
+
+      restorePeopleFilters();
+
+      applyHighlightFromUrl();
+    }
+
+    function openInsightsModal() {
+      const bodyHtml = `
+        <div class="people-chart-grid" style="margin-bottom:18px;">
+          <div class="ungani-card ungani-chart-card" style="box-shadow:none;">
             <div class="ungani-chart-head">
               <div>
                 <h3>People Roles</h3>
                 <p class="ungani-small">Animated chart showing the people roles in this business.</p>
               </div>
             </div>
-
-            ${hasValues(typeRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="peopleTypeChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add people records to show role breakdown.")}
+            ${hasValues(lastTypeRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="peopleTypeChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add people records to show role breakdown.")}
           </div>
 
-          <div class="ungani-card ungani-chart-card">
+          <div class="ungani-card ungani-chart-card" style="box-shadow:none;">
             <div class="ungani-chart-head">
               <div>
                 <h3>People Status</h3>
                 <p class="ungani-small">Active contacts, leads, follow-ups, inactive, and attention-needed people.</p>
               </div>
             </div>
-
-            ${hasValues(statusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="peopleStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add people records to show status breakdown.")}
+            ${hasValues(lastStatusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="peopleStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add people records to show status breakdown.")}
           </div>
-        </section>
+        </div>
 
         <section class="people-type-section">
-          <div class="ungani-card">
+          <div class="ungani-card" style="box-shadow:none;">
             <div class="ungani-section-title">
               <div>
                 <h3>People Roles</h3>
@@ -508,7 +588,7 @@
           </div>
         </section>
 
-        <section class="ungani-card">
+        <section class="ungani-card" style="box-shadow:none; margin-top:18px;">
           <div class="ungani-section-title">
             <div>
               <h3>People Guide</h3>
@@ -538,35 +618,17 @@
             </div>
           </div>
         </section>
+      `;
 
-        <section class="ungani-card">
-          <div class="ungani-section-title">
-            <div>
-              <h3>People List</h3>
-              <p class="ungani-small">${filteredRows.length} people record(s) shown.</p>
-            </div>
-
-            <div class="ungani-button-row" style="margin-top:0;">
-              <button class="ungani-btn gold" onclick="openPersonModal()">+ Add Person</button>
-              <button class="ungani-btn green" onclick="loadPeopleRows()">Refresh</button>
-            </div>
-          </div>
-
-          ${renderPeopleList(filteredRows)}
-        </section>
-
-        <p class="ungani-small">
-          People Version: Step 310B-4 Business-Type People Presets · ungani.com · info@ungani.com
-        </p>
-      `);
-
-      restorePeopleFilters();
-
-      setTimeout(function () {
-        renderPeopleCharts(typeRows, statusRows, relationshipRows);
-      }, 150);
-
-      applyHighlightFromUrl();
+      UnganiClientShared.openModal({
+        title: "Insights & Tools",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          setTimeout(function () {
+            renderPeopleCharts(lastTypeRows, lastStatusRows);
+          }, 150);
+        }
+      });
     }
 
     function applyHighlightFromUrl() {
@@ -585,7 +647,7 @@
       }, 250);
     }
 
-    async function renderPeopleCharts(typeRows, statusRows, relationshipRows) {
+    async function renderPeopleCharts(typeRows, statusRows) {
       try {
         if (hasValues(typeRows)) {
           await UnganiAnalytics.renderHorizontalBarChart("peopleTypeChart", typeRows, "People");
@@ -727,17 +789,6 @@
       rows.forEach(function (row) {
         const status = UnganiClientShared.getValue(row, ["status"], "active");
         map[status] = (map[status] || 0) + 1;
-      });
-
-      return UnganiAnalytics.mapToRows(map);
-    }
-
-    function buildRelationshipRows(rows) {
-      const map = {};
-
-      rows.forEach(function (row) {
-        const relationship = UnganiClientShared.getValue(row, ["relationship_status", "lead_status"], "Not Set");
-        map[relationship] = (map[relationship] || 0) + 1;
       });
 
       return UnganiAnalytics.mapToRows(map);
