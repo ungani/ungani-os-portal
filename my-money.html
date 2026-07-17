@@ -202,11 +202,17 @@
       }
     }
 
+    let lastTrend = [];
+    let lastExpenseBreakdown = [];
+
     function renderMoneyPage() {
       const filteredRows = getFilteredRows();
       const summary = calculateMoneySummary(filteredRows);
       const expenseBreakdown = calculateExpenseBreakdown(filteredRows);
       const trend = calculateIncomeExpenseTrend(filteredRows);
+
+      lastTrend = trend;
+      lastExpenseBreakdown = expenseBreakdown;
 
       UnganiClientShared.setContent(`
         <style>
@@ -464,6 +470,48 @@
             cursor: pointer;
           }
 
+          .insights-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            width: 100%;
+            text-align: left;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            border-left: 6px solid var(--ungani-gold);
+            border-radius: 20px;
+            padding: 16px 18px;
+            margin-bottom: 18px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.18s ease;
+          }
+
+          .insights-banner:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ungani-shadow);
+          }
+
+          .insights-banner strong {
+            font-size: 16px;
+            color: var(--ungani-text);
+          }
+
+          .insights-banner .insights-sub {
+            display: block;
+            margin-top: 3px;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .insights-banner .insights-cta {
+            color: var(--ungani-gold);
+            font-weight: 800;
+            font-size: 13px;
+            white-space: nowrap;
+          }
+
           @media (max-width: 1180px) {
             .money-hero-grid,
             .money-main-grid,
@@ -564,8 +612,42 @@
           </div>
         </section>
 
-        <section class="money-chart-grid">
-          <div class="ungani-card ungani-chart-card">
+        <button type="button" class="insights-banner" onclick="openInsightsModal()">
+          <span>
+            <strong>📊 Insights &amp; Tools</strong>
+            <span class="insights-sub">Charts, recurring reminders, quick-fill categories, and the money guide</span>
+          </span>
+          <span class="insights-cta">Open →</span>
+        </button>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Money Records</h3>
+              <p class="ungani-small">${filteredRows.length} record(s) shown.</p>
+            </div>
+
+            <div class="ungani-button-row" style="margin-top:0;">
+              <button class="ungani-btn gold" onclick="openMoneyModal()">+ Add Money Record</button>
+              <button class="ungani-btn green" onclick="loadMoneyRows()">Refresh</button>
+            </div>
+          </div>
+
+          ${renderMoneyTable(filteredRows)}
+        </section>
+
+        <p class="ungani-small">
+          Money Version: Step 27C Safe Money Delete · ungani.com · info@ungani.com
+        </p>
+      `);
+
+      restoreMoneyFilters();
+    }
+
+    function openInsightsModal() {
+      const bodyHtml = `
+        <div class="money-chart-grid" style="margin-bottom:18px;">
+          <div class="ungani-card ungani-chart-card" style="box-shadow:none;">
             <div class="ungani-chart-head">
               <div>
                 <h3>Income vs Expenses</h3>
@@ -574,10 +656,10 @@
               <a class="ungani-btn green" href="my-charts.html">Analytics</a>
             </div>
 
-            ${trend.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="moneyTrendChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add dated income and expense records to show the trend.")}
+            ${lastTrend.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="moneyTrendChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add dated income and expense records to show the trend.")}
           </div>
 
-          <div class="ungani-card ungani-chart-card">
+          <div class="ungani-card ungani-chart-card" style="box-shadow:none;">
             <div class="ungani-chart-head">
               <div>
                 <h3>Expense Breakdown</h3>
@@ -585,16 +667,16 @@
               </div>
             </div>
 
-            ${expenseBreakdown.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="moneyExpenseChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add expense records to show expense breakdown.")}
+            ${lastExpenseBreakdown.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="moneyExpenseChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add expense records to show expense breakdown.")}
           </div>
-        </section>
+        </div>
 
         ${renderCategorySuggestionsPanel()}
 
         ${renderRecurringMoneyPanel()}
 
-        <section class="money-category-section">
-          <div class="ungani-card">
+        <section class="money-category-section" style="margin-top:18px;">
+          <div class="ungani-card" style="box-shadow:none;">
             <div class="ungani-section-title">
               <div>
                 <h3>Income Categories</h3>
@@ -609,7 +691,7 @@
             </div>
           </div>
 
-          <div class="ungani-card">
+          <div class="ungani-card" style="box-shadow:none;">
             <div class="ungani-section-title">
               <div>
                 <h3>Expense Categories</h3>
@@ -625,7 +707,7 @@
           </div>
         </section>
 
-        <section class="ungani-card">
+        <section class="ungani-card" style="box-shadow:none; margin-top:18px;">
           <div class="ungani-section-title">
             <div>
               <h3>Money Guide</h3>
@@ -655,34 +737,19 @@
             </div>
           </div>
         </section>
+      `;
 
-        <section class="ungani-card">
-          <div class="ungani-section-title">
-            <div>
-              <h3>Money Records</h3>
-              <p class="ungani-small">${filteredRows.length} record(s) shown.</p>
-            </div>
+      UnganiClientShared.openModal({
+        title: "Insights & Tools",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          updateRecurringCategoryOptions();
 
-            <div class="ungani-button-row" style="margin-top:0;">
-              <button class="ungani-btn gold" onclick="openMoneyModal()">+ Add Money Record</button>
-              <button class="ungani-btn green" onclick="loadMoneyRows()">Refresh</button>
-            </div>
-          </div>
-
-          ${renderMoneyTable(filteredRows)}
-        </section>
-
-        <p class="ungani-small">
-          Money Version: Step 27C Safe Money Delete · ungani.com · info@ungani.com
-        </p>
-      `);
-
-      restoreMoneyFilters();
-      updateRecurringCategoryOptions();
-
-      setTimeout(function () {
-        renderMoneyCharts(trend, expenseBreakdown);
-      }, 150);
+          setTimeout(function () {
+            renderMoneyCharts(lastTrend, lastExpenseBreakdown);
+          }, 150);
+        }
+      });
     }
 
     function renderCategorySuggestionsPanel() {
@@ -983,6 +1050,7 @@
         UnganiClientShared.showToast(result.message || "Recurring money created ✓");
         clearRecurringForm();
         await loadMoneyRows();
+        openInsightsModal();
       } catch (error) {
         UnganiClientShared.showToast("Could not create recurring money: " + error.message);
       }
@@ -1021,6 +1089,7 @@
 
         UnganiClientShared.showToast(result.message || "Recurring money updated ✓");
         await loadMoneyRows();
+        openInsightsModal();
       } catch (error) {
         UnganiClientShared.showToast("Could not update recurring money: " + error.message);
       }
@@ -1100,6 +1169,7 @@
 
         UnganiClientShared.showToast(result.message || "Suggestion updated ✓");
         await loadMoneyRows();
+        openInsightsModal();
       } catch (error) {
         UnganiClientShared.showToast("Could not update suggestion: " + error.message);
       }
