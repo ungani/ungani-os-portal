@@ -1712,6 +1712,10 @@
           🔔
           <span id="mobileNotificationCount" class="bell-dot">0</span>
         </button>
+        <button class="bell-btn" type="button" onclick="toggleChatPreview()" aria-label="Open client chat">
+          💬
+          <span id="mobileChatCount" class="bell-dot">0</span>
+        </button>
         <button class="bell-btn" type="button" onclick="toggleProfilePanel()" aria-label="Open profile menu">👤</button>
         <button class="hamburger" type="button" onclick="openSidebar()" aria-label="Open menu">☰</button>
       </div>
@@ -1783,6 +1787,24 @@
       <a href="admin-profiles.html">
         <span data-i18n="qc_profiles">Manage a Client</span><span class="profile-panel-note" data-i18n="qc_profiles_note">Status &amp; profile</span>
       </a>
+    </div>
+  </div>
+
+  <div id="chatPreviewPanel" class="notification-panel">
+    <div class="notification-head">
+      <div>
+        <h3 data-i18n="chat_head_title">Client Chat</h3>
+        <p data-i18n="chat_head_subtitle">Recent conversations across all clients.</p>
+      </div>
+      <button class="btn small light" type="button" onclick="closeChatPreview()" data-i18n="btn_close">Close</button>
+    </div>
+
+    <div class="top-actions" style="justify-content:flex-start;margin-bottom:12px;">
+      <a class="btn small gold" href="admin-chat.html" data-i18n="chat_open_full">Open Full Chat</a>
+    </div>
+
+    <div id="chatPreviewList" class="summary-list">
+      <div class="loading" data-i18n="loading_chat">Loading conversations...</div>
     </div>
   </div>
 
@@ -1979,7 +2001,9 @@
           <button class="bell-btn" type="button" onclick="toggleNotifications()" aria-label="Notifications" title="Notifications">
             🔔<span id="desktopNotificationCount" class="bell-dot">0</span>
           </button>
-          <a class="bell-btn" href="admin-chat.html" aria-label="Client chat" title="Client Chat">💬</a>
+          <button class="bell-btn" type="button" onclick="toggleChatPreview()" aria-label="Client chat" title="Client Chat">
+            💬<span id="desktopChatCount" class="bell-dot">0</span>
+          </button>
           <button class="topbar-pill" type="button" onclick="showAdminAiAssistToast()">
             <span>✨</span> AI Assistant
           </button>
@@ -2301,7 +2325,12 @@
         qc_profiles_note: "Status & profile",
         profile_theme: "Theme",
         profile_language: "Language",
-        profile_refresh: "Refresh Dashboard"
+        profile_refresh: "Refresh Dashboard",
+        chat_head_title: "Client Chat",
+        chat_head_subtitle: "Recent conversations across all clients.",
+        chat_open_full: "Open Full Chat",
+        loading_chat: "Loading conversations...",
+        no_chat: "No client conversations yet."
       },
       sw: {
         app_title: "UNGANI OS - Kituo cha Amri ya Utawala",
@@ -2410,7 +2439,12 @@
         qc_profiles_note: "Hali & wasifu",
         profile_theme: "Muonekano",
         profile_language: "Lugha",
-        profile_refresh: "Pakia Upya Dashibodi"
+        profile_refresh: "Pakia Upya Dashibodi",
+        chat_head_title: "Mazungumzo ya Mteja",
+        chat_head_subtitle: "Mazungumzo ya hivi karibuni kwa wateja wote.",
+        chat_open_full: "Fungua Mazungumzo Yote",
+        loading_chat: "Inapakia mazungumzo...",
+        no_chat: "Hakuna mazungumzo ya wateja bado."
       }
     };
 
@@ -2538,6 +2572,7 @@
       loadSupport();
       loadTransactions();
       loadNotifications();
+      loadChatPreview();
     }
 
     function loadKPIs() {
@@ -2688,6 +2723,76 @@
       });
     }
 
+    function loadChatPreview() {
+      var list = document.getElementById('chatPreviewList');
+      safeDataFetch(async function () {
+        var tenantsRes = await supabase.from('tenants').select('*');
+        var messagesRes = await supabase.from('admin_client_messages').select('*');
+        if (tenantsRes.error || messagesRes.error) throw (tenantsRes.error || messagesRes.error);
+
+        var tenantsById = {};
+        (tenantsRes.data || []).forEach(function (t) { tenantsById[t.id] = t; });
+
+        var messages = (messagesRes.data || []).filter(function (m) { return m.is_internal !== true; });
+
+        var byTenant = {};
+        messages.forEach(function (m) {
+          if (!m.tenant_id) return;
+          if (!byTenant[m.tenant_id]) byTenant[m.tenant_id] = [];
+          byTenant[m.tenant_id].push(m);
+        });
+
+        var conversations = Object.keys(byTenant).map(function (tenantId) {
+          var rows = byTenant[tenantId].slice().sort(function (a, b) { return new Date(b.created_at || 0) - new Date(a.created_at || 0); });
+          var latest = rows[0];
+          var unread = rows.filter(function (m) { return String(m.sender_role || '').toLowerCase() === 'client' && !m.read_by_admin_at; }).length;
+          var tenant = tenantsById[tenantId];
+          var tenantName = tenant ? (tenant.business_name || tenant.company_name || tenant.name || 'Client') : 'Client';
+
+          return { tenantId: tenantId, tenantName: tenantName, latest: latest, unread: unread };
+        }).sort(function (a, b) { return new Date(b.latest.created_at || 0) - new Date(a.latest.created_at || 0); });
+
+        var totalUnread = conversations.reduce(function (sum, c) { return sum + c.unread; }, 0);
+
+        ['desktopChatCount', 'mobileChatCount'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) {
+            el.textContent = totalUnread;
+            el.style.display = totalUnread > 0 ? 'inline-flex' : 'none';
+          }
+        });
+
+        renderChatPreview(conversations.slice(0, 6));
+      }, function () {
+        if (list) list.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
+      });
+    }
+
+    function renderChatPreview(conversations) {
+      var list = document.getElementById('chatPreviewList');
+      if (!list) return;
+
+      if (!conversations.length) {
+        list.innerHTML = '<div class="empty">' + translations[currentLang].no_chat + '</div>';
+        return;
+      }
+
+      list.innerHTML = conversations.map(function (c) {
+        var body = String(c.latest.message_body || '').trim();
+        var preview = body.length > 70 ? body.slice(0, 70) + '…' : body;
+        var timeStr = c.latest.created_at ? new Date(c.latest.created_at).toLocaleDateString() : '';
+        var accent = c.unread > 0 ? '#B91C1C' : '#64748B';
+
+        return '<a class="summary-row" href="admin-chat.html?tenant=' + encodeURIComponent(c.tenantId) + '" style="--accent:' + accent + ';text-decoration:none;">' +
+                 '<div>' +
+                   '<strong>' + escapeHtml(c.tenantName) + '</strong>' +
+                   '<p>' + escapeHtml(preview || 'No messages yet') + ' &bull; ' + escapeHtml(timeStr) + '</p>' +
+                 '</div>' +
+                 (c.unread > 0 ? '<span class="status red">' + c.unread + '</span>' : '<span class="status green">Read</span>') +
+               '</a>';
+      }).join('');
+    }
+
     async function markAllNotificationsRead() {
       try {
         if (!supabase) return;
@@ -2832,6 +2937,7 @@
       closeNotifications();
       closeSearchPanel();
       closeQuickAddPanel();
+      closeChatPreview();
       closeProfilePanel();
       closeDesktopSearchDropdown();
     }
@@ -2885,6 +2991,23 @@
 
     function closeQuickAddPanel() {
       var panel = document.getElementById('quickAddPanel');
+      if (panel) panel.classList.remove('open');
+    }
+
+    function toggleChatPreview() {
+      closeSidebar();
+      var panel = document.getElementById('chatPreviewPanel');
+      var isOpen = panel.classList.contains('open');
+      closeAllPanels();
+      if (!isOpen) {
+        panel.classList.add('open');
+        document.getElementById('notificationOverlay').classList.add('open');
+        loadChatPreview();
+      }
+    }
+
+    function closeChatPreview() {
+      var panel = document.getElementById('chatPreviewPanel');
       if (panel) panel.classList.remove('open');
     }
 
