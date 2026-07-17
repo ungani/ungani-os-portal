@@ -21,6 +21,7 @@
   <!-- Shared Architecture Modules Deployment Layer -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-shared.js" onerror="console.warn('client-shared.js load failed, using fallback mode.'); window.__unganiClientSharedFailed = true;"></script>
+  <script src="ungani-analytics.js" onerror="console.warn('ungani-analytics.js load failed - platform performance chart will be unavailable.');"></script>
   <script src="pwa-register.js" onerror="console.warn('pwa-register.js load failed.');"></script>
   <script>
     (function () {
@@ -2072,6 +2073,19 @@
           </div>
         </div>
 
+        <!-- PLATFORM PERFORMANCE CHART -->
+        <div class="card" style="margin-bottom:18px;">
+          <div class="section-title">
+            <div>
+              <h3 data-i18n="sec_perf_title">Platform Performance</h3>
+              <p data-i18n="sec_perf_desc">New clients, ledger volume, and support activity over the last 6 months.</p>
+            </div>
+          </div>
+          <div style="position:relative; width:100%; height:280px;">
+            <canvas id="platformPerformanceChart"></canvas>
+          </div>
+        </div>
+
         <!-- SUMMARY CONTENT SPLIT SPLIT GRID -->
         <div class="grid-2">
           <!-- LEFT PANELS: DATA ATTENTION LISTS -->
@@ -2222,6 +2236,8 @@
         sec_attention_title: "Needs Attention",
         sec_attention_desc: "Prioritized action items from the system health check.",
         loading_attention: "Loading action items...",
+        sec_perf_title: "Platform Performance",
+        sec_perf_desc: "New clients, ledger volume, and support activity over the last 6 months.",
         sec_tenants_title: "Recent Tenant Registrations",
         sec_tenants_desc: "Awaiting operational profile verification or recent approvals",
         btn_view_all: "View All",
@@ -2329,6 +2345,8 @@
         sec_attention_title: "Yanayohitaji Uangalizi",
         sec_attention_desc: "Vitendo vya kipaumbele kutoka kwa ukaguzi wa afya ya mfumo.",
         loading_attention: "Inapakia vitendo...",
+        sec_perf_title: "Utendaji wa Mfumo",
+        sec_perf_desc: "Wateja wapya, kiwango cha fedha, na shughuli za msaada kwa miezi 6 iliyopita.",
         sec_tenants_title: "Usajili wa Hivi Karibuni wa Wapangaji",
         sec_tenants_desc: "Inasubiri uhakiki wa wasifu wa uendeshaji au idhini za hivi karibuni",
         btn_view_all: "Angalia Zote",
@@ -2483,6 +2501,7 @@
       loadPlatformHealth();
       loadKPIs();
       loadNeedsAttention();
+      loadPerformanceChart();
       loadTenants();
       loadSupport();
       loadTransactions();
@@ -3362,11 +3381,116 @@
       });
     }
 
+    // ---- Platform Performance chart (uses UnganiAnalytics.createChart for Chart.js loading/lifecycle) ----
+
+    function compactMoney(value) {
+      var number = Number(value || 0);
+      var prefix = globalCurrency === 'KES' ? 'Ksh' : globalCurrency;
+      if (Math.abs(number) >= 1000000) return prefix + ' ' + (number / 1000000).toFixed(1).replace('.0', '') + 'M';
+      if (Math.abs(number) >= 1000) return prefix + ' ' + (number / 1000).toFixed(1).replace('.0', '') + 'K';
+      return prefix + ' ' + number.toLocaleString('en-KE');
+    }
+
+    function buildMonthlyLabels(months) {
+      var now = new Date();
+      var labels = [];
+      for (var i = months - 1; i >= 0; i--) {
+        var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        labels.push(d.toLocaleDateString('en-US', { month: 'short' }));
+      }
+      return labels;
+    }
+
+    function chartTextColor() {
+      return document.body.getAttribute('data-theme') === 'dark' ? '#F5F5F3' : '#061C3D';
+    }
+
+    function chartGridColor() {
+      return document.body.getAttribute('data-theme') === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(6,28,61,0.10)';
+    }
+
+    async function renderPerformanceChart(labels, signupsTrend, ledgerTrend, openedTrend, resolvedTrend) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var textColor = chartTextColor();
+      var gridColor = chartGridColor();
+
+      try {
+        await UnganiAnalytics.createChart('platformPerformanceChart', {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [
+              { label: 'New Clients', data: signupsTrend, backgroundColor: '#D4A63A', borderRadius: 10, yAxisID: 'yCount' },
+              { label: 'Support Opened', data: openedTrend, type: 'line', borderColor: '#B91C1C', backgroundColor: '#B91C1C', tension: 0.35, pointRadius: 4, pointHoverRadius: 7, yAxisID: 'yCount' },
+              { label: 'Support Resolved', data: resolvedTrend, type: 'line', borderColor: '#2563EB', backgroundColor: '#2563EB', tension: 0.35, pointRadius: 4, pointHoverRadius: 7, yAxisID: 'yCount' },
+              { label: 'Ledger Volume', data: ledgerTrend, type: 'line', borderColor: '#15803D', backgroundColor: '#15803D', borderDash: [6, 4], tension: 0.35, pointRadius: 4, pointHoverRadius: 7, yAxisID: 'yMoney' }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            animation: reducedMotion ? false : { duration: 900, easing: 'easeOutQuart' },
+            plugins: {
+              legend: { labels: { color: textColor, usePointStyle: true, boxWidth: 8, font: { family: 'Inter, system-ui, sans-serif', size: 12, weight: '700' } } },
+              tooltip: {
+                backgroundColor: '#061C3D',
+                titleColor: '#FFFFFF',
+                bodyColor: '#FFFFFF',
+                borderColor: '#D4A63A',
+                borderWidth: 1,
+                padding: 12,
+                callbacks: {
+                  label: function (context) {
+                    if (context.dataset.yAxisID === 'yMoney') return context.dataset.label + ': ' + compactMoney(context.raw);
+                    return context.dataset.label + ': ' + context.raw;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: { grid: { display: false }, ticks: { color: textColor } },
+              yCount: { position: 'left', beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor, precision: 0 } },
+              yMoney: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { color: textColor, callback: function (v) { return compactMoney(v); } } }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn('Platform performance chart warning:', error.message);
+      }
+    }
+
+    function loadPerformanceChart() {
+      safeDataFetch(async function () {
+        var tenantsTrendRes = await supabase.from('tenants').select('created_at');
+        var txTrendRes = await supabase.from('transactions').select('amount, created_at');
+        var supportTrendRes = await supabase.from('support_issues').select('created_at, resolved_at');
+
+        if (tenantsTrendRes.error || txTrendRes.error || supportTrendRes.error) {
+          throw (tenantsTrendRes.error || txTrendRes.error || supportTrendRes.error);
+        }
+
+        var supportRows = supportTrendRes.data || [];
+        var resolvedRows = supportRows.filter(function (row) { return !!row.resolved_at; });
+
+        var labels = buildMonthlyLabels(6);
+        var signupsTrend = buildMonthlyTrend(tenantsTrendRes.data || [], 'created_at', null, 6);
+        var ledgerTrend = buildMonthlyTrend(txTrendRes.data || [], 'created_at', function (tx) { return parseFloat(tx.amount) || 0; }, 6);
+        var openedTrend = buildMonthlyTrend(supportRows, 'created_at', null, 6);
+        var resolvedTrend = buildMonthlyTrend(resolvedRows, 'resolved_at', null, 6);
+
+        await renderPerformanceChart(labels, signupsTrend, ledgerTrend, openedTrend, resolvedTrend);
+      }, function () {});
+    }
+
     function toggleTheme() {
       var currentTheme = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       localStorage.setItem('ungani_admin_theme', currentTheme);
       localStorage.setItem('ungani_theme', currentTheme);
       applyTheme(currentTheme);
+      loadPerformanceChart();
     }
 
     function logout() {
