@@ -117,7 +117,14 @@
   }
 
   function showBlockedPage(title, message, buttonHref, buttonText) {
-    document.body.innerHTML = `
+    const existing = document.getElementById("clientAccessBlockedOverlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "clientAccessBlockedOverlay";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:999999;";
+
+    overlay.innerHTML = `
       <div style="
         min-height:100vh;
         display:flex;
@@ -190,6 +197,8 @@
         </div>
       </div>
     `;
+
+    document.body.appendChild(overlay);
   }
 
   function escapeHtml(value) {

@@ -39,6 +39,7 @@
   <script src="ungani-business-config.js"></script>
   <script src="ungani-analytics.js"></script>
   <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
 </head>
 
 <body>
@@ -54,6 +55,7 @@
     let sectionOptions = [];
     let currentSectionFilter = "";
     let activeMoneyCategory = "all";
+    let urlActionApplied = false;
 
     const MONEY_CATEGORIES = [
       { key: "all", label: "All Records", accent: "#D4A63A", match: function () { return true; } },
@@ -642,6 +644,31 @@
       `);
 
       restoreMoneyFilters();
+      applyUrlActions();
+    }
+
+    function applyUrlActions() {
+      if (urlActionApplied) return;
+
+      const params = new URLSearchParams(window.location.search);
+      const highlightId = params.get("highlight");
+      const action = params.get("action");
+
+      if (highlightId) {
+        const row = moneyRows.find(function (item) { return String(item.id) === String(highlightId); });
+
+        if (row) {
+          urlActionApplied = true;
+          setTimeout(function () { openMoneyModal(highlightId); }, 250);
+          return;
+        }
+      }
+
+      if (action === "add") {
+        urlActionApplied = true;
+        const presetType = params.get("type") || "income";
+        setTimeout(function () { openMoneyModal(null, { type: presetType }); }, 250);
+      }
     }
 
     function openInsightsModal() {
