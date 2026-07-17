@@ -150,18 +150,82 @@
   ];
 
   const CREATE_ACTIONS = [
-    { match: ["create income", "add income", "log income", "record income", "new income", "log a sale"], href: "my-money.html", params: { action: "add", type: "income" }, confirm: "Opening Money with a new Income record ready to fill in." },
-    { match: ["create expense", "add expense", "log expense", "record expense", "new expense"], href: "my-money.html", params: { action: "add", type: "expense" }, confirm: "Opening Money with a new Expense record ready to fill in." },
-    { match: ["create petty cash", "add petty cash", "log petty cash", "new petty cash"], href: "my-money.html", params: { action: "add", type: "petty_cash" }, confirm: "Opening Money with a new Petty Cash record ready to fill in." },
-    { match: ["create task", "add task", "new task", "create a follow-up", "add a follow-up"], href: "my-tasks.html", params: {}, confirm: "Opening Tasks so you can add a new task." },
-    { match: ["create customer", "add customer", "new customer", "create client", "add client"], href: "my-people.html", params: {}, confirm: "Opening People so you can add a new customer." },
-    { match: ["create employee", "add employee", "new employee", "add staff", "create staff"], href: "my-people.html", params: {}, confirm: "Opening People so you can add a new staff member." },
-    { match: ["create property", "add property", "new property", "add item", "create item", "new item"], href: "my-items.html", params: {}, confirm: "Opening Items so you can add a new property or item." },
-    { match: ["upload document", "upload a document", "add document"], href: "my-documents.html", params: {}, confirm: "Opening Documents so you can upload a new document." },
-    { match: ["open calendar"], href: "my-calendar.html", params: {}, confirm: "Opening Calendar." },
-    { match: ["open reports"], href: "reports.html", params: {}, confirm: "Opening Reports." },
-    { match: ["open notifications", "open notices"], href: "my-notices.html", params: {}, confirm: "Opening Notices." }
+    { key: "income", match: ["create income", "add income", "log income", "record income", "new income", "log a sale"], href: "my-money.html", params: { action: "add", type: "income" }, confirm: "Opening Money with a new Income record ready to fill in." },
+    { key: "expense", match: ["create expense", "add expense", "log expense", "record expense", "new expense"], href: "my-money.html", params: { action: "add", type: "expense" }, confirm: "Opening Money with a new Expense record ready to fill in." },
+    { key: "pettyCash", match: ["create petty cash", "add petty cash", "log petty cash", "new petty cash"], href: "my-money.html", params: { action: "add", type: "petty_cash" }, confirm: "Opening Money with a new Petty Cash record ready to fill in." },
+    { key: "createTask", match: ["create task", "add task", "new task", "create a follow-up", "add a follow-up"], href: "my-tasks.html", params: { action: "add" }, confirm: "Opening Tasks with a new task ready to fill in." },
+    { key: "createCustomer", match: ["create customer", "add customer", "new customer", "create client", "add client"], href: "my-people.html", params: { action: "add" }, confirm: "Opening People with a new person ready to fill in." },
+    { key: "createEmployee", match: ["create employee", "add employee", "new employee", "add staff", "create staff"], href: "my-people.html", params: { action: "add" }, confirm: "Opening People with a new person ready to fill in." },
+    { key: "createProperty", match: ["create property", "add property", "new property", "add item", "create item", "new item"], href: "my-items.html", params: {}, confirm: "Opening Items so you can add a new property or item." },
+    { key: "uploadDocument", match: ["upload document", "upload a document", "add document"], href: "my-documents.html", params: { action: "add" }, confirm: "Opening Documents with a new document ready to fill in." },
+    { key: "openCalendar", match: ["open calendar"], href: "my-calendar.html", params: {}, confirm: "Opening Calendar." },
+    { key: "openReports", match: ["open reports"], href: "reports.html", params: {}, confirm: "Opening Reports." },
+    { key: "openNotifications", match: ["open notifications", "open notices"], href: "my-notices.html", params: {}, confirm: "Opening Notices." }
   ];
+
+  const CREATE_ACTIONS_BY_KEY = {};
+  CREATE_ACTIONS.forEach(function (item) { CREATE_ACTIONS_BY_KEY[item.key] = item; });
+
+  // Per-page quick-action chips. Dashboard keeps the broad entry-point menu;
+  // every other configured page gets chips specific to what you'd actually
+  // do there. Pages without an entry here fall back to QUICK_SUGGESTIONS.
+  const PAGE_CONFIGS = {
+    dashboard: {
+      greeting: "Welcome back! What would you like to do?",
+      chips: QUICK_SUGGESTIONS
+    },
+    money: {
+      greeting: "Welcome back! Here's what I can help with on Money.",
+      chips: [
+        { label: "Add Income", type: "create", actionKey: "income" },
+        { label: "Add Expense", type: "create", actionKey: "expense" },
+        { label: "Add Petty Cash", type: "create", actionKey: "pettyCash" },
+        { label: "Insights & Tools", type: "insights" },
+        { label: "Find a Record", type: "search-prompt" },
+        { label: "How do I add an expense?", type: "howto", key: "add-expense" },
+        { label: "Dashboard", type: "nav", key: "dashboard" },
+        { label: "Help", type: "help" }
+      ]
+    },
+    documents: {
+      greeting: "Welcome back! Here's what I can help with on Documents.",
+      chips: [
+        { label: "Upload Document", type: "create", actionKey: "uploadDocument" },
+        { label: "Find a Document", type: "search-prompt" },
+        { label: "Insights & Tools", type: "insights" },
+        { label: "How do I upload a document?", type: "howto", key: "upload-document" },
+        { label: "Dashboard", type: "nav", key: "dashboard" },
+        { label: "Help", type: "help" }
+      ]
+    },
+    people: {
+      greeting: "Welcome back! Here's what I can help with on People.",
+      chips: [
+        { label: "Add Customer", type: "create", actionKey: "createCustomer" },
+        { label: "Add Employee", type: "create", actionKey: "createEmployee" },
+        { label: "Find a Person", type: "search-prompt" },
+        { label: "Insights & Tools", type: "insights" },
+        { label: "How do I add a customer?", type: "howto", key: "add-customer" },
+        { label: "Dashboard", type: "nav", key: "dashboard" },
+        { label: "Help", type: "help" }
+      ]
+    },
+    tasks: {
+      greeting: "Welcome back! Here's what I can help with on Tasks.",
+      chips: [
+        { label: "Add Task", type: "create", actionKey: "createTask" },
+        { label: "Find a Task", type: "search-prompt" },
+        { label: "Insights & Tools", type: "insights" },
+        { label: "How do I add a task?", type: "howto", key: "add-task" },
+        { label: "Dashboard", type: "nav", key: "dashboard" },
+        { label: "Help", type: "help" }
+      ]
+    }
+  };
+
+  function getPageConfig() {
+    return PAGE_CONFIGS[state.pageKey] || PAGE_CONFIGS.dashboard;
+  }
 
   const state = {
     open: false,
@@ -170,6 +234,8 @@
     supabaseClient: null,
     tenantId: null,
     tenant: null,
+    userId: null,
+    preferredLanguage: "en",
     ready: false,
     messages: [],
     listening: false,
@@ -599,7 +665,7 @@
         );
         markSeenNia();
       } else {
-        addNiaMessage("Welcome back! What would you like to do?");
+        addNiaMessage(getPageConfig().greeting);
       }
 
       showQuickActions();
@@ -715,13 +781,15 @@
     const wrap = document.getElementById("niaQuickActions");
     if (!wrap) return;
 
-    wrap.innerHTML = QUICK_SUGGESTIONS.map(function (item, index) {
+    const chips = getPageConfig().chips;
+
+    wrap.innerHTML = chips.map(function (item, index) {
       return `<button type="button" class="nia-chip" data-suggest-index="${index}">${safe(item.label)}</button>`;
     }).join("");
 
     Array.from(wrap.querySelectorAll(".nia-chip")).forEach(function (chip) {
       chip.addEventListener("click", function () {
-        const item = QUICK_SUGGESTIONS[Number(chip.getAttribute("data-suggest-index"))];
+        const item = chips[Number(chip.getAttribute("data-suggest-index"))];
         handleQuickSuggestion(item);
       });
     });
@@ -731,6 +799,53 @@
     if (item.type === "help") {
       addUserMessage(item.label);
       replyWithDelay(function () { showHelpMenu(); });
+      return;
+    }
+
+    if (item.type === "create") {
+      const action = CREATE_ACTIONS_BY_KEY[item.actionKey];
+      if (!action) { addUserMessage(item.label); replyWithDelay(showFallback); return; }
+      addUserMessage(item.label);
+      replyWithDelay(function () {
+        addNiaMessage(safe(action.confirm));
+        navigateWithParams(action.href, action.params);
+      });
+      return;
+    }
+
+    if (item.type === "insights") {
+      addUserMessage(item.label);
+      replyWithDelay(function () {
+        if (typeof window.openInsightsModal === "function") {
+          addNiaMessage("Opening Insights & Tools for you.");
+          window.openInsightsModal();
+        } else {
+          addNiaMessage("This page doesn't have an Insights & Tools panel yet.");
+        }
+      });
+      return;
+    }
+
+    if (item.type === "search-prompt") {
+      addUserMessage(item.label);
+      replyWithDelay(function () {
+        addNiaMessage("Sure — what would you like me to find? Type a name or keyword below.");
+        const input = document.getElementById("niaTextInput");
+        if (input) {
+          input.value = "find ";
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
+      });
+      return;
+    }
+
+    if (item.type === "howto") {
+      const topic = HOW_TO_TOPICS.find(function (entry) { return entry.key === item.key; });
+      addUserMessage(item.label);
+      replyWithDelay(function () {
+        if (topic) answerHowTo(topic); else showFallback();
+      });
       return;
     }
 
@@ -795,12 +910,71 @@
     }
   }
 
+  // Web Speech API voices have no gender field, so matching is by name —
+  // these substrings cover the common female voices shipped by Apple
+  // (Samantha, Moira, Tessa, Karen...), Microsoft (Zira, Jenny, Aria...),
+  // and Google/Android TTS ("Google ... Female", explicit "female" labels).
+  const FEMALE_VOICE_HINTS = [
+    "female", "samantha", "victoria", "karen", "moira", "tessa", "fiona", "kate",
+    "serena", "susan", "zira", "hazel", "aria", "jenny", "michelle", "ana", "linda",
+    "heera", "catherine", "kathy", "nicky", "martha", "allison", "ava", "emma",
+    "joanna", "kimberly", "salli", "kendra", "amelia", "libby", "olivia", "flo", "grandma", "sandy", "shelley", "reed", "eddy"
+  ];
+
+  let cachedVoices = [];
+
+  function loadVoicesOnce() {
+    if (!window.speechSynthesis) return;
+
+    const existing = window.speechSynthesis.getVoices();
+    if (existing.length) cachedVoices = existing;
+
+    window.speechSynthesis.onvoiceschanged = function () {
+      cachedVoices = window.speechSynthesis.getVoices();
+    };
+  }
+
+  function pickVoice(langPrefix) {
+    const voices = cachedVoices.length ? cachedVoices : (window.speechSynthesis ? window.speechSynthesis.getVoices() : []);
+    if (!voices.length) return null;
+
+    const matchesLang = function (voice) {
+      return voice.lang && voice.lang.toLowerCase().indexOf(langPrefix) === 0;
+    };
+
+    const isFemaleNamed = function (voice) {
+      const name = voice.name.toLowerCase();
+      return FEMALE_VOICE_HINTS.some(function (hint) { return name.indexOf(hint) !== -1; });
+    };
+
+    const inLang = voices.filter(matchesLang);
+    const femaleInLang = inLang.filter(isFemaleNamed);
+
+    if (femaleInLang.length) return femaleInLang[0];
+    if (inLang.length) return inLang[0];
+
+    return null;
+  }
+
   function speakReply(text) {
     if (!window.speechSynthesis || !text) return;
 
     try {
+      const langPrefix = state.preferredLanguage === "sw" ? "sw" : "en";
+      let voice = pickVoice(langPrefix);
+
+      // Swahili voices are rare outside Android/Google TTS — fall back to a
+      // female English voice rather than staying silent or using a male one.
+      if (!voice && langPrefix !== "en") voice = pickVoice("en");
+
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.02;
+
+      if (voice) {
+        utterance.voice = voice;
+        utterance.lang = voice.lang;
+      }
+
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     } catch (error) {
@@ -1114,8 +1288,27 @@
     }, 250);
   }
 
+  async function loadPreferredLanguage() {
+    if (!state.supabaseClient || !state.userId) return;
+
+    try {
+      const response = await state.supabaseClient
+        .from("user_preferences")
+        .select("language")
+        .eq("user_id", state.userId)
+        .maybeSingle();
+
+      if (response && response.data && response.data.language) {
+        state.preferredLanguage = response.data.language === "sw" ? "sw" : "en";
+      }
+    } catch (error) {
+      // Preference is a nice-to-have for voice selection; default to English on failure.
+    }
+  }
+
   function boot() {
     injectStyles();
+    loadVoicesOnce();
 
     state.pageKey = detectPageKeyFallback();
     state.surface = "client";
@@ -1125,9 +1318,11 @@
         state.supabaseClient = shared.supabaseClient;
         state.tenantId = shared.tenantId;
         state.tenant = shared.tenant;
+        state.userId = shared.authUser ? shared.authUser.id : null;
         state.pageKey = shared.currentPageKey || state.pageKey;
         state.ready = true;
         renderFab();
+        loadPreferredLanguage();
       });
     } else {
       renderFab();
@@ -1140,17 +1335,35 @@
     if (settings.supabaseClient) state.supabaseClient = settings.supabaseClient;
     if (settings.tenantId) state.tenantId = settings.tenantId;
     if (settings.tenant) state.tenant = settings.tenant;
+    if (settings.userId) state.userId = settings.userId;
     if (settings.pageKey) state.pageKey = settings.pageKey;
     if (settings.surface) state.surface = settings.surface;
 
     state.ready = !!(state.supabaseClient && state.tenantId);
+    loadPreferredLanguage();
+  }
+
+  function debugVoiceInfo() {
+    const voices = cachedVoices.length ? cachedVoices : (window.speechSynthesis ? window.speechSynthesis.getVoices() : []);
+    const englishVoice = pickVoice("en");
+    const swahiliVoice = pickVoice("sw");
+
+    return {
+      voiceApiSupported: !!window.speechSynthesis,
+      totalVoicesAvailable: voices.length,
+      preferredLanguage: state.preferredLanguage,
+      englishVoice: englishVoice ? { name: englishVoice.name, lang: englishVoice.lang } : null,
+      swahiliVoice: swahiliVoice ? { name: swahiliVoice.name, lang: swahiliVoice.lang } : null,
+      swahiliVoiceAvailableOnThisDevice: !!swahiliVoice
+    };
   }
 
   window.NiaAssistant = {
     init: init,
     open: openNia,
     close: closeNia,
-    toggle: toggleNia
+    toggle: toggleNia,
+    debugVoiceInfo: debugVoiceInfo
   };
 
   if (document.readyState === "loading") {

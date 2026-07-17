@@ -39,6 +39,7 @@
   <script src="ungani-business-config.js"></script>
   <script src="ungani-analytics.js"></script>
   <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
 </head>
 
 <body>
@@ -54,6 +55,7 @@
     let activePersonCategory = "all";
     let lastTypeRows = [];
     let lastStatusRows = [];
+    let urlActionApplied = false;
 
     const TILE_PALETTE = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#DB2777"];
 
@@ -632,19 +634,31 @@
     }
 
     function applyHighlightFromUrl() {
-      if (highlightApplied) return;
+      if (!highlightApplied) {
+        const highlightId = new URLSearchParams(window.location.search).get("highlight");
 
-      const highlightId = new URLSearchParams(window.location.search).get("highlight");
-      if (!highlightId) return;
+        if (highlightId) {
+          const row = peopleRows.find(function (item) { return String(item.id) === String(highlightId); });
 
-      const row = peopleRows.find(function (item) { return String(item.id) === String(highlightId); });
-      if (!row) return;
+          if (row) {
+            highlightApplied = true;
+            setTimeout(function () { openPersonModal(highlightId); }, 250);
+            return;
+          }
+        }
+      }
 
-      highlightApplied = true;
+      applyUrlActions();
+    }
 
-      setTimeout(function () {
-        openPersonModal(highlightId);
-      }, 250);
+    function applyUrlActions() {
+      if (urlActionApplied) return;
+
+      const action = new URLSearchParams(window.location.search).get("action");
+      if (action !== "add") return;
+
+      urlActionApplied = true;
+      setTimeout(function () { openPersonModal(null, {}); }, 250);
     }
 
     async function renderPeopleCharts(typeRows, statusRows) {
