@@ -151,12 +151,17 @@
       renderDocumentsPage();
     }
 
+    let lastTypeRows = [];
+    let lastStatusRows = [];
+
     function renderDocumentsPage() {
       const filteredRows = getFilteredRows();
       const summary = calculateDocumentSummary(filteredRows);
       const typeRows = buildTypeRows(filteredRows);
       const statusRows = buildStatusRows(filteredRows);
-      const folderRows = buildFolderRows(filteredRows);
+
+      lastTypeRows = typeRows;
+      lastStatusRows = statusRows;
 
       UnganiClientShared.setContent(`
         <style>
@@ -375,6 +380,48 @@
             cursor: pointer;
           }
 
+          .insights-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            width: 100%;
+            text-align: left;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            border-left: 6px solid var(--ungani-gold);
+            border-radius: 20px;
+            padding: 16px 18px;
+            margin-bottom: 18px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.18s ease;
+          }
+
+          .insights-banner:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ungani-shadow);
+          }
+
+          .insights-banner strong {
+            font-size: 16px;
+            color: var(--ungani-text);
+          }
+
+          .insights-banner .insights-sub {
+            display: block;
+            margin-top: 3px;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .insights-banner .insights-cta {
+            color: var(--ungani-gold);
+            font-weight: 800;
+            font-size: 13px;
+            white-space: nowrap;
+          }
+
           .document-table tbody tr:hover td {
             background: var(--ungani-soft);
           }
@@ -480,8 +527,42 @@
           </div>
         </section>
 
-        <section class="document-chart-grid">
-          <div class="ungani-card ungani-chart-card">
+        <button type="button" class="insights-banner" onclick="openInsightsModal()">
+          <span>
+            <strong>📊 Insights &amp; Tools</strong>
+            <span class="insights-sub">Charts, quick-fill document types, and the document guide</span>
+          </span>
+          <span class="insights-cta">Open →</span>
+        </button>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Document List</h3>
+              <p class="ungani-small">${filteredRows.length} document record(s) shown.</p>
+            </div>
+
+            <div class="ungani-button-row" style="margin-top:0;">
+              <button class="ungani-btn gold" onclick="openDocumentModal()">+ Add Document</button>
+              <button class="ungani-btn green" onclick="loadDocumentRows()">Refresh</button>
+            </div>
+          </div>
+
+          ${renderDocumentList(filteredRows)}
+        </section>
+
+        <p class="ungani-small">
+          Documents Version: Step 310B-5 Business-Type Document Presets · ungani.com · info@ungani.com
+        </p>
+      `);
+
+      restoreDocumentFilters();
+    }
+
+    function openInsightsModal() {
+      const bodyHtml = `
+        <div class="document-chart-grid" style="margin-bottom:18px;">
+          <div class="ungani-card ungani-chart-card" style="box-shadow:none;">
             <div class="ungani-chart-head">
               <div>
                 <h3>Document Types</h3>
@@ -489,10 +570,10 @@
               </div>
             </div>
 
-            ${hasValues(typeRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="documentTypeChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add documents to show document type breakdown.")}
+            ${hasValues(lastTypeRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="documentTypeChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add documents to show document type breakdown.")}
           </div>
 
-          <div class="ungani-card ungani-chart-card">
+          <div class="ungani-card ungani-chart-card" style="box-shadow:none;">
             <div class="ungani-chart-head">
               <div>
                 <h3>Document Status</h3>
@@ -500,12 +581,12 @@
               </div>
             </div>
 
-            ${hasValues(statusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="documentStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add documents to show status breakdown.")}
+            ${hasValues(lastStatusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="documentStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add documents to show status breakdown.")}
           </div>
-        </section>
+        </div>
 
         <section class="document-type-section">
-          <div class="ungani-card">
+          <div class="ungani-card" style="box-shadow:none;">
             <div class="ungani-section-title">
               <div>
                 <h3>Document Types</h3>
@@ -521,7 +602,7 @@
           </div>
         </section>
 
-        <section class="ungani-card">
+        <section class="ungani-card" style="box-shadow:none; margin-top:18px;">
           <div class="ungani-section-title">
             <div>
               <h3>Document Guide</h3>
@@ -551,36 +632,20 @@
             </div>
           </div>
         </section>
+      `;
 
-        <section class="ungani-card">
-          <div class="ungani-section-title">
-            <div>
-              <h3>Document List</h3>
-              <p class="ungani-small">${filteredRows.length} document record(s) shown.</p>
-            </div>
-
-            <div class="ungani-button-row" style="margin-top:0;">
-              <button class="ungani-btn gold" onclick="openDocumentModal()">+ Add Document</button>
-              <button class="ungani-btn green" onclick="loadDocumentRows()">Refresh</button>
-            </div>
-          </div>
-
-          ${renderDocumentList(filteredRows)}
-        </section>
-
-        <p class="ungani-small">
-          Documents Version: Step 310B-5 Business-Type Document Presets · ungani.com · info@ungani.com
-        </p>
-      `);
-
-      restoreDocumentFilters();
-
-      setTimeout(function () {
-        renderDocumentCharts(typeRows, statusRows, folderRows);
-      }, 150);
+      UnganiClientShared.openModal({
+        title: "Insights & Tools",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          setTimeout(function () {
+            renderDocumentCharts(lastTypeRows, lastStatusRows);
+          }, 150);
+        }
+      });
     }
 
-    async function renderDocumentCharts(typeRows, statusRows, folderRows) {
+    async function renderDocumentCharts(typeRows, statusRows) {
       try {
         if (hasValues(typeRows)) {
           await UnganiAnalytics.renderHorizontalBarChart("documentTypeChart", typeRows, "Documents");
@@ -706,17 +771,6 @@
       rows.forEach(function (row) {
         const status = UnganiClientShared.getValue(row, ["status"], "active");
         map[status] = (map[status] || 0) + 1;
-      });
-
-      return UnganiAnalytics.mapToRows(map);
-    }
-
-    function buildFolderRows(rows) {
-      const map = {};
-
-      rows.forEach(function (row) {
-        const folder = UnganiClientShared.getValue(row, ["folder_name", "category"], "No Folder");
-        map[folder] = (map[folder] || 0) + 1;
       });
 
       return UnganiAnalytics.mapToRows(map);
