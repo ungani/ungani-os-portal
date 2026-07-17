@@ -1386,9 +1386,151 @@
           width: auto;
         }
       }
+
+      .ungani-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(2,6,23,0.72);
+        display: none;
+        align-items: flex-start;
+        justify-content: center;
+        z-index: 9999;
+        padding: 40px 18px;
+        overflow-y: auto;
+      }
+
+      .ungani-modal-backdrop.open {
+        display: flex;
+      }
+
+      .ungani-modal {
+        width: min(720px, 100%);
+        background: var(--ungani-card);
+        color: var(--ungani-text);
+        border: 1px solid var(--ungani-border);
+        border-radius: 24px;
+        box-shadow: 0 30px 90px rgba(0,0,0,0.4);
+        overflow: hidden;
+        max-height: calc(100vh - 80px);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .ungani-modal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--ungani-border);
+        flex: none;
+      }
+
+      .ungani-modal-head h3 {
+        margin: 0;
+        font-size: 19px;
+      }
+
+      .ungani-modal-close {
+        border: none;
+        background: rgba(148,163,184,0.18);
+        color: var(--ungani-text);
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 16px;
+        flex: none;
+        line-height: 1;
+      }
+
+      .ungani-modal-body {
+        padding: 22px;
+        overflow-y: auto;
+      }
+
+      @media (max-width: 640px) {
+        .ungani-modal-backdrop {
+          padding: 0;
+          align-items: flex-end;
+        }
+
+        .ungani-modal {
+          border-radius: 24px 24px 0 0;
+          max-height: 92vh;
+          width: 100%;
+        }
+      }
     `;
 
     document.head.appendChild(style);
+  }
+
+  let modalEscapeListenerAttached = false;
+
+  function ensureModal() {
+    injectSharedStyles();
+
+    let backdrop = document.getElementById("unganiModalBackdrop");
+
+    if (backdrop) return backdrop;
+
+    backdrop = document.createElement("div");
+    backdrop.id = "unganiModalBackdrop";
+    backdrop.className = "ungani-modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="ungani-modal" role="dialog" aria-modal="true" aria-labelledby="unganiModalTitle">
+        <div class="ungani-modal-head">
+          <h3 id="unganiModalTitle"></h3>
+          <button type="button" class="ungani-modal-close" onclick="UnganiClientShared.closeModal()" aria-label="Close">✕</button>
+        </div>
+        <div class="ungani-modal-body" id="unganiModalBody"></div>
+      </div>
+    `;
+
+    document.body.appendChild(backdrop);
+
+    backdrop.addEventListener("click", function (event) {
+      if (event.target === backdrop) closeModal();
+    });
+
+    if (!modalEscapeListenerAttached) {
+      modalEscapeListenerAttached = true;
+
+      document.addEventListener("keydown", function (event) {
+        const openBackdrop = document.getElementById("unganiModalBackdrop");
+        if (event.key === "Escape" && openBackdrop && openBackdrop.classList.contains("open")) {
+          closeModal();
+        }
+      });
+    }
+
+    return backdrop;
+  }
+
+  function openModal(options) {
+    const settings = options || {};
+    const backdrop = ensureModal();
+
+    document.getElementById("unganiModalTitle").innerText = settings.title || "";
+    document.getElementById("unganiModalBody").innerHTML = settings.bodyHtml || "";
+
+    backdrop.classList.add("open");
+    document.body.style.overflow = "hidden";
+
+    if (typeof settings.onOpen === "function") {
+      settings.onOpen();
+    }
+  }
+
+  function closeModal() {
+    const backdrop = document.getElementById("unganiModalBackdrop");
+    if (backdrop) backdrop.classList.remove("open");
+    document.body.style.overflow = "";
+  }
+
+  function cleanText(value) {
+    return String(value || "N/A").replaceAll("_", " ");
   }
 
   async function initPage(config) {
@@ -3186,6 +3328,7 @@
       errorCard,
       metricCard,
       safe,
+      cleanText,
       attr,
       value,
       getValue,
@@ -3213,6 +3356,8 @@
       closeQuickAdd,
       changeQuickAddType,
       saveQuickAdd,
+      openModal,
+      closeModal,
       getCurrentUserId: function () {
         return state.authUser ? state.authUser.id : null;
       },
