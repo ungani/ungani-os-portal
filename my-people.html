@@ -51,6 +51,9 @@
     let isRealEstate = false;
     let isHospitality = false;
     let unitOptions = [];
+    let activePersonCategory = "all";
+
+    const TILE_PALETTE = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#DB2777"];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -134,19 +137,6 @@
         console.warn("Unit options skipped:", error.message);
         unitOptions = [];
       }
-    }
-
-    function getUnitLabel(id) {
-      const item = unitOptions.find(function (row) {
-        return String(row.id) === String(id);
-      });
-
-      if (!item) return "";
-
-      const name = UnganiClientShared.getValue(item, ["property_name", "item_name", "name"], "Unit");
-      const location = UnganiClientShared.getValue(item, ["property_location"], "");
-
-      return location ? name + " — " + location : name;
     }
 
     function renderPeoplePage() {
@@ -261,13 +251,6 @@
             grid-column: span 3;
           }
 
-          .people-main-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(320px, 0.52fr);
-            gap: 18px;
-            align-items: start;
-          }
-
           .people-chart-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -303,96 +286,96 @@
             border-color: rgba(212,166,58,0.65);
           }
 
-          .people-list {
+          .category-tiles {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
-          }
-
-          .person-card {
-            position: relative;
-            border: 1px solid var(--ungani-border);
-            border-radius: 24px;
-            padding: 16px 16px 16px 20px;
-            background: var(--ungani-card);
-            box-shadow: var(--ungani-shadow);
-            display: grid;
-            grid-template-columns: 54px minmax(0, 1fr);
-            gap: 14px;
-            align-items: start;
-          }
-
-          .person-card::before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 14px;
-            bottom: 14px;
-            width: 4px;
-            border-radius: 0 999px 999px 0;
-            background: var(--accent, #64748B);
-          }
-
-          .person-card:hover {
-            border-color: rgba(212,166,58,0.55);
-          }
-
-          @keyframes unganiHighlightPulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(212,166,58,0.55); }
-            50% { box-shadow: 0 0 0 9px rgba(212,166,58,0); }
-          }
-
-          .ungani-highlighted {
-            border-color: rgba(212,166,58,0.9) !important;
-            animation: unganiHighlightPulse 1.4s ease-out 2;
-          }
-
-          .person-avatar {
-            width: 54px;
-            height: 54px;
-            border-radius: 20px;
-            background: linear-gradient(135deg, #061C3D, #D4A63A);
-            color: white;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 950;
-            letter-spacing: -0.03em;
-          }
-
-          .person-head {
-            display: flex;
-            justify-content: space-between;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
             gap: 12px;
-            align-items: flex-start;
+            margin-bottom: 18px;
           }
 
-          .person-head h3 {
-            margin: 0 0 4px;
-            font-size: 18px;
+          .category-tile {
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            border-left: 5px solid var(--tile-accent, var(--ungani-gold));
+            border-radius: 18px;
+            padding: 14px 16px;
+            cursor: pointer;
+            text-align: left;
+            font-family: inherit;
+            transition: 0.18s ease;
           }
 
-          .person-head p {
-            margin: 0;
+          .category-tile:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ungani-shadow);
           }
 
-          .person-meta-grid {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 10px;
+          .category-tile.active {
+            box-shadow: 0 0 0 2px var(--tile-accent, var(--ungani-gold));
           }
 
-          .person-actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-top: 12px;
+          .category-tile .tile-count {
+            display: block;
+            font-size: 22px;
+            font-weight: 900;
+            color: var(--ungani-text);
+          }
+
+          .category-tile .tile-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--ungani-muted);
+            margin-top: 4px;
+          }
+
+          .people-table-wrap {
+            overflow-x: auto;
+          }
+
+          .people-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 780px;
+          }
+
+          .people-table th {
+            text-align: left;
+            color: var(--ungani-muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 13px 12px;
+            border-bottom: 1px solid var(--ungani-border);
+          }
+
+          .people-table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--ungani-border);
+            vertical-align: top;
+          }
+
+          .people-table td:first-child {
+            border-left: 4px solid var(--accent, #64748B);
+          }
+
+          .people-table tbody tr {
+            cursor: pointer;
+          }
+
+          .people-table tbody tr:hover td {
+            background: var(--ungani-soft);
+          }
+
+          .people-table .row-sub {
+            display: block;
+            color: var(--ungani-muted);
+            font-size: 12px;
+            margin-top: 2px;
           }
 
           @media (max-width: 1180px) {
             .people-hero-grid,
-            .people-main-grid,
             .people-chart-grid {
               grid-template-columns: 1fr;
             }
@@ -402,16 +385,9 @@
             }
           }
 
-          @media (max-width: 820px) {
-            .people-list {
-              grid-template-columns: 1fr;
-            }
-          }
-
           @media (max-width: 720px) {
             .people-kpi-grid,
-            .people-form-grid,
-            .person-card {
+            .people-form-grid {
               grid-template-columns: 1fr;
             }
 
@@ -433,7 +409,7 @@
               </p>
 
               <div class="ungani-button-row">
-                <button class="ungani-btn gold" onclick="scrollToPeopleForm()">Add Person</button>
+                <button class="ungani-btn gold" onclick="openPersonModal()">Add Person</button>
                 <button class="ungani-btn green" onclick="loadPeopleRows()">Refresh</button>
                 <a class="ungani-btn light" href="my-charts.html">View Charts</a>
               </div>
@@ -451,6 +427,8 @@
             </div>
           </div>
         </section>
+
+        ${renderCategoryTiles()}
 
         <section class="people-kpi-grid">
           ${peopleKpi("Total People", summary.total, "All people in view", "#2563EB")}
@@ -470,16 +448,6 @@
           </div>
 
           <div class="people-form-grid">
-            <div>
-              <label for="filterType">Person Type</label>
-              <select id="filterType" onchange="savePeopleFilters(); renderPeoplePage();">
-                <option value="">All Types</option>
-                ${businessPreset.peopleTypes.map(function (item) {
-                  return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
-                }).join("")}
-              </select>
-            </div>
-
             <div>
               <label for="filterStatus">Status</label>
               <select id="filterStatus" onchange="savePeopleFilters(); renderPeoplePage();">
@@ -540,158 +508,33 @@
           </div>
         </section>
 
-        <section class="people-main-grid">
-          <div class="ungani-card" id="peopleFormCard">
-            <div class="ungani-section-title">
-              <div>
-                <h3 id="peopleFormTitle">${editingPersonId ? "Edit Person" : "Add Person"}</h3>
-                <p class="ungani-small">Use business-specific roles so dashboard, charts, and reports make sense.</p>
-              </div>
-
-              <button class="ungani-btn dark" onclick="clearPeopleForm()">Clear</button>
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>People Guide</h3>
+              <p class="ungani-small">How to keep people records useful.</p>
             </div>
-
-            <form onsubmit="savePerson(event)">
-              <div class="people-form-grid">
-                <div>
-                  <label for="personName">Full Name</label>
-                  <input id="personName" placeholder="Example: John Kamau" required />
-                </div>
-
-                <div>
-                  <label for="personType">Person Type</label>
-                  <select id="personType">
-                    ${businessPreset.peopleTypes.map(function (item) {
-                      return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
-                    }).join("")}
-                  </select>
-                </div>
-
-                <div>
-                  <label for="personStatus">Status</label>
-                  <select id="personStatus">
-                    <option value="active">Active</option>
-                    <option value="lead">Lead</option>
-                    <option value="follow-up">Follow-up</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="lost">Lost</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label for="personPhone">Phone</label>
-                  <input id="personPhone" placeholder="+254..." />
-                </div>
-
-                <div>
-                  <label for="personEmail">Email</label>
-                  <input id="personEmail" type="email" placeholder="name@example.com" />
-                </div>
-
-                <div>
-                  <label for="personCompany">Company / Organization</label>
-                  <input id="personCompany" placeholder="Company, client, supplier, school..." />
-                </div>
-
-                <div>
-                  <label for="personRoleTitle">Role / Position</label>
-                  <input id="personRoleTitle" placeholder="Manager, driver, stylist, buyer, supplier..." />
-                </div>
-
-                <div>
-                  <label for="personRelationship">Relationship Stage</label>
-                  <select id="personRelationship">
-                    <option value="">Select Stage</option>
-                    <option value="new">New</option>
-                    <option value="contacted">Contacted</option>
-                    <option value="follow-up">Follow-up</option>
-                    <option value="active">Active</option>
-                    <option value="converted">Converted</option>
-                    <option value="lost">Lost</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label for="personFollowUpDate">Last Follow-up Date</label>
-                  <input id="personFollowUpDate" type="date" />
-                </div>
-
-                <div>
-                  <label for="personLocation">Location</label>
-                  <input id="personLocation" placeholder="Mombasa, Nyali, Nairobi, client site..." />
-                </div>
-
-                <div class="wide">
-                  <label for="personAssignedWork">Assigned / Related Work</label>
-                  <input id="personAssignedWork" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)} or task related to this person" />
-                </div>
-
-                ${(isRealEstate || isHospitality) ? `
-                  <div>
-                    <label for="personLinkedItem">${isHospitality ? "Linked Room / Table" : "Linked Unit / Property"}</label>
-                    <select id="personLinkedItem">
-                      <option value="">Not linked</option>
-                      ${unitOptions.map(function (item) {
-                        const label = UnganiClientShared.getValue(item, ["property_name", "item_name", "name"], "Unit") +
-                          (UnganiClientShared.getValue(item, ["property_location"], "") ? " — " + UnganiClientShared.getValue(item, ["property_location"], "") : "");
-
-                        return `<option value="${UnganiClientShared.attr(item.id)}">${UnganiClientShared.safe(label)}</option>`;
-                      }).join("")}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label for="personLeaseStart">${isHospitality ? "Check-in Date" : "Lease Start Date"}</label>
-                    <input id="personLeaseStart" type="date" />
-                  </div>
-
-                  <div>
-                    <label for="personLeaseEnd">${isHospitality ? "Checkout Date" : "Lease End Date"}</label>
-                    <input id="personLeaseEnd" type="date" />
-                  </div>
-                ` : ""}
-
-                <div class="wide">
-                  <label for="personNotes">Notes</label>
-                  <textarea id="personNotes" rows="5" placeholder="Add contact notes, follow-up details, responsibilities, client needs, supplier info..."></textarea>
-                </div>
-              </div>
-
-              <div class="ungani-button-row" style="margin-top:16px;">
-                <button class="ungani-btn gold" type="submit">${editingPersonId ? "Update Person" : "Save Person"}</button>
-                <button class="ungani-btn dark" type="button" onclick="clearPeopleForm()">Cancel</button>
-              </div>
-            </form>
           </div>
 
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <div>
-                <h3>People Guide</h3>
-                <p class="ungani-small">How to keep people records useful.</p>
-              </div>
+          <div class="ungani-empty" style="text-align:left;">
+            <h3>Separate roles clearly</h3>
+            <p>Use roles like client, supplier, driver, agent, stylist, technician, or staff so the dashboard understands the business.</p>
+          </div>
+
+          <div style="display:grid;gap:10px;margin-top:12px;">
+            <div class="ungani-card" style="box-shadow:none;">
+              <strong>Example role</strong>
+              <p class="ungani-small">${UnganiClientShared.safe(businessPreset.peopleTypes[0] || "Client")}</p>
             </div>
 
-            <div class="ungani-empty" style="text-align:left;">
-              <h3>Separate roles clearly</h3>
-              <p>Use roles like client, supplier, driver, agent, stylist, technician, or staff so the dashboard understands the business.</p>
+            <div class="ungani-card" style="box-shadow:none;">
+              <strong>Follow-ups</strong>
+              <p class="ungani-small">Use relationship stage and last follow-up date to avoid losing important people.</p>
             </div>
 
-            <div style="display:grid;gap:10px;margin-top:12px;">
-              <div class="ungani-card" style="box-shadow:none;">
-                <strong>Example role</strong>
-                <p class="ungani-small">${UnganiClientShared.safe(businessPreset.peopleTypes[0] || "Client")}</p>
-              </div>
-
-              <div class="ungani-card" style="box-shadow:none;">
-                <strong>Follow-ups</strong>
-                <p class="ungani-small">Use relationship stage and last follow-up date to avoid losing important people.</p>
-              </div>
-
-              <div class="ungani-card" style="box-shadow:none;">
-                <strong>Reports</strong>
-                <p class="ungani-small">People roles help reports explain clients, staff, suppliers, leads, and active contacts.</p>
-              </div>
+            <div class="ungani-card" style="box-shadow:none;">
+              <strong>Reports</strong>
+              <p class="ungani-small">People roles help reports explain clients, staff, suppliers, leads, and active contacts.</p>
             </div>
           </div>
         </section>
@@ -703,7 +546,10 @@
               <p class="ungani-small">${filteredRows.length} people record(s) shown.</p>
             </div>
 
-            <button class="ungani-btn green" onclick="loadPeopleRows()">Refresh</button>
+            <div class="ungani-button-row" style="margin-top:0;">
+              <button class="ungani-btn gold" onclick="openPersonModal()">+ Add Person</button>
+              <button class="ungani-btn green" onclick="loadPeopleRows()">Refresh</button>
+            </div>
           </div>
 
           ${renderPeopleList(filteredRows)}
@@ -729,18 +575,13 @@
       const highlightId = new URLSearchParams(window.location.search).get("highlight");
       if (!highlightId) return;
 
+      const row = peopleRows.find(function (item) { return String(item.id) === String(highlightId); });
+      if (!row) return;
+
+      highlightApplied = true;
+
       setTimeout(function () {
-        const el = document.getElementById("person-" + highlightId);
-
-        if (!el) return;
-
-        highlightApplied = true;
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.classList.add("ungani-highlighted");
-
-        setTimeout(function () {
-          el.classList.remove("ungani-highlighted");
-        }, 3000);
+        openPersonModal(highlightId);
       }, 250);
     }
 
@@ -769,59 +610,51 @@
       }
 
       return `
-        <div class="people-list">
-          ${rows.map(function (row) {
-            const name = getPersonName(row);
-            const type = UnganiClientShared.getValue(row, ["person_type", "type"], "Contact");
-            const status = UnganiClientShared.getValue(row, ["status"], "active");
-            const phone = UnganiClientShared.getValue(row, ["phone", "phone_number"], "");
-            const email = UnganiClientShared.getValue(row, ["email"], "");
-            const company = UnganiClientShared.getValue(row, ["company", "organization"], "");
-            const role = UnganiClientShared.getValue(row, ["role_title", "position"], "");
-            const relationship = UnganiClientShared.getValue(row, ["relationship_status", "lead_status"], "");
-            const followUp = UnganiClientShared.getValue(row, ["last_follow_up_date"], "");
-            const assignedWork = UnganiClientShared.getValue(row, ["assigned_work", "properties_assigned"], "");
-            const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
-            const linkedItemId = UnganiClientShared.getValue(row, ["linked_item_id"], "");
-            const linkedItemLabel = linkedItemId ? getUnitLabel(linkedItemId) : "";
-            const leaseEnd = UnganiClientShared.getValue(row, ["lease_end_date"], "");
+        <div class="people-table-wrap">
+          <table class="people-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Contact</th>
+                <th>Relationship / Follow-up</th>
+                <th>Status</th>
+              </tr>
+            </thead>
 
-            return `
-              <div class="person-card" id="person-${UnganiClientShared.attr(row.id)}" style="--accent:${UnganiClientShared.attr(statusAccent(status))};">
-                <div class="person-avatar">${UnganiClientShared.safe(makeInitials(name))}</div>
+            <tbody>
+              ${rows.map(function (row) {
+                const name = getPersonName(row);
+                const type = getPersonType(row);
+                const status = UnganiClientShared.getValue(row, ["status"], "active");
+                const phone = UnganiClientShared.getValue(row, ["phone", "phone_number"], "");
+                const email = UnganiClientShared.getValue(row, ["email"], "");
+                const company = UnganiClientShared.getValue(row, ["company", "organization"], "");
+                const role = UnganiClientShared.getValue(row, ["role_title", "position"], "");
+                const relationship = UnganiClientShared.getValue(row, ["relationship_status", "lead_status"], "");
+                const followUp = UnganiClientShared.getValue(row, ["last_follow_up_date"], "");
 
-                <div>
-                  <div class="person-head">
-                    <div>
-                      <h3>${UnganiClientShared.safe(name)}</h3>
-                      <p class="ungani-small">${UnganiClientShared.safe(role || company || type)}</p>
-                    </div>
-                    ${statusBadge(status)}
-                  </div>
-
-                  <p class="ungani-small" style="margin:10px 0 0;">
-                    ${UnganiClientShared.safe(notes || "No notes added.")}
-                  </p>
-
-                  <div class="person-meta-grid">
-                    <span class="ungani-badge gold">${UnganiClientShared.safe(type)}</span>
-                    ${relationship ? `<span class="ungani-badge blue">${UnganiClientShared.safe(UnganiAnalytics.toTitle(relationship))}</span>` : ""}
-                    ${phone ? `<span class="ungani-badge green">${UnganiClientShared.safe(phone)}</span>` : ""}
-                    ${email ? `<span class="ungani-badge blue">${UnganiClientShared.safe(email)}</span>` : ""}
-                    ${followUp ? `<span class="ungani-badge gold">Follow-up: ${UnganiClientShared.safe(UnganiClientShared.formatDate(followUp))}</span>` : ""}
-                    ${assignedWork ? `<span class="ungani-badge blue">Work: ${UnganiClientShared.safe(assignedWork)}</span>` : ""}
-                    ${linkedItemLabel ? `<span class="ungani-badge gold">${isHospitality ? "Room" : "Unit"}: ${UnganiClientShared.safe(linkedItemLabel)}</span>` : ""}
-                    ${leaseEnd ? `<span class="ungani-badge blue">${isHospitality ? "Checkout" : "Lease ends"}: ${UnganiClientShared.safe(UnganiClientShared.formatDate(leaseEnd))}</span>` : ""}
-                  </div>
-
-                  <div class="person-actions">
-                    <button class="ungani-btn small gold" onclick="editPerson('${UnganiClientShared.attr(row.id)}')">Edit</button>
-                    <button class="ungani-btn small red" onclick="deletePerson('${UnganiClientShared.attr(row.id)}')">Delete</button>
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join("")}
+                return `
+                  <tr style="--accent:${UnganiClientShared.attr(statusAccent(status))};" onclick="openPersonModal('${UnganiClientShared.attr(row.id)}')">
+                    <td>
+                      ${UnganiClientShared.safe(name)}
+                      <span class="row-sub">${UnganiClientShared.safe(role || company || "No role/company")}</span>
+                    </td>
+                    <td>${UnganiClientShared.safe(type)}</td>
+                    <td>
+                      ${UnganiClientShared.safe(phone || "—")}
+                      <span class="row-sub">${UnganiClientShared.safe(email || "No email")}</span>
+                    </td>
+                    <td>
+                      ${UnganiClientShared.safe(relationship ? UnganiAnalytics.toTitle(relationship) : "—")}
+                      <span class="row-sub">${followUp ? "Follow-up: " + UnganiClientShared.safe(UnganiClientShared.formatDate(followUp)) : "No follow-up set"}</span>
+                    </td>
+                    <td>${statusBadge(status)}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
         </div>
       `;
     }
@@ -910,22 +743,81 @@
       return UnganiAnalytics.mapToRows(map);
     }
 
-    function getFilteredRows() {
-      const filterType = getStoredOrInput("filterType", "ungani_people_filter_type").toLowerCase();
+    function getPersonType(row) {
+      return UnganiClientShared.getValue(row, ["person_type", "type"], "Contact");
+    }
+
+    function getBaseFilteredRows() {
       const filterStatus = getStoredOrInput("filterStatus", "ungani_people_filter_status").toLowerCase();
       const search = getStoredOrInput("filterSearch", "ungani_people_filter_search").toLowerCase();
 
       return peopleRows.filter(function (row) {
-        const type = String(UnganiClientShared.getValue(row, ["person_type", "type"], "contact")).toLowerCase();
         const status = String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase();
         const haystack = JSON.stringify(row || {}).toLowerCase();
 
-        if (filterType && !type.includes(filterType)) return false;
         if (filterStatus && !status.includes(filterStatus)) return false;
         if (search && !haystack.includes(search)) return false;
 
         return true;
       });
+    }
+
+    function buildPersonCategories() {
+      const knownTypes = businessPreset.peopleTypes || [];
+
+      const categories = [
+        { key: "all", label: "All People", accent: "#061C3D", match: function () { return true; } }
+      ];
+
+      knownTypes.forEach(function (type, index) {
+        categories.push({
+          key: "type-" + index,
+          label: type,
+          accent: TILE_PALETTE[index % TILE_PALETTE.length],
+          match: function (row) { return getPersonType(row) === type; }
+        });
+      });
+
+      categories.push({
+        key: "other",
+        label: "Other",
+        accent: "#64748B",
+        match: function (row) { return knownTypes.indexOf(getPersonType(row)) === -1; }
+      });
+
+      return categories;
+    }
+
+    function getFilteredRows() {
+      const categories = buildPersonCategories();
+      const category = categories.find(function (item) { return item.key === activePersonCategory; }) || categories[0];
+      return getBaseFilteredRows().filter(category.match);
+    }
+
+    function selectPersonCategory(key) {
+      activePersonCategory = key;
+      renderPeoplePage();
+    }
+
+    function renderCategoryTiles() {
+      const categories = buildPersonCategories();
+      const base = getBaseFilteredRows();
+
+      return `
+        <section class="category-tiles">
+          ${categories.map(function (category) {
+            const count = base.filter(category.match).length;
+            const active = category.key === activePersonCategory ? " active" : "";
+
+            return `
+              <button type="button" class="category-tile${active}" style="--tile-accent:${category.accent};" onclick="selectPersonCategory('${category.key}')">
+                <span class="tile-count">${count}</span>
+                <span class="tile-label">${UnganiClientShared.safe(category.label)}</span>
+              </button>
+            `;
+          }).join("")}
+        </section>
+      `;
     }
 
     function getStoredOrInput(inputId, storageKey) {
@@ -939,42 +831,172 @@
     }
 
     function savePeopleFilters() {
-      if (document.getElementById("filterType")) sessionStorage.setItem("ungani_people_filter_type", UnganiClientShared.value("filterType"));
       if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_people_filter_status", UnganiClientShared.value("filterStatus"));
       if (document.getElementById("filterSearch")) sessionStorage.setItem("ungani_people_filter_search", UnganiClientShared.value("filterSearch"));
     }
 
     function restorePeopleFilters() {
-      if (document.getElementById("filterType")) document.getElementById("filterType").value = sessionStorage.getItem("ungani_people_filter_type") || "";
       if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_people_filter_status") || "";
       if (document.getElementById("filterSearch")) document.getElementById("filterSearch").value = sessionStorage.getItem("ungani_people_filter_search") || "";
     }
 
     function resetPeopleFilters() {
-      sessionStorage.removeItem("ungani_people_filter_type");
       sessionStorage.removeItem("ungani_people_filter_status");
       sessionStorage.removeItem("ungani_people_filter_search");
+      activePersonCategory = "all";
       renderPeoplePage();
       UnganiClientShared.showToast("People filters reset ✓");
     }
 
     function quickPersonType(personType) {
-      scrollToPeopleForm();
-
-      setTimeout(function () {
-        const el = document.getElementById("personType");
-        if (el) el.value = personType;
-      }, 150);
-
+      openPersonModal(null, { personType: personType });
       UnganiClientShared.showToast("Person type selected ✓");
     }
 
-    function scrollToPeopleForm() {
-      const el = document.getElementById("peopleFormCard");
+    function openPersonModal(id, presetValues) {
+      const row = id ? peopleRows.find(function (item) { return String(item.id) === String(id); }) : null;
 
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (id && !row) {
+        UnganiClientShared.showToast("Person not found.");
+        return;
       }
+
+      editingPersonId = row ? row.id : null;
+
+      const bodyHtml = `
+        <form onsubmit="savePerson(event)">
+          <div class="people-form-grid">
+            <div>
+              <label for="personName">Full Name</label>
+              <input id="personName" placeholder="Example: John Kamau" required value="${row ? UnganiClientShared.attr(getPersonName(row)) : ""}" />
+            </div>
+
+            <div>
+              <label for="personType">Person Type</label>
+              <select id="personType">
+                ${businessPreset.peopleTypes.map(function (item) {
+                  return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+                }).join("")}
+                ${row && businessPreset.peopleTypes.indexOf(getPersonType(row)) === -1
+                  ? `<option value="${UnganiClientShared.attr(getPersonType(row))}">${UnganiClientShared.safe(getPersonType(row))}</option>`
+                  : ""}
+              </select>
+            </div>
+
+            <div>
+              <label for="personStatus">Status</label>
+              <select id="personStatus">
+                <option value="active">Active</option>
+                <option value="lead">Lead</option>
+                <option value="follow-up">Follow-up</option>
+                <option value="inactive">Inactive</option>
+                <option value="lost">Lost</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="personPhone">Phone</label>
+              <input id="personPhone" placeholder="+254..." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["phone", "phone_number"], "")) : ""}" />
+            </div>
+
+            <div>
+              <label for="personEmail">Email</label>
+              <input id="personEmail" type="email" placeholder="name@example.com" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["email"], "")) : ""}" />
+            </div>
+
+            <div>
+              <label for="personCompany">Company / Organization</label>
+              <input id="personCompany" placeholder="Company, client, supplier, school..." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["company", "organization"], "")) : ""}" />
+            </div>
+
+            <div>
+              <label for="personRoleTitle">Role / Position</label>
+              <input id="personRoleTitle" placeholder="Manager, driver, stylist, buyer, supplier..." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["role_title", "position"], "")) : ""}" />
+            </div>
+
+            <div>
+              <label for="personRelationship">Relationship Stage</label>
+              <select id="personRelationship">
+                <option value="">Select Stage</option>
+                <option value="new">New</option>
+                <option value="contacted">Contacted</option>
+                <option value="follow-up">Follow-up</option>
+                <option value="active">Active</option>
+                <option value="converted">Converted</option>
+                <option value="lost">Lost</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="personFollowUpDate">Last Follow-up Date</label>
+              <input id="personFollowUpDate" type="date" value="${row ? UnganiClientShared.attr(String(UnganiClientShared.getValue(row, ["last_follow_up_date"], "")).slice(0, 10)) : ""}" />
+            </div>
+
+            <div>
+              <label for="personLocation">Location</label>
+              <input id="personLocation" placeholder="Mombasa, Nyali, Nairobi, client site..." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["location"], "")) : ""}" />
+            </div>
+
+            <div class="wide">
+              <label for="personAssignedWork">Assigned / Related Work</label>
+              <input id="personAssignedWork" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)} or task related to this person" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["assigned_work", "properties_assigned"], "")) : ""}" />
+            </div>
+
+            ${(isRealEstate || isHospitality) ? `
+              <div>
+                <label for="personLinkedItem">${isHospitality ? "Linked Room / Table" : "Linked Unit / Property"}</label>
+                <select id="personLinkedItem">
+                  <option value="">Not linked</option>
+                  ${unitOptions.map(function (item) {
+                    const label = UnganiClientShared.getValue(item, ["property_name", "item_name", "name"], "Unit") +
+                      (UnganiClientShared.getValue(item, ["property_location"], "") ? " — " + UnganiClientShared.getValue(item, ["property_location"], "") : "");
+
+                    return `<option value="${UnganiClientShared.attr(item.id)}">${UnganiClientShared.safe(label)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+
+              <div>
+                <label for="personLeaseStart">${isHospitality ? "Check-in Date" : "Lease Start Date"}</label>
+                <input id="personLeaseStart" type="date" value="${row ? UnganiClientShared.attr(String(UnganiClientShared.getValue(row, ["lease_start_date"], "")).slice(0, 10)) : ""}" />
+              </div>
+
+              <div>
+                <label for="personLeaseEnd">${isHospitality ? "Checkout Date" : "Lease End Date"}</label>
+                <input id="personLeaseEnd" type="date" value="${row ? UnganiClientShared.attr(String(UnganiClientShared.getValue(row, ["lease_end_date"], "")).slice(0, 10)) : ""}" />
+              </div>
+            ` : ""}
+
+            <div class="wide">
+              <label for="personNotes">Notes</label>
+              <textarea id="personNotes" rows="5" placeholder="Add contact notes, follow-up details, responsibilities, client needs, supplier info...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
+            </div>
+          </div>
+
+          <div class="ungani-button-row" style="margin-top:16px;">
+            <button class="ungani-btn gold" type="submit">${row ? "Update Person" : "Save Person"}</button>
+            ${row ? `<button class="ungani-btn red" type="button" onclick="deletePerson('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
+            <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({
+        title: row ? "Edit Person" : "Add Person",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          document.getElementById("personType").value = row
+            ? getPersonType(row)
+            : ((presetValues && presetValues.personType) || businessPreset.peopleTypes[0] || "Contact");
+
+          document.getElementById("personStatus").value = row ? UnganiClientShared.getValue(row, ["status"], "active") : "active";
+          document.getElementById("personRelationship").value = row ? UnganiClientShared.getValue(row, ["relationship_status", "lead_status"], "") : "";
+
+          if (isRealEstate || isHospitality) {
+            if (document.getElementById("personLinkedItem")) document.getElementById("personLinkedItem").value = row ? UnganiClientShared.getValue(row, ["linked_item_id"], "") : "";
+          }
+        }
+      });
     }
 
     async function savePerson(event) {
@@ -1034,45 +1056,9 @@
       }
 
       UnganiClientShared.showToast(editingPersonId ? "Person updated ✓" : "Person added ✓");
-      clearPeopleForm();
+      editingPersonId = null;
+      UnganiClientShared.closeModal();
       await loadPeopleRows();
-    }
-
-    function editPerson(id) {
-      const row = peopleRows.find(function (item) {
-        return String(item.id) === String(id);
-      });
-
-      if (!row) {
-        UnganiClientShared.showToast("Person not found.");
-        return;
-      }
-
-      editingPersonId = row.id;
-
-      scrollToPeopleForm();
-
-      setTimeout(function () {
-        document.getElementById("peopleFormTitle").innerText = "Edit Person";
-        document.getElementById("personName").value = getPersonName(row);
-        document.getElementById("personType").value = UnganiClientShared.getValue(row, ["person_type", "type"], "");
-        document.getElementById("personStatus").value = UnganiClientShared.getValue(row, ["status"], "active");
-        document.getElementById("personPhone").value = UnganiClientShared.getValue(row, ["phone", "phone_number"], "");
-        document.getElementById("personEmail").value = UnganiClientShared.getValue(row, ["email"], "");
-        document.getElementById("personCompany").value = UnganiClientShared.getValue(row, ["company", "organization"], "");
-        document.getElementById("personRoleTitle").value = UnganiClientShared.getValue(row, ["role_title", "position"], "");
-        document.getElementById("personRelationship").value = UnganiClientShared.getValue(row, ["relationship_status", "lead_status"], "");
-        document.getElementById("personFollowUpDate").value = String(UnganiClientShared.getValue(row, ["last_follow_up_date"], "")).slice(0, 10);
-        document.getElementById("personLocation").value = UnganiClientShared.getValue(row, ["location"], "");
-        document.getElementById("personAssignedWork").value = UnganiClientShared.getValue(row, ["assigned_work", "properties_assigned"], "");
-        document.getElementById("personNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
-
-        if (isRealEstate || isHospitality) {
-          if (document.getElementById("personLinkedItem")) document.getElementById("personLinkedItem").value = UnganiClientShared.getValue(row, ["linked_item_id"], "");
-          if (document.getElementById("personLeaseStart")) document.getElementById("personLeaseStart").value = String(UnganiClientShared.getValue(row, ["lease_start_date"], "")).slice(0, 10);
-          if (document.getElementById("personLeaseEnd")) document.getElementById("personLeaseEnd").value = String(UnganiClientShared.getValue(row, ["lease_end_date"], "")).slice(0, 10);
-        }
-      }, 150);
     }
 
     async function deletePerson(id) {
@@ -1112,30 +1098,9 @@
       }
 
       UnganiClientShared.showToast("Person moved to Recently Deleted ✓");
-      await loadPeopleRows();
-    }
-
-    function clearPeopleForm() {
       editingPersonId = null;
-
-      const title = document.getElementById("peopleFormTitle");
-      if (title) title.innerText = "Add Person";
-
-      if (document.getElementById("personName")) document.getElementById("personName").value = "";
-      if (document.getElementById("personType")) document.getElementById("personType").value = businessPreset.peopleTypes[0] || "Contact";
-      if (document.getElementById("personStatus")) document.getElementById("personStatus").value = "active";
-      if (document.getElementById("personPhone")) document.getElementById("personPhone").value = "";
-      if (document.getElementById("personEmail")) document.getElementById("personEmail").value = "";
-      if (document.getElementById("personCompany")) document.getElementById("personCompany").value = "";
-      if (document.getElementById("personRoleTitle")) document.getElementById("personRoleTitle").value = "";
-      if (document.getElementById("personRelationship")) document.getElementById("personRelationship").value = "";
-      if (document.getElementById("personFollowUpDate")) document.getElementById("personFollowUpDate").value = "";
-      if (document.getElementById("personLocation")) document.getElementById("personLocation").value = "";
-      if (document.getElementById("personAssignedWork")) document.getElementById("personAssignedWork").value = "";
-      if (document.getElementById("personNotes")) document.getElementById("personNotes").value = "";
-      if (document.getElementById("personLinkedItem")) document.getElementById("personLinkedItem").value = "";
-      if (document.getElementById("personLeaseStart")) document.getElementById("personLeaseStart").value = "";
-      if (document.getElementById("personLeaseEnd")) document.getElementById("personLeaseEnd").value = "";
+      UnganiClientShared.closeModal();
+      await loadPeopleRows();
     }
 
     function getPersonName(row) {
@@ -1168,15 +1133,6 @@
       if (lower.includes("follow") || lower.includes("lead")) return "#D4A63A";
 
       return "#2563EB";
-    }
-
-    function makeInitials(valueText) {
-      const parts = String(valueText || "P").trim().split(/\s+/).filter(Boolean);
-
-      if (parts.length === 0) return "P";
-      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-
-      return (parts[0][0] + parts[1][0]).toUpperCase();
     }
 
     function hasValues(rows) {
