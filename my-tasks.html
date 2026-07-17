@@ -51,6 +51,8 @@
     let sectionOptions = [];
     let currentSectionFilter = "";
     let activeTaskCategory = "all";
+    let lastStatusRows = [];
+    let lastPriorityRows = [];
 
     const TILE_PALETTE = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#DB2777"];
 
@@ -122,6 +124,9 @@
       const summary = calculateTaskSummary(filteredRows);
       const statusRows = buildStatusRows(filteredRows);
       const priorityRows = buildPriorityRows(filteredRows);
+
+      lastStatusRows = statusRows;
+      lastPriorityRows = priorityRows;
 
       UnganiClientShared.setContent(`
         <style>
@@ -344,6 +349,48 @@
             background: var(--ungani-soft);
           }
 
+          .insights-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            width: 100%;
+            text-align: left;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            border-left: 6px solid var(--ungani-gold);
+            border-radius: 20px;
+            padding: 16px 18px;
+            margin-bottom: 18px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.18s ease;
+          }
+
+          .insights-banner:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ungani-shadow);
+          }
+
+          .insights-banner strong {
+            font-size: 16px;
+            color: var(--ungani-text);
+          }
+
+          .insights-banner .insights-sub {
+            display: block;
+            margin-top: 3px;
+            color: var(--ungani-muted);
+            font-size: 13px;
+          }
+
+          .insights-banner .insights-cta {
+            color: var(--ungani-gold);
+            font-weight: 800;
+            font-size: 13px;
+            white-space: nowrap;
+          }
+
           .task-table .row-sub {
             display: block;
             color: var(--ungani-muted);
@@ -456,32 +503,66 @@
           </div>
         </section>
 
-        <section class="task-chart-grid">
-          <div class="ungani-card ungani-chart-card">
+        <button type="button" class="insights-banner" onclick="openInsightsModal()">
+          <span>
+            <strong>📊 Insights &amp; Tools</strong>
+            <span class="insights-sub">Charts, quick-fill task types, and the task guide</span>
+          </span>
+          <span class="insights-cta">Open →</span>
+        </button>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Task List</h3>
+              <p class="ungani-small">${filteredRows.length} task(s) shown.</p>
+            </div>
+
+            <div class="ungani-button-row" style="margin-top:0;">
+              <button class="ungani-btn gold" onclick="openTaskModal()">+ Add Task</button>
+              <button class="ungani-btn green" onclick="loadTaskRows()">Refresh</button>
+            </div>
+          </div>
+
+          ${renderTaskList(filteredRows)}
+        </section>
+
+        <p class="ungani-small">
+          Tasks Version: Step 310B-2 Business-Type Task Presets · ungani.com · info@ungani.com
+        </p>
+      `);
+
+      restoreTaskFilters();
+
+      applyHighlightFromUrl();
+    }
+
+    function openInsightsModal() {
+      const bodyHtml = `
+        <div class="task-chart-grid" style="margin-bottom:18px;">
+          <div class="ungani-card ungani-chart-card" style="box-shadow:none;">
             <div class="ungani-chart-head">
               <div>
                 <h3>Task Status</h3>
                 <p class="ungani-small">Animated chart showing task progress.</p>
               </div>
             </div>
-
-            ${hasValues(statusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="taskStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add tasks to show task status.")}
+            ${hasValues(lastStatusRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="taskStatusChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add tasks to show task status.")}
           </div>
 
-          <div class="ungani-card ungani-chart-card">
+          <div class="ungani-card ungani-chart-card" style="box-shadow:none;">
             <div class="ungani-chart-head">
               <div>
                 <h3>Priority Breakdown</h3>
                 <p class="ungani-small">Urgent and high-priority tasks are easy to spot.</p>
               </div>
             </div>
-
-            ${hasValues(priorityRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="taskPriorityChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add tasks to show priority breakdown.")}
+            ${hasValues(lastPriorityRows) ? '<div class="ungani-chart-canvas-wrap"><canvas id="taskPriorityChart"></canvas></div>' : UnganiAnalytics.emptyChart("Add tasks to show priority breakdown.")}
           </div>
-        </section>
+        </div>
 
         <section class="task-type-section">
-          <div class="ungani-card">
+          <div class="ungani-card" style="box-shadow:none;">
             <div class="ungani-section-title">
               <div>
                 <h3>Task Types</h3>
@@ -497,7 +578,7 @@
           </div>
         </section>
 
-        <section class="ungani-card">
+        <section class="ungani-card" style="box-shadow:none; margin-top:18px;">
           <div class="ungani-section-title">
             <div>
               <h3>Task Guide</h3>
@@ -527,35 +608,17 @@
             </div>
           </div>
         </section>
+      `;
 
-        <section class="ungani-card">
-          <div class="ungani-section-title">
-            <div>
-              <h3>Task List</h3>
-              <p class="ungani-small">${filteredRows.length} task(s) shown.</p>
-            </div>
-
-            <div class="ungani-button-row" style="margin-top:0;">
-              <button class="ungani-btn gold" onclick="openTaskModal()">+ Add Task</button>
-              <button class="ungani-btn green" onclick="loadTaskRows()">Refresh</button>
-            </div>
-          </div>
-
-          ${renderTaskList(filteredRows)}
-        </section>
-
-        <p class="ungani-small">
-          Tasks Version: Step 310B-2 Business-Type Task Presets · ungani.com · info@ungani.com
-        </p>
-      `);
-
-      restoreTaskFilters();
-
-      setTimeout(function () {
-        renderTaskCharts(statusRows, priorityRows);
-      }, 150);
-
-      applyHighlightFromUrl();
+      UnganiClientShared.openModal({
+        title: "Insights & Tools",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          setTimeout(function () {
+            renderTaskCharts(lastStatusRows, lastPriorityRows);
+          }, 150);
+        }
+      });
     }
 
     function applyHighlightFromUrl() {
