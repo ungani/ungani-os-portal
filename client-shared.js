@@ -1392,11 +1392,10 @@
         inset: 0;
         background: rgba(2,6,23,0.72);
         display: none;
-        align-items: flex-start;
+        align-items: center;
         justify-content: center;
         z-index: 9999;
         padding: 40px 18px;
-        overflow-y: auto;
       }
 
       .ungani-modal-backdrop.open {
