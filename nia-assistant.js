@@ -12,6 +12,52 @@
     blue: "#2563EB"
   };
 
+  // Flat-illustration avatar: professional woman with a headset, navy/gold/
+  // off-white to match the brand palette. The mic tip and headset earpiece
+  // carry class hooks so CSS can drive the idle-pulse and typing-state animations.
+  const NIA_AVATAR_SVG = `
+    <svg class="nia-avatar-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Nia">
+      <defs>
+        <linearGradient id="niaBgGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${BRAND.navy2}"/>
+          <stop offset="100%" stop-color="${BRAND.navy}"/>
+        </linearGradient>
+      </defs>
+
+      <circle cx="50" cy="50" r="50" fill="url(#niaBgGrad)"/>
+
+      <ellipse cx="50" cy="50" rx="25" ry="35" fill="#2A2118"/>
+
+      <path d="M16,102 Q18,70 50,66 Q82,70 84,102 Z" fill="${BRAND.navy}"/>
+      <path d="M35,71 L48,68 L43,92 Z" fill="#0B2346"/>
+      <path d="M65,71 L52,68 L57,92 Z" fill="#0B2346"/>
+      <path d="M40,74 L50,89 L60,74 L53,67 L47,67 Z" fill="${BRAND.offWhite}"/>
+
+      <rect x="42" y="57" width="16" height="17" rx="6" fill="#C48A63"/>
+
+      <circle cx="50" cy="43" r="18" fill="#D9A377"/>
+
+      <path d="M32,38 Q31,24 50,22 Q69,24 68,38 Q68,30 61,27 Q58,24 50,24 Q42,24 39,27 Q32,30 32,38 Z" fill="#2A2118"/>
+
+      <circle cx="43" cy="44" r="6" fill="#E3B98D" opacity="0.55"/>
+      <circle cx="57" cy="44" r="6" fill="#E3B98D" opacity="0.55"/>
+
+      <path d="M40.5,40.2 Q42.5,39.2 44.5,40.2" stroke="#3A2A1E" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <path d="M55.5,40.2 Q57.5,39.2 59.5,40.2" stroke="#3A2A1E" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <circle cx="42.5" cy="43.5" r="1.6" fill="#2A1D14"/>
+      <circle cx="57.5" cy="43.5" r="1.6" fill="#2A1D14"/>
+      <path d="M44,42.7 L45.6,41.2" stroke="#2A1D14" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M56,42.7 L54.4,41.2" stroke="#2A1D14" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M43,50.5 Q50,55.5 57,50.5" stroke="#9A5A42" stroke-width="1.7" fill="none" stroke-linecap="round"/>
+
+      <path d="M27,40 Q50,9 73,40" stroke="#171310" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+      <circle cx="27.4" cy="41.5" r="3.6" fill="#171310"/>
+      <circle class="nia-headset-ear" cx="72.6" cy="41.5" r="4.2" fill="${BRAND.gold}"/>
+      <path d="M72.6,45 Q69,55 57,59" stroke="#171310" stroke-width="2.3" fill="none" stroke-linecap="round"/>
+      <circle class="nia-mic-tip" cx="57" cy="59" r="2.7" fill="${BRAND.gold}"/>
+    </svg>
+  `;
+
   const SEEN_KEY = "ungani_nia_seen";
 
   const NAV_ITEMS = [
@@ -323,14 +369,56 @@
         border-radius: 50%;
         border: none;
         cursor: pointer;
-        background: linear-gradient(135deg, ${BRAND.navy}, ${BRAND.navy2});
-        color: ${BRAND.gold};
-        font-size: 26px;
+        padding: 0;
+        overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
         box-shadow: 0 14px 34px rgba(6,28,61,0.35);
         transition: transform 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .nia-avatar-graphic {
+        display: block;
+        width: 100%;
+        height: 100%;
+        line-height: 0;
+      }
+
+      .nia-avatar-svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .nia-avatar-graphic {
+        animation: niaIdlePulse 3.2s ease-in-out infinite;
+      }
+
+      @keyframes niaIdlePulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.035); }
+      }
+
+      .nia-mic-tip {
+        transform-origin: center;
+        transform-box: fill-box;
+      }
+
+      .nia-avatar-thinking .nia-mic-tip {
+        animation: niaMicPulse 0.75s ease-in-out infinite;
+      }
+
+      @keyframes niaMicPulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.55; transform: scale(1.45); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .nia-avatar-graphic,
+        .nia-avatar-thinking .nia-mic-tip {
+          animation: none;
+        }
       }
 
       .nia-fab:hover {
@@ -397,12 +485,10 @@
         width: 34px;
         height: 34px;
         border-radius: 50%;
-        background: rgba(212,166,58,0.22);
-        color: ${BRAND.gold};
+        overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 17px;
         flex: none;
       }
 
@@ -654,7 +740,7 @@
     btn.className = "nia-fab";
     btn.type = "button";
     btn.title = "Nia — Your UNGANI Business Assistant";
-    btn.innerHTML = "✨" + (hasSeenNia() ? "" : '<span class="nia-fab-dot"></span>');
+    btn.innerHTML = '<span class="nia-avatar-graphic nia-fab-avatar">' + NIA_AVATAR_SVG + '</span>' + (hasSeenNia() ? "" : '<span class="nia-fab-dot"></span>');
     btn.addEventListener("click", toggleNia);
     document.body.appendChild(btn);
 
@@ -731,7 +817,7 @@
     panel.innerHTML = `
       <div class="nia-panel-head">
         <div class="nia-title">
-          <div class="nia-avatar">✨</div>
+          <div class="nia-avatar nia-avatar-graphic" id="niaHeaderAvatar">${NIA_AVATAR_SVG}</div>
           <div>
             <strong>Nia</strong>
             <span>Your UNGANI Business Assistant</span>
@@ -798,6 +884,9 @@
     const box = document.getElementById("niaMessages");
     if (!box) return null;
 
+    const headerAvatar = document.getElementById("niaHeaderAvatar");
+    if (headerAvatar) headerAvatar.classList.add("nia-avatar-thinking");
+
     const el = document.createElement("div");
     el.className = "nia-typing";
     el.id = "niaTypingIndicator";
@@ -810,6 +899,9 @@
   function removeTypingIndicator() {
     const el = document.getElementById("niaTypingIndicator");
     if (el) el.remove();
+
+    const headerAvatar = document.getElementById("niaHeaderAvatar");
+    if (headerAvatar) headerAvatar.classList.remove("nia-avatar-thinking");
   }
 
   function replyWithDelay(fn) {
