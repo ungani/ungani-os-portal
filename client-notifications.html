@@ -765,6 +765,7 @@
     document.addEventListener("DOMContentLoaded", updateThemeToggleLabel);
 
     let currentUser = null;
+    let currentTenantId = null;
     let notifications = [];
     let activeFilter = "all";
 
@@ -914,7 +915,46 @@
         return false;
       }
 
+      await resolveTenant();
+
+      if (!currentTenantId) {
+        document.getElementById("notificationList").innerHTML = `
+          <div class="empty-state">
+            <strong>Could not load your workspace</strong>
+            Your login is active, but no business workspace was found. Please contact UNGANI support.
+          </div>
+        `;
+        return false;
+      }
+
       return true;
+    }
+
+    async function resolveTenant() {
+      try {
+        const rpcResponse = await supabaseClient.rpc("get_my_ungani_tenant_id");
+
+        if (!rpcResponse.error && rpcResponse.data) {
+          currentTenantId = rpcResponse.data;
+          return;
+        }
+      } catch (error) {
+        console.warn(error.message);
+      }
+
+      try {
+        const response = await supabaseClient
+          .from("users")
+          .select("*")
+          .or(`id.eq.${currentUser.id},auth_user_id.eq.${currentUser.id},email.eq.${currentUser.email}`)
+          .limit(1);
+
+        if (!response.error && response.data && response.data[0]) {
+          currentTenantId = response.data[0].tenant_id || null;
+        }
+      } catch (error) {
+        console.warn(error.message);
+      }
     }
 
     async function loadNotifications() {
@@ -931,6 +971,7 @@
         .from("ungani_notifications")
         .select("*")
         .eq("target_type", "client")
+        .eq("tenant_id", currentTenantId)
         .order("created_at", { ascending: false })
         .limit(150);
 
@@ -1081,7 +1122,8 @@
           status: "read",
           read_at: new Date().toISOString()
         })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("tenant_id", currentTenantId);
 
       if (result.error) {
         alert(result.error.message);
@@ -1111,7 +1153,8 @@
           status: "unread",
           read_at: null
         })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("tenant_id", currentTenantId);
 
       if (result.error) {
         alert(result.error.message);
@@ -1145,7 +1188,8 @@
           status: "read",
           read_at: new Date().toISOString()
         })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("tenant_id", currentTenantId);
 
       if (result.error) {
         alert(result.error.message);
@@ -1180,7 +1224,8 @@
           status: "read",
           read_at: new Date().toISOString()
         })
-        .in("id", unreadIds);
+        .in("id", unreadIds)
+        .eq("tenant_id", currentTenantId);
 
       if (result.error) {
         alert(result.error.message);

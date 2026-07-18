@@ -64,73 +64,43 @@
 
   function loadAccessGuards() {
     const page = getCurrentPage();
-    const portalMode = String(localStorage.getItem("ungani_portal_mode") || "").toLowerCase();
 
+    // Pages with no authenticated session and nothing sensitive to guard.
+    // Everything else authenticated falls through to the admin/client
+    // classification below, by filename pattern rather than a hand-maintained
+    // allow-list - the previous exhaustive arrays silently missed new pages
+    // (they covered ~30 of ~90 pages), leaving most of the app with no
+    // idle-session timeout at all.
     const publicPages = [
       "index.html",
       "login.html",
-      "staff-login.html"
-    ];
-
-    const adminPages = [
-      "admin.html",
-      "admin-home.html",
-      "admin-reports.html",
-      "admin-onboarding.html",
-      "admin-billing.html",
-      "admin-subscriptions.html",
-      "admin-upgrade-requests.html",
-      "admin-branches.html",
-      "admin-health.html",
-      "admin-email-queue.html",
-      "admin-payment-proofs.html",
-      "admin-invoice.html",
-      "support.html"
-    ];
-
-    const clientPages = [
-      "client.html",
-      "my-money.html",
-      "my-tasks.html",
-      "my-items.html",
-      "my-people.html",
-      "my-records.html",
-      "my-documents.html",
-      "my-calendar.html",
-      "my-support.html",
-      "my-chat.html",
-      "my-team-chat.html",
-      "my-reports.html",
-      "reports.html",
-      "my-billing.html",
-      "my-invoice.html",
-      "my-package.html",
-      "my-branches.html",
-      "my-settings.html",
-      "my-team-access.html",
-      "client-notifications.html",
-      "my-tools.html",
-      "my-onboarding.html",
-      "my-account-status.html"
+      "staff-login.html",
+      "portal.html"
     ];
 
     if (publicPages.includes(page)) return;
 
-    if (adminPages.includes(page)) {
+    const isAdminPage = page.startsWith("admin") || page === "support.html" || page === "users.html" ||
+      page === "sections.html" || page === "billing.html" || page === "notices.html";
+
+    if (isAdminPage) {
       loadScriptOnce("admin-access-guard.js");
       loadScriptOnce("session-inactivity-guard.js");
       return;
     }
 
-    if (clientPages.includes(page)) {
-      loadScriptOnce("client-access-guard.js");
-      loadScriptOnce("session-inactivity-guard.js");
+    loadScriptOnce("client-access-guard.js");
+    loadScriptOnce("session-inactivity-guard.js");
 
-      if (portalMode === "staff") {
-        loadScriptOnce("staff-permission-guard.js");
-        loadScriptOnce("staff-visibility-filter.js");
-      }
-    }
+    // Always run the real, server-verified permission check (it calls
+    // get_my_ungani_staff_access and safely no-ops for genuine owners) -
+    // this used to be gated behind a "portalMode === staff" flag read from
+    // localStorage, which is trivially overwritten by a client-supplied
+    // ?mode=client URL param, letting a restricted staff account skip the
+    // check entirely. The check itself decides what to enforce; loading it
+    // must not be optional.
+    loadScriptOnce("staff-permission-guard.js");
+    loadScriptOnce("staff-visibility-filter.js");
   }
 
   function getCurrentPage() {
