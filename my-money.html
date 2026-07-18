@@ -58,6 +58,21 @@
     let activeMoneyCategory = "all";
     let urlActionApplied = false;
 
+    // Pagination: moneySummaryRows holds every row matching the current
+    // tenant/section/status/search scope, but only narrow columns (not
+    // select("*")) - light enough to fetch in full even at large row
+    // counts. It drives the KPI totals, trend chart, expense breakdown,
+    // and category tile counts (all need the WHOLE matching set to be
+    // accurate, not just one page). moneyRows is the wide (select *) data
+    // for only the current page's ids, fetched via .in("id", pageIds) -
+    // this is what actually renders in the table and is what pagination
+    // bounds.
+    const MONEY_PAGE_SIZE = 50;
+    let moneySummaryRows = [];
+    let moneyPageOffset = 0;
+    let moneyIsLoadingMore = false;
+    let moneySearchDebounceTimer = null;
+
     const MONEY_CATEGORIES = [
       { key: "all", label: "All Records", accent: "#D4A63A", match: function () { return true; } },
       { key: "income", label: "Income", accent: "#16A34A", match: function (row) { return isIncomeRow(row); } },
@@ -101,8 +116,82 @@
       await loadMoneyRows();
     }
 
-    async function loadMoneyRows() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading money records...");
+    const MONEY_SUMMARY_COLUMNS = "id, amount, transaction_type, type, category_name, category, category_key, status, transaction_date, created_at";
+
+    // Applies the filters that scope BOTH the summary fetch and the page
+    // fetch: tenant, section, status dropdown, and free-text search. Search
+    // is escaped via the shared PostgREST helper since it's the one
+    // user-controlled value interpolated into a filter string.
+    function applyMoneyCommonFilters(query) {
+      query = query.eq("tenant_id", currentContext.tenantId);
+
+      if (currentSectionFilter) {
+        query = query.eq("section_label", currentSectionFilter);
+      }
+
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_money_filter_status").toLowerCase();
+      if (filterStatus) {
+        query = query.ilike("status", "%" + UnganiClientShared.escapePostgrestFilterValue(filterStatus) + "%");
+      }
+
+      const search = getStoredOrInput("filterSearch", "ungani_money_filter_search").trim();
+      if (search) {
+        query = query.or(UnganiClientShared.buildSearchOrFilter(["description", "category", "payment_method"], search));
+      }
+
+      return query;
+    }
+
+    // moneySummaryRows covers every row in the current tenant/section/status/
+    // search scope (all categories), fetched with only the narrow columns
+    // the KPI totals, trend chart, expense breakdown, and category tile
+    // counts actually need - light enough to fetch unbounded even at large
+    // row counts, unlike select("*"). Category tile selection then slices
+    // this in-memory id list for the current page, and a separate .in("id",
+    // pageIds) fetch pulls the full row data for just those ids.
+    async function loadMoneySummaryRows() {
+      let response;
+
+      try {
+        response = await applyMoneyCommonFilters(
+          currentContext.supabaseClient.from("transactions").select(MONEY_SUMMARY_COLUMNS)
+        ).order("created_at", { ascending: false });
+      } catch (error) {
+        return { error: error.message || "Network error. Please check your connection." };
+      }
+
+      if (response.error) {
+        return { error: response.error.message };
+      }
+
+      moneySummaryRows = response.data || [];
+      return { error: null };
+    }
+
+    function getMoneyCategoryFilteredIds() {
+      const category = MONEY_CATEGORIES.find(function (item) { return item.key === activeMoneyCategory; }) || MONEY_CATEGORIES[0];
+      return moneySummaryRows.filter(category.match).map(function (row) { return row.id; });
+    }
+
+    function moneyHasMoreRows() {
+      return moneyPageOffset < getMoneyCategoryFilteredIds().length;
+    }
+
+    // Fetches the next MONEY_PAGE_SIZE ids (from the already-loaded id list
+    // above) as full rows. replace=true starts over from offset 0; false
+    // appends (Load More).
+    async function loadMoneyPage(replace) {
+      if (replace) {
+        moneyPageOffset = 0;
+      }
+
+      const allIds = getMoneyCategoryFilteredIds();
+      const pageIds = allIds.slice(moneyPageOffset, moneyPageOffset + MONEY_PAGE_SIZE);
+
+      if (!pageIds.length) {
+        if (replace) moneyRows = [];
+        return { error: null };
+      }
 
       let response;
 
@@ -110,23 +199,43 @@
         response = await currentContext.supabaseClient
           .from("transactions")
           .select("*")
-          .eq("tenant_id", currentContext.tenantId)
+          .in("id", pageIds)
           .order("created_at", { ascending: false });
       } catch (error) {
-        UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load money records", error.message || "Network error. Please check your connection.")
-        );
-        return;
+        return { error: error.message || "Network error. Please check your connection." };
       }
 
       if (response.error) {
+        return { error: response.error.message };
+      }
+
+      const newRows = response.data || [];
+      moneyRows = replace ? newRows : moneyRows.concat(newRows);
+      moneyPageOffset += pageIds.length;
+
+      return { error: null };
+    }
+
+    async function loadMoneyRows() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading money records...");
+
+      const summaryResult = await loadMoneySummaryRows();
+
+      if (summaryResult.error) {
         UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load money records", response.error.message)
+          UnganiClientShared.errorCard("Could not load money records", summaryResult.error)
         );
         return;
       }
 
-      moneyRows = response.data || [];
+      const pageResult = await loadMoneyPage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load money records", pageResult.error)
+        );
+        return;
+      }
 
       const loaders = [
         loadCategorySuggestions(),
@@ -140,6 +249,67 @@
       await Promise.all(loaders);
 
       renderMoneyPage();
+    }
+
+    // Re-runs the summary + first-page fetch (tenant/section unchanged,
+    // status/search/category may have) - used whenever a filter changes.
+    async function refreshMoneyData() {
+      const focusedId = document.activeElement ? document.activeElement.id : null;
+
+      const summaryResult = await loadMoneySummaryRows();
+
+      if (summaryResult.error) {
+        UnganiClientShared.showToast("Could not update records: " + summaryResult.error);
+        return;
+      }
+
+      const pageResult = await loadMoneyPage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.showToast("Could not update records: " + pageResult.error);
+        return;
+      }
+
+      renderMoneyPage();
+
+      if (focusedId) {
+        const el = document.getElementById(focusedId);
+        if (el && typeof el.focus === "function") el.focus();
+      }
+    }
+
+    async function loadMoreMoneyRows() {
+      if (moneyIsLoadingMore) return;
+      moneyIsLoadingMore = true;
+
+      const btn = document.getElementById("moneyLoadMoreBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Loading...";
+      }
+
+      const result = await loadMoneyPage(false);
+
+      moneyIsLoadingMore = false;
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load more records: " + result.error);
+        return;
+      }
+
+      renderMoneyPage();
+    }
+
+    function onMoneySearchInput() {
+      saveMoneyFilters();
+
+      if (moneySearchDebounceTimer) clearTimeout(moneySearchDebounceTimer);
+      moneySearchDebounceTimer = setTimeout(refreshMoneyData, 350);
+    }
+
+    function onMoneyStatusChange() {
+      saveMoneyFilters();
+      refreshMoneyData();
     }
 
     async function loadPersonOptions() {
@@ -210,9 +380,11 @@
 
     function renderMoneyPage() {
       const filteredRows = getFilteredRows();
-      const summary = calculateMoneySummary(filteredRows);
-      const expenseBreakdown = calculateExpenseBreakdown(filteredRows);
-      const trend = calculateIncomeExpenseTrend(filteredRows);
+      const category = MONEY_CATEGORIES.find(function (item) { return item.key === activeMoneyCategory; }) || MONEY_CATEGORIES[0];
+      const summaryScopeRows = moneySummaryRows.filter(category.match);
+      const summary = calculateMoneySummary(summaryScopeRows);
+      const expenseBreakdown = calculateExpenseBreakdown(summaryScopeRows);
+      const trend = calculateIncomeExpenseTrend(summaryScopeRows);
 
       lastTrend = trend;
       lastExpenseBreakdown = expenseBreakdown;
@@ -581,8 +753,8 @@
         ${renderCategoryTiles()}
 
         <section class="money-kpi-grid">
-          ${moneyKpi("Income", UnganiAnalytics.compactMoney(summary.income), filteredRows.filter(isIncomeRow).length + " income record(s)", "#16A34A")}
-          ${moneyKpi("Expenses", UnganiAnalytics.compactMoney(summary.expenses), filteredRows.filter(isExpenseRow).length + " expense record(s)", "#D4A63A")}
+          ${moneyKpi("Income", UnganiAnalytics.compactMoney(summary.income), summaryScopeRows.filter(isIncomeRow).length + " income record(s)", "#16A34A")}
+          ${moneyKpi("Expenses", UnganiAnalytics.compactMoney(summary.expenses), summaryScopeRows.filter(isExpenseRow).length + " expense record(s)", "#D4A63A")}
           ${moneyKpi("Balance", UnganiAnalytics.compactMoney(summary.balance), "Income minus expenses", summary.balance >= 0 ? "#16A34A" : "#DC2626")}
           ${moneyKpi("Pending", UnganiAnalytics.compactMoney(summary.pending), "Pending money records", "#DC2626")}
         </section>
@@ -600,7 +772,7 @@
           <div class="money-form-grid">
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveMoneyFilters(); renderMoneyPage();">
+              <select id="filterStatus" onchange="onMoneyStatusChange();">
                 <option value="">All Status</option>
                 <option value="completed">Completed</option>
                 <option value="pending">Pending</option>
@@ -610,7 +782,7 @@
 
             <div>
               <label for="filterSearch">Search</label>
-              <input id="filterSearch" placeholder="Search category, notes, payment method..." oninput="saveMoneyFilters(); renderMoneyPage();" />
+              <input id="filterSearch" placeholder="Search category, notes, payment method..." oninput="onMoneySearchInput();" />
             </div>
           </div>
         </section>
@@ -627,7 +799,7 @@
           <div class="ungani-section-title">
             <div>
               <h3>Money Records</h3>
-              <p class="ungani-small">${filteredRows.length} record(s) shown.</p>
+              <p class="ungani-small">${filteredRows.length} of ${summaryScopeRows.length} record(s) shown.</p>
             </div>
 
             <div class="ungani-button-row" style="margin-top:0;">
@@ -637,6 +809,12 @@
           </div>
 
           ${renderMoneyTable(filteredRows)}
+
+          ${moneyHasMoreRows() ? `
+            <div class="ungani-button-row" style="justify-content:center; margin-top:14px;">
+              <button class="ungani-btn dark" id="moneyLoadMoreBtn" onclick="loadMoreMoneyRows()">Load More Records</button>
+            </div>
+          ` : ""}
         </section>
 
         <p class="ungani-small">
@@ -648,7 +826,7 @@
       applyUrlActions();
     }
 
-    function applyUrlActions() {
+    async function applyUrlActions() {
       if (urlActionApplied) return;
 
       const params = new URLSearchParams(window.location.search);
@@ -656,7 +834,28 @@
       const action = params.get("action");
 
       if (highlightId) {
-        const row = moneyRows.find(function (item) { return String(item.id) === String(highlightId); });
+        let row = moneyRows.find(function (item) { return String(item.id) === String(highlightId); });
+
+        // With pagination, a deep-linked record (e.g. from a notification)
+        // may not be on the currently loaded page - fetch it directly
+        // rather than silently failing to open it.
+        if (!row) {
+          try {
+            const lookup = await currentContext.supabaseClient
+              .from("transactions")
+              .select("*")
+              .eq("id", highlightId)
+              .eq("tenant_id", currentContext.tenantId)
+              .maybeSingle();
+
+            if (lookup.data) {
+              row = lookup.data;
+              moneyRows = [row].concat(moneyRows);
+            }
+          } catch (error) {
+            console.warn("Highlight lookup failed:", error.message);
+          }
+        }
 
         if (row) {
           urlActionApplied = true;
@@ -1330,39 +1529,31 @@
       return [];
     }
 
-    function getBaseFilteredRows() {
-      const filterStatus = getStoredOrInput("filterStatus", "ungani_money_filter_status").toLowerCase();
-      const search = getStoredOrInput("filterSearch", "ungani_money_filter_search").toLowerCase();
-
-      return moneyRows.filter(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
-        const haystack = JSON.stringify(row || {}).toLowerCase();
-
-        if (currentSectionFilter && UnganiClientShared.getValue(row, ["section_label"], "") !== currentSectionFilter) return false;
-        if (filterStatus && !status.includes(filterStatus)) return false;
-        if (search && !haystack.includes(search)) return false;
-
-        return true;
-      });
-    }
-
+    // Status/search/section are already applied server-side (in
+    // loadMoneySummaryRows/loadMoneyPage), so moneySummaryRows and moneyRows
+    // only need the category slice applied here for tile counts/rendering.
     function getFilteredRows() {
-      const category = MONEY_CATEGORIES.find(function (item) { return item.key === activeMoneyCategory; }) || MONEY_CATEGORIES[0];
-      return getBaseFilteredRows().filter(category.match);
+      return moneyRows;
     }
 
-    function selectMoneyCategory(key) {
+    async function selectMoneyCategory(key) {
       activeMoneyCategory = key;
+
+      const result = await loadMoneyPage(true);
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load category: " + result.error);
+        return;
+      }
+
       renderMoneyPage();
     }
 
     function renderCategoryTiles() {
-      const base = getBaseFilteredRows();
-
       return `
         <section class="category-tiles">
           ${MONEY_CATEGORIES.map(function (category) {
-            const count = base.filter(category.match).length;
+            const count = moneySummaryRows.filter(category.match).length;
             const active = category.key === activeMoneyCategory ? " active" : "";
 
             return `
@@ -1400,7 +1591,17 @@
       sessionStorage.removeItem("ungani_money_filter_status");
       sessionStorage.removeItem("ungani_money_filter_search");
       activeMoneyCategory = "all";
-      renderMoneyPage();
+
+      // Clear the live input values too, not just sessionStorage -
+      // applyMoneyCommonFilters() reads the DOM element first, so a term
+      // still sitting in the search box would otherwise still be applied
+      // to the very refetch this triggers, until the next re-render.
+      const statusEl = document.getElementById("filterStatus");
+      const searchEl = document.getElementById("filterSearch");
+      if (statusEl) statusEl.value = "";
+      if (searchEl) searchEl.value = "";
+
+      refreshMoneyData();
       UnganiClientShared.showToast("Money filters reset ✓");
     }
 

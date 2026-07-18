@@ -52,6 +52,13 @@
     let activeRecordCategory = "all";
     let urlActionApplied = false;
 
+    // See my-money.html for the full rationale.
+    const RECORD_PAGE_SIZE = 50;
+    let recordSummaryRows = [];
+    let recordPageOffset = 0;
+    let recordIsLoadingMore = false;
+    let recordSearchDebounceTimer = null;
+
     const TILE_PALETTE = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#DB2777"];
 
     window.addEventListener("load", function () {
@@ -86,8 +93,70 @@
       await loadRecordRows();
     }
 
-    async function loadRecordRows() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading business records...");
+    const RECORD_SUMMARY_COLUMNS = "id, status, priority, record_type, type";
+
+    function applyRecordCommonFilters(query) {
+      query = query.eq("tenant_id", currentContext.tenantId);
+
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_record_filter_status").toLowerCase();
+      if (filterStatus) {
+        query = query.ilike("status", "%" + UnganiClientShared.escapePostgrestFilterValue(filterStatus) + "%");
+      }
+
+      const filterPriority = getStoredOrInput("filterPriority", "ungani_record_filter_priority").toLowerCase();
+      if (filterPriority) {
+        query = query.ilike("priority", "%" + UnganiClientShared.escapePostgrestFilterValue(filterPriority) + "%");
+      }
+
+      const search = getStoredOrInput("filterSearch", "ungani_record_filter_search").trim();
+      if (search) {
+        query = query.or(UnganiClientShared.buildSearchOrFilter(["record_title", "notes"], search));
+      }
+
+      return query;
+    }
+
+    async function loadRecordSummaryRows() {
+      let response;
+
+      try {
+        response = await applyRecordCommonFilters(
+          currentContext.supabaseClient.from("business_records").select(RECORD_SUMMARY_COLUMNS)
+        ).order("created_at", { ascending: false });
+      } catch (error) {
+        return { error: error.message || "Network error. Please check your connection." };
+      }
+
+      if (response.error) {
+        return { error: response.error.message };
+      }
+
+      recordSummaryRows = response.data || [];
+      return { error: null };
+    }
+
+    function getRecordCategoryFilteredIds() {
+      const categories = buildRecordCategories();
+      const category = categories.find(function (item) { return item.key === activeRecordCategory; }) || categories[0];
+      return recordSummaryRows.filter(category.match).map(function (row) { return row.id; });
+    }
+
+    function recordHasMoreRows() {
+      return recordPageOffset < getRecordCategoryFilteredIds().length;
+    }
+
+    async function loadRecordPage(replace) {
+      if (replace) {
+        recordPageOffset = 0;
+      }
+
+      const allIds = getRecordCategoryFilteredIds();
+      const pageIds = allIds.slice(recordPageOffset, recordPageOffset + RECORD_PAGE_SIZE);
+
+      if (!pageIds.length) {
+        if (replace) recordRows = [];
+        return { error: null };
+      }
 
       let response;
 
@@ -95,32 +164,115 @@
         response = await currentContext.supabaseClient
           .from("business_records")
           .select("*")
-          .eq("tenant_id", currentContext.tenantId)
+          .in("id", pageIds)
           .order("created_at", { ascending: false });
       } catch (error) {
-        UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load business records", error.message || "Network error. Please check your connection.")
-        );
-        return;
+        return { error: error.message || "Network error. Please check your connection." };
       }
 
       if (response.error) {
+        return { error: response.error.message };
+      }
+
+      const newRows = response.data || [];
+      recordRows = replace ? newRows : recordRows.concat(newRows);
+      recordPageOffset += pageIds.length;
+
+      return { error: null };
+    }
+
+    async function loadRecordRows() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading business records...");
+
+      const summaryResult = await loadRecordSummaryRows();
+
+      if (summaryResult.error) {
         UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load business records", response.error.message)
+          UnganiClientShared.errorCard("Could not load business records", summaryResult.error)
         );
         return;
       }
 
-      recordRows = response.data || [];
+      const pageResult = await loadRecordPage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load business records", pageResult.error)
+        );
+        return;
+      }
+
       renderRecordsPage();
+    }
+
+    async function refreshRecordData() {
+      const focusedId = document.activeElement ? document.activeElement.id : null;
+
+      const summaryResult = await loadRecordSummaryRows();
+
+      if (summaryResult.error) {
+        UnganiClientShared.showToast("Could not update records: " + summaryResult.error);
+        return;
+      }
+
+      const pageResult = await loadRecordPage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.showToast("Could not update records: " + pageResult.error);
+        return;
+      }
+
+      renderRecordsPage();
+
+      if (focusedId) {
+        const el = document.getElementById(focusedId);
+        if (el && typeof el.focus === "function") el.focus();
+      }
+    }
+
+    async function loadMoreRecordRows() {
+      if (recordIsLoadingMore) return;
+      recordIsLoadingMore = true;
+
+      const btn = document.getElementById("recordLoadMoreBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Loading...";
+      }
+
+      const result = await loadRecordPage(false);
+
+      recordIsLoadingMore = false;
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load more records: " + result.error);
+        return;
+      }
+
+      renderRecordsPage();
+    }
+
+    function onRecordSearchInput() {
+      saveRecordFilters();
+
+      if (recordSearchDebounceTimer) clearTimeout(recordSearchDebounceTimer);
+      recordSearchDebounceTimer = setTimeout(refreshRecordData, 350);
+    }
+
+    function onRecordFilterChange() {
+      saveRecordFilters();
+      refreshRecordData();
     }
 
     function renderRecordsPage() {
       const filteredRows = getFilteredRows();
-      const summary = calculateRecordSummary(filteredRows);
-      const typeRows = buildTypeRows(filteredRows);
-      const statusRows = buildStatusRows(filteredRows);
-      const priorityRows = buildPriorityRows(filteredRows);
+      const categories = buildRecordCategories();
+      const category = categories.find(function (item) { return item.key === activeRecordCategory; }) || categories[0];
+      const summaryScopeRows = recordSummaryRows.filter(category.match);
+      const summary = calculateRecordSummary(summaryScopeRows);
+      const typeRows = buildTypeRows(summaryScopeRows);
+      const statusRows = buildStatusRows(summaryScopeRows);
+      const priorityRows = buildPriorityRows(summaryScopeRows);
 
       UnganiClientShared.setContent(`
         <style>
@@ -426,7 +578,7 @@
           <div class="record-form-grid">
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveRecordFilters(); renderRecordsPage();">
+              <select id="filterStatus" onchange="onRecordFilterChange();">
                 <option value="">All Status</option>
                 <option value="open">Open</option>
                 <option value="in progress">In Progress</option>
@@ -438,7 +590,7 @@
 
             <div>
               <label for="filterPriority">Priority</label>
-              <select id="filterPriority" onchange="saveRecordFilters(); renderRecordsPage();">
+              <select id="filterPriority" onchange="onRecordFilterChange();">
                 <option value="">All Priority</option>
                 <option value="low">Low</option>
                 <option value="normal">Normal</option>
@@ -449,7 +601,7 @@
 
             <div>
               <label for="filterSearch">Search</label>
-              <input id="filterSearch" placeholder="Search title, type, person, item, notes..." oninput="saveRecordFilters(); renderRecordsPage();" />
+              <input id="filterSearch" placeholder="Search title, type, person, item, notes..." oninput="onRecordSearchInput();" />
             </div>
           </div>
         </section>
@@ -530,7 +682,7 @@
           <div class="ungani-section-title">
             <div>
               <h3>Record List</h3>
-              <p class="ungani-small">${filteredRows.length} record(s) shown.</p>
+              <p class="ungani-small">${filteredRows.length} of ${summaryScopeRows.length} record(s) shown.</p>
             </div>
 
             <div class="ungani-button-row" style="margin-top:0;">
@@ -540,6 +692,12 @@
           </div>
 
           ${renderRecordList(filteredRows)}
+
+          ${recordHasMoreRows() ? `
+            <div class="ungani-button-row" style="justify-content:center; margin-top:14px;">
+              <button class="ungani-btn dark" id="recordLoadMoreBtn" onclick="loadMoreRecordRows()">Load More Records</button>
+            </div>
+          ` : ""}
         </section>
 
         <p class="ungani-small">
@@ -556,7 +714,7 @@
       applyUrlActions();
     }
 
-    function applyUrlActions() {
+    async function applyUrlActions() {
       if (urlActionApplied) return;
 
       const params = new URLSearchParams(window.location.search);
@@ -564,7 +722,28 @@
       const action = params.get("action");
 
       if (highlightId) {
-        const row = recordRows.find(function (item) { return String(item.id) === String(highlightId); });
+        let row = recordRows.find(function (item) { return String(item.id) === String(highlightId); });
+
+        // With pagination, a deep-linked record may not be on the
+        // currently loaded page - fetch it directly rather than
+        // silently failing to open it.
+        if (!row) {
+          try {
+            const lookup = await currentContext.supabaseClient
+              .from("business_records")
+              .select("*")
+              .eq("id", highlightId)
+              .eq("tenant_id", currentContext.tenantId)
+              .maybeSingle();
+
+            if (lookup.data) {
+              row = lookup.data;
+              recordRows = [row].concat(recordRows);
+            }
+          } catch (error) {
+            console.warn("Highlight lookup failed:", error.message);
+          }
+        }
 
         if (row) {
           urlActionApplied = true;
@@ -733,24 +912,6 @@
       return UnganiClientShared.getValue(row, ["record_type", "type"], "General Record");
     }
 
-    function getBaseFilteredRows() {
-      const filterStatus = getStoredOrInput("filterStatus", "ungani_record_filter_status").toLowerCase();
-      const filterPriority = getStoredOrInput("filterPriority", "ungani_record_filter_priority").toLowerCase();
-      const search = getStoredOrInput("filterSearch", "ungani_record_filter_search").toLowerCase();
-
-      return recordRows.filter(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "open")).toLowerCase();
-        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
-        const haystack = JSON.stringify(row || {}).toLowerCase();
-
-        if (filterStatus && !status.includes(filterStatus)) return false;
-        if (filterPriority && !priority.includes(filterPriority)) return false;
-        if (search && !haystack.includes(search)) return false;
-
-        return true;
-      });
-    }
-
     function buildRecordCategories() {
       const knownTypes = businessPreset.recordTypes || [];
 
@@ -778,24 +939,29 @@
     }
 
     function getFilteredRows() {
-      const categories = buildRecordCategories();
-      const category = categories.find(function (item) { return item.key === activeRecordCategory; }) || categories[0];
-      return getBaseFilteredRows().filter(category.match);
+      return recordRows;
     }
 
-    function selectRecordCategory(key) {
+    async function selectRecordCategory(key) {
       activeRecordCategory = key;
+
+      const result = await loadRecordPage(true);
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load category: " + result.error);
+        return;
+      }
+
       renderRecordsPage();
     }
 
     function renderCategoryTiles() {
       const categories = buildRecordCategories();
-      const base = getBaseFilteredRows();
 
       return `
         <section class="category-tiles">
           ${categories.map(function (category) {
-            const count = base.filter(category.match).length;
+            const count = recordSummaryRows.filter(category.match).length;
             const active = category.key === activeRecordCategory ? " active" : "";
 
             return `
@@ -836,7 +1002,15 @@
       sessionStorage.removeItem("ungani_record_filter_priority");
       sessionStorage.removeItem("ungani_record_filter_search");
       activeRecordCategory = "all";
-      renderRecordsPage();
+
+      const statusEl = document.getElementById("filterStatus");
+      const priorityEl = document.getElementById("filterPriority");
+      const searchEl = document.getElementById("filterSearch");
+      if (statusEl) statusEl.value = "";
+      if (priorityEl) priorityEl.value = "";
+      if (searchEl) searchEl.value = "";
+
+      refreshRecordData();
       UnganiClientShared.showToast("Record filters reset ✓");
     }
 

@@ -50,6 +50,13 @@
     let activeItemCategory = "all";
     let urlActionApplied = false;
 
+    // See my-money.html for the full rationale.
+    const ITEM_PAGE_SIZE = 50;
+    let itemSummaryRows = [];
+    let itemPageOffset = 0;
+    let itemIsLoadingMore = false;
+    let itemSearchDebounceTimer = null;
+
     const LISTING_TYPES = ["sale", "rent", "lease", "project", "land", "commercial", "other"];
     const STATUS_OPTIONS = ["available", "reserved", "under negotiation", "sold", "rented", "maintenance", "inactive"];
 
@@ -94,8 +101,74 @@
       await loadItems();
     }
 
-    async function loadItems() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading properties and listings...");
+    const ITEM_SUMMARY_COLUMNS = "id, status, item_status, property_status, listing_type, item_type, type, " +
+      "project_name, total_units, units_sold, units_available, project_progress_percent, " +
+      "property_price, selling_price, cost_price";
+
+    function applyItemCommonFilters(query) {
+      query = query.eq("tenant_id", currentContext.tenantId);
+
+      // Both status and project are exact (case-insensitive) matches in the
+      // original client-side logic, not substrings - .ilike() with no "%"
+      // wildcards is PostgREST's exact case-insensitive match.
+      const filterStatus = document.getElementById("filterStatus") ? UnganiClientShared.value("filterStatus") : "";
+      if (filterStatus) {
+        query = query.ilike("status", UnganiClientShared.escapePostgrestFilterValue(filterStatus));
+      }
+
+      const filterProject = document.getElementById("filterProject") ? UnganiClientShared.value("filterProject") : "";
+      if (filterProject) {
+        query = query.ilike("project_name", UnganiClientShared.escapePostgrestFilterValue(filterProject));
+      }
+
+      const search = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").trim() : "";
+      if (search) {
+        query = query.or(UnganiClientShared.buildSearchOrFilter(["name", "property_location", "assigned_agent", "project_name", "notes"], search));
+      }
+
+      return query;
+    }
+
+    async function loadItemSummaryRows() {
+      let response;
+
+      try {
+        response = await applyItemCommonFilters(
+          currentContext.supabaseClient.from("business_items").select(ITEM_SUMMARY_COLUMNS)
+        ).order("created_at", { ascending: false });
+      } catch (error) {
+        return { error: error.message || "Network error. Please check your connection." };
+      }
+
+      if (response.error) {
+        return { error: response.error.message };
+      }
+
+      itemSummaryRows = response.data || [];
+      return { error: null };
+    }
+
+    function getItemCategoryFilteredIds() {
+      const category = ITEM_CATEGORIES.find(function (item) { return item.key === activeItemCategory; }) || ITEM_CATEGORIES[0];
+      return itemSummaryRows.filter(category.match).map(function (row) { return row.id; });
+    }
+
+    function itemHasMoreRows() {
+      return itemPageOffset < getItemCategoryFilteredIds().length;
+    }
+
+    async function loadItemPage(replace) {
+      if (replace) {
+        itemPageOffset = 0;
+      }
+
+      const allIds = getItemCategoryFilteredIds();
+      const pageIds = allIds.slice(itemPageOffset, itemPageOffset + ITEM_PAGE_SIZE);
+
+      if (!pageIds.length) {
+        if (replace) items = [];
+        return { error: null };
+      }
 
       let response;
 
@@ -103,26 +176,108 @@
         response = await currentContext.supabaseClient
           .from("business_items")
           .select("*")
-          .eq("tenant_id", currentContext.tenantId)
+          .in("id", pageIds)
           .order("created_at", { ascending: false });
       } catch (error) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load properties", error.message || "Network error. Please check your connection.");
-        return;
+        return { error: error.message || "Network error. Please check your connection." };
       }
 
       if (response.error) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load properties", response.error.message);
+        return { error: response.error.message };
+      }
+
+      const newRows = response.data || [];
+      items = replace ? newRows : items.concat(newRows);
+      itemPageOffset += pageIds.length;
+
+      return { error: null };
+    }
+
+    async function loadItems() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading properties and listings...");
+
+      const summaryResult = await loadItemSummaryRows();
+
+      if (summaryResult.error) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load properties", summaryResult.error);
         return;
       }
 
-      items = response.data || [];
+      const pageResult = await loadItemPage(true);
+
+      if (pageResult.error) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load properties", pageResult.error);
+        return;
+      }
+
       renderItemsPage();
+    }
+
+    async function refreshItemData() {
+      const focusedId = document.activeElement ? document.activeElement.id : null;
+
+      const summaryResult = await loadItemSummaryRows();
+
+      if (summaryResult.error) {
+        UnganiClientShared.showToast("Could not update properties: " + summaryResult.error);
+        return;
+      }
+
+      const pageResult = await loadItemPage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.showToast("Could not update properties: " + pageResult.error);
+        return;
+      }
+
+      renderItemsPage();
+
+      if (focusedId) {
+        const el = document.getElementById(focusedId);
+        if (el && typeof el.focus === "function") el.focus();
+      }
+    }
+
+    async function loadMoreItemRows() {
+      if (itemIsLoadingMore) return;
+      itemIsLoadingMore = true;
+
+      const btn = document.getElementById("itemLoadMoreBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Loading...";
+      }
+
+      const result = await loadItemPage(false);
+
+      itemIsLoadingMore = false;
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load more properties: " + result.error);
+        return;
+      }
+
+      renderItemsPage();
+    }
+
+    function onItemSearchInput() {
+      saveFilters();
+
+      if (itemSearchDebounceTimer) clearTimeout(itemSearchDebounceTimer);
+      itemSearchDebounceTimer = setTimeout(refreshItemData, 350);
+    }
+
+    function onItemFilterChange() {
+      saveFilters();
+      refreshItemData();
     }
 
     function renderItemsPage() {
       const filtered = filterItems();
-      const summary = calculateSummary(filtered);
-      const projects = calculateProjects(filtered);
+      const category = ITEM_CATEGORIES.find(function (item) { return item.key === activeItemCategory; }) || ITEM_CATEGORIES[0];
+      const summaryScopeRows = itemSummaryRows.filter(category.match);
+      const summary = calculateSummary(summaryScopeRows);
+      const projects = calculateProjects(summaryScopeRows);
 
       UnganiClientShared.setContent(`
         <style>
@@ -353,7 +508,7 @@
         ${renderCategoryTiles()}
 
         <section class="ungani-grid">
-          ${UnganiClientShared.metricCard(isRealEstate ? "Total Properties" : "Total Items", filtered.length, "Current records shown", "blue")}
+          ${UnganiClientShared.metricCard(isRealEstate ? "Total Properties" : "Total Items", summaryScopeRows.length, "Matching current filters", "blue")}
           ${UnganiClientShared.metricCard("Available", summary.available, "Ready for sale/rent/use", "green")}
           ${UnganiClientShared.metricCard("Reserved / Negotiation", summary.reservedNegotiation, "Needs follow-up", summary.reservedNegotiation > 0 ? "gold" : "blue")}
           ${UnganiClientShared.metricCard("Sold / Rented", summary.soldRented, "Closed or active rental", "green")}
@@ -381,12 +536,12 @@
           <div class="ungani-form-grid">
             <div>
               <label for="searchBox">Search</label>
-              <input id="searchBox" placeholder="Search property, project, location, agent..." oninput="saveFilters(); renderItemsPage();" />
+              <input id="searchBox" placeholder="Search property, project, location, agent..." oninput="onItemSearchInput();" />
             </div>
 
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveFilters(); renderItemsPage();">
+              <select id="filterStatus" onchange="onItemFilterChange();">
                 <option value="">All Statuses</option>
                 <option value="available">Available</option>
                 <option value="reserved">Reserved</option>
@@ -400,7 +555,7 @@
 
             <div>
               <label for="filterProject">Project</label>
-              <select id="filterProject" onchange="saveFilters(); renderItemsPage();">
+              <select id="filterProject" onchange="onItemFilterChange();">
                 <option value="">All Projects</option>
                 ${getProjectOptions()}
               </select>
@@ -412,13 +567,19 @@
           <div class="ungani-section-title">
             <div>
               <h3>${isRealEstate ? "Properties / Listings" : "Items / Assets"}</h3>
-              <p class="ungani-small">${filtered.length} record(s) shown.</p>
+              <p class="ungani-small">${filtered.length} of ${summaryScopeRows.length} record(s) shown.</p>
             </div>
 
             <button class="ungani-btn gold" onclick="openItemModal()">+ Add New</button>
           </div>
 
           ${renderPropertyGrid(filtered)}
+
+          ${itemHasMoreRows() ? `
+            <div class="ungani-button-row" style="justify-content:center; margin-top:14px;">
+              <button class="ungani-btn dark" id="itemLoadMoreBtn" onclick="loadMoreItemRows()">Load More</button>
+            </div>
+          ` : ""}
         </section>
 
         <p class="ungani-small">
@@ -430,7 +591,7 @@
       applyUrlActions();
     }
 
-    function applyUrlActions() {
+    async function applyUrlActions() {
       if (urlActionApplied) return;
 
       const params = new URLSearchParams(window.location.search);
@@ -438,7 +599,28 @@
       const action = params.get("action");
 
       if (highlightId) {
-        const row = items.find(function (item) { return String(item.id) === String(highlightId); });
+        let row = items.find(function (item) { return String(item.id) === String(highlightId); });
+
+        // With pagination, a deep-linked item may not be on the currently
+        // loaded page - fetch it directly rather than silently failing to
+        // open it.
+        if (!row) {
+          try {
+            const lookup = await currentContext.supabaseClient
+              .from("business_items")
+              .select("*")
+              .eq("id", highlightId)
+              .eq("tenant_id", currentContext.tenantId)
+              .maybeSingle();
+
+            if (lookup.data) {
+              row = lookup.data;
+              items = [row].concat(items);
+            }
+          } catch (error) {
+            console.warn("Highlight lookup failed:", error.message);
+          }
+        }
 
         if (row) {
           urlActionApplied = true;
@@ -815,41 +997,28 @@
       return String(UnganiClientShared.getValue(row, ["listing_type", "item_type", "type"], "")).toLowerCase();
     }
 
-    function baseFilterItems() {
-      const search = document.getElementById("searchBox") ? UnganiClientShared.value("searchBox").toLowerCase() : "";
-      const status = document.getElementById("filterStatus") ? UnganiClientShared.value("filterStatus").toLowerCase() : "";
-      const project = document.getElementById("filterProject") ? UnganiClientShared.value("filterProject").toLowerCase() : "";
-
-      return items.filter(function (row) {
-        const rowStatus = getStatus(row).toLowerCase();
-        const rowProject = String(UnganiClientShared.getValue(row, ["project_name"], "")).toLowerCase();
-        const haystack = JSON.stringify(row || {}).toLowerCase();
-
-        if (status && rowStatus !== status) return false;
-        if (project && rowProject !== project) return false;
-        if (search && !haystack.includes(search)) return false;
-
-        return true;
-      });
-    }
-
     function filterItems() {
-      const category = ITEM_CATEGORIES.find(function (item) { return item.key === activeItemCategory; }) || ITEM_CATEGORIES[0];
-      return baseFilterItems().filter(category.match);
+      return items;
     }
 
-    function selectItemCategory(key) {
+    async function selectItemCategory(key) {
       activeItemCategory = key;
+
+      const result = await loadItemPage(true);
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load category: " + result.error);
+        return;
+      }
+
       renderItemsPage();
     }
 
     function renderCategoryTiles() {
-      const base = baseFilterItems();
-
       return `
         <section class="category-tiles">
           ${ITEM_CATEGORIES.map(function (category) {
-            const count = base.filter(category.match).length;
+            const count = itemSummaryRows.filter(category.match).length;
             const active = category.key === activeItemCategory ? " active" : "";
 
             return `
@@ -1092,7 +1261,7 @@
     }
 
     function getProjectOptions() {
-      const projects = Array.from(new Set(items.map(function (row) {
+      const projects = Array.from(new Set(itemSummaryRows.map(function (row) {
         return UnganiClientShared.getValue(row, ["project_name"], "");
       }).filter(Boolean))).sort();
 
@@ -1118,7 +1287,15 @@
       sessionStorage.removeItem("ungani_items_status");
       sessionStorage.removeItem("ungani_items_project");
       activeItemCategory = "all";
-      renderItemsPage();
+
+      const searchEl = document.getElementById("searchBox");
+      const statusEl = document.getElementById("filterStatus");
+      const projectEl = document.getElementById("filterProject");
+      if (searchEl) searchEl.value = "";
+      if (statusEl) statusEl.value = "";
+      if (projectEl) projectEl.value = "";
+
+      refreshItemData();
       UnganiClientShared.showToast("Property filters reset ✓");
     }
 

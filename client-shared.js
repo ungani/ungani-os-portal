@@ -3256,6 +3256,29 @@
     return fallback === undefined ? "" : fallback;
   }
 
+  // PostgREST's or()/not() filter strings use "," to separate conditions
+  // and treat bare "(" / ")" / "%" / "*" as syntax. A raw user search term
+  // interpolated without escaping could break the filter string or, worse,
+  // inject additional conditions. Per PostgREST's documented syntax,
+  // wrapping the value in double quotes neutralizes commas/parentheses -
+  // backslash and any literal double-quote in the input must themselves
+  // be backslash-escaped first so the quoting itself can't be broken out of.
+  function escapePostgrestFilterValue(value) {
+    return String(value === null || value === undefined ? "" : value)
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"');
+  }
+
+  function buildSearchOrFilter(columns, term) {
+    const escaped = escapePostgrestFilterValue(term);
+
+    return columns
+      .map(function (column) {
+        return column + '.ilike."%' + escaped + '%"';
+      })
+      .join(",");
+  }
+
   function formatKES(value) {
     const amount = Number(value || 0);
 
@@ -3358,6 +3381,8 @@
       attr,
       value,
       getValue,
+      escapePostgrestFilterValue,
+      buildSearchOrFilter,
       formatKES,
       formatCurrency: formatKES,
       formatNumber,

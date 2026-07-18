@@ -58,6 +58,13 @@
     let lastStatusRows = [];
     let urlActionApplied = false;
 
+    // See my-money.html for the full rationale.
+    const PEOPLE_PAGE_SIZE = 50;
+    let peopleSummaryRows = [];
+    let peoplePageOffset = 0;
+    let peopleIsLoadingMore = false;
+    let peopleSearchDebounceTimer = null;
+
     const TILE_PALETTE = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#DB2777"];
 
     window.addEventListener("load", function () {
@@ -95,8 +102,65 @@
       await loadPeopleRows();
     }
 
-    async function loadPeopleRows() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading people records...");
+    const PEOPLE_SUMMARY_COLUMNS = "id, status, relationship_status, lead_status, person_type, type";
+
+    function applyPeopleCommonFilters(query) {
+      query = query.eq("tenant_id", currentContext.tenantId);
+
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_people_filter_status").toLowerCase();
+      if (filterStatus) {
+        query = query.ilike("status", "%" + UnganiClientShared.escapePostgrestFilterValue(filterStatus) + "%");
+      }
+
+      const search = getStoredOrInput("filterSearch", "ungani_people_filter_search").trim();
+      if (search) {
+        query = query.or(UnganiClientShared.buildSearchOrFilter(["full_name", "phone", "email", "company"], search));
+      }
+
+      return query;
+    }
+
+    async function loadPeopleSummaryRows() {
+      let response;
+
+      try {
+        response = await applyPeopleCommonFilters(
+          currentContext.supabaseClient.from("client_people").select(PEOPLE_SUMMARY_COLUMNS)
+        ).order("created_at", { ascending: false });
+      } catch (error) {
+        return { error: error.message || "Network error. Please check your connection." };
+      }
+
+      if (response.error) {
+        return { error: response.error.message };
+      }
+
+      peopleSummaryRows = response.data || [];
+      return { error: null };
+    }
+
+    function getPeopleCategoryFilteredIds() {
+      const categories = buildPersonCategories();
+      const category = categories.find(function (item) { return item.key === activePersonCategory; }) || categories[0];
+      return peopleSummaryRows.filter(category.match).map(function (row) { return row.id; });
+    }
+
+    function peopleHasMoreRows() {
+      return peoplePageOffset < getPeopleCategoryFilteredIds().length;
+    }
+
+    async function loadPeoplePage(replace) {
+      if (replace) {
+        peoplePageOffset = 0;
+      }
+
+      const allIds = getPeopleCategoryFilteredIds();
+      const pageIds = allIds.slice(peoplePageOffset, peoplePageOffset + PEOPLE_PAGE_SIZE);
+
+      if (!pageIds.length) {
+        if (replace) peopleRows = [];
+        return { error: null };
+      }
 
       let response;
 
@@ -104,29 +168,108 @@
         response = await currentContext.supabaseClient
           .from("client_people")
           .select("*")
-          .eq("tenant_id", currentContext.tenantId)
+          .in("id", pageIds)
           .order("created_at", { ascending: false });
       } catch (error) {
-        UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load people records", error.message || "Network error. Please check your connection.")
-        );
-        return;
+        return { error: error.message || "Network error. Please check your connection." };
       }
 
       if (response.error) {
+        return { error: response.error.message };
+      }
+
+      const newRows = response.data || [];
+      peopleRows = replace ? newRows : peopleRows.concat(newRows);
+      peoplePageOffset += pageIds.length;
+
+      return { error: null };
+    }
+
+    async function loadPeopleRows() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading people records...");
+
+      const summaryResult = await loadPeopleSummaryRows();
+
+      if (summaryResult.error) {
         UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load people records", response.error.message)
+          UnganiClientShared.errorCard("Could not load people records", summaryResult.error)
         );
         return;
       }
 
-      peopleRows = response.data || [];
+      const pageResult = await loadPeoplePage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load people records", pageResult.error)
+        );
+        return;
+      }
 
       if (isRealEstate || isHospitality) {
         await loadUnitOptions();
       }
 
       renderPeoplePage();
+    }
+
+    async function refreshPeopleData() {
+      const focusedId = document.activeElement ? document.activeElement.id : null;
+
+      const summaryResult = await loadPeopleSummaryRows();
+
+      if (summaryResult.error) {
+        UnganiClientShared.showToast("Could not update people: " + summaryResult.error);
+        return;
+      }
+
+      const pageResult = await loadPeoplePage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.showToast("Could not update people: " + pageResult.error);
+        return;
+      }
+
+      renderPeoplePage();
+
+      if (focusedId) {
+        const el = document.getElementById(focusedId);
+        if (el && typeof el.focus === "function") el.focus();
+      }
+    }
+
+    async function loadMorePeopleRows() {
+      if (peopleIsLoadingMore) return;
+      peopleIsLoadingMore = true;
+
+      const btn = document.getElementById("peopleLoadMoreBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Loading...";
+      }
+
+      const result = await loadPeoplePage(false);
+
+      peopleIsLoadingMore = false;
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load more people: " + result.error);
+        return;
+      }
+
+      renderPeoplePage();
+    }
+
+    function onPeopleSearchInput() {
+      savePeopleFilters();
+
+      if (peopleSearchDebounceTimer) clearTimeout(peopleSearchDebounceTimer);
+      peopleSearchDebounceTimer = setTimeout(refreshPeopleData, 350);
+    }
+
+    function onPeopleStatusChange() {
+      savePeopleFilters();
+      refreshPeopleData();
     }
 
     async function loadUnitOptions() {
@@ -146,9 +289,12 @@
 
     function renderPeoplePage() {
       const filteredRows = getFilteredRows();
-      const summary = calculatePeopleSummary(filteredRows);
-      const typeRows = buildTypeRows(filteredRows);
-      const statusRows = buildStatusRows(filteredRows);
+      const categories = buildPersonCategories();
+      const category = categories.find(function (item) { return item.key === activePersonCategory; }) || categories[0];
+      const summaryScopeRows = peopleSummaryRows.filter(category.match);
+      const summary = calculatePeopleSummary(summaryScopeRows);
+      const typeRows = buildTypeRows(summaryScopeRows);
+      const statusRows = buildStatusRows(summaryScopeRows);
 
       lastTypeRows = typeRows;
       lastStatusRows = statusRows;
@@ -499,7 +645,7 @@
           <div class="people-form-grid">
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="savePeopleFilters(); renderPeoplePage();">
+              <select id="filterStatus" onchange="onPeopleStatusChange();">
                 <option value="">All Status</option>
                 <option value="active">Active</option>
                 <option value="lead">Lead</option>
@@ -511,7 +657,7 @@
 
             <div>
               <label for="filterSearch">Search</label>
-              <input id="filterSearch" placeholder="Search name, phone, email, company, notes..." oninput="savePeopleFilters(); renderPeoplePage();" />
+              <input id="filterSearch" placeholder="Search name, phone, email, company, notes..." oninput="onPeopleSearchInput();" />
             </div>
           </div>
         </section>
@@ -528,7 +674,7 @@
           <div class="ungani-section-title">
             <div>
               <h3>People List</h3>
-              <p class="ungani-small">${filteredRows.length} people record(s) shown.</p>
+              <p class="ungani-small">${filteredRows.length} of ${summaryScopeRows.length} people record(s) shown.</p>
             </div>
 
             <div class="ungani-button-row" style="margin-top:0;">
@@ -538,6 +684,12 @@
           </div>
 
           ${renderPeopleList(filteredRows)}
+
+          ${peopleHasMoreRows() ? `
+            <div class="ungani-button-row" style="justify-content:center; margin-top:14px;">
+              <button class="ungani-btn dark" id="peopleLoadMoreBtn" onclick="loadMorePeopleRows()">Load More People</button>
+            </div>
+          ` : ""}
         </section>
 
         <p class="ungani-small">
@@ -634,12 +786,33 @@
       });
     }
 
-    function applyHighlightFromUrl() {
+    async function applyHighlightFromUrl() {
       if (!highlightApplied) {
         const highlightId = new URLSearchParams(window.location.search).get("highlight");
 
         if (highlightId) {
-          const row = peopleRows.find(function (item) { return String(item.id) === String(highlightId); });
+          let row = peopleRows.find(function (item) { return String(item.id) === String(highlightId); });
+
+          // With pagination, a deep-linked person may not be on the
+          // currently loaded page - fetch it directly rather than
+          // silently failing to open it.
+          if (!row) {
+            try {
+              const lookup = await currentContext.supabaseClient
+                .from("client_people")
+                .select("*")
+                .eq("id", highlightId)
+                .eq("tenant_id", currentContext.tenantId)
+                .maybeSingle();
+
+              if (lookup.data) {
+                row = lookup.data;
+                peopleRows = [row].concat(peopleRows);
+              }
+            } catch (error) {
+              console.warn("Highlight lookup failed:", error.message);
+            }
+          }
 
           if (row) {
             highlightApplied = true;
@@ -813,21 +986,6 @@
       return UnganiClientShared.getValue(row, ["person_type", "type"], "Contact");
     }
 
-    function getBaseFilteredRows() {
-      const filterStatus = getStoredOrInput("filterStatus", "ungani_people_filter_status").toLowerCase();
-      const search = getStoredOrInput("filterSearch", "ungani_people_filter_search").toLowerCase();
-
-      return peopleRows.filter(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase();
-        const haystack = JSON.stringify(row || {}).toLowerCase();
-
-        if (filterStatus && !status.includes(filterStatus)) return false;
-        if (search && !haystack.includes(search)) return false;
-
-        return true;
-      });
-    }
-
     function buildPersonCategories() {
       const knownTypes = businessPreset.peopleTypes || [];
 
@@ -855,24 +1013,29 @@
     }
 
     function getFilteredRows() {
-      const categories = buildPersonCategories();
-      const category = categories.find(function (item) { return item.key === activePersonCategory; }) || categories[0];
-      return getBaseFilteredRows().filter(category.match);
+      return peopleRows;
     }
 
-    function selectPersonCategory(key) {
+    async function selectPersonCategory(key) {
       activePersonCategory = key;
+
+      const result = await loadPeoplePage(true);
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load category: " + result.error);
+        return;
+      }
+
       renderPeoplePage();
     }
 
     function renderCategoryTiles() {
       const categories = buildPersonCategories();
-      const base = getBaseFilteredRows();
 
       return `
         <section class="category-tiles">
           ${categories.map(function (category) {
-            const count = base.filter(category.match).length;
+            const count = peopleSummaryRows.filter(category.match).length;
             const active = category.key === activePersonCategory ? " active" : "";
 
             return `
@@ -910,7 +1073,13 @@
       sessionStorage.removeItem("ungani_people_filter_status");
       sessionStorage.removeItem("ungani_people_filter_search");
       activePersonCategory = "all";
-      renderPeoplePage();
+
+      const statusEl = document.getElementById("filterStatus");
+      const searchEl = document.getElementById("filterSearch");
+      if (statusEl) statusEl.value = "";
+      if (searchEl) searchEl.value = "";
+
+      refreshPeopleData();
       UnganiClientShared.showToast("People filters reset ✓");
     }
 

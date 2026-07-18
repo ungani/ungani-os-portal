@@ -53,6 +53,13 @@
     let activeDocumentCategory = "all";
     let urlActionApplied = false;
 
+    // See my-money.html for the full rationale.
+    const DOCUMENT_PAGE_SIZE = 50;
+    let documentSummaryRows = [];
+    let documentPageOffset = 0;
+    let documentIsLoadingMore = false;
+    let documentSearchDebounceTimer = null;
+
     const TILE_PALETTE = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#DB2777"];
 
     window.addEventListener("load", function () {
@@ -125,8 +132,65 @@
       }
     }
 
-    async function loadDocumentRows() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading documents...");
+    const DOCUMENT_SUMMARY_COLUMNS = "id, status, document_type, type";
+
+    function applyDocumentCommonFilters(query) {
+      query = query.eq("tenant_id", currentContext.tenantId);
+
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_document_filter_status").toLowerCase();
+      if (filterStatus) {
+        query = query.ilike("status", "%" + UnganiClientShared.escapePostgrestFilterValue(filterStatus) + "%");
+      }
+
+      const search = getStoredOrInput("filterSearch", "ungani_document_filter_search").trim();
+      if (search) {
+        query = query.or(UnganiClientShared.buildSearchOrFilter(["document_title", "file_name", "folder_name", "notes"], search));
+      }
+
+      return query;
+    }
+
+    async function loadDocumentSummaryRows() {
+      let response;
+
+      try {
+        response = await applyDocumentCommonFilters(
+          currentContext.supabaseClient.from("documents").select(DOCUMENT_SUMMARY_COLUMNS)
+        ).order("created_at", { ascending: false });
+      } catch (error) {
+        return { error: error.message || "Network error. Please check your connection." };
+      }
+
+      if (response.error) {
+        return { error: response.error.message };
+      }
+
+      documentSummaryRows = response.data || [];
+      return { error: null };
+    }
+
+    function getDocumentCategoryFilteredIds() {
+      const categories = buildDocumentCategories();
+      const category = categories.find(function (item) { return item.key === activeDocumentCategory; }) || categories[0];
+      return documentSummaryRows.filter(category.match).map(function (row) { return row.id; });
+    }
+
+    function documentHasMoreRows() {
+      return documentPageOffset < getDocumentCategoryFilteredIds().length;
+    }
+
+    async function loadDocumentPage(replace) {
+      if (replace) {
+        documentPageOffset = 0;
+      }
+
+      const allIds = getDocumentCategoryFilteredIds();
+      const pageIds = allIds.slice(documentPageOffset, documentPageOffset + DOCUMENT_PAGE_SIZE);
+
+      if (!pageIds.length) {
+        if (replace) documentRows = [];
+        return { error: null };
+      }
 
       let response;
 
@@ -134,24 +198,104 @@
         response = await currentContext.supabaseClient
           .from("documents")
           .select("*")
-          .eq("tenant_id", currentContext.tenantId)
+          .in("id", pageIds)
           .order("created_at", { ascending: false });
       } catch (error) {
-        UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load documents", error.message || "Network error. Please check your connection.")
-        );
-        return;
+        return { error: error.message || "Network error. Please check your connection." };
       }
 
       if (response.error) {
+        return { error: response.error.message };
+      }
+
+      const newRows = response.data || [];
+      documentRows = replace ? newRows : documentRows.concat(newRows);
+      documentPageOffset += pageIds.length;
+
+      return { error: null };
+    }
+
+    async function loadDocumentRows() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading documents...");
+
+      const summaryResult = await loadDocumentSummaryRows();
+
+      if (summaryResult.error) {
         UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load documents", response.error.message)
+          UnganiClientShared.errorCard("Could not load documents", summaryResult.error)
         );
         return;
       }
 
-      documentRows = response.data || [];
+      const pageResult = await loadDocumentPage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load documents", pageResult.error)
+        );
+        return;
+      }
+
       renderDocumentsPage();
+    }
+
+    async function refreshDocumentData() {
+      const focusedId = document.activeElement ? document.activeElement.id : null;
+
+      const summaryResult = await loadDocumentSummaryRows();
+
+      if (summaryResult.error) {
+        UnganiClientShared.showToast("Could not update documents: " + summaryResult.error);
+        return;
+      }
+
+      const pageResult = await loadDocumentPage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.showToast("Could not update documents: " + pageResult.error);
+        return;
+      }
+
+      renderDocumentsPage();
+
+      if (focusedId) {
+        const el = document.getElementById(focusedId);
+        if (el && typeof el.focus === "function") el.focus();
+      }
+    }
+
+    async function loadMoreDocumentRows() {
+      if (documentIsLoadingMore) return;
+      documentIsLoadingMore = true;
+
+      const btn = document.getElementById("documentLoadMoreBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Loading...";
+      }
+
+      const result = await loadDocumentPage(false);
+
+      documentIsLoadingMore = false;
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load more documents: " + result.error);
+        return;
+      }
+
+      renderDocumentsPage();
+    }
+
+    function onDocumentSearchInput() {
+      saveDocumentFilters();
+
+      if (documentSearchDebounceTimer) clearTimeout(documentSearchDebounceTimer);
+      documentSearchDebounceTimer = setTimeout(refreshDocumentData, 350);
+    }
+
+    function onDocumentStatusChange() {
+      saveDocumentFilters();
+      refreshDocumentData();
     }
 
     let lastTypeRows = [];
@@ -159,9 +303,12 @@
 
     function renderDocumentsPage() {
       const filteredRows = getFilteredRows();
-      const summary = calculateDocumentSummary(filteredRows);
-      const typeRows = buildTypeRows(filteredRows);
-      const statusRows = buildStatusRows(filteredRows);
+      const categories = buildDocumentCategories();
+      const category = categories.find(function (item) { return item.key === activeDocumentCategory; }) || categories[0];
+      const summaryScopeRows = documentSummaryRows.filter(category.match);
+      const summary = calculateDocumentSummary(summaryScopeRows);
+      const typeRows = buildTypeRows(summaryScopeRows);
+      const statusRows = buildStatusRows(summaryScopeRows);
 
       lastTypeRows = typeRows;
       lastStatusRows = statusRows;
@@ -512,7 +659,7 @@
           <div class="document-form-grid">
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveDocumentFilters(); renderDocumentsPage();">
+              <select id="filterStatus" onchange="onDocumentStatusChange();">
                 <option value="">All Status</option>
                 <option value="active">Active</option>
                 <option value="pending">Pending</option>
@@ -525,7 +672,7 @@
 
             <div>
               <label for="filterSearch">Search</label>
-              <input id="filterSearch" placeholder="Search title, type, file name, folder, person..." oninput="saveDocumentFilters(); renderDocumentsPage();" />
+              <input id="filterSearch" placeholder="Search title, type, file name, folder, person..." oninput="onDocumentSearchInput();" />
             </div>
           </div>
         </section>
@@ -542,7 +689,7 @@
           <div class="ungani-section-title">
             <div>
               <h3>Document List</h3>
-              <p class="ungani-small">${filteredRows.length} document record(s) shown.</p>
+              <p class="ungani-small">${filteredRows.length} of ${summaryScopeRows.length} document record(s) shown.</p>
             </div>
 
             <div class="ungani-button-row" style="margin-top:0;">
@@ -552,6 +699,12 @@
           </div>
 
           ${renderDocumentList(filteredRows)}
+
+          ${documentHasMoreRows() ? `
+            <div class="ungani-button-row" style="justify-content:center; margin-top:14px;">
+              <button class="ungani-btn dark" id="documentLoadMoreBtn" onclick="loadMoreDocumentRows()">Load More Documents</button>
+            </div>
+          ` : ""}
         </section>
 
         <p class="ungani-small">
@@ -563,7 +716,7 @@
       applyUrlActions();
     }
 
-    function applyUrlActions() {
+    async function applyUrlActions() {
       if (urlActionApplied) return;
 
       const params = new URLSearchParams(window.location.search);
@@ -571,7 +724,28 @@
       const action = params.get("action");
 
       if (highlightId) {
-        const row = documentRows.find(function (item) { return String(item.id) === String(highlightId); });
+        let row = documentRows.find(function (item) { return String(item.id) === String(highlightId); });
+
+        // With pagination, a deep-linked document may not be on the
+        // currently loaded page - fetch it directly rather than
+        // silently failing to open it.
+        if (!row) {
+          try {
+            const lookup = await currentContext.supabaseClient
+              .from("documents")
+              .select("*")
+              .eq("id", highlightId)
+              .eq("tenant_id", currentContext.tenantId)
+              .maybeSingle();
+
+            if (lookup.data) {
+              row = lookup.data;
+              documentRows = [row].concat(documentRows);
+            }
+          } catch (error) {
+            console.warn("Highlight lookup failed:", error.message);
+          }
+        }
 
         if (row) {
           urlActionApplied = true;
@@ -807,21 +981,6 @@
       return UnganiClientShared.getValue(row, ["document_type", "type"], "Business Document");
     }
 
-    function getBaseFilteredRows() {
-      const filterStatus = getStoredOrInput("filterStatus", "ungani_document_filter_status").toLowerCase();
-      const search = getStoredOrInput("filterSearch", "ungani_document_filter_search").toLowerCase();
-
-      return documentRows.filter(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase();
-        const haystack = JSON.stringify(row || {}).toLowerCase();
-
-        if (filterStatus && !status.includes(filterStatus)) return false;
-        if (search && !haystack.includes(search)) return false;
-
-        return true;
-      });
-    }
-
     function buildDocumentCategories() {
       const knownTypes = businessPreset.documentTypes || [];
 
@@ -849,24 +1008,29 @@
     }
 
     function getFilteredRows() {
-      const categories = buildDocumentCategories();
-      const category = categories.find(function (item) { return item.key === activeDocumentCategory; }) || categories[0];
-      return getBaseFilteredRows().filter(category.match);
+      return documentRows;
     }
 
-    function selectDocumentCategory(key) {
+    async function selectDocumentCategory(key) {
       activeDocumentCategory = key;
+
+      const result = await loadDocumentPage(true);
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load category: " + result.error);
+        return;
+      }
+
       renderDocumentsPage();
     }
 
     function renderCategoryTiles() {
       const categories = buildDocumentCategories();
-      const base = getBaseFilteredRows();
 
       return `
         <section class="category-tiles">
           ${categories.map(function (category) {
-            const count = base.filter(category.match).length;
+            const count = documentSummaryRows.filter(category.match).length;
             const active = category.key === activeDocumentCategory ? " active" : "";
 
             return `
@@ -904,7 +1068,13 @@
       sessionStorage.removeItem("ungani_document_filter_status");
       sessionStorage.removeItem("ungani_document_filter_search");
       activeDocumentCategory = "all";
-      renderDocumentsPage();
+
+      const statusEl = document.getElementById("filterStatus");
+      const searchEl = document.getElementById("filterSearch");
+      if (statusEl) statusEl.value = "";
+      if (searchEl) searchEl.value = "";
+
+      refreshDocumentData();
       UnganiClientShared.showToast("Document filters reset ✓");
     }
 

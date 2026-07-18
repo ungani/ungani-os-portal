@@ -57,6 +57,17 @@
     let lastPriorityRows = [];
     let urlActionApplied = false;
 
+    // See my-money.html for the full rationale: taskSummaryRows covers every
+    // row in the current tenant/section/status/priority/search scope with
+    // only narrow columns (not select("*")) - drives KPI counts, charts,
+    // and category tile counts. taskRows is the wide (select *) data for
+    // just the current page's ids.
+    const TASK_PAGE_SIZE = 50;
+    let taskSummaryRows = [];
+    let taskPageOffset = 0;
+    let taskIsLoadingMore = false;
+    let taskSearchDebounceTimer = null;
+
     const TILE_PALETTE = ["#D4A63A", "#2563EB", "#16A34A", "#DC2626", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#DB2777"];
 
     window.addEventListener("load", function () {
@@ -93,8 +104,74 @@
       await loadTaskRows();
     }
 
-    async function loadTaskRows() {
-      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading tasks...");
+    const TASK_SUMMARY_COLUMNS = "id, status, priority, due_date, task_type, type";
+
+    function applyTaskCommonFilters(query) {
+      query = query.eq("tenant_id", currentContext.tenantId);
+
+      if (currentSectionFilter) {
+        query = query.eq("section_label", currentSectionFilter);
+      }
+
+      const filterStatus = getStoredOrInput("filterStatus", "ungani_task_filter_status").toLowerCase();
+      if (filterStatus) {
+        query = query.ilike("status", "%" + UnganiClientShared.escapePostgrestFilterValue(filterStatus) + "%");
+      }
+
+      const filterPriority = getStoredOrInput("filterPriority", "ungani_task_filter_priority").toLowerCase();
+      if (filterPriority) {
+        query = query.ilike("priority", "%" + UnganiClientShared.escapePostgrestFilterValue(filterPriority) + "%");
+      }
+
+      const search = getStoredOrInput("filterSearch", "ungani_task_filter_search").trim();
+      if (search) {
+        query = query.or(UnganiClientShared.buildSearchOrFilter(["task_title", "assigned_to", "notes"], search));
+      }
+
+      return query;
+    }
+
+    async function loadTaskSummaryRows() {
+      let response;
+
+      try {
+        response = await applyTaskCommonFilters(
+          currentContext.supabaseClient.from("tasks").select(TASK_SUMMARY_COLUMNS)
+        ).order("created_at", { ascending: false });
+      } catch (error) {
+        return { error: error.message || "Network error. Please check your connection." };
+      }
+
+      if (response.error) {
+        return { error: response.error.message };
+      }
+
+      taskSummaryRows = response.data || [];
+      return { error: null };
+    }
+
+    function getTaskCategoryFilteredIds() {
+      const categories = buildTaskCategories();
+      const category = categories.find(function (item) { return item.key === activeTaskCategory; }) || categories[0];
+      return taskSummaryRows.filter(category.match).map(function (row) { return row.id; });
+    }
+
+    function taskHasMoreRows() {
+      return taskPageOffset < getTaskCategoryFilteredIds().length;
+    }
+
+    async function loadTaskPage(replace) {
+      if (replace) {
+        taskPageOffset = 0;
+      }
+
+      const allIds = getTaskCategoryFilteredIds();
+      const pageIds = allIds.slice(taskPageOffset, taskPageOffset + TASK_PAGE_SIZE);
+
+      if (!pageIds.length) {
+        if (replace) taskRows = [];
+        return { error: null };
+      }
 
       let response;
 
@@ -102,31 +179,114 @@
         response = await currentContext.supabaseClient
           .from("tasks")
           .select("*")
-          .eq("tenant_id", currentContext.tenantId)
+          .in("id", pageIds)
           .order("created_at", { ascending: false });
       } catch (error) {
-        UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load tasks", error.message || "Network error. Please check your connection.")
-        );
-        return;
+        return { error: error.message || "Network error. Please check your connection." };
       }
 
       if (response.error) {
+        return { error: response.error.message };
+      }
+
+      const newRows = response.data || [];
+      taskRows = replace ? newRows : taskRows.concat(newRows);
+      taskPageOffset += pageIds.length;
+
+      return { error: null };
+    }
+
+    async function loadTaskRows() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading tasks...");
+
+      const summaryResult = await loadTaskSummaryRows();
+
+      if (summaryResult.error) {
         UnganiClientShared.setContent(
-          UnganiClientShared.errorCard("Could not load tasks", response.error.message)
+          UnganiClientShared.errorCard("Could not load tasks", summaryResult.error)
         );
         return;
       }
 
-      taskRows = response.data || [];
+      const pageResult = await loadTaskPage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.setContent(
+          UnganiClientShared.errorCard("Could not load tasks", pageResult.error)
+        );
+        return;
+      }
+
       renderTasksPage();
+    }
+
+    async function refreshTaskData() {
+      const focusedId = document.activeElement ? document.activeElement.id : null;
+
+      const summaryResult = await loadTaskSummaryRows();
+
+      if (summaryResult.error) {
+        UnganiClientShared.showToast("Could not update tasks: " + summaryResult.error);
+        return;
+      }
+
+      const pageResult = await loadTaskPage(true);
+
+      if (pageResult.error) {
+        UnganiClientShared.showToast("Could not update tasks: " + pageResult.error);
+        return;
+      }
+
+      renderTasksPage();
+
+      if (focusedId) {
+        const el = document.getElementById(focusedId);
+        if (el && typeof el.focus === "function") el.focus();
+      }
+    }
+
+    async function loadMoreTaskRows() {
+      if (taskIsLoadingMore) return;
+      taskIsLoadingMore = true;
+
+      const btn = document.getElementById("taskLoadMoreBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Loading...";
+      }
+
+      const result = await loadTaskPage(false);
+
+      taskIsLoadingMore = false;
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load more tasks: " + result.error);
+        return;
+      }
+
+      renderTasksPage();
+    }
+
+    function onTaskSearchInput() {
+      saveTaskFilters();
+
+      if (taskSearchDebounceTimer) clearTimeout(taskSearchDebounceTimer);
+      taskSearchDebounceTimer = setTimeout(refreshTaskData, 350);
+    }
+
+    function onTaskFilterChange() {
+      saveTaskFilters();
+      refreshTaskData();
     }
 
     function renderTasksPage() {
       const filteredRows = getFilteredRows();
-      const summary = calculateTaskSummary(filteredRows);
-      const statusRows = buildStatusRows(filteredRows);
-      const priorityRows = buildPriorityRows(filteredRows);
+      const categories = buildTaskCategories();
+      const category = categories.find(function (item) { return item.key === activeTaskCategory; }) || categories[0];
+      const summaryScopeRows = taskSummaryRows.filter(category.match);
+      const summary = calculateTaskSummary(summaryScopeRows);
+      const statusRows = buildStatusRows(summaryScopeRows);
+      const priorityRows = buildPriorityRows(summaryScopeRows);
 
       lastStatusRows = statusRows;
       lastPriorityRows = priorityRows;
@@ -479,7 +639,7 @@
           <div class="task-form-grid">
             <div>
               <label for="filterStatus">Status</label>
-              <select id="filterStatus" onchange="saveTaskFilters(); renderTasksPage();">
+              <select id="filterStatus" onchange="onTaskFilterChange();">
                 <option value="">All Status</option>
                 <option value="pending">Pending</option>
                 <option value="in progress">In Progress</option>
@@ -490,7 +650,7 @@
 
             <div>
               <label for="filterPriority">Priority</label>
-              <select id="filterPriority" onchange="saveTaskFilters(); renderTasksPage();">
+              <select id="filterPriority" onchange="onTaskFilterChange();">
                 <option value="">All Priority</option>
                 <option value="low">Low</option>
                 <option value="normal">Normal</option>
@@ -501,7 +661,7 @@
 
             <div>
               <label for="filterSearch">Search</label>
-              <input id="filterSearch" placeholder="Search task, type, assigned person..." oninput="saveTaskFilters(); renderTasksPage();" />
+              <input id="filterSearch" placeholder="Search task, type, assigned person..." oninput="onTaskSearchInput();" />
             </div>
           </div>
         </section>
@@ -518,7 +678,7 @@
           <div class="ungani-section-title">
             <div>
               <h3>Task List</h3>
-              <p class="ungani-small">${filteredRows.length} task(s) shown.</p>
+              <p class="ungani-small">${filteredRows.length} of ${summaryScopeRows.length} task(s) shown.</p>
             </div>
 
             <div class="ungani-button-row" style="margin-top:0;">
@@ -528,6 +688,12 @@
           </div>
 
           ${renderTaskList(filteredRows)}
+
+          ${taskHasMoreRows() ? `
+            <div class="ungani-button-row" style="justify-content:center; margin-top:14px;">
+              <button class="ungani-btn dark" id="taskLoadMoreBtn" onclick="loadMoreTaskRows()">Load More Tasks</button>
+            </div>
+          ` : ""}
         </section>
 
         <p class="ungani-small">
@@ -624,12 +790,33 @@
       });
     }
 
-    function applyHighlightFromUrl() {
+    async function applyHighlightFromUrl() {
       if (!highlightApplied) {
         const highlightId = new URLSearchParams(window.location.search).get("highlight");
 
         if (highlightId) {
-          const row = taskRows.find(function (item) { return String(item.id) === String(highlightId); });
+          let row = taskRows.find(function (item) { return String(item.id) === String(highlightId); });
+
+          // With pagination, a deep-linked task may not be on the
+          // currently loaded page - fetch it directly rather than
+          // silently failing to open it.
+          if (!row) {
+            try {
+              const lookup = await currentContext.supabaseClient
+                .from("tasks")
+                .select("*")
+                .eq("id", highlightId)
+                .eq("tenant_id", currentContext.tenantId)
+                .maybeSingle();
+
+              if (lookup.data) {
+                row = lookup.data;
+                taskRows = [row].concat(taskRows);
+              }
+            } catch (error) {
+              console.warn("Highlight lookup failed:", error.message);
+            }
+          }
 
           if (row) {
             highlightApplied = true;
@@ -806,25 +993,6 @@
       return UnganiClientShared.getValue(row, ["task_type", "type"], "General Task");
     }
 
-    function getBaseFilteredRows() {
-      const filterStatus = getStoredOrInput("filterStatus", "ungani_task_filter_status").toLowerCase();
-      const filterPriority = getStoredOrInput("filterPriority", "ungani_task_filter_priority").toLowerCase();
-      const search = getStoredOrInput("filterSearch", "ungani_task_filter_search").toLowerCase();
-
-      return taskRows.filter(function (row) {
-        const status = String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase();
-        const priority = String(UnganiClientShared.getValue(row, ["priority"], "normal")).toLowerCase();
-        const haystack = JSON.stringify(row || {}).toLowerCase();
-
-        if (currentSectionFilter && UnganiClientShared.getValue(row, ["section_label"], "") !== currentSectionFilter) return false;
-        if (filterStatus && !status.includes(filterStatus)) return false;
-        if (filterPriority && !priority.includes(filterPriority)) return false;
-        if (search && !haystack.includes(search)) return false;
-
-        return true;
-      });
-    }
-
     function buildTaskCategories() {
       const knownTypes = businessPreset.taskTypes || [];
 
@@ -852,24 +1020,29 @@
     }
 
     function getFilteredRows() {
-      const categories = buildTaskCategories();
-      const category = categories.find(function (item) { return item.key === activeTaskCategory; }) || categories[0];
-      return getBaseFilteredRows().filter(category.match);
+      return taskRows;
     }
 
-    function selectTaskCategory(key) {
+    async function selectTaskCategory(key) {
       activeTaskCategory = key;
+
+      const result = await loadTaskPage(true);
+
+      if (result.error) {
+        UnganiClientShared.showToast("Could not load category: " + result.error);
+        return;
+      }
+
       renderTasksPage();
     }
 
     function renderCategoryTiles() {
       const categories = buildTaskCategories();
-      const base = getBaseFilteredRows();
 
       return `
         <section class="category-tiles">
           ${categories.map(function (category) {
-            const count = base.filter(category.match).length;
+            const count = taskSummaryRows.filter(category.match).length;
             const active = category.key === activeTaskCategory ? " active" : "";
 
             return `
@@ -910,7 +1083,15 @@
       sessionStorage.removeItem("ungani_task_filter_priority");
       sessionStorage.removeItem("ungani_task_filter_search");
       activeTaskCategory = "all";
-      renderTasksPage();
+
+      const statusEl = document.getElementById("filterStatus");
+      const priorityEl = document.getElementById("filterPriority");
+      const searchEl = document.getElementById("filterSearch");
+      if (statusEl) statusEl.value = "";
+      if (priorityEl) priorityEl.value = "";
+      if (searchEl) searchEl.value = "";
+
+      refreshTaskData();
       UnganiClientShared.showToast("Task filters reset ✓");
     }
 
