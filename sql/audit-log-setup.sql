@@ -50,6 +50,17 @@ create policy "Admins can read audit log"
   to authenticated
   using (is_ungani_admin());
 
+-- Added for the client-facing Security & Data page (my-security.html):
+-- lets a signed-in user read their OWN activity (their logins, logouts,
+-- deletions, permission changes) - never other users' or other tenants'
+-- rows. Narrow and additive; the admin policy above is unchanged.
+drop policy if exists "Users can read their own audit activity" on public.ungani_audit_log;
+create policy "Users can read their own audit activity"
+  on public.ungani_audit_log
+  for select
+  to authenticated
+  using (actor_user_id = auth.uid());
+
 -- Deliberately no insert/update/delete policies for anon/authenticated -
 -- the service-role key used by /api/log-audit-event bypasses RLS entirely,
 -- and everyone else should be denied by default.

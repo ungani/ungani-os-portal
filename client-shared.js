@@ -1894,7 +1894,8 @@
           ["reports", "reports.html", "📑", "Reports"],
           ["print-report", "print-report.html", "🖨️", "Print Report"],
           ["profile", "my-profile.html", "🏢", "Business Profile"],
-          ["account", "account.html", "⚙️", "Account Settings"]
+          ["account", "account.html", "⚙️", "Account Settings"],
+          ["security", "my-security.html", "🔐", "Security & Data"]
         ]
       }
     );

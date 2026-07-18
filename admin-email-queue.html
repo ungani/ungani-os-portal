@@ -603,6 +603,13 @@
         </div>
       </div>
 
+      <div class="filters" style="margin-top:14px;">
+        <button class="btn-gold" type="button" id="sendPendingBtn" onclick="sendPendingEmailsNow()">Send Pending Now</button>
+        <span style="color:var(--muted, #6b7280); font-size:13px;">
+          Also runs automatically every 15 minutes. This button processes up to 15 pending/retry emails immediately.
+        </span>
+      </div>
+
       <div id="messageBox" class="message"></div>
     </section>
 
@@ -991,6 +998,51 @@
         showMessage("Email body copied.", "success");
       } catch (error) {
         showMessage("Unable to copy email body. " + getErrorMessage(error), "error");
+      }
+    }
+
+    async function sendPendingEmailsNow() {
+      const btn = document.getElementById("sendPendingBtn");
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Sending...";
+
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+
+        if (!token) {
+          showMessage("Could not verify your admin session. Please refresh and try again.", "error");
+          return;
+        }
+
+        const response = await fetch("/api/send-email-queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ limit: 15 })
+        });
+
+        const result = await response.json().catch(() => null);
+
+        if (!response.ok || !result?.ok) {
+          showMessage("Send failed: " + (result?.message || response.statusText || "Unknown error"), "error");
+          return;
+        }
+
+        const sentCount = (result.results || []).filter(r => r.ok).length;
+        const failedCount = (result.results || []).filter(r => !r.ok).length;
+
+        showMessage(
+          `Processed ${result.processed} email(s): ${sentCount} sent, ${failedCount} failed.`,
+          failedCount > 0 && sentCount === 0 ? "error" : "success"
+        );
+
+        await loadEmails();
+      } catch (error) {
+        showMessage("Send failed: " + error.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
       }
     }
 
