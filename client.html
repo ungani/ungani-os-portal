@@ -5666,19 +5666,38 @@
       `;
     }
 
-    function renderRetailDashboard(scopedData, scopeLabel) {
-      const data = scopedData || dashboardData;
-      const isScoped = !!scopeLabel;
+    // Pharmacy/Agrovet/Cosmetics (expiry-tracked) and Electronics/Mobile
+    // Phones (warranty-tracked) each have a real operational concern the
+    // other retail sections don't - grouped the same way Phase 2's item
+    // field-sets already group them - built on the expiry_date/
+    // warranty_expiry custom_fields that form now actually captures.
+    // Everything else falls to the generic stock/sales content that
+    // already existed.
+    const RETAIL_DATE_WARNING_DAYS = 30;
 
-      const today = new Date();
-      const todayStr = today.toISOString().slice(0, 10);
-      const monthKey = todayStr.slice(0, 7);
+    function getItemCustomDate(item, key) {
+      const customFields = getValue(item, ["custom_fields"], {}) || {};
+      return customFields[key] ? String(customFields[key]).slice(0, 10) : "";
+    }
 
-      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+    function isItemExpired(item, todayStr) {
+      const expiry = getItemCustomDate(item, "expiry_date");
+      return !!expiry && expiry < todayStr;
+    }
 
-      const salesThisMonth = sumRetailSales(data.transactions, monthKey);
-      const salesLastMonth = sumRetailSales(data.transactions, lastMonthKey);
+    function isItemExpiringSoon(item, todayStr, warningDateStr) {
+      const expiry = getItemCustomDate(item, "expiry_date");
+      return !!expiry && expiry >= todayStr && expiry <= warningDateStr;
+    }
+
+    function isWarrantyExpiringSoon(item, todayStr, warningDateStr) {
+      const expiry = getItemCustomDate(item, "warranty_expiry");
+      return !!expiry && expiry >= todayStr && expiry <= warningDateStr;
+    }
+
+    function buildGenericRetailSectionContent(data, ctx) {
+      const salesThisMonth = sumRetailSales(data.transactions, ctx.monthKey);
+      const salesLastMonth = sumRetailSales(data.transactions, ctx.lastMonthKey);
       const salesDelta = salesThisMonth - salesLastMonth;
 
       const outOfStockItems = (data.items || []).filter(isOutOfStockItem);
@@ -5687,12 +5706,10 @@
 
       const overdueSupplierPayments = (data.transactions || []).filter(function (row) {
         if (!isSupplierPaymentTransaction(row)) return false;
-
         const status = statusText(row);
         if (!status.includes("pending")) return false;
-
         const date = String(getValue(row, ["transaction_date", "created_at"], "")).slice(0, 10);
-        return date && date < todayStr;
+        return date && date < ctx.todayStr;
       }).sort(function (a, b) {
         return String(getValue(a, ["transaction_date", "created_at"], "")).localeCompare(String(getValue(b, ["transaction_date", "created_at"], "")));
       });
@@ -5722,131 +5739,408 @@
       });
 
       const salesTrendMonths = calculateRetailSalesTrend(data.transactions);
-      const hasAnySalesHistory = salesTrendMonths.some(function (m) { return m.value > 0; });
       const restockTrend = buildMonthlyTrend(data.tasks, ["created_at"], function (task) {
         return isRestockOrSupplierTask(getValue(task, ["task_type", "type"], ""));
       });
-      const calendarPreview = buildRetailCalendarPreview(today, data);
-      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
 
-      const sectionParam = isScoped ? "?section=" + encodeURIComponent(scopeLabel) : "";
-      const moneyHref = "my-money.html" + sectionParam;
-      const itemsHref = "my-items.html" + sectionParam;
-      const tasksHref = "my-tasks.html" + sectionParam;
-      const peopleHref = "my-people.html" + sectionParam;
-
-      const mostRecentRecord = findMostRecentRecord(data);
       const greetingMessages = [];
+      if (outOfStockItems.length > 0) greetingMessages.push({ text: outOfStockItems.length === 1 ? "1 item is out of stock" : outOfStockItems.length + " items are out of stock", href: ctx.itemsHref });
+      if (lowStockItems.length > 0) greetingMessages.push({ text: lowStockItems.length === 1 ? "1 item is running low on stock" : lowStockItems.length + " items are running low on stock", href: ctx.itemsHref });
+      if (overdueSupplierPayments.length > 0) greetingMessages.push({ text: overdueSupplierPayments.length === 1 ? "1 supplier payment is overdue" : overdueSupplierPayments.length + " supplier payments are overdue", href: ctx.moneyHref });
+
+      return {
+        subtitle: "Out-of-stock and low-stock items, overdue supplier payments, and open restock/customer tasks for this section.",
+        kpisHtml: [
+          kpiCard("Sales (This Month)", compactMoney(salesThisMonth), rentTrendSubtitle(salesDelta, salesLastMonth, "sales"), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626", ctx.moneyHref, countSpan(salesThisMonth, "money"), sparklineSvg(salesTrendMonths.map(function (m) { return m.value; }), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626"), "💰"),
+          kpiCard("Low / Out of Stock", needsRestockCount, outOfStockItems.length + " out of stock · " + lowStockItems.length + " low", needsRestockCount > 0 ? "#DC2626" : "#16A34A", ctx.itemsHref, countSpan(needsRestockCount, "plain"), null, "📦"),
+          kpiCard("Outstanding Supplier Payments", compactMoney(outstandingSupplierTotal), overdueSupplierPayments.length + " overdue payment(s)", outstandingSupplierTotal > 0 ? "#DC2626" : "#16A34A", ctx.moneyHref, countSpan(outstandingSupplierTotal, "money"), null, "🧾"),
+          kpiCard("Open Restock / Supplier Tasks", restockTasks.length, "Requests needing action", restockTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(restockTasks.length, "plain"), sparklineSvg(restockTrend, restockTasks.length > 0 ? "#DC2626" : "#16A34A"), "🚚")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Out-of-stock and low-stock items, overdue supplier payments, and open restock/customer tasks — in priority order.",
+        attentionHtml: renderRetailAttentionList(outOfStockItems, lowStockItems, overdueSupplierPayments, restockTasks, customerTasks),
+        quickActionsHtml: [
+          quickAction("📦", "Add Product", "List a new product or stock item", ctx.itemsHref, "#D4A63A"),
+          quickAction("💵", "New Sale", "Record a customer sale", ctx.moneyHref, "#16A34A"),
+          quickAction("🚚", "Receive Stock", "Update stock after a delivery", ctx.itemsHref, "#2563EB"),
+          quickAction("🧑", "Add Supplier", "Register a new supplier", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Sales — Last 6 Months",
+        trendSubtitle: "Monthly sales trend from your money records.",
+        trendMonths: salesTrendMonths,
+        trendLabel: "Sales",
+        trendColor: "#D4A63A",
+        trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first sale and this chart will start tracking your monthly sales trend.", actionLabel: "New Sale", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("📦", "Out of Stock", outOfStockItems.length, "item(s)", ctx.itemsHref),
+          todayItem("🧾", "Supplier Payments", overdueSupplierPayments.length, "overdue", ctx.moneyHref),
+          todayItem("🧑", "Customer Follow-ups", customerTasks.length, "open", ctx.tasksHref)
+        ].join(""),
+        greetingMessages: greetingMessages
+      };
+    }
+
+    function buildExpiryTrackedRetailSectionContent(data, ctx) {
+      const salesThisMonth = sumRetailSales(data.transactions, ctx.monthKey);
+      const salesLastMonth = sumRetailSales(data.transactions, ctx.lastMonthKey);
+      const salesDelta = salesThisMonth - salesLastMonth;
+      const salesTrendMonths = calculateRetailSalesTrend(data.transactions);
+
+      const warningDateStr = new Date(new Date(ctx.todayStr).getTime() + RETAIL_DATE_WARNING_DAYS * 86400000).toISOString().slice(0, 10);
+
+      const expiredItems = (data.items || []).filter(function (item) { return isItemExpired(item, ctx.todayStr); });
+      const expiringSoonItems = (data.items || []).filter(function (item) { return isItemExpiringSoon(item, ctx.todayStr, warningDateStr); });
+      const outOfStockItems = (data.items || []).filter(isOutOfStockItem);
+      const lowStockItems = (data.items || []).filter(isLowStockItem);
+
+      const restockTasks = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isRestockOrSupplierTask(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const attentionGroups = [];
+
+      if (expiredItems.length > 0) {
+        attentionGroups.push({
+          title: "Expired Stock",
+          rows: expiredItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Product");
+            return attentionRow("⛔", name, "Expired " + formatDate(getItemCustomDate(item, "expiry_date")), "Expired", "red", ctx.itemsHref + "?highlight=" + item.id, null, "expired:" + item.id);
+          })
+        });
+      }
+
+      if (expiringSoonItems.length > 0) {
+        attentionGroups.push({
+          title: "Expiring Soon (Next " + RETAIL_DATE_WARNING_DAYS + " Days)",
+          rows: expiringSoonItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Product");
+            return attentionRow("⏰", name, "Expires " + formatDate(getItemCustomDate(item, "expiry_date")), "Expiring", "gold", ctx.itemsHref + "?highlight=" + item.id, null, "expiring:" + item.id);
+          })
+        });
+      }
 
       if (outOfStockItems.length > 0) {
-        greetingMessages.push({ text: outOfStockItems.length === 1 ? "1 item is out of stock" : outOfStockItems.length + " items are out of stock", href: itemsHref });
+        attentionGroups.push({
+          title: "Out of Stock Items",
+          rows: outOfStockItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Product");
+            return attentionRow("📦", name, "Out of stock", "Out of Stock", "red", ctx.itemsHref + "?highlight=" + item.id, null, "stock:" + item.id);
+          })
+        });
       }
+
       if (lowStockItems.length > 0) {
-        greetingMessages.push({ text: lowStockItems.length === 1 ? "1 item is running low on stock" : lowStockItems.length + " items are running low on stock", href: itemsHref });
+        attentionGroups.push({
+          title: "Low Stock Items",
+          rows: lowStockItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Product");
+            const qty = getStockQuantity(item);
+            return attentionRow("📉", name, qty + " unit(s) left", "Low Stock", "orange", ctx.itemsHref + "?highlight=" + item.id, null, "low-stock:" + item.id);
+          })
+        });
       }
+
+      if (restockTasks.length > 0) {
+        attentionGroups.push({
+          title: "Open Restock / Supplier Tasks",
+          rows: restockTasks.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Restock Task");
+            const due = getValue(task, ["due_date", "created_at"], "");
+            return attentionRow("🚚", title, due ? "Due " + formatDate(due) : "No due date set", "Open", "blue", ctx.tasksHref + "?highlight=" + task.id, null, null);
+          })
+        });
+      }
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No expired or expiring stock, stock issues, or restocks need attention right now.</p></div>`
+        : attentionGroups.map(function (g) {
+            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+          }).join("");
+
+      const greetingMessages = [];
+      if (expiredItems.length > 0) greetingMessages.push({ text: expiredItems.length === 1 ? "1 item has expired" : expiredItems.length + " items have expired", href: ctx.itemsHref });
+      if (expiringSoonItems.length > 0) greetingMessages.push({ text: expiringSoonItems.length === 1 ? "1 item expires within 30 days" : expiringSoonItems.length + " items expire within 30 days", href: ctx.itemsHref });
+      if (outOfStockItems.length > 0) greetingMessages.push({ text: outOfStockItems.length === 1 ? "1 item is out of stock" : outOfStockItems.length + " items are out of stock", href: ctx.itemsHref });
+
+      return {
+        subtitle: "Expired and expiring stock, low/out of stock items, and open restocks for this section.",
+        kpisHtml: [
+          kpiCard("Sales (This Month)", compactMoney(salesThisMonth), rentTrendSubtitle(salesDelta, salesLastMonth, "sales"), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626", ctx.moneyHref, countSpan(salesThisMonth, "money"), sparklineSvg(salesTrendMonths.map(function (m) { return m.value; }), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626"), "💰"),
+          kpiCard("Expired Stock", expiredItems.length, "Items past expiry date", expiredItems.length > 0 ? "#DC2626" : "#16A34A", ctx.itemsHref, countSpan(expiredItems.length, "plain"), null, "⛔"),
+          kpiCard("Expiring Soon", expiringSoonItems.length, "Within " + RETAIL_DATE_WARNING_DAYS + " days", expiringSoonItems.length > 0 ? "#C77700" : "#16A34A", ctx.itemsHref, countSpan(expiringSoonItems.length, "plain"), null, "⏰"),
+          kpiCard("Low / Out of Stock", outOfStockItems.length + lowStockItems.length, outOfStockItems.length + " out of stock · " + lowStockItems.length + " low", (outOfStockItems.length + lowStockItems.length) > 0 ? "#DC2626" : "#16A34A", ctx.itemsHref, countSpan(outOfStockItems.length + lowStockItems.length, "plain"), null, "📦")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Expired stock, stock expiring within " + RETAIL_DATE_WARNING_DAYS + " days, low/out of stock items, and open restocks — in priority order.",
+        attentionHtml: attentionHtml,
+        quickActionsHtml: [
+          quickAction("📦", "Add Product", "List a new product with expiry tracking", ctx.itemsHref, "#D4A63A"),
+          quickAction("💵", "New Sale", "Record a customer sale", ctx.moneyHref, "#16A34A"),
+          quickAction("🚚", "Receive Stock", "Update stock after a delivery", ctx.itemsHref, "#2563EB"),
+          quickAction("📅", "Log Expiry Check", "Schedule a stock expiry check", ctx.calendarHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Sales — Last 6 Months",
+        trendSubtitle: "Monthly sales trend from your money records.",
+        trendMonths: salesTrendMonths,
+        trendLabel: "Sales",
+        trendColor: "#D4A63A",
+        trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first sale and this chart will start tracking your monthly sales trend.", actionLabel: "New Sale", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("⛔", "Expired Stock", expiredItems.length, "item(s)", ctx.itemsHref),
+          todayItem("⏰", "Expiring Soon", expiringSoonItems.length, "within " + RETAIL_DATE_WARNING_DAYS + " days", ctx.itemsHref),
+          todayItem("📦", "Low / Out of Stock", outOfStockItems.length + lowStockItems.length, "item(s)", ctx.itemsHref)
+        ].join(""),
+        greetingMessages: greetingMessages
+      };
+    }
+
+    function buildWarrantyTrackedRetailSectionContent(data, ctx) {
+      const salesThisMonth = sumRetailSales(data.transactions, ctx.monthKey);
+      const salesLastMonth = sumRetailSales(data.transactions, ctx.lastMonthKey);
+      const salesDelta = salesThisMonth - salesLastMonth;
+      const salesTrendMonths = calculateRetailSalesTrend(data.transactions);
+
+      const warningDateStr = new Date(new Date(ctx.todayStr).getTime() + RETAIL_DATE_WARNING_DAYS * 86400000).toISOString().slice(0, 10);
+
+      const warrantyExpiringSoon = (data.items || []).filter(function (item) { return isWarrantyExpiringSoon(item, ctx.todayStr, warningDateStr); });
+      const outOfStockItems = (data.items || []).filter(isOutOfStockItem);
+      const lowStockItems = (data.items || []).filter(isLowStockItem);
+
+      const overdueSupplierPayments = (data.transactions || []).filter(function (row) {
+        if (!isSupplierPaymentTransaction(row)) return false;
+        const status = statusText(row);
+        if (!status.includes("pending")) return false;
+        const date = String(getValue(row, ["transaction_date", "created_at"], "")).slice(0, 10);
+        return date && date < ctx.todayStr;
+      }).sort(function (a, b) {
+        return String(getValue(a, ["transaction_date", "created_at"], "")).localeCompare(String(getValue(b, ["transaction_date", "created_at"], "")));
+      });
+
+      const attentionGroups = [];
+
+      if (warrantyExpiringSoon.length > 0) {
+        attentionGroups.push({
+          title: "Warranties Expiring Soon (Next " + RETAIL_DATE_WARNING_DAYS + " Days)",
+          rows: warrantyExpiringSoon.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Product");
+            return attentionRow("🛡️", name, "Warranty ends " + formatDate(getItemCustomDate(item, "warranty_expiry")), "Expiring", "gold", ctx.itemsHref + "?highlight=" + item.id, null, "warranty:" + item.id);
+          })
+        });
+      }
+
+      if (outOfStockItems.length > 0) {
+        attentionGroups.push({
+          title: "Out of Stock Items",
+          rows: outOfStockItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Product");
+            return attentionRow("📦", name, "Out of stock", "Out of Stock", "red", ctx.itemsHref + "?highlight=" + item.id, null, "stock:" + item.id);
+          })
+        });
+      }
+
+      if (lowStockItems.length > 0) {
+        attentionGroups.push({
+          title: "Low Stock Items",
+          rows: lowStockItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Product");
+            const qty = getStockQuantity(item);
+            return attentionRow("📉", name, qty + " unit(s) left", "Low Stock", "orange", ctx.itemsHref + "?highlight=" + item.id, null, "low-stock:" + item.id);
+          })
+        });
+      }
+
       if (overdueSupplierPayments.length > 0) {
-        greetingMessages.push({ text: overdueSupplierPayments.length === 1 ? "1 supplier payment is overdue" : overdueSupplierPayments.length + " supplier payments are overdue", href: moneyHref });
+        attentionGroups.push({
+          title: "Overdue Supplier Payments",
+          rows: overdueSupplierPayments.map(function (row) {
+            const supplier = getValue(row, ["notes", "description"], "Supplier Payment");
+            const amount = Number(getValue(row, ["amount"], 0) || 0);
+            return attentionRow("🧾", supplier, compactMoney(amount) + " overdue", "Overdue", "red", ctx.moneyHref + "?highlight=" + row.id, null, "supplier:" + row.id);
+          })
+        });
       }
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No warranties expiring, stock issues, or supplier payments need attention right now.</p></div>`
+        : attentionGroups.map(function (g) {
+            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+          }).join("");
+
+      const greetingMessages = [];
+      if (warrantyExpiringSoon.length > 0) greetingMessages.push({ text: warrantyExpiringSoon.length === 1 ? "1 warranty expires within 30 days" : warrantyExpiringSoon.length + " warranties expire within 30 days", href: ctx.itemsHref });
+      if (outOfStockItems.length > 0) greetingMessages.push({ text: outOfStockItems.length === 1 ? "1 item is out of stock" : outOfStockItems.length + " items are out of stock", href: ctx.itemsHref });
+
+      return {
+        subtitle: "Warranties expiring soon, low/out of stock items, and overdue supplier payments for this section.",
+        kpisHtml: [
+          kpiCard("Sales (This Month)", compactMoney(salesThisMonth), rentTrendSubtitle(salesDelta, salesLastMonth, "sales"), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626", ctx.moneyHref, countSpan(salesThisMonth, "money"), sparklineSvg(salesTrendMonths.map(function (m) { return m.value; }), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626"), "💰"),
+          kpiCard("Warranties Expiring Soon", warrantyExpiringSoon.length, "Within " + RETAIL_DATE_WARNING_DAYS + " days", warrantyExpiringSoon.length > 0 ? "#C77700" : "#16A34A", ctx.itemsHref, countSpan(warrantyExpiringSoon.length, "plain"), null, "🛡️"),
+          kpiCard("Low / Out of Stock", outOfStockItems.length + lowStockItems.length, outOfStockItems.length + " out of stock · " + lowStockItems.length + " low", (outOfStockItems.length + lowStockItems.length) > 0 ? "#DC2626" : "#16A34A", ctx.itemsHref, countSpan(outOfStockItems.length + lowStockItems.length, "plain"), null, "📦"),
+          kpiCard("Overdue Supplier Payments", overdueSupplierPayments.length, "Payments needing action", overdueSupplierPayments.length > 0 ? "#DC2626" : "#16A34A", ctx.moneyHref, countSpan(overdueSupplierPayments.length, "plain"), null, "🧾")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Warranties expiring within " + RETAIL_DATE_WARNING_DAYS + " days, low/out of stock items, and overdue supplier payments — in priority order.",
+        attentionHtml: attentionHtml,
+        quickActionsHtml: [
+          quickAction("📦", "Add Product", "List a new product with warranty tracking", ctx.itemsHref, "#D4A63A"),
+          quickAction("💵", "New Sale", "Record a customer sale", ctx.moneyHref, "#16A34A"),
+          quickAction("🚚", "Receive Stock", "Update stock after a delivery", ctx.itemsHref, "#2563EB"),
+          quickAction("🧑", "Add Supplier", "Register a new supplier", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Sales — Last 6 Months",
+        trendSubtitle: "Monthly sales trend from your money records.",
+        trendMonths: salesTrendMonths,
+        trendLabel: "Sales",
+        trendColor: "#D4A63A",
+        trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first sale and this chart will start tracking your monthly sales trend.", actionLabel: "New Sale", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("🛡️", "Warranties Expiring", warrantyExpiringSoon.length, "within " + RETAIL_DATE_WARNING_DAYS + " days", ctx.itemsHref),
+          todayItem("📦", "Low / Out of Stock", outOfStockItems.length + lowStockItems.length, "item(s)", ctx.itemsHref),
+          todayItem("🧾", "Supplier Payments", overdueSupplierPayments.length, "overdue", ctx.moneyHref)
+        ].join(""),
+        greetingMessages: greetingMessages
+      };
+    }
+
+    function getRetailSectionContent(scopeLabel, data, ctx) {
+      const expiryTrackedSections = ["Pharmacy", "Agrovet", "Cosmetics"];
+      const warrantyTrackedSections = ["Electronics & Computers", "Mobile Phones & Accessories"];
+
+      if (expiryTrackedSections.indexOf(scopeLabel) !== -1) return buildExpiryTrackedRetailSectionContent(data, ctx);
+      if (warrantyTrackedSections.indexOf(scopeLabel) !== -1) return buildWarrantyTrackedRetailSectionContent(data, ctx);
+      return buildGenericRetailSectionContent(data, ctx);
+    }
+
+    function renderRetailDashboard(scopedData, scopeLabel) {
+      const data = scopedData || dashboardData;
+      const isScoped = !!scopeLabel;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const sectionParam = isScoped ? "?section=" + encodeURIComponent(scopeLabel) : "";
+      const ctx = {
+        todayStr: todayStr,
+        monthKey: monthKey,
+        lastMonthKey: lastMonthKey,
+        moneyHref: "my-money.html" + sectionParam,
+        calendarHref: "my-calendar.html" + sectionParam,
+        tasksHref: "my-tasks.html" + sectionParam,
+        itemsHref: "my-items.html" + sectionParam,
+        peopleHref: "my-people.html" + sectionParam
+      };
+
+      const content = getRetailSectionContent(isScoped ? scopeLabel : "General Retail", data, ctx);
+      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+      const calendarPreview = buildRetailCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(data);
+
+      const greetingMessages = content.greetingMessages.slice();
       if (mostRecentRecord) {
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
 
-      const tasksSummary = calculateTaskSummary(data.tasks);
-      const moneySummary = calculateMoneySummary(data.transactions);
-      const supportSummary = calculateSupportSummary(data.support);
+      let health = null;
+      if (!isScoped) {
+        const tasksSummary = calculateTaskSummary(data.tasks);
+        const moneySummary = calculateMoneySummary(data.transactions);
+        const supportSummary = calculateSupportSummary(data.support);
 
-      let health;
-      try {
-        health = computeGenericHealthScore({ tasks: tasksSummary, money: moneySummary, support: supportSummary, dashboardData: data });
-      } catch (healthError) {
-        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+        try {
+          health = computeGenericHealthScore({ tasks: tasksSummary, money: moneySummary, support: supportSummary, dashboardData: data });
+        } catch (healthError) {
+          health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+        }
       }
 
       document.getElementById("content").innerHTML = `
         ${isScoped ? `
           <section class="card" style="margin-bottom:14px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+            <div>
+              <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+              <p style="margin:8px 0 0;color:var(--muted);">${safe(content.subtitle)}</p>
+            </div>
             <a class="btn small light" href="client.html">← Back to Overview</a>
           </section>
-        ` : ""}
+        ` : `
+          <section class="hero">
+            <div class="hero-grid">
+              <div class="hero-greet-enter">
+                <span class="badge gold">${safe(businessPreset.name)}</span>
+                <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+                ${buildGreetingRotatorHtml(greetingMessages)}
+                <p class="desktop-only">
+                  Here's what needs attention today across your stock and sales. Use it to see out-of-stock and low-stock items, overdue supplier payments, and open restock/customer tasks, then click any card or row to open the right record.
+                </p>
+                <p class="mobile-only">
+                  Your retail summary for today. Tap any card or use ☰ for full sections.
+                </p>
 
-        <section class="hero">
-          <div class="hero-grid">
-            <div class="hero-greet-enter">
-              <span class="badge gold">${safe(isScoped ? scopeLabel : businessPreset.name)}</span>
-              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
-              ${buildGreetingRotatorHtml(greetingMessages)}
-              <p class="desktop-only">
-                ${isScoped
-                  ? `Showing data tagged to the ${safe(scopeLabel)} section only. Switch sections from the sidebar or return to the combined Overview.`
-                  : `Here's what needs attention today across your stock and sales. Use it to see out-of-stock and low-stock items, overdue supplier payments, and open restock/customer tasks, then click any card or row to open the right record.`
-                }
-              </p>
-              <p class="mobile-only">
-                Your retail summary for today. Tap any card or use ☰ for full sections.
-              </p>
+                <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                  <a class="btn gold" href="${attr(ctx.moneyHref)}">New Sale</a>
+                  <a class="btn green" href="${attr(ctx.itemsHref)}">Receive Stock</a>
+                  <a class="btn light" href="${attr(ctx.itemsHref)}">Stock / Products</a>
+                  <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+                </div>
+              </div>
 
-              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
-                <a class="btn gold" href="${attr(moneyHref)}">New Sale</a>
-                <a class="btn green" href="${attr(itemsHref)}">Receive Stock</a>
-                <a class="btn light" href="my-items.html">Stock / Products</a>
-                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              <div class="hero-mini">
+                ${renderHealthGaugeHtml(health.score, health.summary)}
+                <div class="hero-mini-divider"></div>
+                <h4>Today / Attention</h4>
+                <div class="today-list">
+                  ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                  ${content.todayListHtml}
+                </div>
               </div>
             </div>
-
-            <div class="hero-mini">
-              ${renderHealthGaugeHtml(health.score, health.summary)}
-              <div class="hero-mini-divider"></div>
-              <h4>Today / Attention</h4>
-              <div class="today-list">
-                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("📦", "Out of Stock", outOfStockItems.length, "item(s)", itemsHref)}
-                ${todayItem("🧾", "Supplier Payments", overdueSupplierPayments.length, "overdue", moneyHref)}
-                ${todayItem("🧑", "Customer Follow-ups", customerTasks.length, "open", tasksHref)}
-              </div>
-            </div>
-          </div>
-        </section>
+          </section>
+        `}
 
         <section class="kpi-grid">
-          ${kpiCard("Sales (This Month)", compactMoney(salesThisMonth), rentTrendSubtitle(salesDelta, salesLastMonth, "sales"), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626", moneyHref, countSpan(salesThisMonth, "money"), sparklineSvg(salesTrendMonths.map(function (m) { return m.value; }), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626"), "💰")}
-          ${kpiCard("Low / Out of Stock", needsRestockCount, outOfStockItems.length + " out of stock · " + lowStockItems.length + " low", needsRestockCount > 0 ? "#DC2626" : "#16A34A", itemsHref, countSpan(needsRestockCount, "plain"), null, "📦")}
-          ${kpiCard("Outstanding Supplier Payments", compactMoney(outstandingSupplierTotal), overdueSupplierPayments.length + " overdue payment(s)", outstandingSupplierTotal > 0 ? "#DC2626" : "#16A34A", moneyHref, countSpan(outstandingSupplierTotal, "money"), null, "🧾")}
-          ${kpiCard("Open Restock / Supplier Tasks", restockTasks.length, "Requests needing action", restockTasks.length > 0 ? "#DC2626" : "#16A34A", tasksHref, countSpan(restockTasks.length, "plain"), sparklineSvg(restockTrend, restockTasks.length > 0 ? "#DC2626" : "#16A34A"), "🚚")}
+          ${content.kpisHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>Needs Attention Today</h3>
-              <p>Out-of-stock and low-stock items, overdue supplier payments, and open restock/customer tasks — in priority order.</p>
+              <h3>${safe(content.attentionTitle)}</h3>
+              <p>${safe(content.attentionSubtitle)}</p>
             </div>
           </div>
 
-          ${renderRetailAttentionList(outOfStockItems, lowStockItems, overdueSupplierPayments, restockTasks, customerTasks)}
+          ${content.attentionHtml}
         </section>
 
         <section class="quick-actions">
-          ${quickAction("📦", "Add Product", "List a new product or stock item", "my-items.html", "#D4A63A")}
-          ${quickAction("💵", "New Sale", "Record a customer sale", moneyHref, "#16A34A")}
-          ${quickAction("🚚", "Receive Stock", "Update stock after a delivery", "my-items.html", "#2563EB")}
-          ${quickAction("🧑", "Add Supplier", "Register a new supplier", peopleHref, "#14B8A6")}
+          ${content.quickActionsHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>Sales — Last 6 Months</h3>
-              <p>Monthly sales trend from your money records.</p>
+              <h3>${safe(content.trendTitle)}</h3>
+              <p>${safe(content.trendSubtitle)}</p>
             </div>
-            <a class="btn small gold" href="${attr(moneyHref)}">Money</a>
+            <a class="btn small gold" href="${attr(ctx.moneyHref)}">Money</a>
           </div>
 
-          ${hasAnySalesHistory ? `
+          ${hasAnyTrendHistory ? `
             <div style="position:relative;height:260px;">
               <canvas id="retailSalesTrendChart"></canvas>
             </div>
-          ` : emptyStateNudge("💰", "Put your numbers here", "Log your first sale and this chart will start tracking your monthly sales trend.", "New Sale", moneyHref)}
+          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
         </section>
 
         <section class="card">
@@ -5855,7 +6149,7 @@
               <h3>Calendar — Next 5 Days</h3>
               <p>Restocks, deliveries, and payment reminders coming up.</p>
             </div>
-            <a class="btn small gold" href="${attr("my-calendar.html" + sectionParam)}">Open Calendar</a>
+            <a class="btn small gold" href="${attr(ctx.calendarHref)}">Open Calendar</a>
           </div>
 
           ${renderCalendarPreview(calendarPreview, false, "Restock dates, deliveries, supplier follow-ups, and payment reminders will appear here.")}
@@ -5870,10 +6164,13 @@
 
       updateThemeButton();
       updateNotificationCounts();
-      renderRetailSalesChart(salesTrendMonths);
+      renderRetailSalesChart(content.trendMonths, content.trendLabel, content.trendColor);
       initCountAnimations();
-      startGreetingRotation(greetingMessages.length || 1);
-      animateHealthGauges();
+
+      if (!isScoped) {
+        startGreetingRotation(greetingMessages.length || 1);
+        animateHealthGauges();
+      }
     }
 
     function renderRetailOverview(sections) {
@@ -5955,6 +6252,18 @@
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
 
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(dashboardData.tasks),
+          money: calculateMoneySummary(dashboardData.transactions),
+          support: calculateSupportSummary(dashboardData.support),
+          dashboardData: dashboardData
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
       document.getElementById("content").innerHTML = `
         <section class="hero">
           <div class="hero-grid">
@@ -5978,6 +6287,8 @@
             </div>
 
             <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
@@ -6056,6 +6367,7 @@
       renderSectionComparisonChart(sectionSummaries);
       initCountAnimations();
       startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
     }
 
     // Hospitality's lodging sections (Hotel/Guest House/Lodge/Resort/
@@ -7047,11 +7359,34 @@
 
     const LOW_STOCK_THRESHOLD = 5;
 
+    // Phase 2's item field-set engine stores a retail item's stock count
+    // in custom_fields.stock_quantity (no dedicated column) - units_available
+    // was only ever written by Real Estate's project-unit fields, so it's
+    // kept here purely as a fallback for any legacy row that happens to
+    // have it set, not the primary source.
     function getStockQuantity(item) {
+      const customFields = getValue(item, ["custom_fields"], {}) || {};
+      const customQty = customFields.stock_quantity;
+
+      if (customQty !== undefined && customQty !== null && customQty !== "") {
+        const num = Number(customQty);
+        if (!isNaN(num)) return num;
+      }
+
       const raw = getValue(item, ["units_available"], null);
       if (raw === null || raw === "") return null;
       const num = Number(raw);
       return isNaN(num) ? null : num;
+    }
+
+    function getReorderLevel(item) {
+      const customFields = getValue(item, ["custom_fields"], {}) || {};
+      const raw = customFields.reorder_level;
+
+      if (raw === undefined || raw === null || raw === "") return LOW_STOCK_THRESHOLD;
+
+      const num = Number(raw);
+      return isNaN(num) || num <= 0 ? LOW_STOCK_THRESHOLD : num;
     }
 
     function isOutOfStockItem(item) {
@@ -7061,7 +7396,7 @@
 
     function isLowStockItem(item) {
       const qty = getStockQuantity(item);
-      return qty !== null && qty > 0 && qty <= LOW_STOCK_THRESHOLD;
+      return qty !== null && qty > 0 && qty <= getReorderLevel(item);
     }
 
     function isSupplierPaymentTransaction(row) {
@@ -7158,8 +7493,11 @@
       return months;
     }
 
-    async function renderRetailSalesChart(months) {
+    async function renderRetailSalesChart(months, label, color) {
       if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      const chartLabel = label || "Sales";
+      const chartColor = color || "#D4A63A";
 
       try {
         await UnganiAnalytics.createChart("retailSalesTrendChart", {
@@ -7168,9 +7506,9 @@
             labels: months.map(function (m) { return m.label; }),
             datasets: [
               {
-                label: "Sales",
+                label: chartLabel,
                 data: months.map(function (m) { return m.value; }),
-                backgroundColor: "#D4A63A",
+                backgroundColor: chartColor,
                 borderRadius: 10
               }
             ]
