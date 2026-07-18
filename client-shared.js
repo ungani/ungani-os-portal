@@ -1974,11 +1974,17 @@
   }
 
   async function resolveTenantId(authUser, profile) {
+    // Only trust tenant_id/client_id from the server-controlled `users` row.
+    // A previous version also fell back to authUser.user_metadata.tenant_id,
+    // which any authenticated user can set on their own account via
+    // supabase.auth.updateUser({ data: {...} }) - nothing in this codebase
+    // ever legitimately writes it, so it was pure risk: an account whose
+    // users row lookup came back empty would fall through to that
+    // attacker-settable value and use it as their tenant scope for the rest
+    // of the session. Removed entirely rather than trying to sanitize it.
     const possible = [
       getValue(profile, ["tenant_id"], null),
-      getValue(profile, ["client_id"], null),
-      authUser && authUser.user_metadata ? authUser.user_metadata.tenant_id : null,
-      authUser && authUser.app_metadata ? authUser.app_metadata.tenant_id : null
+      getValue(profile, ["client_id"], null)
     ].filter(Boolean);
 
     if (possible.length > 0) {

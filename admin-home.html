@@ -2594,6 +2594,32 @@
           console.warn("Supabase context instance offline. Using mock connection mode.");
         }
 
+        // This page previously called loadAdminData() unconditionally as soon
+        // as ANY authenticated session existed - it never verified the user
+        // was actually an UNGANI admin before pulling cross-tenant data
+        // (every tenant's records, every business's admin/client chat
+        // messages, etc). admin-access-guard.js also protects this page, but
+        // it runs on a separate DOMContentLoaded listener and can lose the
+        // race against this pipeline's own fetches. Verify inline here too,
+        // matching the pattern already used on admin.html/admin-profiles.html/
+        // users.html/sections.html, so the sensitive fetch itself can never
+        // fire before admin status is confirmed - independent of guard timing.
+        if (!supabase) {
+          return;
+        }
+
+        try {
+          const adminCheck = await supabase.rpc("is_ungani_admin");
+
+          if (adminCheck.error || adminCheck.data !== true) {
+            console.warn("admin-home.html: non-admin session, skipping admin data load.");
+            return;
+          }
+        } catch (adminCheckError) {
+          console.warn("admin-home.html: admin check failed, skipping admin data load.", adminCheckError);
+          return;
+        }
+
         loadAdminData();
       })();
     });

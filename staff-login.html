@@ -540,20 +540,80 @@
       setLoading(true, "Logging in...");
 
       try {
+        const lockStatus = await checkLoginLockout(email);
+
+        if (lockStatus && lockStatus.locked) {
+          showLockoutMessage(lockStatus.seconds_remaining);
+          return;
+        }
+
         const response = await supabaseClient.auth.signInWithPassword({
           email: email,
           password: password
         });
 
         if (response.error) {
-          showMessage(response.error.message + " If you do not know the password, use Reset Password.", "error");
+          const attemptResult = await recordFailedLogin(email);
+
+          if (attemptResult && attemptResult.locked) {
+            showLockoutMessage(attemptResult.seconds_remaining);
+          } else {
+            const remaining = attemptResult && typeof attemptResult.attempts_remaining === "number" ? attemptResult.attempts_remaining : null;
+            const suffix = remaining !== null ? (" (" + remaining + " attempt" + (remaining === 1 ? "" : "s") + " remaining before a temporary lockout)") : "";
+            showMessage(response.error.message + " If you do not know the password, use Reset Password." + suffix, "error");
+          }
+
           return;
         }
+
+        recordSuccessfulLogin(email);
 
         await verifyStaffAccessAndRedirect();
       } finally {
         setLoading(false);
       }
+    }
+
+    // Mirrors the same lockout RPCs used on login.html (check_login_lockout /
+    // record_failed_login / record_successful_login) - confirmed live in
+    // Supabase, see memory. Fails gracefully (never blocks login) if the RPCs
+    // are ever unavailable.
+    async function checkLoginLockout(email) {
+      try {
+        const response = await supabaseClient.rpc("check_login_lockout", { p_email: email });
+        if (response.error) return null;
+        return response.data;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    async function recordFailedLogin(email) {
+      try {
+        const response = await supabaseClient.rpc("record_failed_login", { p_email: email });
+        if (response.error) return null;
+        return response.data;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    async function recordSuccessfulLogin(email) {
+      try {
+        await supabaseClient.rpc("record_successful_login", { p_email: email });
+      } catch (error) {
+        // non-critical - never block a successful login on this
+      }
+    }
+
+    function showLockoutMessage(secondsRemaining) {
+      const minutes = Math.max(1, Math.ceil((Number(secondsRemaining) || 900) / 60));
+
+      showMessage(
+        "Too many failed attempts. This account is temporarily locked for about " + minutes +
+        " more minute" + (minutes === 1 ? "" : "s") + ". Use Reset Password below to regain access immediately.",
+        "error"
+      );
     }
 
     async function sendResetLink() {
