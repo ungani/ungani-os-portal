@@ -2470,6 +2470,7 @@
     let isRealEstate = false;
     let isHospitality = false;
     let isRetail = false;
+    let isLogistics = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3324,6 +3325,7 @@
       isRealEstate = detectRealEstate(currentTenant);
       isHospitality = detectHospitality(currentTenant);
       isRetail = detectRetail(currentTenant);
+      isLogistics = detectLogistics(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -3661,6 +3663,22 @@
         }
 
         renderRetailDashboard();
+        return;
+      }
+
+      if (isLogistics) {
+        const sections = (businessPreset.selectedSectionLabels || []);
+
+        if (sections.length > 1) {
+          if (currentSection && sections.indexOf(currentSection) !== -1) {
+            renderLogisticsDashboard(buildSectionScopedData(currentSection), currentSection);
+          } else {
+            renderLogisticsOverview(sections);
+          }
+          return;
+        }
+
+        renderLogisticsDashboard();
         return;
       }
 
@@ -4343,6 +4361,653 @@
       updateThemeButton();
       updateNotificationCounts();
       renderPropertyTrendChart(trendMonths);
+      renderSectionComparisonChart(sectionSummaries);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+    }
+
+    function isFuelExpense(row) {
+      const category = String(getValue(row, ["category", "category_name"], "")).toLowerCase();
+      return isExpense(row) && category.includes("fuel");
+    }
+
+    function sumFuelCosts(rows, targetMonthKey) {
+      let total = 0;
+
+      (rows || []).forEach(function (row) {
+        if (!isFuelExpense(row)) return;
+
+        const raw = getValue(row, ["transaction_date", "created_at"], "");
+        if (!raw) return;
+
+        const date = new Date(raw);
+        if (isNaN(date.getTime())) return;
+
+        const key = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0");
+
+        if (key === targetMonthKey) {
+          total += Number(getValue(row, ["amount"], 0) || 0);
+        }
+      });
+
+      return total;
+    }
+
+    function calculateFuelCostTrend(transactionRows) {
+      const now = new Date();
+      const months = [];
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+
+        months.push({
+          key: d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"),
+          label: d.toLocaleDateString("en-KE", { month: "short", year: "numeric" }),
+          value: 0
+        });
+      }
+
+      (transactionRows || []).forEach(function (row) {
+        if (!isFuelExpense(row)) return;
+
+        const raw = getValue(row, ["transaction_date", "created_at"], "");
+        if (!raw) return;
+
+        const date = new Date(raw);
+        if (isNaN(date.getTime())) return;
+
+        const key = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0");
+        const amount = Number(getValue(row, ["amount"], 0) || 0);
+        const month = months.find(function (m) { return m.key === key; });
+
+        if (month) month.value += amount;
+      });
+
+      return months;
+    }
+
+    function isDeliveryTaskType(value) {
+      const lower = String(value || "").toLowerCase();
+      return lower.includes("delivery") || lower.includes("trip follow");
+    }
+
+    function isMaintenanceTaskType(value) {
+      const lower = String(value || "").toLowerCase();
+      return lower.includes("maintenance");
+    }
+
+    function isLogisticsCalendarType(value) {
+      const lower = String(value || "").toLowerCase();
+      return lower.includes("trip") || lower.includes("delivery");
+    }
+
+    function isClosedTripStatus(value) {
+      const lower = String(value || "").toLowerCase();
+      return lower.includes("sold") || lower.includes("rented") || lower.includes("inactive") || lower.includes("completed") || lower.includes("cancelled");
+    }
+
+    function calculateActiveTripsTrend(itemRows) {
+      // Trip items don't carry a per-month "value" the way money does - this
+      // approximates monthly trip volume from created_at, same shape as the
+      // other trend sparklines so kpiCard()/sparklineSvg() can reuse it as-is.
+      const now = new Date();
+      const months = [];
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push({ key: d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"), value: 0 });
+      }
+
+      (itemRows || []).forEach(function (row) {
+        const type = String(getValue(row, ["item_type", "type"], "")).toLowerCase();
+        if (type !== "trip") return;
+
+        const raw = getValue(row, ["created_at"], "");
+        if (!raw) return;
+
+        const date = new Date(raw);
+        if (isNaN(date.getTime())) return;
+
+        const key = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0");
+        const month = months.find(function (m) { return m.key === key; });
+        if (month) month.value += 1;
+      });
+
+      return months.map(function (m) { return m.value; });
+    }
+
+    function renderLogisticsAttentionList(overdueDeliveries, todaysTrips, tripsNeedingOutcome, maintenanceDue, taggedMode) {
+      const groups = [];
+
+      if (overdueDeliveries.length > 0) {
+        groups.push({
+          title: "Overdue Deliveries",
+          rows: overdueDeliveries.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Delivery");
+            const due = formatDate(getValue(task, ["due_date"], ""));
+            return attentionRow("📦", title, "Due " + due, "Overdue", "red", "my-tasks.html?highlight=" + task.id, taggedMode ? getValue(task, ["section_label"], "") : null, "delivery:" + task.id);
+          })
+        });
+      }
+
+      if (todaysTrips.length > 0) {
+        groups.push({
+          title: "Today's Trips & Deliveries",
+          rows: todaysTrips.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Trip / Delivery");
+            return attentionRow("🚚", title, getValue(event, ["event_type", "type"], "Activity"), "Today", "blue", "my-calendar.html?highlight=" + event.id, taggedMode ? getValue(event, ["section_label"], "") : null, null);
+          })
+        });
+      }
+
+      if (tripsNeedingOutcome.length > 0) {
+        groups.push({
+          title: "Trips Needing Outcome Confirmation",
+          rows: tripsNeedingOutcome.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Trip / Delivery");
+            const date = formatDate(getValue(event, ["event_date", "date", "start_date"], ""));
+            return attentionRow("❓", title, date, "Unconfirmed", "orange", "my-calendar.html?highlight=" + event.id, taggedMode ? getValue(event, ["section_label"], "") : null, "trip-outcome:" + event.id);
+          })
+        });
+      }
+
+      if (maintenanceDue.length > 0) {
+        groups.push({
+          title: "Vehicle & Equipment Maintenance Due (Oldest First)",
+          rows: maintenanceDue.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Maintenance");
+            const due = formatDate(getValue(task, ["due_date", "created_at"], ""));
+            return attentionRow("🛠️", title, "Due " + due, "Due", "gold", "my-tasks.html?highlight=" + task.id, taggedMode ? getValue(task, ["section_label"], "") : null, "maintenance:" + task.id);
+          })
+        });
+      }
+
+      if (groups.length === 0) {
+        return `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No deliveries, trips, or maintenance need attention right now.</p></div>`;
+      }
+
+      return groups.map(function (g) {
+        return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+      }).join("");
+    }
+
+    function buildLogisticsCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+
+      const items = [];
+
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+
+        items.push({
+          date: date,
+          title: getValue(row, ["event_title", "title", "name"], "Trip / Delivery"),
+          type: getValue(row, ["event_type", "type"], "Activity"),
+          section: getValue(row, ["section_label"], ""),
+          ackKey: "event:" + row.id,
+          href: "my-calendar.html?highlight=" + row.id
+        });
+      });
+
+      (data.tasks || []).forEach(function (row) {
+        const type = String(getValue(row, ["task_type", "type"], ""));
+        if (!isMaintenanceTaskType(type)) return;
+
+        const due = String(getValue(row, ["due_date"], "")).slice(0, 10);
+        if (!due || !days.includes(due)) return;
+
+        items.push({
+          date: due,
+          title: "Vehicle service due — " + getValue(row, ["task_title", "title"], "Maintenance"),
+          type: "Vehicle Service",
+          section: getValue(row, ["section_label"], ""),
+          href: "my-tasks.html?highlight=" + row.id
+        });
+      });
+
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderLogisticsTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      try {
+        await UnganiAnalytics.createChart("logisticsFuelTrendChart", {
+          type: "bar",
+          data: {
+            labels: months.map(function (m) { return m.label; }),
+            datasets: [
+              {
+                label: "Fuel & Operating Costs",
+                data: months.map(function (m) { return m.value; }),
+                backgroundColor: "#D4A63A",
+                borderRadius: 10
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: function (v) { return compactMoney(v); } }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("Logistics trend chart warning:", error.message);
+      }
+    }
+
+    function renderLogisticsDashboard(scopedData, scopeLabel) {
+      const data = scopedData || dashboardData;
+      const isScoped = !!scopeLabel;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const fuelThisMonth = sumFuelCosts(data.transactions, monthKey);
+      const fuelLastMonth = sumFuelCosts(data.transactions, lastMonthKey);
+      const fuelDelta = fuelThisMonth - fuelLastMonth;
+
+      const activeTrips = (data.items || []).filter(function (item) {
+        const type = String(getValue(item, ["item_type", "type"], "")).toLowerCase();
+        const status = String(getValue(item, ["property_status", "item_status", "status"], ""));
+        return type === "trip" && !isClosedTripStatus(status);
+      });
+
+      const totalDrivers = (data.people || []).filter(function (person) {
+        return String(getValue(person, ["person_type", "type"], "")).toLowerCase() === "driver";
+      });
+
+      const availableDrivers = totalDrivers.filter(function (person) {
+        const status = String(getValue(person, ["status"], "active")).toLowerCase();
+        return !status.includes("inactive") && !status.includes("lost");
+      });
+
+      const overdueDeliveries = (data.tasks || []).filter(function (task) {
+        const type = String(getValue(task, ["task_type", "type"], ""));
+        const status = statusText(task);
+        const due = String(getValue(task, ["due_date"], "")).slice(0, 10);
+        return isDeliveryTaskType(type) && due && due < todayStr && !status.includes("completed") && !status.includes("cancelled");
+      });
+
+      const maintenanceDue = (data.tasks || []).filter(function (task) {
+        const type = String(getValue(task, ["task_type", "type"], ""));
+        const status = statusText(task);
+        return isMaintenanceTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const todaysTrips = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isLogisticsCalendarType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const tripsNeedingOutcome = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isLogisticsCalendarType(type) && date && date < todayStr && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
+      }).sort(function (a, b) {
+        return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
+      });
+
+      const attentionCount = overdueDeliveries.length + maintenanceDue.length;
+
+      const fuelTrendMonths = calculateFuelCostTrend(data.transactions);
+      const hasAnyFuelHistory = fuelTrendMonths.some(function (m) { return m.value > 0; });
+      const activeTripsTrend = calculateActiveTripsTrend(data.items);
+      const calendarPreview = buildLogisticsCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const sectionParam = isScoped ? "?section=" + encodeURIComponent(scopeLabel) : "";
+      const moneyHref = "my-money.html" + sectionParam;
+      const calendarHref = "my-calendar.html" + sectionParam;
+      const tasksHref = "my-tasks.html" + sectionParam;
+      const itemsHref = "my-items.html" + sectionParam;
+      const peopleHref = "my-people.html" + sectionParam;
+
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+
+      if (overdueDeliveries.length > 0) {
+        greetingMessages.push({ text: overdueDeliveries.length === 1 ? "1 delivery is overdue" : overdueDeliveries.length + " deliveries are overdue", href: tasksHref });
+      }
+      if (todaysTrips.length > 0) {
+        greetingMessages.push({ text: todaysTrips.length === 1 ? "1 trip or delivery scheduled today" : todaysTrips.length + " trips or deliveries scheduled today", href: calendarHref });
+      }
+      if (maintenanceDue.length > 0) {
+        greetingMessages.push({ text: maintenanceDue.length === 1 ? "1 vehicle needs maintenance" : maintenanceDue.length + " vehicles need maintenance", href: tasksHref });
+      }
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(data.tasks),
+          money: calculateMoneySummary(data.transactions),
+          support: calculateSupportSummary(data.support),
+          dashboardData: data
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
+      document.getElementById("content").innerHTML = `
+        ${isScoped ? `
+          <section class="card" style="margin-bottom:14px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+            <a class="btn small light" href="client.html">← Back to Overview</a>
+          </section>
+        ` : ""}
+
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(isScoped ? scopeLabel : businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                ${isScoped
+                  ? `Showing data tagged to the ${safe(scopeLabel)} section only. Switch sections from the sidebar or return to the combined Overview.`
+                  : `Here's what needs attention today across your fleet. Use it to see overdue deliveries, today's trips, vehicle maintenance due, and trips awaiting an outcome, then click any card or row to open the right record.`
+                }
+              </p>
+              <p class="mobile-only">
+                Your logistics summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="${attr(itemsHref)}">New Trip</a>
+                <a class="btn green" href="${attr(moneyHref)}">Log Fuel Entry</a>
+                <a class="btn light" href="${attr(peopleHref)}">Drivers</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("📦", "Overdue Deliveries", overdueDeliveries.length, "past due", tasksHref)}
+                ${todayItem("🚚", "Today's Trips", todaysTrips.length, "scheduled today", calendarHref)}
+                ${todayItem("🛠️", "Maintenance Due", maintenanceDue.length, "vehicle(s)/asset(s)", tasksHref)}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("Active Trips", activeTrips.length, "Trip(s) currently in progress", "#2563EB", itemsHref, countSpan(activeTrips.length, "plain"), sparklineSvg(activeTripsTrend, "#2563EB"), "🚚")}
+          ${kpiCard("Fuel & Operating Costs", compactMoney(fuelThisMonth), rentTrendSubtitle(fuelDelta, fuelLastMonth, "fuel spend"), "#D4A63A", moneyHref, countSpan(fuelThisMonth, "money"), sparklineSvg(fuelTrendMonths.map(function (m) { return m.value; }), "#D4A63A"), "⛽")}
+          ${kpiCard("Available Drivers", availableDrivers.length + " / " + totalDrivers.length, "Drivers available now", "#16A34A", peopleHref, countSpan(availableDrivers.length, "ratio", " / " + totalDrivers.length), staticProportionBar(totalDrivers.length > 0 ? availableDrivers.length / totalDrivers.length : 0, "#16A34A", (totalDrivers.length > 0 ? Math.round((availableDrivers.length / totalDrivers.length) * 100) : 0) + "% available"), "🧑‍✈️")}
+          ${kpiCard("Overdue Deliveries & Maintenance", attentionCount, "Deliveries + vehicle maintenance needing action", attentionCount > 0 ? "#DC2626" : "#16A34A", tasksHref, countSpan(attentionCount, "plain"), null, "⚠️")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue deliveries, today's trips, trips awaiting an outcome, and vehicle maintenance due — in priority order.</p>
+            </div>
+          </div>
+
+          ${renderLogisticsAttentionList(overdueDeliveries, todaysTrips, tripsNeedingOutcome, maintenanceDue, null)}
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("🚚", "New Trip", "Log a new trip or delivery run", itemsHref, "#D4A63A")}
+          ${quickAction("⛽", "Log Fuel Entry", "Record a fuel or operating cost", moneyHref, "#16A34A")}
+          ${quickAction("🧑‍✈️", "Assign Driver", "Manage drivers and assignments", peopleHref, "#2563EB")}
+          ${quickAction("📅", "Schedule Delivery", "Book a trip or delivery date", calendarHref, "#14B8A6")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Fuel & Operating Costs — Last 6 Months</h3>
+              <p>Monthly fuel and operating cost trend from your money records.</p>
+            </div>
+            <a class="btn small gold" href="${attr(moneyHref)}">Money</a>
+          </div>
+
+          ${hasAnyFuelHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="logisticsFuelTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge("⛽", "Put your numbers here", "Log your first fuel or operating cost and this chart will start tracking your monthly spend trend.", "Log Fuel Entry", moneyHref)}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Trips, deliveries, and vehicle service coming up.</p>
+            </div>
+            <a class="btn small gold" href="${attr(calendarHref)}">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Logistics & Transport · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderLogisticsTrendChart(fuelTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
+    function renderLogisticsOverview(sections) {
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const fuelThisMonth = sumFuelCosts(dashboardData.transactions, monthKey);
+      const fuelLastMonth = sumFuelCosts(dashboardData.transactions, lastMonthKey);
+      const fuelDelta = fuelThisMonth - fuelLastMonth;
+
+      const activeTrips = (dashboardData.items || []).filter(function (item) {
+        const type = String(getValue(item, ["item_type", "type"], "")).toLowerCase();
+        const status = String(getValue(item, ["property_status", "item_status", "status"], ""));
+        return type === "trip" && !isClosedTripStatus(status);
+      });
+
+      const totalDrivers = (dashboardData.people || []).filter(function (person) {
+        return String(getValue(person, ["person_type", "type"], "")).toLowerCase() === "driver";
+      });
+
+      const availableDrivers = totalDrivers.filter(function (person) {
+        const status = String(getValue(person, ["status"], "active")).toLowerCase();
+        return !status.includes("inactive") && !status.includes("lost");
+      });
+
+      const overdueDeliveries = (dashboardData.tasks || []).filter(function (task) {
+        const type = String(getValue(task, ["task_type", "type"], ""));
+        const status = statusText(task);
+        const due = String(getValue(task, ["due_date"], "")).slice(0, 10);
+        return isDeliveryTaskType(type) && due && due < todayStr && !status.includes("completed") && !status.includes("cancelled");
+      });
+
+      const maintenanceDue = (dashboardData.tasks || []).filter(function (task) {
+        const type = String(getValue(task, ["task_type", "type"], ""));
+        const status = statusText(task);
+        return isMaintenanceTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const todaysTrips = (dashboardData.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isLogisticsCalendarType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const attentionCount = overdueDeliveries.length + maintenanceDue.length;
+
+      const sectionSummaries = sections.map(function (label) {
+        return calculateSectionSummary(label, monthKey, todayStr);
+      });
+
+      const fuelTrendMonths = calculateFuelCostTrend(dashboardData.transactions);
+      const activeTripsTrend = calculateActiveTripsTrend(dashboardData.items);
+      const calendarPreview = buildLogisticsCalendarPreview(today);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const mostRecentRecord = findMostRecentRecord(dashboardData);
+      const greetingMessages = [];
+
+      if (overdueDeliveries.length > 0) {
+        greetingMessages.push({ text: overdueDeliveries.length === 1 ? "1 delivery is overdue" : overdueDeliveries.length + " deliveries are overdue", href: "my-tasks.html" });
+      }
+      if (todaysTrips.length > 0) {
+        greetingMessages.push({ text: todaysTrips.length === 1 ? "1 trip or delivery scheduled today" : todaysTrips.length + " trips or deliveries scheduled today", href: "my-calendar.html" });
+      }
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                Combined view across all your sections: ${safe(sections.join(", "))}. Compare performance below, or switch to a single section from the sidebar.
+              </p>
+              <p class="mobile-only">
+                Your combined logistics summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-items.html">New Trip</a>
+                <a class="btn green" href="my-money.html">Log Fuel Entry</a>
+                <a class="btn light" href="my-people.html">Drivers</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("📦", "Overdue Deliveries", overdueDeliveries.length, "past due", "my-tasks.html")}
+                ${todayItem("🚚", "Today's Trips", todaysTrips.length, "scheduled today", "my-calendar.html")}
+                ${todayItem("🛠️", "Maintenance Due", maintenanceDue.length, "vehicle(s)/asset(s)", "my-tasks.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("Active Trips", activeTrips.length, "Trip(s) currently in progress", "#2563EB", "my-items.html", countSpan(activeTrips.length, "plain"), sparklineSvg(activeTripsTrend, "#2563EB"), "🚚")}
+          ${kpiCard("Fuel & Operating Costs", compactMoney(fuelThisMonth), rentTrendSubtitle(fuelDelta, fuelLastMonth, "fuel spend"), "#D4A63A", "my-money.html", countSpan(fuelThisMonth, "money"), sparklineSvg(fuelTrendMonths.map(function (m) { return m.value; }), "#D4A63A"), "⛽")}
+          ${kpiCard("Available Drivers", availableDrivers.length + " / " + totalDrivers.length, "Drivers available now", "#16A34A", "my-people.html", countSpan(availableDrivers.length, "ratio", " / " + totalDrivers.length), staticProportionBar(totalDrivers.length > 0 ? availableDrivers.length / totalDrivers.length : 0, "#16A34A", (totalDrivers.length > 0 ? Math.round((availableDrivers.length / totalDrivers.length) * 100) : 0) + "% available"), "🧑‍✈️")}
+          ${kpiCard("Overdue Deliveries & Maintenance", attentionCount, "Deliveries + vehicle maintenance needing action", attentionCount > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(attentionCount, "plain"), null, "⚠️")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue deliveries, today's trips, and vehicle maintenance due — tagged by section.</p>
+            </div>
+          </div>
+
+          ${renderLogisticsAttentionList(overdueDeliveries, todaysTrips, [], maintenanceDue, true)}
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("🚚", "New Trip", "Log a new trip or delivery run", "my-items.html", "#D4A63A")}
+          ${quickAction("⛽", "Log Fuel Entry", "Record a fuel or operating cost", "my-money.html", "#16A34A")}
+          ${quickAction("🧑‍✈️", "Assign Driver", "Manage drivers and assignments", "my-people.html", "#2563EB")}
+          ${quickAction("📅", "Schedule Delivery", "Book a trip or delivery date", "my-calendar.html", "#14B8A6")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Section Comparison</h3>
+              <p>Same metrics, side by side, so you can compare how each section is performing.</p>
+            </div>
+          </div>
+
+          <div style="position:relative;height:${Math.max(140, sectionSummaries.length * 56)}px;margin-bottom:20px;">
+            <canvas id="sectionComparisonChart"></canvas>
+          </div>
+
+          <div class="section-scroll-row">
+            ${sectionSummaries.map(sectionComparisonCard).join("")}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Trips, deliveries, and vehicle service coming up, tagged by section.</p>
+            </div>
+            <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview, true)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Logistics & Transport Multi-Section Overview · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderLogisticsTrendChart(fuelTrendMonths);
       renderSectionComparisonChart(sectionSummaries);
       initCountAnimations();
       startGreetingRotation(greetingMessages.length || 1);
@@ -6463,6 +7128,18 @@
       return businessType.includes("retail") || businessType.includes("shop") || businessTypeKey.includes("retail");
     }
 
+    function detectLogistics(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "logistics";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("logistics") || businessType.includes("transport") || businessType.includes("fleet") || businessTypeKey.includes("logistics");
+    }
+
     function todayItem(icon, title, value, subtitle, href) {
       return `
         <a class="today-item" href="${attr(href || "my-tools.html")}">
@@ -6534,9 +7211,6 @@
       return Math.max(0, Math.min(100, Math.round(weighted / totalWeight)));
     }
 
-    // TEMPORARY diagnostic build - visibly reports gauge render/animate state on-page
-    // (no dev tools needed) while we track down a Safari-only "gauge doesn't show" bug.
-    // Safe to remove renderHealthGaugeDebugLine()/#healthGaugeDebug once resolved.
     function renderHealthGaugeHtml(score, summary) {
       try {
         const band = healthBandFor(score);
@@ -6569,7 +7243,6 @@
             </div>
             <p class="health-gauge-summary">${safe(summary)}</p>
           </div>
-          <div id="healthGaugeDebug" style="font-size:9px;font-family:monospace;color:rgba(255,255,255,0.55);margin-top:6px;line-height:1.5;word-break:break-all;">gauge debug: render ok, waiting on animate...</div>
         `;
       } catch (error) {
         return `
@@ -6583,19 +7256,13 @@
     }
 
     function animateHealthGauges() {
-      const debugEl = document.getElementById("healthGaugeDebug");
-
       try {
         const arcs = document.querySelectorAll(".health-gauge-arc[data-target-offset]");
 
-        if (!arcs.length) {
-          if (debugEl) debugEl.textContent = "gauge debug: no .health-gauge-arc[data-target-offset] found in DOM";
-          return;
-        }
+        if (!arcs.length) return;
 
         if (prefersReducedMotion()) {
           arcs.forEach(function (arc) { arc.style.setProperty("stroke-dashoffset", arc.dataset.targetOffset); });
-          if (debugEl) debugEl.textContent = "gauge debug: reduced-motion path, dashoffset set directly";
           return;
         }
 
@@ -6607,30 +7274,11 @@
 
         requestAnimationFrame(function () {
           requestAnimationFrame(function () {
-            try {
-              arcs.forEach(function (arc) { arc.style.setProperty("stroke-dashoffset", arc.dataset.targetOffset); });
-
-              if (debugEl) {
-                const arc = arcs[0];
-                const rect = arc.getBoundingClientRect();
-                const g = arc.closest(".health-gauge-rotate");
-                const gRect = g ? g.getBoundingClientRect() : null;
-                const cs = getComputedStyle(arc);
-                debugEl.textContent = "gauge debug: arcs=" + arcs.length +
-                  " arcRect=" + Math.round(rect.width) + "x" + Math.round(rect.height) +
-                  " gRect=" + (gRect ? Math.round(gRect.width) + "x" + Math.round(gRect.height) : "n/a") +
-                  " dashoffset=" + cs.strokeDashoffset +
-                  " target=" + arc.dataset.targetOffset +
-                  " stroke=" + cs.stroke +
-                  " gTransform=" + (g ? getComputedStyle(g).transform : "n/a");
-              }
-            } catch (innerError) {
-              if (debugEl) debugEl.textContent = "gauge debug ERROR (inner rAF): " + ((innerError && innerError.message) || innerError);
-            }
+            arcs.forEach(function (arc) { arc.style.setProperty("stroke-dashoffset", arc.dataset.targetOffset); });
           });
         });
       } catch (error) {
-        if (debugEl) debugEl.textContent = "gauge debug ERROR: " + ((error && error.message) || error);
+        console.warn("Health gauge animation warning:", error.message);
       }
     }
 
