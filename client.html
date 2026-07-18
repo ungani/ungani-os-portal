@@ -2471,6 +2471,7 @@
     let isHospitality = false;
     let isRetail = false;
     let isLogistics = false;
+    let isWarehouse = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3326,6 +3327,7 @@
       isHospitality = detectHospitality(currentTenant);
       isRetail = detectRetail(currentTenant);
       isLogistics = detectLogistics(currentTenant);
+      isWarehouse = detectWarehouse(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -3679,6 +3681,11 @@
         }
 
         renderLogisticsDashboard();
+        return;
+      }
+
+      if (isWarehouse) {
+        renderWarehouseDashboard();
         return;
       }
 
@@ -5643,6 +5650,336 @@
       updateNotificationCounts();
       renderLogisticsTrendChart(fuelTrendMonths);
       renderSectionComparisonChart(sectionSummaries);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
+    // Warehousing has no sections in the business config (one operational
+    // model per tenant), so unlike Logistics/Property/Hospitality/Retail
+    // there's no Overview/scoped-section split needed here - just one
+    // dashboard, always shown with the full greeting/health-gauge hero.
+    function isWarehouseRevenueIncome(row) {
+      const category = String(getValue(row, ["category", "category_name"], "")).toLowerCase();
+      return isIncome(row) && (category.includes("storage") || category.includes("handling") || category.includes("dispatch"));
+    }
+
+    function isDispatchFollowUpTask(value) {
+      return String(value || "").toLowerCase().includes("dispatch");
+    }
+
+    function isStockCountOrMaintenanceTask(value) {
+      const lower = String(value || "").toLowerCase();
+      return lower.includes("stock count") || lower.includes("equipment maintenance");
+    }
+
+    function isWarehouseClientUpdateTask(value) {
+      return String(value || "").toLowerCase().includes("client update");
+    }
+
+    async function renderWarehouseTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      try {
+        await UnganiAnalytics.createChart("warehouseRevenueTrendChart", {
+          type: "bar",
+          data: {
+            labels: months.map(function (m) { return m.label; }),
+            datasets: [
+              {
+                label: "Storage & Handling Revenue",
+                data: months.map(function (m) { return m.value; }),
+                backgroundColor: "#D4A63A",
+                borderRadius: 10
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: function (v) { return compactMoney(v); } }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("Warehouse trend chart warning:", error.message);
+      }
+    }
+
+    function buildWarehouseCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+
+      const items = [];
+
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+
+        items.push({
+          date: date,
+          title: getValue(row, ["event_title", "title", "name"], "Warehouse Activity"),
+          type: getValue(row, ["event_type", "type"], "Activity"),
+          section: getValue(row, ["section_label"], ""),
+          ackKey: "event:" + row.id,
+          href: "my-calendar.html?highlight=" + row.id
+        });
+      });
+
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    function renderWarehouseDashboard() {
+      const data = dashboardData;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isWarehouseRevenueIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isWarehouseRevenueIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isWarehouseRevenueIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const storageUnits = (data.items || []).filter(function (item) {
+        return String(getValue(item, ["item_type", "type"], "")).toLowerCase() === "storage unit";
+      });
+      const occupiedStorageUnits = storageUnits.filter(function (item) {
+        return isOccupiedItemStatus(getValue(item, ["property_status", "item_status", "status"], ""));
+      });
+
+      const pendingDispatches = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isDispatchFollowUpTask(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const overdueDispatches = pendingDispatches.filter(function (task) {
+        const due = String(getValue(task, ["due_date"], "")).slice(0, 10);
+        return due && due < todayStr;
+      });
+
+      const stockCountsAndMaintenance = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isStockCountOrMaintenanceTask(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const clientFollowUps = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isWarehouseClientUpdateTask(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const dispatchTrend = buildMonthlyTrend(data.tasks, ["created_at"], function (task) {
+        return isDispatchFollowUpTask(getValue(task, ["task_type", "type"], ""));
+      });
+      const maintenanceTrend = buildMonthlyTrend(data.tasks, ["created_at"], function (task) {
+        return isStockCountOrMaintenanceTask(getValue(task, ["task_type", "type"], ""));
+      });
+      const calendarPreview = buildWarehouseCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+
+      if (overdueDispatches.length > 0) {
+        greetingMessages.push({ text: overdueDispatches.length === 1 ? "1 dispatch is overdue" : overdueDispatches.length + " dispatches are overdue", href: "my-tasks.html" });
+      }
+      if (stockCountsAndMaintenance.length > 0) {
+        greetingMessages.push({ text: stockCountsAndMaintenance.length === 1 ? "1 stock count or maintenance task is due" : stockCountsAndMaintenance.length + " stock count or maintenance tasks are due", href: "my-tasks.html" });
+      }
+      if (clientFollowUps.length > 0) {
+        greetingMessages.push({ text: clientFollowUps.length === 1 ? "1 client follow-up is open" : clientFollowUps.length + " client follow-ups are open", href: "my-tasks.html" });
+      }
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(data.tasks),
+          money: calculateMoneySummary(data.transactions),
+          support: calculateSupportSummary(data.support),
+          dashboardData: data
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
+      const attentionGroups = [];
+
+      if (overdueDispatches.length > 0) {
+        attentionGroups.push({
+          title: "Overdue Dispatches",
+          rows: overdueDispatches.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Dispatch");
+            const due = formatDate(getValue(task, ["due_date"], ""));
+            return attentionRow("🚚", title, "Due " + due, "Overdue", "red", "my-tasks.html?highlight=" + task.id, null, "dispatch:" + task.id);
+          })
+        });
+      }
+
+      if (stockCountsAndMaintenance.length > 0) {
+        attentionGroups.push({
+          title: "Stock Counts & Equipment Maintenance (Oldest First)",
+          rows: stockCountsAndMaintenance.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Stock Count / Maintenance");
+            const due = formatDate(getValue(task, ["due_date", "created_at"], ""));
+            return attentionRow("📋", title, "Due " + due, "Due", "gold", "my-tasks.html?highlight=" + task.id, null, "stock-maintenance:" + task.id);
+          })
+        });
+      }
+
+      if (clientFollowUps.length > 0) {
+        attentionGroups.push({
+          title: "Client Follow-ups Open",
+          rows: clientFollowUps.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Client Update");
+            const due = getValue(task, ["due_date"], "");
+            return attentionRow("🧑", title, due ? "Due " + formatDate(due) : "No due date set", "Open", "blue", "my-tasks.html?highlight=" + task.id, null, null);
+          })
+        });
+      }
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue dispatches, stock counts, maintenance, or client follow-ups need attention right now.</p></div>`
+        : attentionGroups.map(function (g) {
+            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+          }).join("");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                Here's what needs attention today across your storage and dispatch operations. Use it to see overdue dispatches, stock counts, equipment maintenance, and open client follow-ups, then click any card or row to open the right record.
+              </p>
+              <p class="mobile-only">
+                Your warehouse summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-money.html">Log Payment</a>
+                <a class="btn green" href="my-calendar.html">Schedule Dispatch</a>
+                <a class="btn light" href="my-items.html">Storage / Stock</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("🚚", "Overdue Dispatches", overdueDispatches.length, "past due", "my-tasks.html")}
+                ${todayItem("📋", "Stock Counts / Maintenance", stockCountsAndMaintenance.length, "due", "my-tasks.html")}
+                ${todayItem("🧑", "Client Follow-ups", clientFollowUps.length, "open", "my-tasks.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("Storage & Handling Revenue", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626"), "💰")}
+          ${kpiCard("Storage Occupancy", occupiedStorageUnits.length + " / " + storageUnits.length, storageUnits.length > 0 ? "Storage units currently in use" : "No storage units tracked yet", "#2563EB", "my-items.html", countSpan(occupiedStorageUnits.length, "ratio", " / " + storageUnits.length), staticProportionBar(storageUnits.length > 0 ? occupiedStorageUnits.length / storageUnits.length : 0, "#2563EB", storageUnits.length > 0 ? (Math.round((occupiedStorageUnits.length / storageUnits.length) * 100) + "% occupied") : "No storage units tracked yet"), "🏭")}
+          ${kpiCard("Pending Dispatches", pendingDispatches.length, overdueDispatches.length + " overdue", pendingDispatches.length > 0 ? "#C77700" : "#16A34A", "my-tasks.html", countSpan(pendingDispatches.length, "plain"), sparklineSvg(dispatchTrend, pendingDispatches.length > 0 ? "#C77700" : "#16A34A"), "🚚")}
+          ${kpiCard("Stock Counts & Maintenance Due", stockCountsAndMaintenance.length, "Tasks needing action", stockCountsAndMaintenance.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(stockCountsAndMaintenance.length, "plain"), sparklineSvg(maintenanceTrend, stockCountsAndMaintenance.length > 0 ? "#DC2626" : "#16A34A"), "📋")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue dispatches, stock counts, equipment maintenance, and open client follow-ups — in priority order.</p>
+            </div>
+          </div>
+
+          ${attentionHtml}
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("🏭", "Add Storage Unit / Stock", "List a new storage unit, pallet, or stock item", "my-items.html", "#D4A63A")}
+          ${quickAction("💵", "Log Payment", "Record a storage, handling, or dispatch fee", "my-money.html", "#16A34A")}
+          ${quickAction("🚚", "Schedule Dispatch", "Book a dispatch or receiving date", "my-calendar.html", "#2563EB")}
+          ${quickAction("🧑", "Add Client", "Register a new client or supplier", "my-people.html", "#14B8A6")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Storage & Handling Revenue — Last 6 Months</h3>
+              <p>Monthly storage, handling, and dispatch fee income from your money records.</p>
+            </div>
+            <a class="btn small gold" href="my-money.html">Money</a>
+          </div>
+
+          ${hasAnyRevenueHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="warehouseRevenueTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge("💰", "Put your numbers here", "Log your first storage or handling fee and this chart will start tracking your monthly revenue trend.", "Log Payment", "my-money.html")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Dispatches, receiving dates, and stock counts coming up.</p>
+            </div>
+            <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Warehouse & Storage · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderWarehouseTrendChart(revenueTrendMonths);
       initCountAnimations();
       startGreetingRotation(greetingMessages.length || 1);
       animateHealthGauges();
@@ -8328,6 +8665,18 @@
       const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("logistics") || businessType.includes("transport") || businessType.includes("fleet") || businessTypeKey.includes("logistics");
+    }
+
+    function detectWarehouse(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "warehouse";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("warehouse") || businessType.includes("storage") || businessTypeKey.includes("warehouse");
     }
 
     function todayItem(icon, title, value, subtitle, href) {
