@@ -6058,19 +6058,15 @@
       startGreetingRotation(greetingMessages.length || 1);
     }
 
-    function renderHospitalityDashboard(scopedData, scopeLabel) {
-      const data = scopedData || dashboardData;
-      const isScoped = !!scopeLabel;
-
-      const today = new Date();
-      const todayStr = today.toISOString().slice(0, 10);
-      const monthKey = todayStr.slice(0, 7);
-
-      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
-
-      const revenueThisMonth = sumHospitalityIncome(data.transactions, monthKey);
-      const revenueLastMonth = sumHospitalityIncome(data.transactions, lastMonthKey);
+    // Hospitality's lodging sections (Hotel/Guest House/Lodge/Resort/
+    // Hostel/Airbnb) and its Food & Beverage sections (Restaurant/Bar
+    // Lounge/Catering) are different businesses under one roof - renting
+    // rooms by the night vs selling food/drink stock - so each gets its
+    // own content strategy, same grouping already used for Phase 2's
+    // item field-sets.
+    function buildRoomsSectionContent(data, ctx) {
+      const revenueThisMonth = sumHospitalityIncome(data.transactions, ctx.monthKey);
+      const revenueLastMonth = sumHospitalityIncome(data.transactions, ctx.lastMonthKey);
       const revenueDelta = revenueThisMonth - revenueLastMonth;
 
       const guestsLinked = (data.people || []).filter(function (person) {
@@ -6081,7 +6077,7 @@
 
       guestsLinked.forEach(function (person) {
         const checkoutDate = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
-        if (!checkoutDate || checkoutDate >= todayStr) return;
+        if (!checkoutDate || checkoutDate >= ctx.todayStr) return;
 
         const unit = (data.items || []).find(function (item) {
           return String(item.id) === String(getValue(person, ["linked_item_id"], ""));
@@ -6114,156 +6110,327 @@
         const type = getValue(event, ["event_type", "type"], "");
         const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
         const status = statusText(event);
-        return isHospitalityBookingType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+        return isHospitalityBookingType(type) && date === ctx.todayStr && !status.includes("cancelled") && !status.includes("completed");
       });
 
       const bookingsNeedingOutcome = (data.events || []).filter(function (event) {
         const type = getValue(event, ["event_type", "type"], "");
         const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
         const status = statusText(event);
-        return isHospitalityBookingType(type) && date && date < todayStr && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
+        return isHospitalityBookingType(type) && date && date < ctx.todayStr && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
       }).sort(function (a, b) {
         return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
       });
 
-      const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
-
       const upcomingCheckouts = guestsLinked.filter(function (person) {
         const checkoutDate = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
-        return checkoutDate && checkoutDate >= todayStr && checkoutDate <= sevenDaysStr;
+        return checkoutDate && checkoutDate >= ctx.todayStr && checkoutDate <= ctx.sevenDaysStr;
       }).sort(function (a, b) {
         return String(getValue(a, ["lease_end_date"], "")).localeCompare(String(getValue(b, ["lease_end_date"], "")));
       });
 
       const revenueTrendMonths = calculateHospitalityRevenueTrend(data.transactions);
-      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
       const bookingsTrend = buildMonthlyTrend(data.events, ["event_date", "created_at"], function (row) {
         return isHospitalityBookingType(getValue(row, ["event_type", "type"], ""));
       });
       const maintenanceTrend = buildMonthlyTrend(data.tasks, ["created_at"], function (task) {
         return isHousekeepingOrMaintenanceTask(getValue(task, ["task_type", "type"], ""));
       });
-      const calendarPreview = buildHospitalityCalendarPreview(today, data);
-      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const greetingMessages = [];
+      if (overdueCheckouts.length > 0) greetingMessages.push({ text: overdueCheckouts.length === 1 ? "1 overdue checkout needs attention" : overdueCheckouts.length + " overdue checkouts need attention", href: ctx.peopleHref });
+      if (todaysCheckins.length > 0) greetingMessages.push({ text: todaysCheckins.length === 1 ? "1 check-in scheduled today" : todaysCheckins.length + " check-ins scheduled today", href: ctx.calendarHref });
+      if (upcomingCheckouts.length > 0) greetingMessages.push({ text: upcomingCheckouts.length === 1 ? "1 checkout within 7 days" : upcomingCheckouts.length + " checkouts within 7 days", href: ctx.peopleHref });
+
+      return {
+        subtitle: "Overdue checkouts, today's check-ins, open housekeeping/maintenance, and upcoming departures for this section.",
+        kpisHtml: [
+          kpiCard("Revenue (This Month)", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626", ctx.moneyHref, countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626"), "💰"),
+          kpiCard("Bookings Today", todaysCheckins.length, "Check-ins / reservations today", "#D4A63A", ctx.calendarHref, countSpan(todaysCheckins.length, "plain"), sparklineSvg(bookingsTrend, "#D4A63A"), "🛎️"),
+          kpiCard("Occupancy", occupiedUnits + " / " + totalUnits, totalUnits > 0 ? "Rooms currently occupied" : "No rooms tracked yet", "#2563EB", ctx.itemsHref, countSpan(occupiedUnits, "ratio", " / " + totalUnits), staticProportionBar(totalUnits > 0 ? occupiedUnits / totalUnits : 0, "#2563EB", totalUnits > 0 ? (Math.round((occupiedUnits / totalUnits) * 100) + "% occupied") : "No rooms tracked yet"), "🏨"),
+          kpiCard("Housekeeping / Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(maintenanceOpen.length, "plain"), sparklineSvg(maintenanceTrend, maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A"), "🧹")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Overdue checkouts, today's check-ins, bookings needing an outcome, open housekeeping/maintenance, and upcoming departures — in priority order.",
+        attentionHtml: renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts),
+        quickActionsHtml: [
+          quickAction("🏨", "Add Room", "List a new room or unit", ctx.itemsHref, "#D4A63A"),
+          quickAction("💵", "Log Payment", "Record booking income", ctx.moneyHref, "#16A34A"),
+          quickAction("📅", "New Reservation", "Book a room or stay", ctx.calendarHref, "#2563EB"),
+          quickAction("🧑", "Add Guest", "Register a new guest", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Revenue — Last 6 Months",
+        trendSubtitle: "Monthly booking income trend from your money records.",
+        trendMonths: revenueTrendMonths,
+        trendLabel: "Revenue Collected",
+        trendColor: "#D4A63A",
+        trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first booking payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("🚪", "Overdue Checkouts", overdueCheckouts.length, "still occupied", ctx.peopleHref),
+          todayItem("🛎️", "Today's Check-ins", todaysCheckins.length, "scheduled today", ctx.calendarHref),
+          todayItem("🧹", "Housekeeping / Maintenance", maintenanceOpen.length, "open request(s)", ctx.tasksHref)
+        ].join(""),
+        greetingMessages: greetingMessages
+      };
+    }
+
+    function buildFoodBeverageSectionContent(data, ctx) {
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, ctx.monthKey, isFoodBeverageIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, ctx.lastMonthKey, isFoodBeverageIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isFoodBeverageIncome);
+
+      const outOfStockItems = (data.items || []).filter(isOutOfStockHospitalityItem);
+      const lowStockItems = (data.items || []).filter(isLowStockHospitalityItem);
+      const needsRestockCount = outOfStockItems.length + lowStockItems.length;
+
+      const supplierRestocksDue = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isSupplierRestockTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const guestRequestsOpen = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isGuestRequestTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const todaysBookings = (data.events || []).filter(function (event) {
+        const type = getValue(event, ["event_type", "type"], "");
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isHospitalityBookingType(type) && date === ctx.todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const attentionGroups = [];
+
+      if (outOfStockItems.length > 0) {
+        attentionGroups.push({
+          title: "Out of Stock",
+          rows: outOfStockItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Menu Item");
+            return attentionRow("🚫", name, "Out of stock", "Urgent", "red", ctx.itemsHref + "?highlight=" + item.id, null, "out-of-stock:" + item.id);
+          })
+        });
+      }
+
+      if (lowStockItems.length > 0) {
+        attentionGroups.push({
+          title: "Low Stock",
+          rows: lowStockItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Menu Item");
+            return attentionRow("📉", name, "Running low", "Low Stock", "gold", ctx.itemsHref + "?highlight=" + item.id, null, "low-stock:" + item.id);
+          })
+        });
+      }
+
+      if (supplierRestocksDue.length > 0) {
+        attentionGroups.push({
+          title: "Supplier Restocks Due",
+          rows: supplierRestocksDue.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Supplier Restock");
+            const due = getValue(task, ["due_date"], "");
+            const overdue = due && String(due).slice(0, 10) < ctx.todayStr;
+            return attentionRow("🚚", title, due ? "Due " + formatDate(due) : "No due date set", overdue ? "Overdue" : "Due", overdue ? "red" : "gold", ctx.tasksHref + "?highlight=" + task.id, null, overdue ? ("restock:" + task.id) : null);
+          })
+        });
+      }
+
+      if (guestRequestsOpen.length > 0) {
+        attentionGroups.push({
+          title: "Guest Requests Open",
+          rows: guestRequestsOpen.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Guest Request");
+            const due = getValue(task, ["due_date"], "");
+            return attentionRow("🙋", title, due ? "Due " + formatDate(due) : "No due date set", "Open", "blue", ctx.tasksHref + "?highlight=" + task.id, null, null);
+          })
+        });
+      }
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No stock issues, restocks, or guest requests need attention right now.</p></div>`
+        : attentionGroups.map(function (g) {
+            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+          }).join("");
+
+      const greetingMessages = [];
+      if (outOfStockItems.length > 0) greetingMessages.push({ text: outOfStockItems.length === 1 ? "1 item is out of stock" : outOfStockItems.length + " items are out of stock", href: ctx.itemsHref });
+      if (supplierRestocksDue.length > 0) greetingMessages.push({ text: supplierRestocksDue.length === 1 ? "1 supplier restock is due" : supplierRestocksDue.length + " supplier restocks are due", href: ctx.tasksHref });
+      if (guestRequestsOpen.length > 0) greetingMessages.push({ text: guestRequestsOpen.length === 1 ? "1 guest request is open" : guestRequestsOpen.length + " guest requests are open", href: ctx.tasksHref });
+
+      return {
+        subtitle: "Stock levels, supplier restocks, and guest requests for this section.",
+        kpisHtml: [
+          kpiCard("F&B Sales (This Month)", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "sales"), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626", ctx.moneyHref, countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626"), "💰"),
+          kpiCard("Needs Restock", needsRestockCount, outOfStockItems.length + " out of stock, " + lowStockItems.length + " low", needsRestockCount > 0 ? "#DC2626" : "#16A34A", ctx.itemsHref, countSpan(needsRestockCount, "plain"), null, "📦"),
+          kpiCard("Supplier Restocks Due", supplierRestocksDue.length, "Restock tasks needing action", supplierRestocksDue.length > 0 ? "#C77700" : "#16A34A", ctx.tasksHref, countSpan(supplierRestocksDue.length, "plain"), null, "🚚"),
+          kpiCard("Guest Requests Open", guestRequestsOpen.length, "Requests needing a response", guestRequestsOpen.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(guestRequestsOpen.length, "plain"), null, "🙋")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Out of stock / low stock items, supplier restocks due, and open guest requests — in priority order.",
+        attentionHtml: attentionHtml,
+        quickActionsHtml: [
+          quickAction("🍽️", "Add Menu Item", "List a new menu item, beverage, or stock item", ctx.itemsHref, "#D4A63A"),
+          quickAction("💵", "Log Sale", "Record a food or bar sale", ctx.moneyHref, "#16A34A"),
+          quickAction("🚚", "Record Restock", "Log a supplier restock", ctx.tasksHref, "#2563EB"),
+          quickAction("📅", "New Event Booking", "Book a function or catering event", ctx.calendarHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "F&B Sales — Last 6 Months",
+        trendSubtitle: "Monthly food & beverage sales trend from your money records.",
+        trendMonths: revenueTrendMonths,
+        trendLabel: "F&B Sales",
+        trendColor: "#16A34A",
+        trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first food or bar sale and this chart will start tracking your monthly sales trend.", actionLabel: "Log Sale", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("📦", "Needs Restock", needsRestockCount, "item(s)", ctx.itemsHref),
+          todayItem("🚚", "Restocks Due", supplierRestocksDue.length, "task(s)", ctx.tasksHref),
+          todayItem("🙋", "Guest Requests", guestRequestsOpen.length, "open", ctx.tasksHref)
+        ].join(""),
+        greetingMessages: greetingMessages
+      };
+    }
+
+    function getHospitalitySectionContent(scopeLabel, data, ctx) {
+      const fnbSections = ["Restaurant", "Bar / Lounge", "Catering"];
+      if (fnbSections.indexOf(scopeLabel) !== -1) return buildFoodBeverageSectionContent(data, ctx);
+      return buildRoomsSectionContent(data, ctx);
+    }
+
+    function renderHospitalityDashboard(scopedData, scopeLabel) {
+      const data = scopedData || dashboardData;
+      const isScoped = !!scopeLabel;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+      const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
 
       const sectionParam = isScoped ? "?section=" + encodeURIComponent(scopeLabel) : "";
-      const moneyHref = "my-money.html" + sectionParam;
-      const calendarHref = "my-calendar.html" + sectionParam;
-      const tasksHref = "my-tasks.html" + sectionParam;
-      const peopleHref = "my-people.html" + sectionParam;
+      const ctx = {
+        todayStr: todayStr,
+        monthKey: monthKey,
+        lastMonthKey: lastMonthKey,
+        sevenDaysStr: sevenDaysStr,
+        moneyHref: "my-money.html" + sectionParam,
+        calendarHref: "my-calendar.html" + sectionParam,
+        tasksHref: "my-tasks.html" + sectionParam,
+        itemsHref: "my-items.html" + sectionParam,
+        peopleHref: "my-people.html" + sectionParam
+      };
 
+      const content = getHospitalitySectionContent(isScoped ? scopeLabel : "Hotel", data, ctx);
+      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+      const calendarPreview = buildHospitalityCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
       const mostRecentRecord = findMostRecentRecord(data);
-      const greetingMessages = [];
 
-      if (overdueCheckouts.length > 0) {
-        greetingMessages.push({ text: overdueCheckouts.length === 1 ? "1 overdue checkout needs attention" : overdueCheckouts.length + " overdue checkouts need attention", href: peopleHref });
-      }
-      if (todaysCheckins.length > 0) {
-        greetingMessages.push({ text: todaysCheckins.length === 1 ? "1 check-in scheduled today" : todaysCheckins.length + " check-ins scheduled today", href: calendarHref });
-      }
-      if (upcomingCheckouts.length > 0) {
-        greetingMessages.push({ text: upcomingCheckouts.length === 1 ? "1 checkout within 7 days" : upcomingCheckouts.length + " checkouts within 7 days", href: peopleHref });
-      }
+      const greetingMessages = content.greetingMessages.slice();
       if (mostRecentRecord) {
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
 
-      const tasksSummary = calculateTaskSummary(data.tasks);
-      const moneySummary = calculateMoneySummary(data.transactions);
-      const supportSummary = calculateSupportSummary(data.support);
+      let health = null;
+      if (!isScoped) {
+        const tasksSummary = calculateTaskSummary(data.tasks);
+        const moneySummary = calculateMoneySummary(data.transactions);
+        const supportSummary = calculateSupportSummary(data.support);
 
-      let health;
-      try {
-        health = computeGenericHealthScore({ tasks: tasksSummary, money: moneySummary, support: supportSummary, dashboardData: data });
-      } catch (healthError) {
-        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+        try {
+          health = computeGenericHealthScore({ tasks: tasksSummary, money: moneySummary, support: supportSummary, dashboardData: data });
+        } catch (healthError) {
+          health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+        }
       }
 
       document.getElementById("content").innerHTML = `
         ${isScoped ? `
           <section class="card" style="margin-bottom:14px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+            <div>
+              <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+              <p style="margin:8px 0 0;color:var(--muted);">${safe(content.subtitle)}</p>
+            </div>
             <a class="btn small light" href="client.html">← Back to Overview</a>
           </section>
-        ` : ""}
+        ` : `
+          <section class="hero">
+            <div class="hero-grid">
+              <div class="hero-greet-enter">
+                <span class="badge gold">${safe(businessPreset.name)}</span>
+                <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+                ${buildGreetingRotatorHtml(greetingMessages)}
+                <p class="desktop-only">
+                  Here's what needs attention today across your rooms, tables, and bookings. Use it to see overdue checkouts, today's check-ins, open housekeeping/maintenance, and upcoming departures, then click any card or row to open the right record.
+                </p>
+                <p class="mobile-only">
+                  Your hospitality summary for today. Tap any card or use ☰ for full sections.
+                </p>
 
-        <section class="hero">
-          <div class="hero-grid">
-            <div class="hero-greet-enter">
-              <span class="badge gold">${safe(isScoped ? scopeLabel : businessPreset.name)}</span>
-              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
-              ${buildGreetingRotatorHtml(greetingMessages)}
-              <p class="desktop-only">
-                ${isScoped
-                  ? `Showing data tagged to the ${safe(scopeLabel)} section only. Switch sections from the sidebar or return to the combined Overview.`
-                  : `Here's what needs attention today across your rooms, tables, and bookings. Use it to see overdue checkouts, today's check-ins, open housekeeping/maintenance, and upcoming departures, then click any card or row to open the right record.`
-                }
-              </p>
-              <p class="mobile-only">
-                Your hospitality summary for today. Tap any card or use ☰ for full sections.
-              </p>
+                <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                  <a class="btn gold" href="${attr(ctx.moneyHref)}">Log Payment</a>
+                  <a class="btn green" href="${attr(ctx.calendarHref)}">New Reservation</a>
+                  <a class="btn light" href="${attr(ctx.itemsHref)}">Rooms / Tables</a>
+                  <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+                </div>
+              </div>
 
-              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
-                <a class="btn gold" href="${attr(moneyHref)}">Log Payment</a>
-                <a class="btn green" href="${attr(calendarHref)}">New Reservation</a>
-                <a class="btn light" href="my-items.html">Rooms / Tables</a>
-                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              <div class="hero-mini">
+                ${renderHealthGaugeHtml(health.score, health.summary)}
+                <div class="hero-mini-divider"></div>
+                <h4>Today / Attention</h4>
+                <div class="today-list">
+                  ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                  ${content.todayListHtml}
+                </div>
               </div>
             </div>
-
-            <div class="hero-mini">
-              ${renderHealthGaugeHtml(health.score, health.summary)}
-              <div class="hero-mini-divider"></div>
-              <h4>Today / Attention</h4>
-              <div class="today-list">
-                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("🚪", "Overdue Checkouts", overdueCheckouts.length, "still occupied", peopleHref)}
-                ${todayItem("🛎️", "Today's Check-ins", todaysCheckins.length, "scheduled today", calendarHref)}
-                ${todayItem("🧹", "Housekeeping / Maintenance", maintenanceOpen.length, "open request(s)", tasksHref)}
-              </div>
-            </div>
-          </div>
-        </section>
+          </section>
+        `}
 
         <section class="kpi-grid">
-          ${kpiCard("Revenue (This Month)", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626", moneyHref, countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626"), "💰")}
-          ${kpiCard("Bookings Today", todaysCheckins.length, "Check-ins / reservations today", "#D4A63A", calendarHref, countSpan(todaysCheckins.length, "plain"), sparklineSvg(bookingsTrend, "#D4A63A"), "🛎️")}
-          ${kpiCard("Occupancy", occupiedUnits + " / " + totalUnits, totalUnits > 0 ? "Rooms / tables currently occupied" : "No rooms or tables tracked yet", "#2563EB", "my-items.html", countSpan(occupiedUnits, "ratio", " / " + totalUnits), staticProportionBar(totalUnits > 0 ? occupiedUnits / totalUnits : 0, "#2563EB", totalUnits > 0 ? (Math.round((occupiedUnits / totalUnits) * 100) + "% occupied") : "No rooms/tables tracked yet"), "🏨")}
-          ${kpiCard("Housekeeping / Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", tasksHref, countSpan(maintenanceOpen.length, "plain"), sparklineSvg(maintenanceTrend, maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A"), "🧹")}
+          ${content.kpisHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>Needs Attention Today</h3>
-              <p>Overdue checkouts, today's check-ins, bookings needing an outcome, open housekeeping/maintenance, and upcoming departures — in priority order.</p>
+              <h3>${safe(content.attentionTitle)}</h3>
+              <p>${safe(content.attentionSubtitle)}</p>
             </div>
           </div>
 
-          ${renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts)}
+          ${content.attentionHtml}
         </section>
 
         <section class="quick-actions">
-          ${quickAction("🏨", "Add Room / Item", "List a new room, table, or menu item", "my-items.html", "#D4A63A")}
-          ${quickAction("💵", "Log Payment", "Record booking, food, or bar income", moneyHref, "#16A34A")}
-          ${quickAction("📅", "New Reservation", "Book a room, table, or event", calendarHref, "#2563EB")}
-          ${quickAction("🧑", "Add Guest", "Register a new guest", peopleHref, "#14B8A6")}
+          ${content.quickActionsHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>Revenue — Last 6 Months</h3>
-              <p>Monthly income trend from your money records.</p>
+              <h3>${safe(content.trendTitle)}</h3>
+              <p>${safe(content.trendSubtitle)}</p>
             </div>
-            <a class="btn small gold" href="${attr(moneyHref)}">Money</a>
+            <a class="btn small gold" href="${attr(ctx.moneyHref)}">Money</a>
           </div>
 
-          ${hasAnyRevenueHistory ? `
+          ${hasAnyTrendHistory ? `
             <div style="position:relative;height:260px;">
               <canvas id="hospitalityRevenueTrendChart"></canvas>
             </div>
-          ` : emptyStateNudge("💰", "Put your numbers here", "Log your first booking or sale and this chart will start tracking your monthly revenue trend.", "Log Payment", moneyHref)}
+          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
         </section>
 
         <section class="card">
@@ -6272,7 +6439,7 @@
               <h3>Calendar — Next 5 Days</h3>
               <p>Check-ins, reservations, checkouts, and maintenance coming up.</p>
             </div>
-            <a class="btn small gold" href="${attr(calendarHref)}">Open Calendar</a>
+            <a class="btn small gold" href="${attr(ctx.calendarHref)}">Open Calendar</a>
           </div>
 
           ${renderCalendarPreview(calendarPreview, false, "Check-ins, reservations, checkouts, and housekeeping/maintenance activities will appear here.")}
@@ -6287,10 +6454,13 @@
 
       updateThemeButton();
       updateNotificationCounts();
-      renderHospitalityRevenueChart(revenueTrendMonths);
+      renderHospitalityRevenueChart(content.trendMonths, content.trendLabel, content.trendColor);
       initCountAnimations();
-      startGreetingRotation(greetingMessages.length || 1);
-      animateHealthGauges();
+
+      if (!isScoped) {
+        startGreetingRotation(greetingMessages.length || 1);
+        animateHealthGauges();
+      }
     }
 
     function renderHospitalityOverview(sections) {
@@ -6397,6 +6567,18 @@
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
 
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(dashboardData.tasks),
+          money: calculateMoneySummary(dashboardData.transactions),
+          support: calculateSupportSummary(dashboardData.support),
+          dashboardData: dashboardData
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
       document.getElementById("content").innerHTML = `
         <section class="hero">
           <div class="hero-grid">
@@ -6420,6 +6602,8 @@
             </div>
 
             <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
@@ -6498,6 +6682,7 @@
       renderSectionComparisonChart(sectionSummaries);
       initCountAnimations();
       startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
     }
 
     function calculateSectionSummary(label, monthKey, todayStr) {
@@ -6823,8 +7008,11 @@
       return months;
     }
 
-    async function renderHospitalityRevenueChart(months) {
+    async function renderHospitalityRevenueChart(months, label, color) {
       if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      const chartLabel = label || "Revenue Collected";
+      const chartColor = color || "#D4A63A";
 
       try {
         await UnganiAnalytics.createChart("hospitalityRevenueTrendChart", {
@@ -6833,9 +7021,9 @@
             labels: months.map(function (m) { return m.label; }),
             datasets: [
               {
-                label: "Revenue Collected",
+                label: chartLabel,
                 data: months.map(function (m) { return m.value; }),
-                backgroundColor: "#D4A63A",
+                backgroundColor: chartColor,
                 borderRadius: 10
               }
             ]
@@ -6885,6 +7073,32 @@
     function isRestockOrSupplierTask(value) {
       const lower = String(value || "").toLowerCase();
       return lower.includes("restock") || lower.includes("supplier") || lower.includes("delivery") || lower.includes("stock count");
+    }
+
+    // Hospitality's Food & Beverage sections (Restaurant/Bar Lounge/
+    // Catering) track menu items and beverages as stock, tagged via
+    // their own status vocab from the Phase 2 item field-set (low
+    // stock/out of stock), not the units_available column Retail's
+    // stock helpers above read - hence separate matchers here.
+    function isOutOfStockHospitalityItem(item) {
+      return String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase().includes("out of stock");
+    }
+
+    function isLowStockHospitalityItem(item) {
+      return String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase().includes("low stock");
+    }
+
+    function isFoodBeverageIncome(row) {
+      const category = String(getValue(row, ["category", "category_name"], "")).toLowerCase();
+      return isIncome(row) && (category.includes("food") || category.includes("beverage") || category.includes("bar"));
+    }
+
+    function isGuestRequestTaskType(value) {
+      return String(value || "").toLowerCase().includes("guest request");
+    }
+
+    function isSupplierRestockTaskType(value) {
+      return String(value || "").toLowerCase().includes("supplier restock");
     }
 
     function isCustomerFollowUpTask(value) {
