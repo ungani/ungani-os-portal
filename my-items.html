@@ -53,6 +53,7 @@
     let urlActionApplied = false;
     let sectionOptions = [];
     let currentSectionFilter = "";
+    let activeItemFieldSet = null;
 
     // See my-money.html for the full rationale.
     const ITEM_PAGE_SIZE = 50;
@@ -62,7 +63,6 @@
     let itemSearchDebounceTimer = null;
 
     const LISTING_TYPES = ["sale", "rent", "lease", "project", "land", "commercial", "other"];
-    const STATUS_OPTIONS = ["available", "reserved", "under negotiation", "sold", "rented", "maintenance", "inactive"];
 
     const ITEM_CATEGORIES = [
       { key: "all", label: "All", accent: "#061C3D", match: function () { return true; } },
@@ -74,6 +74,33 @@
       { key: "commercial", label: "Commercial", accent: "#0EA5E9", match: function (row) { return getListingType(row) === "commercial"; } },
       { key: "other", label: "Other", accent: "#64748B", match: function (row) { return LISTING_TYPES.indexOf(getListingType(row)) === -1 || getListingType(row) === "other"; } }
     ];
+
+    const GENERIC_TILE_PALETTE = ["#061C3D", "#2563EB", "#16A34A", "#D4A63A", "#7C3AED", "#0EA5E9", "#DC2626", "#64748B"];
+
+    // Real Estate keeps its listing-type tiles (Sale/Rent/Lease/...);
+    // every other business type gets tiles built from whichever status
+    // values are actually present in this tenant's items, since status
+    // vocab differs per section (in stock/low stock vs available/in use).
+    function getActiveCategories() {
+      if (isRealEstate) return ITEM_CATEGORIES;
+
+      const statuses = Array.from(new Set(
+        itemSummaryRows.map(function (row) { return getStatus(row).toLowerCase(); }).filter(Boolean)
+      ));
+
+      const categories = [{ key: "all", label: "All", accent: GENERIC_TILE_PALETTE[0], match: function () { return true; } }];
+
+      statuses.slice(0, 7).forEach(function (status, index) {
+        categories.push({
+          key: status,
+          label: toTitle(status),
+          accent: GENERIC_TILE_PALETTE[(index + 1) % GENERIC_TILE_PALETTE.length],
+          match: function (row) { return getStatus(row).toLowerCase() === status; }
+        });
+      });
+
+      return categories;
+    }
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -160,7 +187,8 @@
     }
 
     function getItemCategoryFilteredIds() {
-      const category = ITEM_CATEGORIES.find(function (item) { return item.key === activeItemCategory; }) || ITEM_CATEGORIES[0];
+      const categories = getActiveCategories();
+      const category = categories.find(function (item) { return item.key === activeItemCategory; }) || categories[0];
       return itemSummaryRows.filter(category.match).map(function (row) { return row.id; });
     }
 
@@ -285,10 +313,11 @@
 
     function renderItemsPage() {
       const filtered = filterItems();
-      const category = ITEM_CATEGORIES.find(function (item) { return item.key === activeItemCategory; }) || ITEM_CATEGORIES[0];
+      const categories = getActiveCategories();
+      const category = categories.find(function (item) { return item.key === activeItemCategory; }) || categories[0];
       const summaryScopeRows = itemSummaryRows.filter(category.match);
-      const summary = calculateSummary(summaryScopeRows);
-      const projects = calculateProjects(summaryScopeRows);
+      const summary = isRealEstate ? calculateSummary(summaryScopeRows) : calculateGenericSummary(summaryScopeRows);
+      const projects = isRealEstate ? calculateProjects(summaryScopeRows) : [];
 
       UnganiClientShared.setContent(`
         <style>
@@ -476,9 +505,60 @@
             cursor: pointer;
           }
 
+          .generic-item-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+          }
+
+          .generic-item-card {
+            position: relative;
+            cursor: pointer;
+            border-left: 4px solid var(--accent, var(--ungani-gold));
+          }
+
+          .generic-item-value {
+            font-size: 22px;
+            line-height: 1.05;
+            font-weight: 950;
+            letter-spacing: -0.03em;
+            margin: 8px 0 4px;
+            color: var(--ungani-text);
+          }
+
+          .generic-item-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+          }
+
+          .generic-item-meta {
+            border: 1px solid var(--ungani-border);
+            border-radius: 16px;
+            padding: 10px;
+            background: var(--ungani-soft);
+          }
+
+          .generic-item-meta span {
+            display: block;
+            color: var(--ungani-muted);
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 3px;
+          }
+
+          .generic-item-meta strong {
+            display: block;
+            font-size: 14px;
+          }
+
           @media (max-width: 1180px) {
             .property-grid,
-            .project-grid {
+            .project-grid,
+            .generic-item-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
             }
           }
@@ -486,7 +566,9 @@
           @media (max-width: 680px) {
             .property-grid,
             .project-grid,
-            .property-meta-grid {
+            .property-meta-grid,
+            .generic-item-grid,
+            .generic-item-meta-grid {
               grid-template-columns: 1fr;
             }
 
@@ -510,7 +592,7 @@
           </p>
 
           <div class="ungani-button-row">
-            <button class="ungani-btn gold" onclick="openItemModal()">Add Property</button>
+            <button class="ungani-btn gold" onclick="openItemModal()">${isRealEstate ? "Add Property" : "Add Item"}</button>
             <button class="ungani-btn green" onclick="loadItems()">Refresh</button>
             <a class="ungani-btn dark" href="client.html">Dashboard</a>
           </div>
@@ -521,24 +603,34 @@
         ${renderCategoryTiles()}
 
         <section class="ungani-grid">
-          ${UnganiClientShared.metricCard(isRealEstate ? "Total Properties" : "Total Items", summaryScopeRows.length, "Matching current filters", "blue")}
-          ${UnganiClientShared.metricCard("Available", summary.available, "Ready for sale/rent/use", "green")}
-          ${UnganiClientShared.metricCard("Reserved / Negotiation", summary.reservedNegotiation, "Needs follow-up", summary.reservedNegotiation > 0 ? "gold" : "blue")}
-          ${UnganiClientShared.metricCard("Sold / Rented", summary.soldRented, "Closed or active rental", "green")}
-          ${UnganiClientShared.metricCard("Estimated Value", UnganiClientShared.formatKES(summary.totalValue), "Visible property/listing value", "green")}
-          ${UnganiClientShared.metricCard("Projects", projects.length, "Grouped developments", "gold")}
+          ${isRealEstate ? `
+            ${UnganiClientShared.metricCard("Total Properties", summaryScopeRows.length, "Matching current filters", "blue")}
+            ${UnganiClientShared.metricCard("Available", summary.available, "Ready for sale/rent/use", "green")}
+            ${UnganiClientShared.metricCard("Reserved / Negotiation", summary.reservedNegotiation, "Needs follow-up", summary.reservedNegotiation > 0 ? "gold" : "blue")}
+            ${UnganiClientShared.metricCard("Sold / Rented", summary.soldRented, "Closed or active rental", "green")}
+            ${UnganiClientShared.metricCard("Estimated Value", UnganiClientShared.formatKES(summary.totalValue), "Visible property/listing value", "green")}
+            ${UnganiClientShared.metricCard("Projects", projects.length, "Grouped developments", "gold")}
+          ` : `
+            ${UnganiClientShared.metricCard("Total Items", summaryScopeRows.length, "Matching current filters", "blue")}
+            ${UnganiClientShared.metricCard("In Stock / Available", summary.inStock, "Ready for use", "green")}
+            ${UnganiClientShared.metricCard("Low Stock / Attention", summary.lowStock, "Needs follow-up", summary.lowStock > 0 ? "gold" : "blue")}
+            ${UnganiClientShared.metricCard("Out of Stock / Retired", summary.outOfStock, "Unavailable", summary.outOfStock > 0 ? "red" : "green")}
+            ${UnganiClientShared.metricCard("Estimated Total Value", UnganiClientShared.formatKES(summary.totalValue), "Visible item value", "green")}
+          `}
         </section>
 
-        <section class="ungani-card">
-          <div class="ungani-section-title">
-            <div>
-              <h3>Project Progress</h3>
-              <p class="ungani-small">Track developments by units sold, available units, and completion progress.</p>
+        ${isRealEstate ? `
+          <section class="ungani-card">
+            <div class="ungani-section-title">
+              <div>
+                <h3>Project Progress</h3>
+                <p class="ungani-small">Track developments by units sold, available units, and completion progress.</p>
+              </div>
             </div>
-          </div>
 
-          ${renderProjectProgress(projects)}
-        </section>
+            ${renderProjectProgress(projects)}
+          </section>
+        ` : ""}
 
         <section class="ungani-card">
           <div class="ungani-section-title">
@@ -549,30 +641,36 @@
           <div class="ungani-form-grid">
             <div>
               <label for="searchBox">Search</label>
-              <input id="searchBox" placeholder="Search property, project, location, agent..." oninput="onItemSearchInput();" />
+              <input id="searchBox" placeholder="${isRealEstate ? "Search property, project, location, agent..." : "Search item name, notes..."}" oninput="onItemSearchInput();" />
             </div>
 
             <div>
               <label for="filterStatus">Status</label>
               <select id="filterStatus" onchange="onItemFilterChange();">
                 <option value="">All Statuses</option>
-                <option value="available">Available</option>
-                <option value="reserved">Reserved</option>
-                <option value="under negotiation">Under Negotiation</option>
-                <option value="sold">Sold</option>
-                <option value="rented">Rented</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="inactive">Inactive</option>
+                ${isRealEstate ? `
+                  <option value="available">Available</option>
+                  <option value="reserved">Reserved</option>
+                  <option value="under negotiation">Under Negotiation</option>
+                  <option value="sold">Sold</option>
+                  <option value="rented">Rented</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="inactive">Inactive</option>
+                ` : getActiveCategories().filter(function (category) { return category.key !== "all"; }).map(function (category) {
+                  return `<option value="${UnganiClientShared.attr(category.key)}">${UnganiClientShared.safe(category.label)}</option>`;
+                }).join("")}
               </select>
             </div>
 
-            <div>
-              <label for="filterProject">Project</label>
-              <select id="filterProject" onchange="onItemFilterChange();">
-                <option value="">All Projects</option>
-                ${getProjectOptions()}
-              </select>
-            </div>
+            ${isRealEstate ? `
+              <div>
+                <label for="filterProject">Project</label>
+                <select id="filterProject" onchange="onItemFilterChange();">
+                  <option value="">All Projects</option>
+                  ${getProjectOptions()}
+                </select>
+              </div>
+            ` : ""}
           </div>
         </section>
 
@@ -586,7 +684,7 @@
             <button class="ungani-btn gold" onclick="openItemModal()">+ Add New</button>
           </div>
 
-          ${renderPropertyGrid(filtered)}
+          ${isRealEstate ? renderPropertyGrid(filtered) : renderGenericItemGrid(filtered)}
 
           ${itemHasMoreRows() ? `
             <div class="ungani-button-row" style="justify-content:center; margin-top:14px;">
@@ -692,6 +790,97 @@
       `;
     }
 
+    function renderGenericItemGrid(rows) {
+      if (rows.length === 0) {
+        return `
+          <div class="ungani-empty">
+            <h3>No items found</h3>
+            <p>Add your first item or change the filters.</p>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="generic-item-grid">
+          ${rows.map(function (row) {
+            return renderGenericItemCard(row);
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function renderGenericItemCard(row) {
+      const id = row.id;
+      const name = getItemName(row);
+      const itemType = UnganiClientShared.getValue(row, ["item_type", "type"], "Item");
+      const status = getStatus(row);
+      const value = Number(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
+      const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
+      const sectionLabel = UnganiClientShared.getValue(row, ["section_label"], "");
+      const fieldSet = UnganiBusinessConfig.resolveItemFieldSet(currentContext.tenant, sectionLabel);
+      const customFields = row.custom_fields || {};
+
+      const extraRows = (fieldSet.fields || []).slice(0, 4).map(function (field) {
+        const raw = field.column
+          ? UnganiClientShared.getValue(row, [field.column], "")
+          : UnganiClientShared.getValue(customFields, [field.id], "");
+
+        if (!raw) return "";
+
+        const displayValue = field.type === "date" ? UnganiClientShared.formatDate(raw) : raw;
+
+        return `
+          <div class="generic-item-meta">
+            <span>${UnganiClientShared.safe(field.label)}</span>
+            <strong>${UnganiClientShared.safe(displayValue)}</strong>
+          </div>
+        `;
+      }).filter(Boolean).join("");
+
+      return `
+        <article class="ungani-card generic-item-card" style="--accent:${UnganiClientShared.attr(statusAccentHex(status))};" onclick="openItemModal('${UnganiClientShared.attr(id)}')">
+          <div class="ungani-section-title">
+            <div>
+              <h3 style="font-size:18px;">${UnganiClientShared.safe(name)}</h3>
+              <p class="ungani-small">${UnganiClientShared.safe(toTitle(itemType))}</p>
+            </div>
+
+            ${statusBadge(status)}
+          </div>
+
+          ${value > 0 ? `<p class="generic-item-value">${UnganiClientShared.safe(UnganiClientShared.formatKES(value))}</p>` : ""}
+
+          ${extraRows ? `<div class="generic-item-meta-grid">${extraRows}</div>` : ""}
+
+          ${notes ? `<p class="ungani-small" style="margin-top:12px;"><strong>Notes:</strong> ${UnganiClientShared.safe(shortText(notes, 110))}</p>` : ""}
+        </article>
+      `;
+    }
+
+    function calculateGenericSummary(rows) {
+      let inStock = 0;
+      let lowStock = 0;
+      let outOfStock = 0;
+      let totalValue = 0;
+
+      rows.forEach(function (row) {
+        const status = getStatus(row).toLowerCase();
+        const value = Number(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
+
+        totalValue += value;
+
+        if (status.includes("out of stock") || status.includes("retired") || status.includes("expired") || status.includes("discontinued")) {
+          outOfStock++;
+        } else if (status.includes("low stock") || status.includes("maintenance") || status.includes("on hold")) {
+          lowStock++;
+        } else if (status.includes("available") || status.includes("in stock") || status.includes("in use") || status.includes("cleared")) {
+          inStock++;
+        }
+      });
+
+      return { inStock, lowStock, outOfStock, totalValue };
+    }
+
     function renderPropertyGrid(rows) {
       if (rows.length === 0) {
         return `
@@ -787,37 +976,103 @@
       `;
     }
 
-    function openItemModal(id) {
-      const row = id ? items.find(function (item) { return String(item.id) === String(id); }) : null;
+    // Renders one extra form field from a resolved field-set entry.
+    // column-backed fields (Real Estate's legacy columns) and
+    // custom_fields-backed fields (everything else) render identically -
+    // only readExtraFieldValue()'s save target differs.
+    function renderExtraFieldHtml(field, row) {
+      const fieldId = "itemExtra_" + field.id;
+      const rawValue = field.column
+        ? (row ? UnganiClientShared.getValue(row, [field.column], "") : "")
+        : (row ? UnganiClientShared.getValue(row.custom_fields || {}, [field.id], "") : "");
 
-      if (id && !row) {
-        UnganiClientShared.showToast("Property not found.");
-        return;
+      if (field.type === "date") {
+        const dateVal = rawValue ? String(rawValue).slice(0, 10) : "";
+        return `<div><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="date" value="${UnganiClientShared.attr(dateVal)}" /></div>`;
       }
 
-      currentEditId = row ? row.id : null;
+      if (field.type === "number") {
+        return `<div><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="number" step="any" placeholder="${UnganiClientShared.attr(field.placeholder || "")}" value="${UnganiClientShared.attr(rawValue)}" /></div>`;
+      }
 
-      const bodyHtml = `
+      if (field.type === "url") {
+        return `<div><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="url" placeholder="${UnganiClientShared.attr(field.placeholder || "")}" value="${UnganiClientShared.attr(rawValue)}" /></div>`;
+      }
+
+      return `<div><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="text" placeholder="${UnganiClientShared.attr(field.placeholder || "")}" value="${UnganiClientShared.attr(rawValue)}" /></div>`;
+    }
+
+    function renderExtraFieldsHtml(fieldSet, row) {
+      return (fieldSet.fields || []).map(function (field) { return renderExtraFieldHtml(field, row); }).join("");
+    }
+
+    function readExtraFieldValue(field) {
+      const raw = UnganiClientShared.value("itemExtra_" + field.id);
+
+      if (field.type === "number") {
+        return raw === "" ? null : Number(raw);
+      }
+
+      return raw || null;
+    }
+
+    function renderStatusOptionsHtml(fieldSet, row) {
+      const options = fieldSet.statusOptions || ["available", "inactive"];
+      const currentStatus = row ? getStatus(row).toLowerCase() : "";
+
+      let html = options.map(function (opt) {
+        return `<option value="${UnganiClientShared.attr(opt)}">${UnganiClientShared.safe(toTitle(opt))}</option>`;
+      }).join("");
+
+      if (row && currentStatus && options.indexOf(currentStatus) === -1) {
+        html += `<option value="${UnganiClientShared.attr(currentStatus)}">${UnganiClientShared.safe(toTitle(currentStatus))}</option>`;
+      }
+
+      return html;
+    }
+
+    // Extra fields depend on which section is active, so switching the
+    // Section dropdown re-resolves the field-set and re-renders them live
+    // rather than leaving the form showing the previous section's fields.
+    function onItemSectionChange() {
+      const sectionLabel = UnganiClientShared.value("itemSection");
+      activeItemFieldSet = UnganiBusinessConfig.resolveItemFieldSet(currentContext.tenant, sectionLabel);
+
+      const statusSelect = document.getElementById(isRealEstate ? "propertyStatus" : "itemStatusSelect");
+      if (statusSelect) {
+        statusSelect.innerHTML = renderStatusOptionsHtml(activeItemFieldSet, null);
+        statusSelect.value = activeItemFieldSet.statusOptions[0] || "available";
+      }
+
+      const valueLabelEl = document.getElementById(isRealEstate ? "propertyPriceLabel" : "itemValueLabel");
+      if (valueLabelEl) valueLabelEl.innerText = activeItemFieldSet.valueLabel || "Price / Value";
+
+      const container = document.getElementById("itemExtraFieldsContainer");
+      if (container) container.innerHTML = renderExtraFieldsHtml(activeItemFieldSet, null);
+    }
+
+    function renderSectionFieldHtml(formSectionLabel) {
+      if (sectionOptions.length <= 1) return "";
+
+      return `
+        <div>
+          <label for="itemSection">Section</label>
+          <select id="itemSection" onchange="onItemSectionChange()">
+            ${sectionOptions.map(function (label) {
+              return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
+            }).join("")}
+          </select>
+        </div>
+      `;
+    }
+
+    function buildRealEstateFormHtml(row, formSectionLabel) {
+      return `
         <form id="itemForm" onsubmit="saveItem(event)">
           <div class="ungani-form-grid">
             <div>
               <label for="propertyName">Property / Listing Name</label>
               <input id="propertyName" required placeholder="Example: Clove Garden A12" value="${row ? UnganiClientShared.attr(getItemName(row)) : ""}" />
-            </div>
-
-            <div>
-              <label for="projectName">Project / Development</label>
-              <input id="projectName" placeholder="Example: Clove Garden" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["project_name"], "")) : ""}" />
-            </div>
-
-            <div>
-              <label for="propertyLocation">Location</label>
-              <input id="propertyLocation" placeholder="Example: Nyali, Mombasa" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_location", "location"], "")) : ""}" />
-            </div>
-
-            <div>
-              <label for="propertyPrice">Price / Value</label>
-              <input id="propertyPrice" type="number" min="0" step="1" placeholder="Amount in Ksh" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], "")) : ""}" />
             </div>
 
             <div>
@@ -837,85 +1092,19 @@
             </div>
 
             <div>
-              <label for="propertyStatus">Status</label>
-              <select id="propertyStatus">
-                <option value="available">Available</option>
-                <option value="reserved">Reserved</option>
-                <option value="under negotiation">Under Negotiation</option>
-                <option value="sold">Sold</option>
-                <option value="rented">Rented</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="inactive">Inactive</option>
-                ${row && STATUS_OPTIONS.indexOf(getStatus(row).toLowerCase()) === -1
-                  ? `<option value="${UnganiClientShared.attr(getStatus(row))}">${UnganiClientShared.safe(toTitle(getStatus(row)))}</option>`
-                  : ""}
-              </select>
-            </div>
-
-            ${sectionOptions.length > 1 ? `
-              <div>
-                <label for="itemSection">Section</label>
-                <select id="itemSection">
-                  ${sectionOptions.map(function (label) {
-                    return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
-                  }).join("")}
-                </select>
-              </div>
-            ` : ""}
-
-            <div>
-              <label for="bedrooms">Bedrooms</label>
-              <input id="bedrooms" type="number" min="0" step="1" placeholder="Example: 3" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["bedrooms"], "")) : ""}" />
+              <label for="propertyStatus" id="propertyStatusLabel">Status</label>
+              <select id="propertyStatus">${renderStatusOptionsHtml(activeItemFieldSet, row)}</select>
             </div>
 
             <div>
-              <label for="bathrooms">Bathrooms</label>
-              <input id="bathrooms" type="number" min="0" step="1" placeholder="Example: 2" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["bathrooms"], "")) : ""}" />
+              <label for="propertyPrice" id="propertyPriceLabel">${UnganiClientShared.safe(activeItemFieldSet.valueLabel || "Price / Value")}</label>
+              <input id="propertyPrice" type="number" min="0" step="1" placeholder="Amount in Ksh" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], "")) : ""}" />
             </div>
 
-            <div>
-              <label for="propertySize">Property Size</label>
-              <input id="propertySize" placeholder="Example: 1,250 sq ft" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_size"], "")) : ""}" />
-            </div>
+            ${renderSectionFieldHtml(formSectionLabel)}
 
-            <div>
-              <label for="assignedAgent">Assigned Agent</label>
-              <input id="assignedAgent" placeholder="Example: Brian Otieno" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["assigned_agent"], "")) : ""}" />
-            </div>
-
-            <div>
-              <label for="photoUrl">Photo URL</label>
-              <input id="photoUrl" type="url" placeholder="Optional image link. If empty, placeholder is used." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["photo_url", "image_url", "thumbnail_url"], "")) : ""}" />
-            </div>
-
-            <div>
-              <label for="dateListed">Date Listed</label>
-              <input id="dateListed" type="date" value="${row ? UnganiClientShared.attr(String(UnganiClientShared.getValue(row, ["date_listed"], "")).slice(0, 10)) : ""}" />
-            </div>
-
-            <div>
-              <label for="totalUnits">Total Units</label>
-              <input id="totalUnits" type="number" min="0" step="1" placeholder="Example: 20" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["total_units"], "")) : ""}" />
-            </div>
-
-            <div>
-              <label for="unitsSold">Units Sold</label>
-              <input id="unitsSold" type="number" min="0" step="1" placeholder="Example: 8" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["units_sold"], "")) : ""}" />
-            </div>
-
-            <div>
-              <label for="unitsAvailable">Units Available</label>
-              <input id="unitsAvailable" type="number" min="0" step="1" placeholder="Example: 12" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["units_available"], "")) : ""}" />
-            </div>
-
-            <div>
-              <label for="projectProgress">Project Progress %</label>
-              <input id="projectProgress" type="number" min="0" max="100" step="1" placeholder="Example: 65" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["project_progress_percent"], "")) : ""}" />
-            </div>
-
-            <div>
-              <label for="completionStatus">Completion Status</label>
-              <input id="completionStatus" placeholder="Example: Ongoing / Ready / Completed" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["completion_status"], "")) : ""}" />
+            <div id="itemExtraFieldsContainer" style="display:contents;">
+              ${renderExtraFieldsHtml(activeItemFieldSet, row)}
             </div>
           </div>
 
@@ -932,18 +1121,97 @@
           </div>
         </form>
       `;
+    }
+
+    function buildGenericItemFormHtml(row, formSectionLabel) {
+      const currentItemType = row ? UnganiClientShared.getValue(row, ["item_type", "type"], "") : "";
+      const itemTypes = businessPreset.itemTypes || [];
+
+      return `
+        <form id="itemForm" onsubmit="saveItem(event)">
+          <div class="ungani-form-grid">
+            <div>
+              <label for="itemNameInput">Item Name</label>
+              <input id="itemNameInput" required placeholder="Example: Reefer Unit 2, Amoxicillin 500mg" value="${row ? UnganiClientShared.attr(getItemName(row)) : ""}" />
+            </div>
+
+            <div>
+              <label for="itemTypeSelect">Item Type</label>
+              <select id="itemTypeSelect">
+                ${itemTypes.map(function (item) {
+                  return `<option value="${UnganiClientShared.attr(item)}">${UnganiClientShared.safe(item)}</option>`;
+                }).join("")}
+                ${row && itemTypes.indexOf(currentItemType) === -1 && currentItemType
+                  ? `<option value="${UnganiClientShared.attr(currentItemType)}">${UnganiClientShared.safe(currentItemType)}</option>`
+                  : ""}
+              </select>
+            </div>
+
+            <div>
+              <label for="itemStatusSelect" id="itemStatusSelectLabel">Status</label>
+              <select id="itemStatusSelect">${renderStatusOptionsHtml(activeItemFieldSet, row)}</select>
+            </div>
+
+            <div>
+              <label for="itemValue" id="itemValueLabel">${UnganiClientShared.safe(activeItemFieldSet.valueLabel || "Price / Value")}</label>
+              <input id="itemValue" type="number" min="0" step="any" placeholder="Amount in Ksh" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], "")) : ""}" />
+            </div>
+
+            ${renderSectionFieldHtml(formSectionLabel)}
+
+            <div id="itemExtraFieldsContainer" style="display:contents;">
+              ${renderExtraFieldsHtml(activeItemFieldSet, row)}
+            </div>
+          </div>
+
+          <label for="itemNotes">Notes</label>
+          <textarea id="itemNotes" placeholder="Add notes, specifications, or details...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn green" type="submit">${row ? "Update Item" : "Save Item"}</button>
+            ${row ? `<button class="ungani-btn red" type="button" onclick="deleteItem('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
+            <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
+          </div>
+        </form>
+      `;
+    }
+
+    function openItemModal(id) {
+      const row = id ? items.find(function (item) { return String(item.id) === String(id); }) : null;
+
+      if (id && !row) {
+        UnganiClientShared.showToast(isRealEstate ? "Property not found." : "Item not found.");
+        return;
+      }
+
+      currentEditId = row ? row.id : null;
+
+      const formSectionLabel = row
+        ? UnganiClientShared.getValue(row, ["section_label"], "")
+        : (currentSectionFilter || sectionOptions[0] || "");
+
+      activeItemFieldSet = UnganiBusinessConfig.resolveItemFieldSet(currentContext.tenant, formSectionLabel);
+
+      const bodyHtml = isRealEstate
+        ? buildRealEstateFormHtml(row, formSectionLabel)
+        : buildGenericItemFormHtml(row, formSectionLabel);
 
       UnganiClientShared.openModal({
-        title: row ? "Update Property / Listing" : "Add Property / Listing",
+        title: row
+          ? (isRealEstate ? "Update Property / Listing" : "Update Item")
+          : (isRealEstate ? "Add Property / Listing" : "Add Item"),
         bodyHtml: bodyHtml,
         onOpen: function () {
-          document.getElementById("listingType").value = row ? getListingType(row) : "sale";
-          document.getElementById("propertyStatus").value = row ? getStatus(row) : "available";
+          if (isRealEstate) {
+            document.getElementById("listingType").value = row ? getListingType(row) : "sale";
+            document.getElementById("propertyStatus").value = row ? getStatus(row) : (activeItemFieldSet.statusOptions[0] || "available");
+          } else {
+            document.getElementById("itemTypeSelect").value = row ? UnganiClientShared.getValue(row, ["item_type", "type"], "") : (businessPreset.itemTypes[0] || "Item");
+            document.getElementById("itemStatusSelect").value = row ? getStatus(row) : (activeItemFieldSet.statusOptions[0] || "available");
+          }
 
           if (sectionOptions.length > 1 && document.getElementById("itemSection")) {
-            document.getElementById("itemSection").value = row
-              ? UnganiClientShared.getValue(row, ["section_label"], "")
-              : (currentSectionFilter || sectionOptions[0] || "");
+            document.getElementById("itemSection").value = formSectionLabel;
           }
         }
       });
@@ -1065,31 +1333,18 @@
     async function saveItem(event) {
       event.preventDefault();
 
-      const name = UnganiClientShared.value("propertyName");
+      const nameFieldId = isRealEstate ? "propertyName" : "itemNameInput";
+      const name = UnganiClientShared.value(nameFieldId);
 
       if (!name) {
-        alert("Please enter a property/listing name.");
+        alert(isRealEstate ? "Please enter a property/listing name." : "Please enter an item name.");
         return;
       }
 
-      const totalUnits = Number(UnganiClientShared.value("totalUnits") || 0);
-      const unitsSold = Number(UnganiClientShared.value("unitsSold") || 0);
-      let unitsAvailable = Number(UnganiClientShared.value("unitsAvailable") || 0);
+      const status = UnganiClientShared.value(isRealEstate ? "propertyStatus" : "itemStatusSelect")
+        || (activeItemFieldSet.statusOptions[0] || "available");
 
-      if (!unitsAvailable && totalUnits > 0) {
-        unitsAvailable = Math.max(0, totalUnits - unitsSold);
-      }
-
-      let progress = Number(UnganiClientShared.value("projectProgress") || 0);
-
-      if (!progress && totalUnits > 0) {
-        progress = Math.round((unitsSold / totalUnits) * 100);
-      }
-
-      progress = Math.max(0, Math.min(100, progress));
-
-      const status = UnganiClientShared.value("propertyStatus") || "available";
-      const listingType = UnganiClientShared.value("listingType") || "sale";
+      const value = Number(UnganiClientShared.value(isRealEstate ? "propertyPrice" : "itemValue") || 0) || null;
 
       const payload = {
         business_type_key: UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], null),
@@ -1100,40 +1355,48 @@
         title: name,
         property_name: name,
 
-        item_type: isRealEstate ? "property" : "item",
-        type: isRealEstate ? "property" : "item",
-        item_category: listingType,
-        category: listingType,
-
-        listing_type: listingType,
-        property_location: UnganiClientShared.value("propertyLocation") || null,
-        property_price: Number(UnganiClientShared.value("propertyPrice") || 0) || null,
-
         item_status: status,
         status: status,
         property_status: status,
 
-        bedrooms: Number(UnganiClientShared.value("bedrooms") || 0) || null,
-        bathrooms: Number(UnganiClientShared.value("bathrooms") || 0) || null,
-        property_size: UnganiClientShared.value("propertySize") || null,
-        assigned_agent: UnganiClientShared.value("assignedAgent") || null,
-        photo_url: UnganiClientShared.value("photoUrl") || null,
+        property_price: value,
 
-        project_name: UnganiClientShared.value("projectName") || null,
-        date_listed: UnganiClientShared.value("dateListed") || null,
-        total_units: totalUnits || null,
-        units_sold: unitsSold || null,
-        units_available: unitsAvailable || null,
-        completion_status: UnganiClientShared.value("completionStatus") || null,
-        project_progress_percent: progress || null,
-
-        notes: UnganiClientShared.value("notes") || null,
+        notes: UnganiClientShared.value(isRealEstate ? "notes" : "itemNotes") || null,
         updated_at: new Date().toISOString()
       };
+
+      if (isRealEstate) {
+        const listingType = UnganiClientShared.value("listingType") || "sale";
+        payload.item_type = "property";
+        payload.type = "property";
+        payload.item_category = listingType;
+        payload.category = listingType;
+        payload.listing_type = listingType;
+      } else {
+        const itemType = UnganiClientShared.value("itemTypeSelect") || (businessPreset.itemTypes[0] || "Item");
+        payload.item_type = itemType;
+        payload.type = itemType;
+        payload.item_category = itemType;
+        payload.category = itemType;
+      }
 
       if (sectionOptions.length > 1) {
         payload.section_label = UnganiClientShared.value("itemSection") || null;
       }
+
+      const customFields = {};
+
+      (activeItemFieldSet.fields || []).forEach(function (field) {
+        const fieldValue = readExtraFieldValue(field);
+
+        if (field.column) {
+          payload[field.column] = fieldValue;
+        } else {
+          customFields[field.id] = fieldValue;
+        }
+      });
+
+      payload.custom_fields = customFields;
 
       let response;
 
@@ -1153,7 +1416,7 @@
             .insert(payload);
         }
       } catch (error) {
-        alert(error.message || "Could not save property. Please check your connection.");
+        alert(error.message || "Could not save. Please check your connection.");
         return;
       }
 
@@ -1163,7 +1426,7 @@
       }
 
       currentEditId = null;
-      UnganiClientShared.showToast("Property saved ✓");
+      UnganiClientShared.showToast(isRealEstate ? "Property saved ✓" : "Item saved ✓");
       UnganiClientShared.closeModal();
       await loadItems();
     }

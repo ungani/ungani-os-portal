@@ -3345,6 +3345,228 @@
     return fallback === undefined ? "" : fallback;
   }
 
+  // Phase 2: per-section "what does an item actually look like here"
+  // field definitions for my-items.html's add/edit form and card display.
+  // Keyed by section key first, falling back to the top-level type key,
+  // falling back to GENERIC_ITEM_FIELD_SET for anything not covered yet
+  // (Phase 3 will fill in the remaining ~20 sections one at a time).
+  //
+  // Each field: { id, label, type, placeholder?, column? }
+  //   - type is "text" | "number" | "date" | "url"
+  //   - column: if set, the value reads/writes that existing top-level
+  //     business_items column (used only for Real Estate's legacy
+  //     fields, so old data and any code still reading those columns
+  //     directly - e.g. client.html's Property dashboard - keeps
+  //     working unchanged). If absent, the value reads/writes
+  //     custom_fields[id] instead.
+
+  const GENERIC_ITEM_FIELD_SET = {
+    valueLabel: "Price / Value",
+    statusOptions: ["available", "in use", "maintenance", "inactive"],
+    fields: [
+      { id: "quantity", label: "Quantity / Stock", type: "number", placeholder: "Example: 10" },
+      { id: "supplier", label: "Supplier / Source", type: "text", placeholder: "Example: ABC Distributors" }
+    ]
+  };
+
+  const REAL_ESTATE_ITEM_FIELD_SET = {
+    valueLabel: "Price / Value",
+    statusOptions: ["available", "reserved", "under negotiation", "sold", "rented", "maintenance", "inactive"],
+    fields: [
+      { id: "property_location", label: "Location", type: "text", column: "property_location", placeholder: "Example: Nyali, Mombasa" },
+      { id: "bedrooms", label: "Bedrooms", type: "number", column: "bedrooms", placeholder: "Example: 3" },
+      { id: "bathrooms", label: "Bathrooms", type: "number", column: "bathrooms", placeholder: "Example: 2" },
+      { id: "property_size", label: "Property Size", type: "text", column: "property_size", placeholder: "Example: 1,250 sq ft" },
+      { id: "assigned_agent", label: "Assigned Agent", type: "text", column: "assigned_agent", placeholder: "Example: Brian Otieno" },
+      { id: "photo_url", label: "Photo URL", type: "url", column: "photo_url", placeholder: "Optional image link. If empty, placeholder is used." },
+      { id: "project_name", label: "Project / Development", type: "text", column: "project_name", placeholder: "Example: Clove Garden" },
+      { id: "date_listed", label: "Date Listed", type: "date", column: "date_listed" },
+      { id: "total_units", label: "Total Units", type: "number", column: "total_units", placeholder: "Example: 20" },
+      { id: "units_sold", label: "Units Sold", type: "number", column: "units_sold", placeholder: "Example: 8" },
+      { id: "units_available", label: "Units Available", type: "number", column: "units_available", placeholder: "Example: 12" },
+      { id: "project_progress_percent", label: "Project Progress %", type: "number", column: "project_progress_percent", placeholder: "Example: 65" },
+      { id: "completion_status", label: "Completion Status", type: "text", column: "completion_status", placeholder: "Example: Ongoing / Ready / Completed" }
+    ]
+  };
+
+  const LOGISTICS_TRANSPORT_FIELD_SET = {
+    valueLabel: "Estimated Value",
+    statusOptions: ["available", "in use", "in maintenance", "retired", "inactive"],
+    fields: [
+      { id: "registration_number", label: "Registration Number", type: "text", placeholder: "Example: KDA 123B" },
+      { id: "capacity", label: "Capacity", type: "text", placeholder: "Example: 7 tonnes / 14 seats" },
+      { id: "fuel_type", label: "Fuel Type", type: "text", placeholder: "Example: Diesel" },
+      { id: "last_service_date", label: "Last Service Date", type: "date" }
+    ]
+  };
+
+  const LOGISTICS_COLD_CHAIN_FIELD_SET = {
+    valueLabel: "Estimated Value",
+    statusOptions: ["available", "in use", "in maintenance", "retired", "inactive"],
+    fields: [
+      { id: "fuel_capacity_liters", label: "Fuel Capacity (Liters)", type: "number", placeholder: "Example: 200" },
+      { id: "temperature_range", label: "Temperature Range", type: "text", placeholder: "Example: -18°C to -22°C" },
+      { id: "last_service_date", label: "Last Service Date", type: "date" }
+    ]
+  };
+
+  const LOGISTICS_CLEARING_FIELD_SET = {
+    valueLabel: "Estimated Value",
+    statusOptions: ["available", "in progress", "cleared", "on hold", "inactive"],
+    fields: [
+      { id: "reference_number", label: "Container / Reference Number", type: "text", placeholder: "Example: MSKU1234567" },
+      { id: "origin", label: "Origin", type: "text", placeholder: "Example: Mombasa Port" },
+      { id: "destination", label: "Destination", type: "text", placeholder: "Example: Nairobi ICD" },
+      { id: "clearance_status", label: "Clearance Status", type: "text", placeholder: "Example: Awaiting documents" }
+    ]
+  };
+
+  const HOSPITALITY_ROOM_FIELD_SET = {
+    valueLabel: "Rate per Night",
+    statusOptions: ["available", "occupied", "reserved", "maintenance", "inactive"],
+    fields: [
+      { id: "room_type", label: "Room / Unit Type", type: "text", placeholder: "Example: Single, Double, Suite" },
+      { id: "capacity", label: "Guest Capacity", type: "number", placeholder: "Example: 2" },
+      { id: "amenities", label: "Amenities", type: "text", placeholder: "Example: WiFi, AC, Breakfast included" },
+      { id: "floor_location", label: "Floor / Location", type: "text", placeholder: "Example: 2nd Floor, Garden Wing" }
+    ]
+  };
+
+  const HOSPITALITY_FNB_FIELD_SET = {
+    valueLabel: "Unit Price",
+    statusOptions: ["available", "low stock", "out of stock", "discontinued"],
+    fields: [
+      { id: "category", label: "Category", type: "text", placeholder: "Example: Main Course, Drink, Equipment" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 25" },
+      { id: "reorder_level", label: "Reorder Level", type: "number", placeholder: "Example: 5" },
+      { id: "supplier", label: "Supplier", type: "text", placeholder: "Example: Fresh Foods Ltd" }
+    ]
+  };
+
+  const RETAIL_EXPIRY_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "expired", "discontinued"],
+    fields: [
+      { id: "expiry_date", label: "Expiry Date", type: "date" },
+      { id: "batch_number", label: "Batch Number", type: "text", placeholder: "Example: B20260614" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 40" },
+      { id: "reorder_level", label: "Reorder Level", type: "number", placeholder: "Example: 10" },
+      { id: "supplier", label: "Supplier", type: "text", placeholder: "Example: MedSupply Kenya" }
+    ]
+  };
+
+  const RETAIL_SERIAL_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    fields: [
+      { id: "serial_number", label: "Serial Number / IMEI", type: "text", placeholder: "Example: 356789104561234" },
+      { id: "warranty_expiry", label: "Warranty Expiry", type: "date" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 15" },
+      { id: "supplier", label: "Supplier", type: "text" }
+    ]
+  };
+
+  const RETAIL_VARIANT_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    fields: [
+      { id: "size", label: "Size", type: "text", placeholder: "Example: M, 42, UK 8" },
+      { id: "color", label: "Color", type: "text", placeholder: "Example: Navy Blue" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 20" },
+      { id: "supplier", label: "Supplier", type: "text" }
+    ]
+  };
+
+  const RETAIL_FURNITURE_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    fields: [
+      { id: "dimensions", label: "Dimensions", type: "text", placeholder: "Example: 180cm x 90cm x 75cm" },
+      { id: "material", label: "Material", type: "text", placeholder: "Example: Oak, Steel, Fabric" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 6" },
+      { id: "supplier", label: "Supplier", type: "text" }
+    ]
+  };
+
+  const RETAIL_BOOK_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    fields: [
+      { id: "isbn", label: "ISBN", type: "text", placeholder: "Example: 978-3-16-148410-0" },
+      { id: "author", label: "Author", type: "text" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 12" },
+      { id: "supplier", label: "Supplier", type: "text" }
+    ]
+  };
+
+  const RETAIL_GENERIC_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    fields: [
+      { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 50" },
+      { id: "reorder_level", label: "Reorder Level", type: "number", placeholder: "Example: 10" },
+      { id: "supplier", label: "Supplier", type: "text" }
+    ]
+  };
+
+  const ITEM_FIELD_SETS = {
+    real_estate: REAL_ESTATE_ITEM_FIELD_SET,
+
+    transport: LOGISTICS_TRANSPORT_FIELD_SET,
+    cold_chain: LOGISTICS_COLD_CHAIN_FIELD_SET,
+    clearing_forwarding: LOGISTICS_CLEARING_FIELD_SET,
+
+    hotel: HOSPITALITY_ROOM_FIELD_SET,
+    guest_house: HOSPITALITY_ROOM_FIELD_SET,
+    lodge: HOSPITALITY_ROOM_FIELD_SET,
+    resort: HOSPITALITY_ROOM_FIELD_SET,
+    hostel: HOSPITALITY_ROOM_FIELD_SET,
+    airbnb: HOSPITALITY_ROOM_FIELD_SET,
+    restaurant: HOSPITALITY_FNB_FIELD_SET,
+    bar_lounge: HOSPITALITY_FNB_FIELD_SET,
+    catering: HOSPITALITY_FNB_FIELD_SET,
+
+    pharmacy: RETAIL_EXPIRY_FIELD_SET,
+    agrovet: RETAIL_EXPIRY_FIELD_SET,
+    cosmetics: RETAIL_EXPIRY_FIELD_SET,
+    electronics: RETAIL_SERIAL_FIELD_SET,
+    mobile_phones: RETAIL_SERIAL_FIELD_SET,
+    fashion: RETAIL_VARIANT_FIELD_SET,
+    furniture_retail: RETAIL_FURNITURE_FIELD_SET,
+    bookshop: RETAIL_BOOK_FIELD_SET,
+    supermarket: RETAIL_GENERIC_FIELD_SET,
+    hardware: RETAIL_GENERIC_FIELD_SET,
+    general_retail: RETAIL_GENERIC_FIELD_SET
+  };
+
+  // Resolves which field-set a tenant's item form/card should use: the
+  // matched section's own set (by section key) if the item's current
+  // section has one, else the top-level business type's set (by type
+  // key - currently only real_estate, since it has no section split),
+  // else the generic minimal fallback for anything not authored yet.
+  function resolveItemFieldSet(tenant, sectionLabel) {
+    const type = resolve(tenant);
+
+    if (type && type.sections && type.sections.length && sectionLabel) {
+      const cleanLabel = String(sectionLabel || "").trim().toLowerCase();
+
+      const section = type.sections.filter(function (candidate) {
+        return String(candidate.label || "").toLowerCase() === cleanLabel;
+      })[0];
+
+      if (section && ITEM_FIELD_SETS[section.key]) {
+        return ITEM_FIELD_SETS[section.key];
+      }
+    }
+
+    if (type && ITEM_FIELD_SETS[type.key]) {
+      return ITEM_FIELD_SETS[type.key];
+    }
+
+    return GENERIC_ITEM_FIELD_SET;
+  }
+
   window.UnganiBusinessConfig = {
     TYPES,
     GENERAL,
@@ -3353,6 +3575,7 @@
     mergeWithGeneral,
     getRawBusinessText,
     getValue,
-    unique
+    unique,
+    resolveItemFieldSet
   };
 })();
