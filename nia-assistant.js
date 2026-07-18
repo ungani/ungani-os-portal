@@ -41,6 +41,50 @@
   const NAV_BY_KEY = {};
   NAV_ITEMS.forEach(function (item) { NAV_BY_KEY[item.key] = item; });
 
+  // Admin-side nav: real pages confirmed from admin-home.html's own
+  // sidebar links plus a few real utility pages (audit logs, email
+  // queue, sections) that aren't in the sidebar but genuinely exist.
+  // No smart-search table list here - the admin side has no per-tenant
+  // customer/property-style data for Nia to search across the way the
+  // client side does, per the earlier audit finding.
+  const ADMIN_NAV_ITEMS = [
+    { key: "admin-dashboard", href: "admin-home.html", icon: "🏠", label: "Dashboard", aliases: ["home", "dashboard", "main page", "admin home"] },
+    { key: "admin-approvals", href: "admin.html", icon: "✅", label: "Approvals", aliases: ["approvals", "registrations", "registration", "pending signups", "signups", "sign ups", "approve"] },
+    { key: "admin-users", href: "users.html", icon: "👥", label: "Users", aliases: ["users", "clients", "tenants", "businesses", "accounts", "user accounts"] },
+    { key: "admin-money", href: "admin-money.html", icon: "💰", label: "Money", aliases: ["money", "transactions", "revenue", "ledger", "payments"] },
+    { key: "admin-billing", href: "billing.html", icon: "💳", label: "Billing", aliases: ["billing", "invoices", "invoice"] },
+    { key: "admin-subscriptions", href: "admin-subscriptions.html", icon: "📦", label: "Subscriptions & Packages", aliases: ["subscriptions", "packages", "plans", "upgrade requests", "upgrades"] },
+    { key: "admin-sections", href: "sections.html", icon: "🏷️", label: "Business Types & Sections", aliases: ["sections", "business types", "categories"] },
+    { key: "admin-support", href: "support.html", icon: "🛟", label: "Support Desk", aliases: ["support", "support tickets", "help desk", "issues", "tickets"] },
+    { key: "admin-notices", href: "notices.html", icon: "🔔", label: "Notices", aliases: ["notices", "notifications", "announcements"] },
+    { key: "admin-profiles", href: "admin-profiles.html", icon: "🏢", label: "Client Profiles", aliases: ["client profiles", "profiles", "business profiles"] },
+    { key: "admin-documents", href: "admin-documents.html", icon: "📄", label: "Documents", aliases: ["documents", "files"] },
+    { key: "admin-people", href: "admin-people.html", icon: "👤", label: "People", aliases: ["people", "contacts"] },
+    { key: "admin-tasks", href: "admin-tasks.html", icon: "✅", label: "Tasks", aliases: ["tasks", "follow-ups", "follow ups"] },
+    { key: "admin-records", href: "admin-records.html", icon: "🗂️", label: "Records", aliases: ["records"] },
+    { key: "admin-items", href: "admin-items.html", icon: "🏷️", label: "Items", aliases: ["items", "assets", "inventory"] },
+    { key: "admin-calendar", href: "admin-calendar.html", icon: "📅", label: "Calendar", aliases: ["calendar", "schedule"] },
+    { key: "admin-charts", href: "admin-charts.html", icon: "📊", label: "Charts", aliases: ["charts", "analytics", "graphs"] },
+    { key: "admin-reports", href: "admin-reports.html", icon: "📑", label: "Reports", aliases: ["reports", "report"] },
+    { key: "admin-audit-logs", href: "admin-audit-logs.html", icon: "🕵️", label: "Audit Logs", aliases: ["audit logs", "audit log", "activity log", "security log", "who did what"] },
+    { key: "admin-email-queue", href: "admin-email-queue.html", icon: "✉️", label: "Email Queue", aliases: ["email queue", "emails", "email", "send email"] },
+    { key: "admin-health", href: "admin-health.html", icon: "❤️", label: "System Health", aliases: ["system health", "health check", "status", "uptime"] },
+    { key: "admin-smart-checks", href: "admin-smart-checks.html", icon: "🧠", label: "Smart Checks", aliases: ["smart checks"] },
+    { key: "admin-chat", href: "admin-chat.html", icon: "💬", label: "Client Chat", aliases: ["chat", "client chat", "messages"] },
+    { key: "admin-settings", href: "admin-settings.html", icon: "⚙️", label: "Settings", aliases: ["settings", "admin settings", "preferences"] }
+  ];
+
+  const ADMIN_NAV_BY_KEY = {};
+  ADMIN_NAV_ITEMS.forEach(function (item) { ADMIN_NAV_BY_KEY[item.key] = item; });
+
+  function getNavItems() {
+    return state.surface === "admin" ? ADMIN_NAV_ITEMS : NAV_ITEMS;
+  }
+
+  function getNavByKey() {
+    return state.surface === "admin" ? ADMIN_NAV_BY_KEY : NAV_BY_KEY;
+  }
+
   const SEARCH_TABLES = [
     { table: "business_items", label: "Property / Item", href: "my-items.html", titleFields: ["property_name", "item_name", "name", "title"], detailFields: ["property_status", "item_status", "status", "property_location"] },
     { table: "tasks", label: "Task", href: "my-tasks.html", titleFields: ["task_title", "title", "name"], detailFields: ["status", "priority", "due_date"] },
@@ -149,6 +193,55 @@
       match: ["add a record", "add record", "create a record", "new record", "log a record"],
       pageKey: "records",
       steps: ["Open Records.", "Select \"+ Add Record\".", "Fill in the title, record type, and status.", "Select Save."]
+    }
+  ];
+
+  // Admin-side how-to answers - grounded in the real admin workflows
+  // (approve.html's own flow, users.html's role controls, etc.), not
+  // invented. No search-related topics here since admin has no
+  // per-tenant record search the way the client side does.
+  const ADMIN_HOW_TO_TOPICS = [
+    {
+      key: "admin-approve-registration",
+      match: ["approve a registration", "approve registration", "approve a signup", "approve signup", "approve a client", "approve client", "new registration", "pending registration"],
+      pageKey: "admin-approvals",
+      steps: ["Open Approvals.", "Review the pending business's details.", "Select Approve to activate their account, or Reject with a reason if it shouldn't proceed."]
+    },
+    {
+      key: "admin-manage-user-role",
+      match: ["change a user's role", "change user role", "make someone an admin", "edit user role", "manage roles", "change permissions"],
+      pageKey: "admin-users",
+      steps: ["Open Users.", "Find the account and select it to open their profile.", "Update their role or permissions and save."]
+    },
+    {
+      key: "admin-respond-support",
+      match: ["respond to a support ticket", "reply to a support ticket", "answer a support ticket", "close a support ticket", "resolve a ticket"],
+      pageKey: "admin-support",
+      steps: ["Open Support Desk.", "Select the ticket you want to respond to.", "Type your reply and update the status (In Progress, Resolved, etc.) as needed."]
+    },
+    {
+      key: "admin-view-audit-log",
+      match: ["view the audit log", "check the audit log", "see who did what", "view security log", "check activity log"],
+      pageKey: "admin-audit-logs",
+      steps: ["Open Audit Logs.", "Use the filters to narrow by action type, user, or date range.", "Select any entry for more detail on that event."]
+    },
+    {
+      key: "admin-approve-upgrade",
+      match: ["approve an upgrade request", "approve upgrade", "review upgrade request", "package upgrade"],
+      pageKey: "admin-subscriptions",
+      steps: ["Open Subscriptions & Packages.", "Find the pending upgrade request.", "Review the requested plan and approve or decline it."]
+    },
+    {
+      key: "admin-send-queued-email",
+      match: ["send queued emails", "send pending emails", "process email queue", "resend an email"],
+      pageKey: "admin-email-queue",
+      steps: ["Open Email Queue.", "Review pending or failed emails.", "Select \"Send Pending Now\" to process them immediately, or wait for the automatic daily send."]
+    },
+    {
+      key: "admin-manage-sections",
+      match: ["add a business section", "manage sections", "edit business types", "add a section"],
+      pageKey: "admin-sections",
+      steps: ["Open Business Types & Sections.", "Select the business type you want to adjust.", "Add, edit, or remove a section, then save."]
     }
   ];
 
@@ -285,7 +378,31 @@
     }
   };
 
+  // Admin-side chip set: navigation + help only, no create/search/insights
+  // chip types - the admin side has no per-tenant record creation flows
+  // or search the way client pages do, so those chip types would be dead
+  // ends here.
+  const ADMIN_QUICK_SUGGESTIONS = [
+    { label: "Approvals", type: "nav", key: "admin-approvals" },
+    { label: "Users", type: "nav", key: "admin-users" },
+    { label: "Support Desk", type: "nav", key: "admin-support" },
+    { label: "Audit Logs", type: "nav", key: "admin-audit-logs" },
+    { label: "How do I approve a registration?", type: "howto", key: "admin-approve-registration" },
+    { label: "Help", type: "help" }
+  ];
+
+  const ADMIN_PAGE_CONFIGS = {
+    dashboard: {
+      greeting: "Welcome back! What would you like to do?",
+      chips: ADMIN_QUICK_SUGGESTIONS
+    }
+  };
+
   function getPageConfig() {
+    if (state.surface === "admin") {
+      return ADMIN_PAGE_CONFIGS[state.pageKey] || ADMIN_PAGE_CONFIGS.dashboard;
+    }
+
     return PAGE_CONFIGS[state.pageKey] || PAGE_CONFIGS.dashboard;
   }
 
@@ -808,7 +925,9 @@
 
       if (!hasSeenNia()) {
         addNiaMessage(
-          "Hello 👋<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant.<br><br>I can help you:<br>• Navigate the system<br>• Find records<br>• Explain features<br>• Open pages<br>• Help you complete tasks<br><br>What would you like to do today?"
+          state.surface === "admin"
+            ? "Hello 👋<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant.<br><br>I can help you:<br>• Navigate the admin console<br>• Explain features<br>• Open pages<br>• Walk you through admin tasks<br><br>What would you like to do today?"
+            : "Hello 👋<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant.<br><br>I can help you:<br>• Navigate the system<br>• Find records<br>• Explain features<br>• Open pages<br>• Help you complete tasks<br><br>What would you like to do today?"
         );
         markSeenNia();
       } else {
@@ -1189,7 +1308,7 @@
   function findNavMatch(text) {
     const lower = text.toLowerCase();
 
-    for (const item of NAV_ITEMS) {
+    for (const item of getNavItems()) {
       if (lower.indexOf(item.label.toLowerCase()) !== -1) return item;
 
       for (const alias of item.aliases) {
@@ -1214,8 +1333,9 @@
 
   function findHowTo(text) {
     const lower = text.toLowerCase();
+    const topics = state.surface === "admin" ? ADMIN_HOW_TO_TOPICS : HOW_TO_TOPICS;
 
-    for (const topic of HOW_TO_TOPICS) {
+    for (const topic of topics) {
       for (const phrase of topic.match) {
         if (lower.indexOf(phrase) !== -1) return topic;
       }
@@ -1225,6 +1345,8 @@
   }
 
   function findCreateAction(text) {
+    if (state.surface === "admin") return null;
+
     const lower = text.toLowerCase();
 
     for (const action of CREATE_ACTIONS) {
@@ -1248,7 +1370,11 @@
   function interpretMessage(text) {
     try {
       if (isGreeting(text)) {
-        addNiaMessage("Hi there! What would you like to do — navigate somewhere, find a record, or get help with a task?");
+        addNiaMessage(
+          state.surface === "admin"
+            ? "Hi there! What would you like to do — navigate somewhere, or get help with an admin task?"
+            : "Hi there! What would you like to do — navigate somewhere, find a record, or get help with a task?"
+        );
         showQuickActions();
         return { spoken: "Hi there! What would you like to do?" };
       }
@@ -1261,6 +1387,11 @@
       }
 
       if (isSearchPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Search isn't available on the admin side yet — but I can help you navigate to a page (like Users or Support Desk) or walk you through a task.");
+          return { spoken: "Search isn't available on the admin side yet, but I can help you navigate or answer a how-to question." };
+        }
+
         return runSearchIntent(text.replace(/^(find|search for|search|look up|where is|where's)\b/i, "").trim());
       }
 
@@ -1292,7 +1423,7 @@
     if (onThisPage) {
       addNiaMessage("You're already on the right page for this. Here's how:" + stepsHtml);
     } else {
-      const navItem = NAV_BY_KEY[topic.pageKey];
+      const navItem = getNavByKey()[topic.pageKey];
       const linkHtml = navItem ? `<a class="nia-link-btn" href="${attr(navItem.href)}">Open ${safe(navItem.label)}</a>` : "";
       addNiaMessage("Here's how:" + stepsHtml + linkHtml);
     }
@@ -1310,7 +1441,7 @@
   }
 
   function navigateTo(key) {
-    const item = NAV_BY_KEY[key];
+    const item = getNavByKey()[key];
 
     if (!item) {
       return showFallback();
@@ -1417,23 +1548,27 @@
   }
 
   function showFallback() {
+    const isAdmin = state.surface === "admin";
+
     addNiaMessage(
-      "I couldn't complete that request.<br>Would you like me to open the correct page or connect you with support?" +
+      "I couldn't complete that request.<br>Would you like me to open the correct page" + (isAdmin ? "?" : " or connect you with support?") +
       `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">` +
-      `<a class="nia-link-btn" style="margin-top:0;" href="#" id="niaFallbackQuick">Show me around</a>` +
-      `<a class="nia-link-btn" style="margin-top:0;" href="my-support.html">Contact Support</a>` +
+      (isAdmin ? "" : `<a class="nia-link-btn" style="margin-top:0;" href="#" id="niaFallbackQuick">Show me around</a>`) +
+      `<a class="nia-link-btn" style="margin-top:0;" href="${isAdmin ? "support.html" : "my-support.html"}">Contact Support</a>` +
       `</div>`
     );
 
-    setTimeout(function () {
-      const el = document.getElementById("niaFallbackQuick");
-      if (el) {
-        el.addEventListener("click", function (event) {
-          event.preventDefault();
-          showOverview();
-        });
-      }
-    }, 0);
+    if (!isAdmin) {
+      setTimeout(function () {
+        const el = document.getElementById("niaFallbackQuick");
+        if (el) {
+          el.addEventListener("click", function (event) {
+            event.preventDefault();
+            showOverview();
+          });
+        }
+      }, 0);
+    }
 
     return { spoken: "I couldn't complete that request. Would you like me to open the correct page, or connect you with support?" };
   }
@@ -1522,6 +1657,16 @@
 
     state.ready = !!(state.supabaseClient && state.tenantId);
     loadPreferredLanguage();
+
+    // Explicit init() means the host page is taking responsibility for
+    // its own auth/context resolution rather than relying on boot()'s
+    // UnganiClientShared auto-detect - render the FAB directly instead
+    // of assuming that path already ran. This matters specifically for
+    // pages like admin-home.html that load client-shared.js (for
+    // unrelated utility functions) without ever calling its
+    // initPage() shell, which would otherwise make boot() wait forever
+    // for tenant state that's never coming. renderFab() is idempotent.
+    renderFab();
   }
 
   function debugVoiceInfo() {

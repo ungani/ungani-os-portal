@@ -23,6 +23,7 @@
   <script src="client-shared.js" onerror="console.warn('client-shared.js load failed, using fallback mode.'); window.__unganiClientSharedFailed = true;"></script>
   <script src="ungani-analytics.js" onerror="console.warn('ungani-analytics.js load failed - platform performance chart will be unavailable.');"></script>
   <script src="pwa-register.js" onerror="console.warn('pwa-register.js load failed.');"></script>
+  <script src="nia-assistant.js" onerror="console.warn('nia-assistant.js load failed.');"></script>
   <script>
     (function () {
       function showUnganiLoadError() {
@@ -2621,6 +2622,22 @@
         } catch (adminCheckError) {
           console.warn("admin-home.html: admin check failed, skipping admin data load.", adminCheckError);
           return;
+        }
+
+        if (window.NiaAssistant) {
+          try {
+            const userResponse = await supabaseClient.auth.getUser();
+            const adminUser = userResponse && userResponse.data ? userResponse.data.user : null;
+
+            NiaAssistant.init({
+              supabaseClient: supabaseClient,
+              userId: adminUser ? adminUser.id : null,
+              pageKey: "admin-dashboard",
+              surface: "admin"
+            });
+          } catch (niaInitError) {
+            console.warn("admin-home.html: Nia init failed (non-fatal).", niaInitError);
+          }
         }
 
         loadAdminData();
