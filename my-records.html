@@ -49,6 +49,8 @@
     let businessPreset = null;
     let recordRows = [];
     let editingRecordId = null;
+    let sectionOptions = [];
+    let currentSectionFilter = "";
     let activeRecordCategory = "all";
     let urlActionApplied = false;
 
@@ -78,6 +80,8 @@
       }
 
       businessPreset = UnganiPresets.getPreset(context.tenant);
+      sectionOptions = businessPreset.selectedSectionLabels || [];
+      currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -97,6 +101,10 @@
 
     function applyRecordCommonFilters(query) {
       query = query.eq("tenant_id", currentContext.tenantId);
+
+      if (currentSectionFilter) {
+        query = query.eq("section_label", currentSectionFilter);
+      }
 
       const filterStatus = getStoredOrInput("filterStatus", "ungani_record_filter_status").toLowerCase();
       if (filterStatus) {
@@ -541,6 +549,8 @@
                 <button class="ungani-btn green" onclick="loadRecordRows()">Refresh</button>
                 <a class="ungani-btn light" href="my-charts.html">View Charts</a>
               </div>
+
+              ${renderSectionSwitcher()}
             </div>
 
             <div class="records-preset-box">
@@ -1088,6 +1098,17 @@
               <input id="recordRelatedItem" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)}" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["related_item"], "")) : ""}" />
             </div>
 
+            ${sectionOptions.length > 1 ? `
+              <div>
+                <label for="recordSection">Section</label>
+                <select id="recordSection">
+                  ${sectionOptions.map(function (label) {
+                    return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
+
             <div class="wide">
               <label for="recordNotes">Notes</label>
               <textarea id="recordNotes" rows="5" placeholder="Write the full update, observation, issue, progress note, or client feedback...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
@@ -1113,6 +1134,12 @@
 
           document.getElementById("recordStatus").value = row ? UnganiClientShared.getValue(row, ["status"], "open") : "open";
           document.getElementById("recordPriority").value = row ? UnganiClientShared.getValue(row, ["priority"], "normal") : "normal";
+
+          if (sectionOptions.length > 1 && document.getElementById("recordSection")) {
+            document.getElementById("recordSection").value = row
+              ? UnganiClientShared.getValue(row, ["section_label"], "")
+              : (currentSectionFilter || sectionOptions[0] || "");
+          }
         }
       });
     }
@@ -1138,6 +1165,10 @@
         related_item: UnganiClientShared.value("recordRelatedItem") || null,
         notes: UnganiClientShared.value("recordNotes") || null
       };
+
+      if (sectionOptions.length > 1) {
+        payload.section_label = UnganiClientShared.value("recordSection") || null;
+      }
 
       let response;
 
@@ -1239,6 +1270,35 @@
 
     function getRecordTitle(row) {
       return UnganiClientShared.getValue(row, ["record_title", "title", "name"], "Business Record");
+    }
+
+    function renderSectionSwitcher() {
+      if (sectionOptions.length <= 1) return "";
+
+      const pills = [{ label: "All Sections", value: "" }].concat(
+        sectionOptions.map(function (label) { return { label: label, value: label }; })
+      );
+
+      return `
+        <div class="ungani-button-row" style="margin-top:10px;">
+          ${pills.map(function (pill) {
+            const active = currentSectionFilter === pill.value;
+            return `<button class="ungani-btn ${active ? "gold" : "dark"}" type="button" onclick="switchSection('${UnganiClientShared.attr(pill.value)}')">${UnganiClientShared.safe(pill.label)}</button>`;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function switchSection(value) {
+      const url = new URL(window.location.href);
+
+      if (value) {
+        url.searchParams.set("section", value);
+      } else {
+        url.searchParams.delete("section");
+      }
+
+      window.location.href = url.toString();
     }
 
     function statusBadge(status) {

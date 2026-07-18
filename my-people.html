@@ -53,6 +53,8 @@
     let isRealEstate = false;
     let isHospitality = false;
     let unitOptions = [];
+    let sectionOptions = [];
+    let currentSectionFilter = "";
     let activePersonCategory = "all";
     let lastTypeRows = [];
     let lastStatusRows = [];
@@ -84,6 +86,8 @@
       }
 
       businessPreset = UnganiPresets.getPreset(context.tenant);
+      sectionOptions = businessPreset.selectedSectionLabels || [];
+      currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
 
       isRealEstate = detectRealEstate(context.tenant);
       isHospitality = detectHospitality(context.tenant);
@@ -106,6 +110,10 @@
 
     function applyPeopleCommonFilters(query) {
       query = query.eq("tenant_id", currentContext.tenantId);
+
+      if (currentSectionFilter) {
+        query = query.eq("section_label", currentSectionFilter);
+      }
 
       const filterStatus = getStoredOrInput("filterStatus", "ungani_people_filter_status").toLowerCase();
       if (filterStatus) {
@@ -608,6 +616,8 @@
                 <button class="ungani-btn green" onclick="loadPeopleRows()">Refresh</button>
                 <a class="ungani-btn light" href="my-charts.html">View Charts</a>
               </div>
+
+              ${renderSectionSwitcher()}
             </div>
 
             <div class="people-preset-box">
@@ -1177,6 +1187,17 @@
               <input id="personAssignedWork" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)} or task related to this person" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["assigned_work", "properties_assigned"], "")) : ""}" />
             </div>
 
+            ${sectionOptions.length > 1 ? `
+              <div>
+                <label for="personSection">Section</label>
+                <select id="personSection">
+                  ${sectionOptions.map(function (label) {
+                    return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
+
             ${(isRealEstate || isHospitality) ? `
               <div>
                 <label for="personLinkedItem">${isHospitality ? "Linked Room / Table" : "Linked Unit / Property"}</label>
@@ -1230,6 +1251,12 @@
           if (isRealEstate || isHospitality) {
             if (document.getElementById("personLinkedItem")) document.getElementById("personLinkedItem").value = row ? UnganiClientShared.getValue(row, ["linked_item_id"], "") : "";
           }
+
+          if (sectionOptions.length > 1 && document.getElementById("personSection")) {
+            document.getElementById("personSection").value = row
+              ? UnganiClientShared.getValue(row, ["section_label"], "")
+              : (currentSectionFilter || sectionOptions[0] || "");
+          }
         }
       });
     }
@@ -1264,6 +1291,10 @@
         payload.linked_item_id = UnganiClientShared.value("personLinkedItem") || null;
         payload.lease_start_date = UnganiClientShared.value("personLeaseStart") || null;
         payload.lease_end_date = UnganiClientShared.value("personLeaseEnd") || null;
+      }
+
+      if (sectionOptions.length > 1) {
+        payload.section_label = UnganiClientShared.value("personSection") || null;
       }
 
       let response;
@@ -1375,6 +1406,35 @@
       return (rows || []).some(function (row) {
         return Number(row.value || 0) > 0;
       });
+    }
+
+    function renderSectionSwitcher() {
+      if (sectionOptions.length <= 1) return "";
+
+      const pills = [{ label: "All Sections", value: "" }].concat(
+        sectionOptions.map(function (label) { return { label: label, value: label }; })
+      );
+
+      return `
+        <div class="ungani-button-row" style="margin-top:10px;">
+          ${pills.map(function (pill) {
+            const active = currentSectionFilter === pill.value;
+            return `<button class="ungani-btn ${active ? "gold" : "dark"}" type="button" onclick="switchSection('${UnganiClientShared.attr(pill.value)}')">${UnganiClientShared.safe(pill.label)}</button>`;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function switchSection(value) {
+      const url = new URL(window.location.href);
+
+      if (value) {
+        url.searchParams.set("section", value);
+      } else {
+        url.searchParams.delete("section");
+      }
+
+      window.location.href = url.toString();
     }
 
     function detectRealEstate(tenant) {

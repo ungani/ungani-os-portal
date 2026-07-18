@@ -38,17 +38,21 @@
     })();
   </script>
   <script src="ungani-business-config.js"></script>
+  <script src="ungani-presets.js"></script>
   <script src="nia-assistant.js"></script>
 </head>
 
 <body>
   <script>
     let currentContext = null;
+    let businessPreset = null;
     let items = [];
     let currentEditId = null;
     let isRealEstate = false;
     let activeItemCategory = "all";
     let urlActionApplied = false;
+    let sectionOptions = [];
+    let currentSectionFilter = "";
 
     // See my-money.html for the full rationale.
     const ITEM_PAGE_SIZE = 50;
@@ -84,6 +88,9 @@
       currentContext = context;
 
       isRealEstate = detectRealEstate(context.tenant);
+      businessPreset = UnganiPresets.getPreset(context.tenant);
+      sectionOptions = businessPreset.selectedSectionLabels || [];
+      currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -107,6 +114,10 @@
 
     function applyItemCommonFilters(query) {
       query = query.eq("tenant_id", currentContext.tenantId);
+
+      if (currentSectionFilter) {
+        query = query.eq("section_label", currentSectionFilter);
+      }
 
       // Both status and project are exact (case-insensitive) matches in the
       // original client-side logic, not substrings - .ilike() with no "%"
@@ -503,6 +514,8 @@
             <button class="ungani-btn green" onclick="loadItems()">Refresh</button>
             <a class="ungani-btn dark" href="client.html">Dashboard</a>
           </div>
+
+          ${renderSectionSwitcher()}
         </section>
 
         ${renderCategoryTiles()}
@@ -839,6 +852,17 @@
               </select>
             </div>
 
+            ${sectionOptions.length > 1 ? `
+              <div>
+                <label for="itemSection">Section</label>
+                <select id="itemSection">
+                  ${sectionOptions.map(function (label) {
+                    return `<option value="${UnganiClientShared.attr(label)}">${UnganiClientShared.safe(label)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
+
             <div>
               <label for="bedrooms">Bedrooms</label>
               <input id="bedrooms" type="number" min="0" step="1" placeholder="Example: 3" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["bedrooms"], "")) : ""}" />
@@ -915,6 +939,12 @@
         onOpen: function () {
           document.getElementById("listingType").value = row ? getListingType(row) : "sale";
           document.getElementById("propertyStatus").value = row ? getStatus(row) : "available";
+
+          if (sectionOptions.length > 1 && document.getElementById("itemSection")) {
+            document.getElementById("itemSection").value = row
+              ? UnganiClientShared.getValue(row, ["section_label"], "")
+              : (currentSectionFilter || sectionOptions[0] || "");
+          }
         }
       });
     }
@@ -1100,6 +1130,10 @@
         notes: UnganiClientShared.value("notes") || null,
         updated_at: new Date().toISOString()
       };
+
+      if (sectionOptions.length > 1) {
+        payload.section_label = UnganiClientShared.value("itemSection") || null;
+      }
 
       let response;
 
@@ -1314,6 +1348,35 @@
       if (text.length <= max) return text;
 
       return text.slice(0, max) + "...";
+    }
+
+    function renderSectionSwitcher() {
+      if (sectionOptions.length <= 1) return "";
+
+      const pills = [{ label: "All Sections", value: "" }].concat(
+        sectionOptions.map(function (label) { return { label: label, value: label }; })
+      );
+
+      return `
+        <div class="ungani-button-row" style="margin-top:10px;">
+          ${pills.map(function (pill) {
+            const active = currentSectionFilter === pill.value;
+            return `<button class="ungani-btn ${active ? "gold" : "dark"}" type="button" onclick="switchSection('${UnganiClientShared.attr(pill.value)}')">${UnganiClientShared.safe(pill.label)}</button>`;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function switchSection(value) {
+      const url = new URL(window.location.href);
+
+      if (value) {
+        url.searchParams.set("section", value);
+      } else {
+        url.searchParams.delete("section");
+      }
+
+      window.location.href = url.toString();
     }
 
     function detectRealEstate(tenant) {

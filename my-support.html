@@ -37,14 +37,19 @@
       }
     })();
   </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-presets.js"></script>
   <script src="nia-assistant.js"></script>
 </head>
 
 <body>
   <script>
     let currentContext = null;
+    let businessPreset = null;
     let issues = [];
     let currentEditId = null;
+    let sectionOptions = [];
+    let currentSectionFilter = "";
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -57,6 +62,11 @@
 
     async function startSupportPage(context) {
       currentContext = context;
+
+      businessPreset = UnganiPresets.getPreset(context.tenant);
+      sectionOptions = businessPreset.selectedSectionLabels || [];
+      currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
+
       await loadIssues();
     }
 
@@ -66,11 +76,16 @@
       let response;
 
       try {
-        response = await currentContext.supabaseClient
+        let query = currentContext.supabaseClient
           .from("support_issues")
           .select("*")
-          .eq("tenant_id", currentContext.tenantId)
-          .order("created_at", { ascending: false });
+          .eq("tenant_id", currentContext.tenantId);
+
+        if (currentSectionFilter) {
+          query = query.eq("section_label", currentSectionFilter);
+        }
+
+        response = await query.order("created_at", { ascending: false });
       } catch (error) {
         currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load support issues", error.message || "Network error. Please check your connection.");
         return;
@@ -101,6 +116,8 @@
             <a class="ungani-btn green" href="my-chat.html">Chat with UNGANI</a>
             <a class="ungani-btn dark" href="my-notices.html">Notices</a>
           </div>
+
+          ${renderSectionSwitcher()}
         </section>
 
         <section class="ungani-grid">
@@ -258,6 +275,18 @@
                 <option value="closed">Closed</option>
               </select>
             </div>
+
+            ${sectionOptions.length > 1 ? `
+              <div>
+                <label for="issueSection">Section</label>
+                <select id="issueSection">
+                  ${sectionOptions.map(function (label) {
+                    const selected = (currentSectionFilter || sectionOptions[0]) === label ? "selected" : "";
+                    return `<option value="${UnganiClientShared.attr(label)}" ${selected}>${UnganiClientShared.safe(label)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
           </div>
 
           <label for="description">Description</label>
@@ -418,6 +447,10 @@
         payload.resolved_at = new Date().toISOString();
       }
 
+      if (sectionOptions.length > 1) {
+        payload.section_label = UnganiClientShared.value("issueSection") || null;
+      }
+
       let response;
 
       try {
@@ -465,6 +498,10 @@
       setValue("priority", UnganiClientShared.getValue(row, ["priority"], "normal"));
       setValue("status", UnganiClientShared.getValue(row, ["status"], "open"));
       setValue("description", UnganiClientShared.getValue(row, ["description"], ""));
+
+      if (sectionOptions.length > 1) {
+        setValue("issueSection", UnganiClientShared.getValue(row, ["section_label"], ""));
+      }
     }
 
     function editIssue(id) {
@@ -611,6 +648,35 @@
       if (element) {
         element.value = value === null || value === undefined ? "" : value;
       }
+    }
+
+    function renderSectionSwitcher() {
+      if (sectionOptions.length <= 1) return "";
+
+      const pills = [{ label: "All Sections", value: "" }].concat(
+        sectionOptions.map(function (label) { return { label: label, value: label }; })
+      );
+
+      return `
+        <div class="ungani-button-row" style="margin-top:10px;">
+          ${pills.map(function (pill) {
+            const active = currentSectionFilter === pill.value;
+            return `<button class="ungani-btn ${active ? "gold" : "dark"}" type="button" onclick="switchSection('${UnganiClientShared.attr(pill.value)}')">${UnganiClientShared.safe(pill.label)}</button>`;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function switchSection(value) {
+      const url = new URL(window.location.href);
+
+      if (value) {
+        url.searchParams.set("section", value);
+      } else {
+        url.searchParams.delete("section");
+      }
+
+      window.location.href = url.toString();
     }
 
     function scrollToForm() {
