@@ -3927,25 +3927,19 @@
       };
     }
 
-    function renderPropertyDashboard(scopedData, scopeLabel) {
-      const data = scopedData || dashboardData;
-      const isScoped = !!scopeLabel;
-      const rentalConceptsApply = !isScoped || scopeLabel === "Rentals";
-
-      const today = new Date();
-      const todayStr = today.toISOString().slice(0, 10);
-      const monthKey = todayStr.slice(0, 7);
-
-      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
-
-      const rentThisMonth = sumRentalIncome(data.transactions, monthKey);
-      const rentLastMonth = sumRentalIncome(data.transactions, lastMonthKey);
+    // Rentals and Sales are fundamentally different businesses under one
+    // roof (recurring rent collection + tenant management vs. one-off
+    // sales closings + buyer pipeline), so - same pattern as Logistics -
+    // each section gets its own content strategy rather than one shared
+    // shape with relabeled KPIs.
+    function buildRentalsSectionContent(data, ctx) {
+      const rentThisMonth = sumRentalIncome(data.transactions, ctx.monthKey);
+      const rentLastMonth = sumRentalIncome(data.transactions, ctx.lastMonthKey);
       const rentDelta = rentThisMonth - rentLastMonth;
 
-      const linkedTenants = rentalConceptsApply ? (data.people || []).filter(function (person) {
+      const linkedTenants = (data.people || []).filter(function (person) {
         return !!getValue(person, ["linked_item_id"], "");
-      }) : [];
+      });
 
       const overdueRent = [];
       let outstandingRentTotal = 0;
@@ -3960,7 +3954,7 @@
         const paidThisMonth = (data.transactions || []).some(function (t) {
           const relatedId = getValue(t, ["related_person_id"], "");
           const date = String(getValue(t, ["transaction_date", "created_at"], "")).slice(0, 7);
-          return String(relatedId) === String(person.id) && date === monthKey && isRentalIncome(t);
+          return String(relatedId) === String(person.id) && date === ctx.monthKey && isRentalIncome(t);
         });
 
         if (paidThisMonth) return;
@@ -3991,149 +3985,359 @@
         const type = String(getValue(event, ["event_type", "type"], "")).toLowerCase();
         const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
         const status = statusText(event);
-        return (type.includes("viewing") || type.includes("site visit")) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+        return (type.includes("viewing") || type.includes("site visit")) && date === ctx.todayStr && !status.includes("cancelled") && !status.includes("completed");
       });
 
       const viewingsNeedingOutcome = (data.events || []).filter(function (event) {
         const type = String(getValue(event, ["event_type", "type"], "")).toLowerCase();
         const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
         const status = statusText(event);
-        return (type.includes("viewing") || type.includes("site visit")) && date && date < todayStr && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
+        return (type.includes("viewing") || type.includes("site visit")) && date && date < ctx.todayStr && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
       }).sort(function (a, b) {
         return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
       });
 
-      const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
-
-      const leasesExpiring = rentalConceptsApply ? (data.people || []).filter(function (person) {
+      const leasesExpiring = (data.people || []).filter(function (person) {
         const leaseEnd = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
-        return leaseEnd && leaseEnd >= todayStr && leaseEnd <= sevenDaysStr;
+        return leaseEnd && leaseEnd >= ctx.todayStr && leaseEnd <= ctx.sevenDaysStr;
       }).sort(function (a, b) {
         return String(getValue(a, ["lease_end_date"], "")).localeCompare(String(getValue(b, ["lease_end_date"], "")));
-      }) : [];
+      });
 
       const trendMonths = calculatePropertyRentTrend(data.transactions);
-      const hasAnyRentHistory = trendMonths.some(function (m) { return m.value > 0; });
-      const outstandingRentTrend = calculateOutstandingRentTrend(data, rentalConceptsApply);
+      const outstandingRentTrend = calculateOutstandingRentTrend(data, true);
       const maintenanceTrend = buildMonthlyTrend(data.tasks, ["created_at"], function (task) {
         return String(getValue(task, ["task_type", "type"], "")).toLowerCase().includes("maintenance");
       });
-      const calendarPreview = buildPropertyCalendarPreview(today, data);
-      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const greetingMessages = [];
+      if (overdueRent.length > 0) greetingMessages.push({ text: overdueRent.length === 1 ? "1 tenant has unpaid rent this month" : overdueRent.length + " tenants have unpaid rent this month", href: ctx.peopleHref });
+      if (todaysViewings.length > 0) greetingMessages.push({ text: todaysViewings.length === 1 ? "1 viewing scheduled today" : todaysViewings.length + " viewings scheduled today", href: ctx.calendarHref });
+      if (leasesExpiring.length > 0) greetingMessages.push({ text: leasesExpiring.length === 1 ? "1 lease expiring within 7 days" : leasesExpiring.length + " leases expiring within 7 days", href: ctx.peopleHref });
+
+      return {
+        subtitle: "Overdue rent, today's viewings, open maintenance, and leases expiring soon for Rentals.",
+        kpisHtml: [
+          kpiCard("Rent Collected", compactMoney(rentThisMonth), rentTrendSubtitle(rentDelta, rentLastMonth), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626", ctx.moneyHref, countSpan(rentThisMonth, "money"), sparklineSvg(trendMonths.map(function (m) { return m.value; }), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626"), "💰"),
+          kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " tenant(s) unpaid this month", overdueRent.length > 0 ? "#DC2626" : "#16A34A", ctx.peopleHref, countSpan(outstandingRentTotal, "money"), sparklineSvg(outstandingRentTrend, "#DC2626"), "🧾"),
+          kpiCard("Occupied / Total Units", occupiedUnits + " / " + totalUnits, "Units currently occupied or sold", "#2563EB", ctx.itemsHref, countSpan(occupiedUnits, "ratio", " / " + totalUnits), staticProportionBar(totalUnits > 0 ? occupiedUnits / totalUnits : 0, "#2563EB", (totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0) + "% occupied"), "🏘️"),
+          kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(maintenanceOpen.length, "plain"), sparklineSvg(maintenanceTrend, maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A"), "🛠️")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Overdue rent, today's viewings, past viewings needing an outcome, open maintenance, and leases expiring soon — in priority order.",
+        attentionHtml: renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, null, viewingsNeedingOutcome),
+        quickActionsHtml: [
+          quickAction("🏠", "Add Property", "List a new unit or property", ctx.itemsHref, "#D4A63A"),
+          quickAction("💵", "Log Payment", "Record rent or other income", ctx.moneyHref, "#16A34A"),
+          quickAction("📅", "Schedule Viewing", "Book a property viewing", ctx.calendarHref, "#2563EB"),
+          quickAction("🧑", "Add Tenant", "Register a new tenant", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Rent Collected — Last 6 Months",
+        trendSubtitle: "Monthly rental income trend from your money records.",
+        trendMonths: trendMonths,
+        trendLabel: "Rent Collected",
+        trendColor: "#D4A63A",
+        trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first rent payment and this chart will start tracking your monthly collection trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("💰", "Overdue Rent", overdueRent.length, "tenant(s) unpaid", ctx.peopleHref),
+          todayItem("📅", "Today's Viewings", todaysViewings.length, "scheduled today", ctx.calendarHref),
+          todayItem("🛠️", "Maintenance", maintenanceOpen.length, "open request(s)", ctx.tasksHref)
+        ].join(""),
+        greetingMessages: greetingMessages
+      };
+    }
+
+    function buildSalesSectionContent(data, ctx) {
+      const salesThisMonth = sumTransactionsByMatcher(data.transactions, ctx.monthKey, isPropertySaleIncome);
+      const salesLastMonth = sumTransactionsByMatcher(data.transactions, ctx.lastMonthKey, isPropertySaleIncome);
+      const salesDelta = salesThisMonth - salesLastMonth;
+      const salesTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isPropertySaleIncome);
+
+      const totalListings = (data.items || []).length;
+      const soldListings = (data.items || []).filter(function (item) {
+        return isSoldPropertyStatus(getValue(item, ["property_status", "item_status", "status"], ""));
+      });
+      const dealsInNegotiation = (data.items || []).filter(function (item) {
+        return isNegotiationPropertyStatus(getValue(item, ["property_status", "item_status", "status"], ""));
+      });
+      const activeListings = totalListings - soldListings.length;
+
+      const todaysViewings = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], "")).toLowerCase();
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return (type.includes("viewing") || type.includes("site visit")) && date === ctx.todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const viewingsNeedingOutcome = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], "")).toLowerCase();
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return (type.includes("viewing") || type.includes("site visit")) && date && date < ctx.todayStr && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
+      }).sort(function (a, b) {
+        return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
+      });
+
+      const docCollectionDue = (data.tasks || []).filter(function (task) {
+        const type = String(getValue(task, ["task_type", "type"], ""));
+        const status = statusText(task);
+        return isDocumentCollectionTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const attentionGroups = [];
+
+      if (dealsInNegotiation.length > 0) {
+        attentionGroups.push({
+          title: "Deals in Negotiation",
+          rows: dealsInNegotiation.map(function (item) {
+            const name = getValue(item, ["property_name", "item_name", "name"], "Listing");
+            const status = getValue(item, ["property_status", "item_status", "status"], "");
+            return attentionRow("🤝", name, toTitle(status), "In Progress", "gold", ctx.itemsHref + "?highlight=" + item.id, null, "negotiation:" + item.id);
+          })
+        });
+      }
+
+      if (todaysViewings.length > 0) {
+        attentionGroups.push({
+          title: "Today's Viewings",
+          rows: todaysViewings.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Viewing");
+            const time = getValue(event, ["start_time"], "");
+            return attentionRow("📅", title, time ? "Today at " + String(time).slice(0, 5) : "Scheduled today", "Today", "blue", ctx.calendarHref + "?highlight=" + event.id, null, "event:" + event.id);
+          })
+        });
+      }
+
+      if (viewingsNeedingOutcome.length > 0) {
+        attentionGroups.push({
+          title: "Viewings Needing Outcome",
+          rows: viewingsNeedingOutcome.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Viewing");
+            const date = getValue(event, ["event_date", "date", "start_date"], "");
+            return attentionRow("❓", title, "Was " + formatDate(date) + " — confirm what happened", "Needs Outcome", "red", ctx.calendarHref + "?highlight=" + event.id, null, "event:" + event.id);
+          })
+        });
+      }
+
+      if (docCollectionDue.length > 0) {
+        attentionGroups.push({
+          title: "Document Collection Due",
+          rows: docCollectionDue.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Document Collection");
+            const due = getValue(task, ["due_date"], "");
+            const overdue = due && String(due).slice(0, 10) < ctx.todayStr;
+            return attentionRow("📄", title, due ? "Due " + formatDate(due) : "No due date set", overdue ? "Overdue" : "Due", overdue ? "red" : "gold", ctx.tasksHref + "?highlight=" + task.id, null, overdue ? ("doc:" + task.id) : null);
+          })
+        });
+      }
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No deals in negotiation, viewings, or document collections need attention right now.</p></div>`
+        : attentionGroups.map(function (g) {
+            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+          }).join("");
+
+      const greetingMessages = [];
+      if (dealsInNegotiation.length > 0) greetingMessages.push({ text: dealsInNegotiation.length === 1 ? "1 deal is in negotiation" : dealsInNegotiation.length + " deals are in negotiation", href: ctx.itemsHref });
+      if (todaysViewings.length > 0) greetingMessages.push({ text: todaysViewings.length === 1 ? "1 viewing scheduled today" : todaysViewings.length + " viewings scheduled today", href: ctx.calendarHref });
+      if (docCollectionDue.length > 0) greetingMessages.push({ text: docCollectionDue.length === 1 ? "1 document collection is due" : docCollectionDue.length + " document collections are due", href: ctx.tasksHref });
+
+      return {
+        subtitle: "Sales closed, active listings, deals in negotiation, and document collection for Sales.",
+        kpisHtml: [
+          kpiCard("Sales Closed", compactMoney(salesThisMonth), rentTrendSubtitle(salesDelta, salesLastMonth, "sales"), salesThisMonth >= salesLastMonth ? "#16A34A" : "#DC2626", ctx.moneyHref, countSpan(salesThisMonth, "money"), sparklineSvg(salesTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "💰"),
+          kpiCard("Active Listings", activeListings, "Not yet sold", "#2563EB", ctx.itemsHref, countSpan(activeListings, "plain"), null, "🏘️"),
+          kpiCard("Units Sold / Total Listed", soldListings.length + " / " + totalListings, "Closed sales this period", "#16A34A", ctx.itemsHref, countSpan(soldListings.length, "ratio", " / " + totalListings), staticProportionBar(totalListings > 0 ? soldListings.length / totalListings : 0, "#16A34A", (totalListings > 0 ? Math.round((soldListings.length / totalListings) * 100) : 0) + "% sold"), "✅"),
+          kpiCard("Deals in Negotiation", dealsInNegotiation.length, "Reserved or under negotiation", dealsInNegotiation.length > 0 ? "#C77700" : "#16A34A", ctx.itemsHref, countSpan(dealsInNegotiation.length, "plain"), null, "🤝")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Deals in negotiation, today's viewings, viewings needing an outcome, and document collection due — in priority order.",
+        attentionHtml: attentionHtml,
+        quickActionsHtml: [
+          quickAction("🏠", "Add Listing", "List a new property, plot, or development", ctx.itemsHref, "#D4A63A"),
+          quickAction("💵", "Log Sale Payment", "Record a sale or deposit payment", ctx.moneyHref, "#16A34A"),
+          quickAction("📅", "Schedule Viewing", "Book a property viewing", ctx.calendarHref, "#2563EB"),
+          quickAction("🧑", "Add Buyer Lead", "Register a new lead or buyer", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Sales Closed — Last 6 Months",
+        trendSubtitle: "Monthly property sales income trend from your money records.",
+        trendMonths: salesTrendMonths,
+        trendLabel: "Sales Closed",
+        trendColor: "#16A34A",
+        trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first sale payment and this chart will start tracking your monthly sales trend.", actionLabel: "Log Sale Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("🤝", "Deals in Negotiation", dealsInNegotiation.length, "in progress", ctx.itemsHref),
+          todayItem("📅", "Today's Viewings", todaysViewings.length, "scheduled today", ctx.calendarHref),
+          todayItem("📄", "Document Collection", docCollectionDue.length, "due", ctx.tasksHref)
+        ].join(""),
+        greetingMessages: greetingMessages
+      };
+    }
+
+    function getPropertySectionContent(scopeLabel, data, ctx) {
+      if (scopeLabel === "Sales") return buildSalesSectionContent(data, ctx);
+      return buildRentalsSectionContent(data, ctx);
+    }
+
+    function renderPropertyDashboard(scopedData, scopeLabel) {
+      const data = scopedData || dashboardData;
+      const isScoped = !!scopeLabel;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+      const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
 
       const sectionParam = isScoped ? "?section=" + encodeURIComponent(scopeLabel) : "";
-      const moneyHref = "my-money.html" + sectionParam;
-      const calendarHref = "my-calendar.html" + sectionParam;
-      const tasksHref = "my-tasks.html" + sectionParam;
+      const ctx = {
+        todayStr: todayStr,
+        monthKey: monthKey,
+        lastMonthKey: lastMonthKey,
+        sevenDaysStr: sevenDaysStr,
+        moneyHref: "my-money.html" + sectionParam,
+        calendarHref: "my-calendar.html" + sectionParam,
+        tasksHref: "my-tasks.html" + sectionParam,
+        itemsHref: "my-items.html" + sectionParam,
+        peopleHref: "my-people.html" + sectionParam
+      };
 
+      const content = getPropertySectionContent(isScoped ? scopeLabel : "Rentals", data, ctx);
+      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+      const calendarPreview = buildPropertyCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
       const mostRecentRecord = findMostRecentRecord(data);
-      const greetingMessages = [];
 
-      if (overdueRent.length > 0) {
-        greetingMessages.push({ text: overdueRent.length === 1 ? "1 tenant has unpaid rent this month" : overdueRent.length + " tenants have unpaid rent this month", href: "my-people.html" });
-      }
-      if (todaysViewings.length > 0) {
-        greetingMessages.push({ text: todaysViewings.length === 1 ? "1 viewing scheduled today" : todaysViewings.length + " viewings scheduled today", href: calendarHref });
-      }
-      if (leasesExpiring.length > 0) {
-        greetingMessages.push({ text: leasesExpiring.length === 1 ? "1 lease expiring within 7 days" : leasesExpiring.length + " leases expiring within 7 days", href: "my-people.html" });
-      }
+      const greetingMessages = content.greetingMessages.slice();
       if (mostRecentRecord) {
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
 
-      let health;
-      try {
-        health = computePropertyHealthScore({ linkedTenants: linkedTenants, overdueRent: overdueRent, occupiedUnits: occupiedUnits, totalUnits: totalUnits, maintenanceOpen: maintenanceOpen, leasesExpiring: leasesExpiring });
-      } catch (healthError) {
-        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      let health = null;
+      if (!isScoped) {
+        const linkedTenants = (data.people || []).filter(function (person) {
+          return !!getValue(person, ["linked_item_id"], "");
+        });
+        const overdueRentForHealth = linkedTenants.filter(function (person) {
+          const paidThisMonth = (data.transactions || []).some(function (t) {
+            const relatedId = getValue(t, ["related_person_id"], "");
+            const date = String(getValue(t, ["transaction_date", "created_at"], "")).slice(0, 7);
+            return String(relatedId) === String(person.id) && date === monthKey && isRentalIncome(t);
+          });
+          return !paidThisMonth;
+        });
+        const totalUnitsForHealth = (data.items || []).length;
+        const occupiedUnitsForHealth = (data.items || []).filter(function (item) {
+          const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
+          return status.includes("rented") || status.includes("sold");
+        }).length;
+        const maintenanceOpenForHealth = (data.tasks || []).filter(function (task) {
+          const type = String(getValue(task, ["task_type", "type"], "")).toLowerCase();
+          const status = statusText(task);
+          return type.includes("maintenance") && !status.includes("completed") && !status.includes("cancelled");
+        });
+        const leasesExpiringForHealth = (data.people || []).filter(function (person) {
+          const leaseEnd = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
+          return leaseEnd && leaseEnd >= todayStr && leaseEnd <= sevenDaysStr;
+        });
+
+        try {
+          health = computePropertyHealthScore({
+            linkedTenants: linkedTenants,
+            overdueRent: overdueRentForHealth,
+            occupiedUnits: occupiedUnitsForHealth,
+            totalUnits: totalUnitsForHealth,
+            maintenanceOpen: maintenanceOpenForHealth,
+            leasesExpiring: leasesExpiringForHealth
+          });
+        } catch (healthError) {
+          health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+        }
       }
 
       document.getElementById("content").innerHTML = `
         ${isScoped ? `
           <section class="card" style="margin-bottom:14px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+            <div>
+              <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+              <p style="margin:8px 0 0;color:var(--muted);">${safe(content.subtitle)}</p>
+            </div>
             <a class="btn small light" href="client.html">← Back to Overview</a>
           </section>
-        ` : ""}
+        ` : `
+          <section class="hero">
+            <div class="hero-grid">
+              <div class="hero-greet-enter">
+                <span class="badge gold">${safe(businessPreset.name)}</span>
+                <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+                ${buildGreetingRotatorHtml(greetingMessages)}
+                <p class="desktop-only">
+                  Here's what needs attention today across your properties. Use it to see overdue rent, today's viewings, open maintenance, and leases expiring soon, then click any card or row to open the right record.
+                </p>
+                <p class="mobile-only">
+                  Your property summary for today. Tap any card or use ☰ for full sections.
+                </p>
 
-        <section class="hero">
-          <div class="hero-grid">
-            <div class="hero-greet-enter">
-              <span class="badge gold">${safe(isScoped ? scopeLabel : businessPreset.name)}</span>
-              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
-              ${buildGreetingRotatorHtml(greetingMessages)}
-              <p class="desktop-only">
-                ${isScoped
-                  ? `Showing data tagged to the ${safe(scopeLabel)} section only. Switch sections from the sidebar or return to the combined Overview.`
-                  : `Here's what needs attention today across your properties. Use it to see overdue rent, today's viewings, open maintenance, and leases expiring soon, then click any card or row to open the right record.`
-                }
-              </p>
-              <p class="mobile-only">
-                Your property summary for today. Tap any card or use ☰ for full sections.
-              </p>
+                <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                  <a class="btn gold" href="${attr(ctx.moneyHref)}">Log Payment</a>
+                  <a class="btn green" href="${attr(ctx.calendarHref)}">Schedule Viewing</a>
+                  <a class="btn light" href="${attr(ctx.itemsHref)}">Properties</a>
+                  <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+                </div>
+              </div>
 
-              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
-                <a class="btn gold" href="${attr(moneyHref)}">Log Payment</a>
-                <a class="btn green" href="${attr(calendarHref)}">Schedule Viewing</a>
-                <a class="btn light" href="my-items.html">Properties</a>
-                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              <div class="hero-mini">
+                ${renderHealthGaugeHtml(health.score, health.summary)}
+                <div class="hero-mini-divider"></div>
+                <h4>Today / Attention</h4>
+                <div class="today-list">
+                  ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                  ${content.todayListHtml}
+                </div>
               </div>
             </div>
-
-            <div class="hero-mini">
-              ${renderHealthGaugeHtml(health.score, health.summary)}
-              <div class="hero-mini-divider"></div>
-              <h4>Today / Attention</h4>
-              <div class="today-list">
-                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("💰", "Overdue Rent", overdueRent.length, "tenant(s) unpaid", "my-people.html")}
-                ${todayItem("📅", "Today's Viewings", todaysViewings.length, "scheduled today", calendarHref)}
-                ${todayItem("🛠️", "Maintenance", maintenanceOpen.length, "open request(s)", tasksHref)}
-              </div>
-            </div>
-          </div>
-        </section>
+          </section>
+        `}
 
         <section class="kpi-grid">
-          ${kpiCard("Rent Collected", compactMoney(rentThisMonth), rentTrendSubtitle(rentDelta, rentLastMonth), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626", moneyHref, countSpan(rentThisMonth, "money"), sparklineSvg(trendMonths.map(function (m) { return m.value; }), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626"), "💰")}
-          ${kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " tenant(s) unpaid this month", overdueRent.length > 0 ? "#DC2626" : "#16A34A", "my-people.html", countSpan(outstandingRentTotal, "money"), sparklineSvg(outstandingRentTrend, "#DC2626"), "🧾")}
-          ${kpiCard("Occupied / Total Units", occupiedUnits + " / " + totalUnits, "Units currently occupied or sold", "#2563EB", "my-items.html", countSpan(occupiedUnits, "ratio", " / " + totalUnits), staticProportionBar(totalUnits > 0 ? occupiedUnits / totalUnits : 0, "#2563EB", (totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0) + "% occupied"), "🏘️")}
-          ${kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", tasksHref, countSpan(maintenanceOpen.length, "plain"), sparklineSvg(maintenanceTrend, maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A"), "🛠️")}
+          ${content.kpisHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>Needs Attention Today</h3>
-              <p>Overdue rent, today's viewings, past viewings needing an outcome, open maintenance, and leases expiring soon — in priority order.</p>
+              <h3>${safe(content.attentionTitle)}</h3>
+              <p>${safe(content.attentionSubtitle)}</p>
             </div>
           </div>
 
-          ${renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, null, viewingsNeedingOutcome)}
+          ${content.attentionHtml}
         </section>
 
         <section class="quick-actions">
-          ${quickAction("🏠", "Add Property", "List a new unit or property", "my-items.html", "#D4A63A")}
-          ${quickAction("💵", "Log Payment", "Record rent or other income", moneyHref, "#16A34A")}
-          ${quickAction("📅", "Schedule Viewing", "Book a property viewing", calendarHref, "#2563EB")}
-          ${quickAction("🧑", "Add Tenant", "Register a new tenant", "my-people.html", "#14B8A6")}
+          ${content.quickActionsHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>Rent Collected — Last 6 Months</h3>
-              <p>Monthly rental income trend from your money records.</p>
+              <h3>${safe(content.trendTitle)}</h3>
+              <p>${safe(content.trendSubtitle)}</p>
             </div>
-            <a class="btn small gold" href="${attr(moneyHref)}">Money</a>
+            <a class="btn small gold" href="${attr(ctx.moneyHref)}">Money</a>
           </div>
 
-          ${hasAnyRentHistory ? `
+          ${hasAnyTrendHistory ? `
             <div style="position:relative;height:260px;">
               <canvas id="propertyRentTrendChart"></canvas>
             </div>
-          ` : emptyStateNudge("💰", "Put your numbers here", "Log your first rent payment and this chart will start tracking your monthly collection trend.", "Log Payment", moneyHref)}
+          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
         </section>
 
         <section class="card">
@@ -4142,7 +4346,7 @@
               <h3>Calendar — Next 5 Days</h3>
               <p>Viewings, lease renewals, and maintenance coming up.</p>
             </div>
-            <a class="btn small gold" href="${attr(calendarHref)}">Open Calendar</a>
+            <a class="btn small gold" href="${attr(ctx.calendarHref)}">Open Calendar</a>
           </div>
 
           ${renderCalendarPreview(calendarPreview)}
@@ -4157,10 +4361,13 @@
 
       updateThemeButton();
       updateNotificationCounts();
-      renderPropertyTrendChart(trendMonths);
+      renderPropertyTrendChart(content.trendMonths, content.trendLabel, content.trendColor);
       initCountAnimations();
-      startGreetingRotation(greetingMessages.length || 1);
-      animateHealthGauges();
+
+      if (!isScoped) {
+        startGreetingRotation(greetingMessages.length || 1);
+        animateHealthGauges();
+      }
     }
 
     function renderPropertyOverview(sections) {
@@ -4263,6 +4470,20 @@
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
 
+      let health;
+      try {
+        health = computePropertyHealthScore({
+          linkedTenants: linkedTenants,
+          overdueRent: overdueRent,
+          occupiedUnits: occupiedUnits,
+          totalUnits: totalUnits,
+          maintenanceOpen: maintenanceOpen,
+          leasesExpiring: leasesExpiring
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
       document.getElementById("content").innerHTML = `
         <section class="hero">
           <div class="hero-grid">
@@ -4286,6 +4507,8 @@
             </div>
 
             <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
@@ -4364,6 +4587,7 @@
       renderSectionComparisonChart(sectionSummaries);
       initCountAnimations();
       startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
     }
 
     function isFuelExpense(row) {
@@ -4423,6 +4647,21 @@
       const customFields = getValue(row, ["custom_fields"], {}) || {};
       const clearanceStatus = String(customFields.clearance_status || "").toLowerCase();
       return !clearanceStatus.includes("cleared");
+    }
+
+    function isPropertySaleIncome(row) {
+      const category = String(getValue(row, ["category", "category_name"], "")).toLowerCase();
+      const type = String(getValue(row, ["transaction_type", "type"], "")).toLowerCase();
+      return isIncome(row) && (category.includes("sale") || type.includes("sale"));
+    }
+
+    function isSoldPropertyStatus(value) {
+      return String(value || "").toLowerCase().includes("sold");
+    }
+
+    function isNegotiationPropertyStatus(value) {
+      const lower = String(value || "").toLowerCase();
+      return lower.includes("reserved") || lower.includes("negotiation");
     }
 
     function sumTransactionsByMatcher(rows, targetMonthKey, matcher) {
@@ -6480,8 +6719,11 @@
       return months;
     }
 
-    async function renderPropertyTrendChart(months) {
+    async function renderPropertyTrendChart(months, label, color) {
       if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      const chartLabel = label || "Rent Collected";
+      const chartColor = color || "#D4A63A";
 
       try {
         await UnganiAnalytics.createChart("propertyRentTrendChart", {
@@ -6490,9 +6732,9 @@
             labels: months.map(function (m) { return m.label; }),
             datasets: [
               {
-                label: "Rent Collected",
+                label: chartLabel,
                 data: months.map(function (m) { return m.value; }),
-                backgroundColor: "#D4A63A",
+                backgroundColor: chartColor,
                 borderRadius: 10
               }
             ]
