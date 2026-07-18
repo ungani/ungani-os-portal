@@ -1103,7 +1103,7 @@
 
             ${renderSectionFieldHtml(formSectionLabel)}
 
-            <div id="itemExtraFieldsContainer" style="display:contents;">
+            <div id="itemExtraFieldsContainer" class="ungani-form-grid" style="grid-column:1/-1;padding:0;margin:0;">
               ${renderExtraFieldsHtml(activeItemFieldSet, row)}
             </div>
           </div>
@@ -1159,7 +1159,7 @@
 
             ${renderSectionFieldHtml(formSectionLabel)}
 
-            <div id="itemExtraFieldsContainer" style="display:contents;">
+            <div id="itemExtraFieldsContainer" class="ungani-form-grid" style="grid-column:1/-1;padding:0;margin:0;">
               ${renderExtraFieldsHtml(activeItemFieldSet, row)}
             </div>
           </div>
@@ -1315,7 +1315,7 @@
     function renderCategoryTiles() {
       return `
         <section class="category-tiles">
-          ${ITEM_CATEGORIES.map(function (category) {
+          ${getActiveCategories().map(function (category) {
             const count = itemSummaryRows.filter(category.match).length;
             const active = category.key === activeItemCategory ? " active" : "";
 
@@ -1333,74 +1333,87 @@
     async function saveItem(event) {
       event.preventDefault();
 
-      const nameFieldId = isRealEstate ? "propertyName" : "itemNameInput";
-      const name = UnganiClientShared.value(nameFieldId);
-
-      if (!name) {
-        alert(isRealEstate ? "Please enter a property/listing name." : "Please enter an item name.");
-        return;
-      }
-
-      const status = UnganiClientShared.value(isRealEstate ? "propertyStatus" : "itemStatusSelect")
-        || (activeItemFieldSet.statusOptions[0] || "available");
-
-      const value = Number(UnganiClientShared.value(isRealEstate ? "propertyPrice" : "itemValue") || 0) || null;
-
-      const payload = {
-        business_type_key: UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], null),
-        section_key: isRealEstate ? "properties_listings" : "items_assets_stock",
-
-        item_name: name,
-        name: name,
-        title: name,
-        property_name: name,
-
-        item_status: status,
-        status: status,
-        property_status: status,
-
-        property_price: value,
-
-        notes: UnganiClientShared.value(isRealEstate ? "notes" : "itemNotes") || null,
-        updated_at: new Date().toISOString()
-      };
-
-      if (isRealEstate) {
-        const listingType = UnganiClientShared.value("listingType") || "sale";
-        payload.item_type = "property";
-        payload.type = "property";
-        payload.item_category = listingType;
-        payload.category = listingType;
-        payload.listing_type = listingType;
-      } else {
-        const itemType = UnganiClientShared.value("itemTypeSelect") || (businessPreset.itemTypes[0] || "Item");
-        payload.item_type = itemType;
-        payload.type = itemType;
-        payload.item_category = itemType;
-        payload.category = itemType;
-      }
-
-      if (sectionOptions.length > 1) {
-        payload.section_label = UnganiClientShared.value("itemSection") || null;
-      }
-
-      const customFields = {};
-
-      (activeItemFieldSet.fields || []).forEach(function (field) {
-        const fieldValue = readExtraFieldValue(field);
-
-        if (field.column) {
-          payload[field.column] = fieldValue;
-        } else {
-          customFields[field.id] = fieldValue;
-        }
-      });
-
-      payload.custom_fields = customFields;
-
-      let response;
-
+      // Everything here - including payload construction, not just the
+      // network call - is wrapped in one try/catch. Before this, an
+      // unexpected error anywhere above the network call (e.g. a stale
+      // activeItemFieldSet) would throw uncaught out of this onsubmit
+      // handler: preventDefault() had already run, so nothing visibly
+      // happened - no error, no save, modal just sat there. That's
+      // indistinguishable from "the form doesn't let me save" to a user,
+      // and invisible in this app's own error reporting.
       try {
+        const nameFieldId = isRealEstate ? "propertyName" : "itemNameInput";
+        const name = UnganiClientShared.value(nameFieldId);
+
+        if (!name) {
+          alert(isRealEstate ? "Please enter a property/listing name." : "Please enter an item name.");
+          return;
+        }
+
+        if (!activeItemFieldSet) {
+          alert("Could not determine which fields apply to this item. Please close this form and try again.");
+          return;
+        }
+
+        const status = UnganiClientShared.value(isRealEstate ? "propertyStatus" : "itemStatusSelect")
+          || (activeItemFieldSet.statusOptions[0] || "available");
+
+        const value = Number(UnganiClientShared.value(isRealEstate ? "propertyPrice" : "itemValue") || 0) || null;
+
+        const payload = {
+          business_type_key: UnganiClientShared.getValue(currentContext.tenant, ["business_type_key"], null),
+          section_key: isRealEstate ? "properties_listings" : "items_assets_stock",
+
+          item_name: name,
+          name: name,
+          title: name,
+          property_name: name,
+
+          item_status: status,
+          status: status,
+          property_status: status,
+
+          property_price: value,
+
+          notes: UnganiClientShared.value(isRealEstate ? "notes" : "itemNotes") || null,
+          updated_at: new Date().toISOString()
+        };
+
+        if (isRealEstate) {
+          const listingType = UnganiClientShared.value("listingType") || "sale";
+          payload.item_type = "property";
+          payload.type = "property";
+          payload.item_category = listingType;
+          payload.category = listingType;
+          payload.listing_type = listingType;
+        } else {
+          const itemType = UnganiClientShared.value("itemTypeSelect") || (businessPreset.itemTypes[0] || "Item");
+          payload.item_type = itemType;
+          payload.type = itemType;
+          payload.item_category = itemType;
+          payload.category = itemType;
+        }
+
+        if (sectionOptions.length > 1) {
+          payload.section_label = UnganiClientShared.value("itemSection") || null;
+        }
+
+        const customFields = {};
+
+        (activeItemFieldSet.fields || []).forEach(function (field) {
+          const fieldValue = readExtraFieldValue(field);
+
+          if (field.column) {
+            payload[field.column] = fieldValue;
+          } else {
+            customFields[field.id] = fieldValue;
+          }
+        });
+
+        payload.custom_fields = customFields;
+
+        let response;
+
         if (currentEditId) {
           response = await currentContext.supabaseClient
             .from("business_items")
@@ -1415,20 +1428,19 @@
             .from("business_items")
             .insert(payload);
         }
+
+        if (response.error) {
+          alert(response.error.message);
+          return;
+        }
+
+        currentEditId = null;
+        UnganiClientShared.showToast(isRealEstate ? "Property saved ✓" : "Item saved ✓");
+        UnganiClientShared.closeModal();
+        await loadItems();
       } catch (error) {
-        alert(error.message || "Could not save. Please check your connection.");
-        return;
+        alert((error && error.message) || "Could not save. Please check your connection and try again.");
       }
-
-      if (response.error) {
-        alert(response.error.message);
-        return;
-      }
-
-      currentEditId = null;
-      UnganiClientShared.showToast(isRealEstate ? "Property saved ✓" : "Item saved ✓");
-      UnganiClientShared.closeModal();
-      await loadItems();
     }
 
     async function quickStatus(id, status) {
