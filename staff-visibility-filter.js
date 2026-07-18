@@ -63,6 +63,19 @@
         return;
       }
 
+      // See the matching comment in staff-permission-guard.js: only treat
+      // this as a staff session when there's positive evidence of a real,
+      // provisioned staff record (a real role_key). A genuine owner with
+      // no team_members row gets is_owner/role_key both unset, which must
+      // not be read as "not owner, so must be staff."
+      const roleKey = String(access.role_key || "").toLowerCase();
+      const isConfirmedStaffRecord = roleKey !== "" && roleKey !== "guest";
+
+      if (!isConfirmedStaffRecord) {
+        document.body.setAttribute("data-ungani-role", "owner");
+        return;
+      }
+
       document.body.setAttribute("data-ungani-role", "staff");
 
       const permissions = access.permissions || {};
@@ -102,6 +115,9 @@
 
     const observer = new MutationObserver(function () {
       if (!cachedAccess || cachedAccess.is_owner === true) return;
+
+      const roleKey = String(cachedAccess.role_key || "").toLowerCase();
+      if (roleKey === "" || roleKey === "guest") return;
 
       const permissions = cachedAccess.permissions || {};
       hideRestrictedLinks(permissions);

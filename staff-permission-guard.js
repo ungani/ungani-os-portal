@@ -73,6 +73,22 @@
 
       if (access.is_owner === true) return;
 
+      // get_my_ungani_staff_access was originally only ever called from
+      // staff-login.html, where every caller already has a team_members
+      // row. Now that this guard runs unconditionally for every client
+      // session (closing the ?mode=client bypass), a genuine owner who
+      // never went through Team Access has no team_members row at all -
+      // the RPC returns data: null (or an object with neither is_owner
+      // nor role_key set), which must NOT be treated as "not owner, so
+      // restrict." Only restrict when there's positive evidence this is
+      // a real, provisioned staff record (a real role_key), matching the
+      // same check staff-login.html already uses to decide "not listed
+      // as active staff."
+      const roleKey = String(access.role_key || "").toLowerCase();
+      const isConfirmedStaffRecord = roleKey !== "" && roleKey !== "guest";
+
+      if (!isConfirmedStaffRecord) return;
+
       const permissions = access.permissions || {};
       const sectionPermission = permissions[sectionKey] || {};
 
