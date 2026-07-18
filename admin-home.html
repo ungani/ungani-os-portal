@@ -2261,7 +2261,9 @@
 
   <!-- SCRIPT ENGINE CORE LOGIC LAYER -->
   <script>
-    var supabase = null;
+    var SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    var SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    var supabaseClient = null;
     var currentLang = 'en';
     var globalCurrency = 'KES';
 
@@ -2551,47 +2553,48 @@
 
       // Initialization Wrapper logic ensuring resilience
       (async function initPipeline() {
-        try {
-          if (typeof UnganiClientShared !== 'undefined' && typeof UnganiClientShared.initPage === 'function') {
-            await UnganiClientShared.initPage();
-            supabase = UnganiClientShared.supabase;
-          }
-        } catch (err) {
-          console.error("UnganiClientShared initialization failed gracefully:", err);
+        // This page previously routed through UnganiClientShared.initPage()
+        // (a client-page bootstrapper meant to be called with a
+        // {pageKey, ...} config) with no arguments, which throws
+        // immediately, and then read a UnganiClientShared.supabase
+        // property that client-shared.js never actually exposes. Both were
+        // caught/swallowed, so the client below always fell through to
+        // window.supabase - the raw SDK namespace object (with a
+        // .createClient method), not an initialized client. Assigning that
+        // namespace directly, rather than calling .createClient(), left
+        // every "if (supabase)" check truthy while every real query
+        // silently failed. This page has its own dashboard shell and never
+        // needed UnganiClientShared's client-page rendering, so it now
+        // creates its own client directly, exactly like admin.html does.
+        if (typeof window.supabase !== 'undefined' && typeof window.supabase.createClient === 'function') {
+          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        } else {
+          console.warn("Supabase SDK failed to load. Using mock connection mode.");
         }
 
-        // Standard fallback if standalone client object is injected instead
-        if (!supabase && window.supabase && typeof window.supabase.createClient === 'function') {
-          supabase = window.supabase;
-        }
-
-        if (supabase) {
+        if (supabaseClient) {
           try {
-            if (supabase.auth && typeof supabase.auth.getUser === 'function') {
-              var authRes = await supabase.auth.getUser();
-              var user = authRes.data ? authRes.data.user : null;
-              if (user) {
-  var profileRes = await supabase.from('users').select('tenant_id, full_name, role, email').eq('id', user.id).maybeSingle();
-                var profile = profileRes.data;
-                if (profile) {
-                  updateAdminProfileChip(profile.full_name || profile.email || user.email, profile.role);
-                } else {
-                  updateAdminProfileChip(user.email, null);
-                }
-                if (profile && profile.tenant_id) {
-                  var tenantRes = await supabase.from('tenants').select('currency').eq('id', profile.tenant_id).maybeSingle();
-                  var tenant = tenantRes.data;
-                  if (tenant && tenant.currency) {
-                    globalCurrency = tenant.currency;
-                  }
+            var authRes = await supabaseClient.auth.getUser();
+            var user = authRes.data ? authRes.data.user : null;
+            if (user) {
+              var profileRes = await supabaseClient.from('users').select('tenant_id, full_name, role, email').eq('id', user.id).maybeSingle();
+              var profile = profileRes.data;
+              if (profile) {
+                updateAdminProfileChip(profile.full_name || profile.email || user.email, profile.role);
+              } else {
+                updateAdminProfileChip(user.email, null);
+              }
+              if (profile && profile.tenant_id) {
+                var tenantRes = await supabaseClient.from('tenants').select('currency').eq('id', profile.tenant_id).maybeSingle();
+                var tenant = tenantRes.data;
+                if (tenant && tenant.currency) {
+                  globalCurrency = tenant.currency;
                 }
               }
             }
           } catch (currencyErr) {
             console.warn("Tenant currency detection bypassed fallback to default KES:", currencyErr);
           }
-        } else {
-          console.warn("Supabase context instance offline. Using mock connection mode.");
         }
 
         // This page previously called loadAdminData() unconditionally as soon
@@ -2604,12 +2607,12 @@
         // matching the pattern already used on admin.html/admin-profiles.html/
         // users.html/sections.html, so the sensitive fetch itself can never
         // fire before admin status is confirmed - independent of guard timing.
-        if (!supabase) {
+        if (!supabaseClient) {
           return;
         }
 
         try {
-          const adminCheck = await supabase.rpc("is_ungani_admin");
+          const adminCheck = await supabaseClient.rpc("is_ungani_admin");
 
           if (adminCheck.error || adminCheck.data !== true) {
             console.warn("admin-home.html: non-admin session, skipping admin data load.");
@@ -2627,7 +2630,7 @@
     // Guarded Execution Utility Function Container
     async function safeDataFetch(fetchFn, fallbackUiFn) {
       try {
-        if (!supabase) {
+        if (!supabaseClient) {
           if (typeof fallbackUiFn === 'function') fallbackUiFn();
           return;
         }
@@ -2654,13 +2657,13 @@
       var grid = document.getElementById('kpiGridWrap');
 
       safeDataFetch(async function() {
-        var tenantsCount = await supabase.from('tenants').select('*', { count: 'exact', head: true });
-        var tenantsTrend = await supabase.from('tenants').select('created_at');
-        var usersCount = await supabase.from('users').select('*', { count: 'exact', head: true });
-        var usersTrend = await supabase.from('users').select('created_at');
-        var itemsCount = await supabase.from('business_items').select('*', { count: 'exact', head: true });
-        var itemsTrend = await supabase.from('business_items').select('created_at');
-        var txRes = await supabase.from('transactions').select('amount, created_at');
+        var tenantsCount = await supabaseClient.from('tenants').select('*', { count: 'exact', head: true });
+        var tenantsTrend = await supabaseClient.from('tenants').select('created_at');
+        var usersCount = await supabaseClient.from('users').select('*', { count: 'exact', head: true });
+        var usersTrend = await supabaseClient.from('users').select('created_at');
+        var itemsCount = await supabaseClient.from('business_items').select('*', { count: 'exact', head: true });
+        var itemsTrend = await supabaseClient.from('business_items').select('created_at');
+        var txRes = await supabaseClient.from('transactions').select('amount, created_at');
 
         if (tenantsCount.error || usersCount.error || itemsCount.error || txRes.error) {
           throw (tenantsCount.error || usersCount.error || itemsCount.error || txRes.error);
@@ -2691,13 +2694,13 @@
       });
 
       safeDataFetch(async function() {
-        var pendingReg = await supabase.from('tenants').select('status').eq('status', 'pending');
+        var pendingReg = await supabaseClient.from('tenants').select('status').eq('status', 'pending');
         document.getElementById('todayRegistrations').textContent = pendingReg.data ? pendingReg.data.length : 0;
 
-        var openTickets = await supabase.from('support_issues').select('status').not('status', 'in', '("resolved","closed")');
+        var openTickets = await supabaseClient.from('support_issues').select('status').not('status', 'in', '("resolved","closed")');
         document.getElementById('todaySupport').textContent = openTickets.data ? openTickets.data.length : 0;
 
-        var activeTasks = await supabase.from('tasks').select('status,due_date');
+        var activeTasks = await supabaseClient.from('tasks').select('status,due_date');
         if (activeTasks.data) {
           var overdue = activeTasks.data.filter(function(t) {
             return t.status === 'overdue' || (t.due_date && new Date(t.due_date) < new Date() && t.status !== 'completed');
@@ -2716,7 +2719,7 @@
     function loadTenants() {
       var container = document.getElementById('tenantsSummaryList');
       safeDataFetch(async function() {
-        var res = await supabase.from('tenants').select('*').order('created_at', { ascending: false }).limit(5);
+        var res = await supabaseClient.from('tenants').select('*').order('created_at', { ascending: false }).limit(5);
         if (res.error) throw res.error;
         renderTenantsSummary(res.data);
       }, function() {
@@ -2727,7 +2730,7 @@
     function loadSupport() {
       var container = document.getElementById('supportSummaryList');
       safeDataFetch(async function() {
-        var res = await supabase.from('support_issues').select('*').order('created_at', { ascending: false }).limit(5);
+        var res = await supabaseClient.from('support_issues').select('*').order('created_at', { ascending: false }).limit(5);
         if (res.error) throw res.error;
         renderSupportSummary(res.data);
       }, function() {
@@ -2738,7 +2741,7 @@
     function loadTransactions() {
       var container = document.getElementById('activitySummaryList');
       safeDataFetch(async function() {
-        var res = await supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(5);
+        var res = await supabaseClient.from('transactions').select('*').order('created_at', { ascending: false }).limit(5);
         if (res.error) throw res.error;
         renderActivitySummary(res.data);
       }, function() {
@@ -2749,7 +2752,7 @@
     function loadNotifications() {
       var list = document.getElementById('notificationList');
       safeDataFetch(async function() {
-        var res = await supabase.from('system_notices').select('*').order('created_at', { ascending: false }).limit(10);
+        var res = await supabaseClient.from('system_notices').select('*').order('created_at', { ascending: false }).limit(10);
         if (res.error) throw res.error;
 
         var count = (res.data || []).filter(function(n) {
@@ -2801,8 +2804,8 @@
     function loadChatPreview() {
       var list = document.getElementById('chatPreviewList');
       safeDataFetch(async function () {
-        var tenantsRes = await supabase.from('tenants').select('*');
-        var messagesRes = await supabase.from('admin_client_messages').select('*');
+        var tenantsRes = await supabaseClient.from('tenants').select('*');
+        var messagesRes = await supabaseClient.from('admin_client_messages').select('*');
         if (tenantsRes.error || messagesRes.error) throw (tenantsRes.error || messagesRes.error);
 
         var tenantsById = {};
@@ -2870,8 +2873,8 @@
 
     async function markAllNotificationsRead() {
       try {
-        if (!supabase) return;
-        var cols = await supabase.from('system_notices').select('*').limit(1);
+        if (!supabaseClient) return;
+        var cols = await supabaseClient.from('system_notices').select('*').limit(1);
         var checkField = 'is_read';
         if (cols.data && cols.data.length > 0 && cols.data[0].is_read === undefined && cols.data[0].read !== undefined) {
           checkField = 'read';
@@ -2880,7 +2883,7 @@
         var updatePayload = {};
         updatePayload[checkField] = true;
 
-        await supabase.from('system_notices').update(updatePayload).eq(checkField, false);
+        await supabaseClient.from('system_notices').update(updatePayload).eq(checkField, false);
         loadNotifications();
         closeNotifications();
       } catch (err) {
@@ -3148,7 +3151,7 @@
         setAdminSearchResultsHtml('<div class="empty">Type at least 2 characters to search.</div>');
         return;
       }
-      if (!supabase) {
+      if (!supabaseClient) {
         setAdminSearchResultsHtml('<div class="empty">Search is unavailable right now.</div>');
         return;
       }
@@ -3167,7 +3170,7 @@
       for (var i = 0; i < tables.length; i++) {
         var config = tables[i];
         try {
-          var res = await supabase.from(config.table).select('*').order('created_at', { ascending: false }).limit(50);
+          var res = await supabaseClient.from(config.table).select('*').order('created_at', { ascending: false }).limit(50);
           if (res.error) continue;
 
           (res.data || []).forEach(function (row) {
@@ -3420,7 +3423,7 @@
     async function loadPlatformHealth() {
       var wrap = document.getElementById('platformHealthGaugeWrap');
       safeDataFetch(async function () {
-        var res = await supabase.rpc('get_admin_ungani_system_health_snapshot');
+        var res = await supabaseClient.rpc('get_admin_ungani_system_health_snapshot');
         if (res.error) throw res.error;
         healthSnapshot = res.data || {};
         var summary = healthSnapshot.summary || {};
@@ -3618,7 +3621,7 @@
     function loadNeedsAttention() {
       var container = document.getElementById('attentionList');
       safeDataFetch(async function () {
-        var res = await supabase.rpc('get_admin_ungani_system_action_items');
+        var res = await supabaseClient.rpc('get_admin_ungani_system_action_items');
         if (res.error) throw res.error;
         actionItems = res.data || {};
         renderNeedsAttention();
@@ -3710,9 +3713,9 @@
 
     function loadPerformanceChart() {
       safeDataFetch(async function () {
-        var tenantsTrendRes = await supabase.from('tenants').select('created_at');
-        var txTrendRes = await supabase.from('transactions').select('amount, created_at');
-        var supportTrendRes = await supabase.from('support_issues').select('created_at, resolved_at');
+        var tenantsTrendRes = await supabaseClient.from('tenants').select('created_at');
+        var txTrendRes = await supabaseClient.from('transactions').select('amount, created_at');
+        var supportTrendRes = await supabaseClient.from('support_issues').select('created_at, resolved_at');
 
         if (tenantsTrendRes.error || txTrendRes.error || supportTrendRes.error) {
           throw (tenantsTrendRes.error || txTrendRes.error || supportTrendRes.error);
