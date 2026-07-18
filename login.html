@@ -773,6 +773,7 @@
       }
 
       recordSuccessfulLogin(email);
+      logAuditEvent("login", response.data.session?.access_token, { entityType: "session" });
 
       currentUser = response.data.user;
 
@@ -857,6 +858,20 @@
         await supabaseClient.rpc("record_successful_login", { p_email: email });
       } catch (error) {
         // non-critical - never block a successful login on this
+      }
+    }
+
+    async function logAuditEvent(action, token, details) {
+      try {
+        if (!token) return;
+        await fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(Object.assign({ action: action }, details || {})),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
       }
     }
 
@@ -945,6 +960,8 @@
     }
 
     async function logout() {
+      const sessionRes = await supabaseClient.auth.getSession();
+      await logAuditEvent("logout", sessionRes?.data?.session?.access_token, { entityType: "session" });
       await supabaseClient.auth.signOut();
 
       currentUser = null;

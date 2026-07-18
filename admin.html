@@ -1019,6 +1019,13 @@
         return;
       }
 
+      logAuditEvent("registration_approved", {
+        entityType: "tenants",
+        entityId: String(registrationId),
+        tenantId: result.tenant_id || null,
+        description: "Approved registration and created/linked client account"
+      });
+
       showApprovalMessage(result.approval_message || buildApprovalMessage(result));
       showToast("Registration approved ✓");
 
@@ -1053,6 +1060,12 @@
         alert(result.message || "Reject failed.");
         return;
       }
+
+      logAuditEvent("registration_rejected", {
+        entityType: "tenants",
+        entityId: String(registrationId),
+        description: "Rejected registration: " + (reason || "Rejected by UNGANI admin")
+      });
 
       showToast("Registration rejected ✓");
       await loadPageData();
@@ -1252,7 +1265,30 @@
       }, 2200);
     }
 
+    async function logAuditEvent(action, details) {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (!token) return;
+
+        await fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(Object.assign({ action: action }, details || {})),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
+    }
+
     async function logout() {
+      try {
+        await logAuditEvent("logout", { entityType: "session" });
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
+
       await supabaseClient.auth.signOut();
       window.location.href = "portal.html";
     }

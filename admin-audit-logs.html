@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Admin Audit Logs</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+
+  <style>
+    .page-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .metric-card {
+      background: var(--ungani-card);
+      border: 1px solid var(--ungani-border);
+      border-left: 6px solid var(--ungani-gold);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 10px 24px var(--ungani-shadow);
+    }
+
+    .metric-card h3 {
+      margin: 0 0 8px;
+      color: var(--ungani-muted);
+      font-size: 14px;
+    }
+
+    .metric-card p {
+      margin: 0;
+      font-size: 28px;
+      font-weight: bold;
+      color: var(--ungani-text);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin: 8px 0 6px;
+      font-size: 14px;
+      color: var(--ungani-text);
+    }
+
+    input, select {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--ungani-border);
+      border-radius: 12px;
+      background: var(--ungani-card);
+      color: var(--ungani-text);
+      font-size: 15px;
+      font-family: Arial, sans-serif;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--ungani-gold);
+      color: var(--ungani-navy);
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn.dark {
+      background: var(--ungani-card);
+      color: var(--ungani-text);
+      border: 1px solid var(--ungani-border);
+    }
+
+    .btn.green { background: var(--ungani-green); color: #FFFFFF; }
+
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .section-title-row h2 {
+      margin: 0;
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--ungani-navy);
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .badge.green { background: var(--ungani-green); }
+    .badge.red { background: var(--ungani-red); }
+    .badge.orange { background: var(--ungani-orange); }
+    .badge.blue { background: var(--ungani-blue); }
+    .badge.gold { background: var(--ungani-gold); color: var(--ungani-navy); }
+    .badge.gray { background: #64748B; }
+
+    .empty {
+      text-align: center;
+      padding: 28px;
+      background: var(--ungani-card);
+      border: 1px dashed var(--ungani-border);
+      border-radius: 18px;
+    }
+
+    .empty h3 {
+      margin: 0 0 8px;
+      color: var(--ungani-text);
+    }
+
+    .empty p {
+      margin: 0;
+      color: var(--ungani-muted);
+    }
+
+    .small-text {
+      color: var(--ungani-muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .ungani-table-wrap {
+      overflow-x: auto;
+    }
+
+    .ungani-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      min-width: 820px;
+    }
+
+    .ungani-table thead th {
+      text-align: left;
+      padding: 10px 12px;
+      color: var(--ungani-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--ungani-border);
+      white-space: nowrap;
+    }
+
+    .ungani-table td {
+      padding: 12px;
+      border-bottom: 1px solid var(--ungani-border);
+      vertical-align: top;
+    }
+
+    .ungani-table .row-time {
+      white-space: nowrap;
+      color: var(--ungani-muted);
+      font-size: 13px;
+    }
+
+    .ungani-table .row-sub {
+      display: block;
+      font-weight: normal;
+      color: var(--ungani-muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="adminRoot"></div>
+
+  <script>
+    let supabaseClient = null;
+    let currentAdmin = null;
+
+    const PAGE_SIZE = 50;
+    let currentOffset = 0;
+    let currentRows = [];
+    let hasMore = false;
+
+    const ACTION_OPTIONS = [
+      { value: "", label: "All Actions" },
+      { value: "login", label: "Login" },
+      { value: "logout", label: "Logout" },
+      { value: "logout_idle_timeout", label: "Logout (idle timeout)" },
+      { value: "access_denied", label: "Access Denied" },
+      { value: "record_deleted", label: "Record Deleted" },
+      { value: "role_changed", label: "Role Changed" },
+      { value: "staff_added", label: "Staff Added/Updated" },
+      { value: "staff_permission_changed", label: "Staff Permission Changed" },
+      { value: "staff_disabled", label: "Staff Disabled" },
+      { value: "tenant_status_changed", label: "Tenant Status Changed" },
+      { value: "tenant_profile_updated", label: "Tenant Profile Updated" },
+      { value: "registration_approved", label: "Registration Approved" },
+      { value: "registration_rejected", label: "Registration Rejected" },
+      { value: "subscription_updated", label: "Subscription Updated" },
+      { value: "upgrade_request_updated", label: "Upgrade Request Updated" }
+    ];
+
+    const pageMainHtml = `
+      <section class="ungani-card ungani-hero-card">
+        <div style="position: relative; z-index: 1;">
+          <h2>Audit Logs</h2>
+          <p>
+            Immutable security trail of logins, logouts, deletions, and permission/status changes across UNGANI OS. Admin-only.
+          </p>
+          <div style="margin-top: 16px;">
+            <a class="btn" href="admin-home.html">Admin Home</a>
+            <a class="btn dark" href="admin-settings.html">Admin Settings</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-grid" id="summaryTiles">
+        <div class="metric-card"><h3>Events shown</h3><p id="metricShown">0</p></div>
+        <div class="metric-card"><h3>Logins</h3><p id="metricLogins">0</p></div>
+        <div class="metric-card"><h3>Deletions</h3><p id="metricDeletions">0</p></div>
+        <div class="metric-card"><h3>Access denied</h3><p id="metricDenied">0</p></div>
+      </section>
+
+      <section class="ungani-card">
+        <div class="section-title-row">
+          <h2>Filters</h2>
+          <button class="btn green" onclick="applyFilters()">Refresh</button>
+        </div>
+
+        <div class="form-grid">
+          <div>
+            <label for="actionFilter">Action</label>
+            <select id="actionFilter">
+              ${ACTION_OPTIONS.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join("")}
+            </select>
+          </div>
+
+          <div>
+            <label for="actorFilter">Actor email contains</label>
+            <input id="actorFilter" placeholder="e.g. jane@business.com" />
+          </div>
+
+          <div>
+            <label for="tenantFilter">Tenant ID</label>
+            <input id="tenantFilter" placeholder="Exact tenant UUID" />
+          </div>
+
+          <div>
+            <label for="fromDate">From date</label>
+            <input id="fromDate" type="date" />
+          </div>
+
+          <div>
+            <label for="toDate">To date</label>
+            <input id="toDate" type="date" />
+          </div>
+        </div>
+
+        <div class="button-row">
+          <button class="btn green" onclick="applyFilters()">Apply Filters</button>
+          <button class="btn dark" onclick="resetFilters()">Reset Filters</button>
+        </div>
+      </section>
+
+      <section class="ungani-card">
+        <div class="section-title-row">
+          <h2>Event Log</h2>
+          <p class="small-text" id="logsCountText">Loading...</p>
+        </div>
+
+        <div class="ungani-table-wrap">
+          <table class="ungani-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Actor</th>
+                <th>Action</th>
+                <th>Entity</th>
+                <th>Description</th>
+                <th>Tenant</th>
+                <th>IP Address</th>
+              </tr>
+            </thead>
+            <tbody id="logsListBox">
+              <tr><td colspan="7"><div class="empty"><h3>Loading audit log...</h3><p>Please wait.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="button-row">
+          <button class="btn dark" id="loadMoreBtn" style="display:none;" onclick="loadMore()">Load More</button>
+        </div>
+      </section>
+    `;
+
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "auditLogs",
+        pageTitle: "Audit Logs",
+        pageSubtitle: "Security event trail: logins, logouts, deletions, permission changes.",
+        footerTitle: "Audit Logs",
+        footerVersion: "Audit Logs Version: v1",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "auditLogs",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Audit Logs",
+            footerVersion: "Audit Logs Version: v1"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await applyFilters();
+        }
+      });
+    });
+
+    function safe(value) {
+      return UnganiAdminShared.safe(value);
+    }
+
+    function cleanText(value) {
+      return UnganiAdminShared.cleanText(value);
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "N/A";
+
+      const dateObj = new Date(value);
+
+      if (isNaN(dateObj.getTime())) return "N/A";
+
+      return dateObj.toLocaleString("en-KE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function actionBadge(action) {
+      const clean = String(action || "").toLowerCase();
+
+      if (clean === "login") return `<span class="badge green">Login</span>`;
+      if (clean === "logout" || clean === "logout_idle_timeout") return `<span class="badge gray">${clean === "logout_idle_timeout" ? "Idle Timeout" : "Logout"}</span>`;
+      if (clean === "access_denied") return `<span class="badge red">Access Denied</span>`;
+      if (clean === "record_deleted") return `<span class="badge red">Deleted</span>`;
+      if (clean.includes("role") || clean.includes("permission")) return `<span class="badge gold">${safe(cleanText(clean))}</span>`;
+      if (clean.includes("approved")) return `<span class="badge green">${safe(cleanText(clean))}</span>`;
+      if (clean.includes("rejected") || clean.includes("disabled")) return `<span class="badge orange">${safe(cleanText(clean))}</span>`;
+
+      return `<span class="badge blue">${safe(cleanText(clean))}</span>`;
+    }
+
+    function buildQuery(offset) {
+      let query = supabaseClient
+        .from("ungani_audit_log")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      const action = document.getElementById("actionFilter").value;
+      const actor = document.getElementById("actorFilter").value.trim();
+      const tenantId = document.getElementById("tenantFilter").value.trim();
+      const fromDate = document.getElementById("fromDate").value;
+      const toDate = document.getElementById("toDate").value;
+
+      if (action) query = query.eq("action", action);
+      if (actor) query = query.ilike("actor_email", "%" + actor + "%");
+      if (tenantId) query = query.eq("tenant_id", tenantId);
+      if (fromDate) query = query.gte("created_at", fromDate + "T00:00:00");
+      if (toDate) query = query.lte("created_at", toDate + "T23:59:59");
+
+      return query;
+    }
+
+    async function applyFilters() {
+      currentOffset = 0;
+      currentRows = [];
+
+      document.getElementById("logsListBox").innerHTML = `<tr><td colspan="7"><div class="empty"><h3>Loading audit log...</h3><p>Please wait.</p></div></td></tr>`;
+
+      const { data, error } = await buildQuery(0);
+
+      if (error) {
+        document.getElementById("logsListBox").innerHTML = `<tr><td colspan="7"><div class="empty"><h3>Could not load audit log</h3><p>${safe(error.message)}</p></div></td></tr>`;
+        document.getElementById("logsCountText").innerText = "Error loading log.";
+        return;
+      }
+
+      currentRows = data || [];
+      currentOffset = currentRows.length;
+      hasMore = currentRows.length === PAGE_SIZE;
+
+      renderLogs();
+    }
+
+    async function loadMore() {
+      const { data, error } = await buildQuery(currentOffset);
+
+      if (error) {
+        UnganiAdminShared.showToast("Could not load more: " + error.message);
+        return;
+      }
+
+      const rows = data || [];
+      currentRows = currentRows.concat(rows);
+      currentOffset += rows.length;
+      hasMore = rows.length === PAGE_SIZE;
+
+      renderLogs();
+    }
+
+    function resetFilters() {
+      document.getElementById("actionFilter").value = "";
+      document.getElementById("actorFilter").value = "";
+      document.getElementById("tenantFilter").value = "";
+      document.getElementById("fromDate").value = "";
+      document.getElementById("toDate").value = "";
+      applyFilters();
+    }
+
+    function renderLogs() {
+      const box = document.getElementById("logsListBox");
+
+      if (!currentRows.length) {
+        box.innerHTML = `<tr><td colspan="7"><div class="empty"><h3>No matching events</h3><p>Adjust the filters above or check back after more activity occurs.</p></div></td></tr>`;
+      } else {
+        box.innerHTML = currentRows.map(function (row) {
+          return `
+            <tr>
+              <td class="row-time">${safe(formatDateTime(row.created_at))}</td>
+              <td>
+                ${safe(row.actor_email || "Unknown")}
+                <span class="row-sub mono">${safe((row.actor_user_id || "").slice(0, 8))}</span>
+              </td>
+              <td>${actionBadge(row.action)}</td>
+              <td>
+                ${safe(row.entity_type || "-")}
+                ${row.entity_id ? `<span class="row-sub mono">${safe(String(row.entity_id).slice(0, 20))}</span>` : ""}
+              </td>
+              <td>${safe(row.description || "-")}</td>
+              <td class="mono">${safe(row.tenant_id ? String(row.tenant_id).slice(0, 8) : "-")}</td>
+              <td class="mono">${safe(row.ip_address || "-")}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      document.getElementById("metricShown").innerText = String(currentRows.length);
+      document.getElementById("metricLogins").innerText = String(currentRows.filter(r => r.action === "login").length);
+      document.getElementById("metricDeletions").innerText = String(currentRows.filter(r => r.action === "record_deleted").length);
+      document.getElementById("metricDenied").innerText = String(currentRows.filter(r => r.action === "access_denied").length);
+
+      document.getElementById("logsCountText").innerText = currentRows.length + " event" + (currentRows.length === 1 ? "" : "s") + " shown" + (hasMore ? " (more available)" : "");
+      document.getElementById("loadMoreBtn").style.display = hasMore ? "inline-block" : "none";
+    }
+  </script>
+</body>
+</html>

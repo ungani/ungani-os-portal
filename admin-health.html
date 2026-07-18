@@ -1829,6 +1829,17 @@
 
     async function logout() {
       try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (token) {
+          fetch("/api/log-audit-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify({ action: "logout", entityType: "session" }),
+            keepalive: true
+          }).catch(function () {});
+        }
+
         await supabaseClient.auth.signOut();
       } catch (error) {
         console.warn(error.message);

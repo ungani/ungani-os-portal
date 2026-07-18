@@ -996,6 +996,16 @@
 
       if (adminResult.error || adminResult.data !== true) {
         alert("Admin access only. Please log in using an authorized UNGANI admin account.");
+        const deniedSession = await supabaseClient.auth.getSession();
+        const deniedToken = deniedSession?.data?.session?.access_token;
+        if (deniedToken) {
+          fetch("/api/log-audit-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + deniedToken },
+            body: JSON.stringify({ action: "access_denied", entityType: "session", description: "Failed is_ungani_admin check on admin-subscriptions.html" }),
+            keepalive: true
+          }).catch(function () {});
+        }
         await supabaseClient.auth.signOut();
         window.location.href = "login.html?mode=admin";
         return false;
@@ -1356,8 +1366,32 @@
         return;
       }
 
+      logAuditEvent("subscription_updated", {
+        entityType: "tenants",
+        entityId: String(tenantId),
+        tenantId: String(tenantId),
+        description: "Subscription updated: package=" + packageKey + ", status=" + subscriptionStatus + ", payment=" + paymentStatus
+      });
+
       alert("Subscription updated successfully.");
       await loadAll();
+    }
+
+    async function logAuditEvent(action, details) {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (!token) return;
+
+        await fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(Object.assign({ action: action }, details || {})),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
     }
 
     async function quickUpdate(tenantId, subscriptionStatus, paymentStatus) {
@@ -1380,6 +1414,21 @@
     }
 
     async function logout() {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (token) {
+          fetch("/api/log-audit-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify({ action: "logout", entityType: "session" }),
+            keepalive: true
+          }).catch(function () {});
+        }
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
+
       await supabaseClient.auth.signOut();
       window.location.href = "login.html?mode=admin";
     }

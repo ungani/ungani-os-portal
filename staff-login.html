@@ -567,6 +567,7 @@
         }
 
         recordSuccessfulLogin(email);
+        logAuditEvent("login", response.data.session?.access_token, { entityType: "session" });
 
         await verifyStaffAccessAndRedirect();
       } finally {
@@ -603,6 +604,20 @@
         await supabaseClient.rpc("record_successful_login", { p_email: email });
       } catch (error) {
         // non-critical - never block a successful login on this
+      }
+    }
+
+    async function logAuditEvent(action, token, details) {
+      try {
+        if (!token) return;
+        await fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(Object.assign({ action: action }, details || {})),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
       }
     }
 
@@ -686,6 +701,8 @@
 
       if (access.can_access !== true) {
         showMessage(access.message || "This email is not connected to an active staff workspace.", "error");
+        const deniedSession = await supabaseClient.auth.getSession();
+        await logAuditEvent("access_denied", deniedSession?.data?.session?.access_token, { entityType: "session", description: access.message || "Staff access check failed: can_access false" });
         await supabaseClient.auth.signOut();
         return;
       }
@@ -697,6 +714,8 @@
 
       if (!access.role_key || access.role_key === "guest") {
         showMessage("This email is not listed as active staff. Ask the business owner to add it in Team Access.", "error");
+        const noRoleSession = await supabaseClient.auth.getSession();
+        await logAuditEvent("access_denied", noRoleSession?.data?.session?.access_token, { entityType: "session", description: "Staff access check failed: no role_key assigned" });
         await supabaseClient.auth.signOut();
         return;
       }

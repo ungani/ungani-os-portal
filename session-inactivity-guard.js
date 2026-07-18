@@ -83,7 +83,7 @@
     const idleFor = Date.now() - getLastActivity();
 
     if (idleFor >= IDLE_TIMEOUT_MS) {
-      doLogout();
+      doLogout("logout_idle_timeout");
       return;
     }
 
@@ -184,7 +184,7 @@
     return overlay;
   }
 
-  async function doLogout() {
+  async function doLogout(reason) {
     hideWarning();
 
     if (tickTimer) {
@@ -193,6 +193,17 @@
     }
 
     try {
+      const sessionRes = await supabaseClient.auth.getSession();
+      const token = sessionRes?.data?.session?.access_token;
+      if (token) {
+        fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ action: reason || "logout", entityType: "session" }),
+          keepalive: true
+        }).catch(function () {});
+      }
+
       await supabaseClient.auth.signOut();
     } catch (error) {
       // proceed to redirect regardless

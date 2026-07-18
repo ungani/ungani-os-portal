@@ -7321,6 +7321,21 @@
     }
 
     async function logout() {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (token) {
+          fetch("/api/log-audit-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify({ action: "logout", entityType: "session" }),
+            keepalive: true
+          }).catch(function () {});
+        }
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
+
       await supabaseClient.auth.signOut();
       window.location.href = "login.html?mode=client";
     }

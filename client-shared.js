@@ -3110,6 +3110,26 @@
     document.body.classList.toggle("ungani-sidebar-open");
   }
 
+  async function logAuditEvent(action, details) {
+    try {
+      if (!state.supabaseClient) return;
+
+      const sessionRes = await state.supabaseClient.auth.getSession();
+      const token = sessionRes?.data?.session?.access_token;
+
+      if (!token) return;
+
+      await fetch("/api/log-audit-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify(Object.assign({ action: action }, details || {})),
+        keepalive: true
+      });
+    } catch (error) {
+      console.warn("Audit log warning:", error.message);
+    }
+  }
+
   async function logout() {
     try {
       if (!state.supabaseClient && window.supabase) {
@@ -3117,6 +3137,7 @@
       }
 
       if (state.supabaseClient) {
+        await logAuditEvent("logout", { entityType: "session" });
         await state.supabaseClient.auth.signOut();
       }
     } catch (error) {
@@ -3348,6 +3369,7 @@
       toggleTheme,
       toggleSidebar,
       logout,
+      logAuditEvent,
       signInFromForm,
       getTenantName,
       getBusinessTypeLabel,

@@ -968,6 +968,9 @@
         return;
       }
 
+      const originalUser = users.find(item => String(item.id) === String(selectedUserId));
+      const originalRole = originalUser ? originalUser.role : null;
+
       const payload = {
         full_name: fullName,
         tenant_id: tenantId || null,
@@ -986,6 +989,16 @@
       if (error) {
         alert(error.message);
         return;
+      }
+
+      if (originalRole !== role) {
+        UnganiAdminShared.logAuditEvent("role_changed", {
+          entityType: "users",
+          entityId: String(selectedUserId),
+          tenantId: tenantId || null,
+          description: "Role changed from " + (originalRole || "none") + " to " + role,
+          metadata: { fromRole: originalRole, toRole: role }
+        });
       }
 
       UnganiAdminShared.closeModal();

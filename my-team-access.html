@@ -683,6 +683,12 @@
           return;
         }
 
+        logAuditEvent("staff_added", {
+          entityType: "team_member",
+          entityId: response.data.id ? String(response.data.id) : payload.p_email,
+          description: "Added/updated staff member " + payload.p_email + " with role " + payload.p_role_key
+        });
+
         document.getElementById("fullName").value = "";
         document.getElementById("email").value = "";
         document.getElementById("phone").value = "";
@@ -719,6 +725,13 @@
         await loadTeamMembers();
         return;
       }
+
+      logAuditEvent("staff_permission_changed", {
+        entityType: "team_member",
+        entityId: String(memberId),
+        description: "Updated " + sectionKey + " permissions",
+        metadata: { sectionKey: sectionKey, canView: canView, canCreate: canCreate, canEdit: canEdit, canDelete: canDelete }
+      });
     }
 
     async function disableMember(memberId, buttonEl) {
@@ -734,6 +747,12 @@
           return;
         }
 
+        logAuditEvent("staff_disabled", {
+          entityType: "team_member",
+          entityId: String(memberId),
+          description: "Disabled staff member"
+        });
+
         await loadTeamMembers();
       });
     }
@@ -741,6 +760,23 @@
     function getChecked(memberId, sectionKey, action) {
       const input = document.getElementById(memberId + "_" + sectionKey + "_" + action);
       return input ? input.checked : false;
+    }
+
+    async function logAuditEvent(action, details) {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (!token) return;
+
+        await fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(Object.assign({ action: action }, details || {})),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
     }
 
     function toggleTheme() {

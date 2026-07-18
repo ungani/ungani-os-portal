@@ -1034,12 +1034,36 @@
         updateSummaryCounts();
         renderRequests();
 
+        logAuditEvent("upgrade_request_updated", {
+          entityType: "upgrade_requests",
+          entityId: String(requestId),
+          tenantId: data && data.tenant_id ? String(data.tenant_id) : null,
+          description: "Upgrade request status set to " + status
+        });
+
         showToast("Upgrade request updated successfully.", "success");
       } catch (error) {
         showToast(
           error && error.message ? error.message : "Unable to update request.",
           "error"
         );
+      }
+    }
+
+    async function logAuditEvent(action, details) {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (!token) return;
+
+        await fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(Object.assign({ action: action }, details || {})),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
       }
     }
 

@@ -895,6 +895,16 @@
 
       if (adminResult.error || adminResult.data !== true) {
         alert("Admin access only. Please log in using an authorized UNGANI admin account.");
+        const deniedSession = await supabaseClient.auth.getSession();
+        const deniedToken = deniedSession?.data?.session?.access_token;
+        if (deniedToken) {
+          fetch("/api/log-audit-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + deniedToken },
+            body: JSON.stringify({ action: "access_denied", entityType: "session", description: "Failed is_ungani_admin check on admin-notifications.html" }),
+            keepalive: true
+          }).catch(function () {});
+        }
         await supabaseClient.auth.signOut();
         window.location.href = "login.html?mode=admin";
         return false;

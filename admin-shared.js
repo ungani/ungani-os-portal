@@ -41,6 +41,7 @@
       reports: "Reports",
       charts: "Charts",
       settings: "Settings",
+      auditLogs: "Audit Logs",
       adminSettings: "Admin Settings",
       refresh: "Refresh",
       logout: "Logout",
@@ -88,6 +89,7 @@
       reports: "Ripoti",
       charts: "Chati",
       settings: "Mipangilio",
+      auditLogs: "Kumbukumbu za Ukaguzi",
       adminSettings: "Mipangilio ya Admin",
       refresh: "Sasisha",
       logout: "Toka",
@@ -160,6 +162,7 @@
     {
       titleKey: "settings",
       links: [
+        { key: "auditLogs", href: "admin-audit-logs.html", icon: "🛡️", activeKey: "auditLogs" },
         { key: "adminSettings", href: "admin-settings.html", icon: "⚙️", activeKey: "admin-settings" }
       ]
     }
@@ -1184,12 +1187,33 @@
 
     if (msg) msg.innerHTML = `<p style="color: var(--ungani-green); font-weight: bold;">${safe(t("loginSuccess"))}</p>`;
 
+    await logAuditEvent("login", { entityType: "session" });
     await loadAdminProfile();
     window.location.reload();
   }
 
+  async function logAuditEvent(action, details) {
+    try {
+      const client = getSupabaseClient();
+      const sessionRes = await client.auth.getSession();
+      const token = sessionRes?.data?.session?.access_token;
+
+      if (!token) return;
+
+      await fetch("/api/log-audit-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify(Object.assign({ action: action }, details || {})),
+        keepalive: true
+      });
+    } catch (error) {
+      console.warn("Audit log warning:", error.message);
+    }
+  }
+
   async function logoutAdmin() {
     const client = getSupabaseClient();
+    await logAuditEvent("logout", { entityType: "session" });
     await client.auth.signOut();
     window.location.href = "admin-home.html";
   }
@@ -1295,6 +1319,7 @@
     applyLanguage,
     updateAdminPreferences,
     logoutAdmin,
+    logAuditEvent,
     showToast,
     openModal,
     closeModal,
