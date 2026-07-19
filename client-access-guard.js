@@ -23,7 +23,8 @@
       if (allowedWithoutFullAccess.includes(page)) return;
       if (!window.supabase) return;
 
-      const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      if (!supabaseClient) return;
 
       const userResponse = await supabaseClient.auth.getUser();
       const user = userResponse && userResponse.data ? userResponse.data.user : null;

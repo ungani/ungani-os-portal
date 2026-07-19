@@ -1546,7 +1546,7 @@
         return;
       }
 
-      state.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      state.supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
       const sessionResponse = await state.supabaseClient.auth.getSession();
       const session = sessionResponse && sessionResponse.data ? sessionResponse.data.session : null;
@@ -1672,7 +1672,7 @@
     }
 
     if (!state.supabaseClient) {
-      state.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      state.supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     }
 
     const response = await state.supabaseClient.auth.signInWithPassword({
@@ -3134,7 +3134,7 @@
   async function logout() {
     try {
       if (!state.supabaseClient && window.supabase) {
-        state.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        state.supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
       }
 
       if (state.supabaseClient) {

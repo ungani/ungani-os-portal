@@ -1,5 +1,32 @@
 (function () {
   const UNGANI_BUILD_VERSION = "portal-separation-14s-20260710";
+  const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+  // Every authenticated page used to call window.supabase.createClient()
+  // independently in its own inline script AND in each guard script it
+  // loaded (client-access-guard.js, session-inactivity-guard.js,
+  // staff-permission-guard.js, staff-visibility-filter.js) - up to 9+
+  // separate GoTrueClient instances per page load, all racing against the
+  // same localStorage-persisted session. Supabase JS explicitly documents
+  // this as producing "undefined behavior" - multiple instances each run
+  // their own auto-refresh timer, and if two race to refresh the same
+  // (single-use, rotating) refresh token, the loser can get an
+  // invalid-token error and conclude the user is signed out, sometimes
+  // corrupting the shared session for every other instance on the page too.
+  // This is the most likely cause of intermittent "got logged out" reports
+  // on section navigation (a full page reload, so a fresh burst of
+  // near-simultaneous client creation every time). pwa-register.js loads
+  // first on every authenticated page (non-deferred, before any guard
+  // script it injects), so this is the one safe place to hand out a single
+  // shared instance that every script on the page reuses instead.
+  window.getUnganiSupabaseClient = function () {
+    if (window.__unganiSupabaseClient) return window.__unganiSupabaseClient;
+    if (!window.supabase || typeof window.supabase.createClient !== "function") return null;
+
+    window.__unganiSupabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    return window.__unganiSupabaseClient;
+  };
 
   setPortalModeFromUrl();
   loadUiPolish();

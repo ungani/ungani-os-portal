@@ -186,10 +186,18 @@
   function getSupabaseClient() {
     if (supabaseClient) return supabaseClient;
 
+    if (window.getUnganiSupabaseClient) {
+      supabaseClient = window.getUnganiSupabaseClient();
+      if (supabaseClient) return supabaseClient;
+    }
+
     if (!window.supabase || typeof window.supabase.createClient !== "function") {
       throw new Error("Supabase JS is not loaded. Add the Supabase CDN script before admin-shared.js.");
     }
 
+    // persistSession/autoRefreshToken/detectSessionInUrl below are already
+    // the SDK's own defaults - kept explicit only as the fallback path for
+    // pages that somehow load admin-shared.js without pwa-register.js.
     supabaseClient = window.supabase.createClient(
       UNGANI_CONFIG.supabaseUrl,
       UNGANI_CONFIG.supabaseAnonKey,

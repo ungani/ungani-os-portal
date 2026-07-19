@@ -44,7 +44,8 @@
       return;
     }
 
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    if (!supabaseClient) return;
 
     await protectAdminPage();
   }

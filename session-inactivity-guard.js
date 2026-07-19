@@ -24,7 +24,8 @@
   async function init() {
     if (!window.supabase) return;
 
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    if (!supabaseClient) return;
 
     const userResponse = await supabaseClient.auth.getUser();
     const user = userResponse && userResponse.data ? userResponse.data.user : null;

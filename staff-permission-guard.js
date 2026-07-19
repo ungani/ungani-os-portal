@@ -34,13 +34,17 @@
     "staff-login.html"
   ];
 
-  runSoon();
-  document.addEventListener("DOMContentLoaded", runSoon);
-  window.addEventListener("load", runSoon);
-
-  function runSoon() {
-    setTimeout(runStaffPermissionGuard, 20);
-    setTimeout(runStaffPermissionGuard, 300);
+  // Previously fired via runSoon() registered three times (immediately,
+  // on DOMContentLoaded, and on window.load), each scheduling two more
+  // setTimeouts (20ms/300ms) - up to 6 concurrent invocations of this
+  // guard per page load, each creating its OWN Supabase client. Multiple
+  // GoTrueClient instances racing against the same session is exactly the
+  // kind of thing that produces intermittent "got logged out" symptoms -
+  // collapsed to the same single-invocation pattern the other guards use.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", runStaffPermissionGuard);
+  } else {
+    runStaffPermissionGuard();
   }
 
   async function runStaffPermissionGuard() {
@@ -55,7 +59,8 @@
 
       if (!window.supabase) return;
 
-      const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      if (!supabaseClient) return;
 
       const userResponse = await supabaseClient.auth.getUser();
       const user = userResponse && userResponse.data ? userResponse.data.user : null;
