@@ -2476,6 +2476,7 @@
     let isHealthcare = false;
     let isSalon = false;
     let isEvents = false;
+    let isSchool = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3169,6 +3170,13 @@
         };
       }
 
+      if (isSchool) {
+        return {
+          itemKey: "item", itemLabel: "Class / Course", itemPlaceholder: "Grade 5 Mathematics", itemTypeValue: "Class",
+          eventKey: "event", eventLabel: "Class", eventTypeValue: "Class", eventPlaceholder: "Class - Grade 5 Mathematics"
+        };
+      }
+
       return {
         itemKey: "item", itemLabel: "Item", itemPlaceholder: "New item name",
         itemTypeValue: (businessPreset && businessPreset.itemTypes && businessPreset.itemTypes[0]) || "Item",
@@ -3566,6 +3574,7 @@
       isHealthcare = detectHealthcare(currentTenant);
       isSalon = detectSalon(currentTenant);
       isEvents = detectEvents(currentTenant);
+      isSchool = detectSchool(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -3988,6 +3997,11 @@
         }
 
         renderEventsDashboard();
+        return;
+      }
+
+      if (isSchool) {
+        renderSchoolDashboard();
         return;
       }
 
@@ -11440,6 +11454,304 @@
       animateHealthGauges();
     }
 
+    // School/Training Center has no sections in the business config (one
+    // operational model per tenant, same shape as Warehouse) - just one
+    // dashboard, always shown with the full greeting/health-gauge hero.
+    // Calendar types are "Class"/"Training Session"/"Fee Reminder"/"Parent
+    // Meeting"/"Exam / Assessment" - no substring collisions between them,
+    // but matchers still use exact equality (not .includes()) per the
+    // Events lesson, since there's no reason to risk it.
+    function isClassOrTrainingCalendarType(value) {
+      const lower = String(value || "").trim().toLowerCase();
+      return lower === "class" || lower === "training session";
+    }
+
+    function isFeeReminderTaskType(value) {
+      return String(value || "").trim().toLowerCase() === "fee reminder";
+    }
+
+    function buildSchoolCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+
+      const items = [];
+
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+
+        items.push({
+          date: date,
+          title: getValue(row, ["event_title", "title", "name"], "Class"),
+          type: getValue(row, ["event_type", "type"], "Activity"),
+          section: getValue(row, ["section_label"], ""),
+          ackKey: "event:" + row.id,
+          href: "my-calendar.html?highlight=" + row.id
+        });
+      });
+
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderSchoolTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      try {
+        await UnganiAnalytics.createChart("schoolRevenueTrendChart", {
+          type: "bar",
+          data: {
+            labels: months.map(function (m) { return m.label; }),
+            datasets: [
+              {
+                label: "School Revenue",
+                data: months.map(function (m) { return m.value; }),
+                backgroundColor: "#D4A63A",
+                borderRadius: 10
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: function (v) { return compactMoney(v); } }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("School trend chart warning:", error.message);
+      }
+    }
+
+    function renderSchoolDashboard() {
+      const data = dashboardData;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const todaysClasses = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isClassOrTrainingCalendarType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const feeRemindersDue = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isFeeReminderTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const overdueTasks = findOverdueTasksForSection(data, todayStr);
+
+      const classTrend = buildMonthlyTrend(data.events, ["event_date", "created_at"], function (event) {
+        return isClassOrTrainingCalendarType(getValue(event, ["event_type", "type"], ""));
+      });
+
+      const calendarPreview = buildSchoolCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+
+      if (overdueTasks.length > 0) {
+        greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
+      }
+      if (feeRemindersDue.length > 0) {
+        greetingMessages.push({ text: feeRemindersDue.length === 1 ? "1 fee reminder is open" : feeRemindersDue.length + " fee reminders are open", href: "my-tasks.html" });
+      }
+      if (todaysClasses.length > 0) {
+        greetingMessages.push({ text: todaysClasses.length === 1 ? "1 class or training session today" : todaysClasses.length + " classes or training sessions today", href: "my-calendar.html" });
+      }
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(data.tasks),
+          money: calculateMoneySummary(data.transactions),
+          support: calculateSupportSummary(data.support),
+          dashboardData: data
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
+      const attentionGroups = [];
+
+      if (overdueTasks.length > 0) {
+        attentionGroups.push({
+          title: "Overdue Tasks (Oldest First)",
+          rows: overdueTasks.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Task");
+            const due = formatDate(getValue(task, ["due_date"], ""));
+            return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id);
+          })
+        });
+      }
+
+      if (feeRemindersDue.length > 0) {
+        attentionGroups.push({
+          title: "Fee Reminders Open",
+          rows: feeRemindersDue.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Fee Reminder");
+            const due = getValue(task, ["due_date"], "");
+            return attentionRow("💵", title, due ? "Due " + formatDate(due) : "No due date set", "Open", "orange", "my-tasks.html?highlight=" + task.id, null, "fee-reminder:" + task.id);
+          })
+        });
+      }
+
+      if (todaysClasses.length > 0) {
+        attentionGroups.push({
+          title: "Today's Classes / Training",
+          rows: todaysClasses.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Class");
+            return attentionRow("📅", title, getValue(event, ["event_type", "type"], "Class"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null);
+          })
+        });
+      }
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, fee reminders, or classes need attention right now.</p></div>`
+        : attentionGroups.map(function (g) {
+            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+          }).join("");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                Here's what needs attention today across your school. Use it to see overdue tasks, open fee reminders, and today's classes or training sessions, then click any card or row to open the right record.
+              </p>
+              <p class="mobile-only">
+                Your school summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">New Class</a>
+                <a class="btn green" href="my-money.html">Log Fee Payment</a>
+                <a class="btn light" href="my-people.html">Learners</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
+                ${todayItem("💵", "Fee Reminders", feeRemindersDue.length, "open", "my-tasks.html")}
+                ${todayItem("📅", "Today's Classes", todaysClasses.length, "scheduled today", "my-calendar.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("School Revenue", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), "#16A34A", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🎓")}
+          ${kpiCard("Today's Classes / Training", todaysClasses.length, "Classes or training sessions today", "#2563EB", "my-calendar.html", countSpan(todaysClasses.length, "plain"), sparklineSvg(classTrend, "#2563EB"), "📅")}
+          ${kpiCard("Fee Reminders Due", feeRemindersDue.length, "Open fee reminders", feeRemindersDue.length > 0 ? "#D4A63A" : "#16A34A", "my-tasks.html", countSpan(feeRemindersDue.length, "plain"), null, "💵")}
+          ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "⚠️")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue tasks, open fee reminders, and today's classes or training sessions — in priority order.</p>
+            </div>
+          </div>
+
+          ${attentionHtml}
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("📅", "New Class", "Schedule a class or training session", "my-calendar.html", "#2563EB")}
+          ${quickAction("💵", "Log Fee Payment", "Record a school or training fee", "my-money.html", "#16A34A")}
+          ${quickAction("🎓", "Add Class / Course", "Add a new class, course, or material", "my-items.html", "#D4A63A")}
+          ${quickAction("🧑", "Add Learner", "Register a new learner or student", "my-people.html", "#14B8A6")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>School Revenue — Last 6 Months</h3>
+              <p>Monthly fee and training income from your money records.</p>
+            </div>
+            <a class="btn small gold" href="my-money.html">Money</a>
+          </div>
+
+          ${hasAnyRevenueHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="schoolRevenueTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge("💰", "Put your numbers here", "Log your first fee payment and this chart will start tracking your monthly revenue trend.", "Log Fee Payment", "my-money.html")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Classes, training sessions, and parent meetings coming up.</p>
+            </div>
+            <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: School / Training Center · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderSchoolTrendChart(revenueTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
     function detectRealEstate(tenant) {
       if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
         const matched = UnganiBusinessConfig.resolve(tenant);
@@ -11546,6 +11858,18 @@
       const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("events") || businessType.includes("catering") || businessType.includes("caterer") || businessTypeKey.includes("events");
+    }
+
+    function detectSchool(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "school";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("school") || businessType.includes("training") || businessType.includes("academy") || businessType.includes("education") || businessTypeKey.includes("school");
     }
 
     function todayItem(icon, title, value, subtitle, href) {
