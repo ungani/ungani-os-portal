@@ -2473,6 +2473,7 @@
     let isLogistics = false;
     let isWarehouse = false;
     let isAutomotive = false;
+    let isHealthcare = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3089,6 +3090,41 @@
         };
       }
 
+      if (isHealthcare) {
+        if (section === "Medical Centre") {
+          return {
+            itemKey: "item", itemLabel: "Equipment / Service", itemPlaceholder: "Blood Pressure Monitor", itemTypeValue: "Equipment",
+            eventKey: "event", eventLabel: "Appointment", eventTypeValue: "Appointment", eventPlaceholder: "Appointment - 10am"
+          };
+        }
+
+        if (section === "Hospital") {
+          return {
+            itemKey: "item", itemLabel: "Ward / Equipment", itemPlaceholder: "ICU Ventilator", itemTypeValue: "Medical Equipment",
+            eventKey: "event", eventLabel: "Surgery", eventTypeValue: "Surgery Schedule", eventPlaceholder: "Surgery - Appendectomy"
+          };
+        }
+
+        if (section === "Dental Clinic") {
+          return {
+            itemKey: "item", itemLabel: "Supply / Equipment", itemPlaceholder: "Dental Anesthetic", itemTypeValue: "Dental Supply",
+            eventKey: "event", eventLabel: "Appointment", eventTypeValue: "Appointment", eventPlaceholder: "Appointment - 10am"
+          };
+        }
+
+        if (section === "Diagnostic Laboratory") {
+          return {
+            itemKey: "item", itemLabel: "Test Kit / Equipment", itemPlaceholder: "Malaria Rapid Test Kit", itemTypeValue: "Test Kit",
+            eventKey: "event", eventLabel: "Sample Collection", eventTypeValue: "Sample Collection", eventPlaceholder: "Sample Collection - Blood Test"
+          };
+        }
+
+        return {
+          itemKey: "item", itemLabel: "Service", itemPlaceholder: "General Consultation", itemTypeValue: "Service",
+          eventKey: "event", eventLabel: "Appointment", eventTypeValue: "Appointment", eventPlaceholder: "Appointment - 10am"
+        };
+      }
+
       return {
         itemKey: "item", itemLabel: "Item", itemPlaceholder: "New item name",
         itemTypeValue: (businessPreset && businessPreset.itemTypes && businessPreset.itemTypes[0]) || "Item",
@@ -3483,6 +3519,7 @@
       isLogistics = detectLogistics(currentTenant);
       isWarehouse = detectWarehouse(currentTenant);
       isAutomotive = detectAutomotive(currentTenant);
+      isHealthcare = detectHealthcare(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -3857,6 +3894,22 @@
         }
 
         renderAutomotiveDashboard();
+        return;
+      }
+
+      if (isHealthcare) {
+        const sections = (businessPreset.selectedSectionLabels || []);
+
+        if (sections.length > 1) {
+          if (currentSection && sections.indexOf(currentSection) !== -1) {
+            renderHealthcareDashboard(buildSectionScopedData(currentSection), currentSection);
+          } else {
+            renderHealthcareOverview(sections);
+          }
+          return;
+        }
+
+        renderHealthcareDashboard();
         return;
       }
 
@@ -9534,6 +9587,688 @@
       animateHealthGauges();
     }
 
+    // Healthcare has 5 sections (Clinic, Medical Centre, Hospital, Dental
+    // Clinic, Diagnostic Laboratory) - thinner category vocab per section
+    // than Automotive/Logistics (mostly one income category, 3 of 5 have no
+    // expense categories authored), so differentiation leans more on each
+    // section's own calendar type (Appointment vs Surgery Schedule vs
+    // Sample Collection) plus the type-level task vocab (Patient Follow-up,
+    // Equipment Maintenance) where a section has no expense category of its
+    // own to build a narrower cost KPI from.
+    function isWardSuppliesExpense(row) {
+      const category = String(getValue(row, ["category", "category_name"], "")).toLowerCase();
+      return isExpense(row) && category.includes("ward supplies");
+    }
+
+    function isDentalSuppliesExpense(row) {
+      const category = String(getValue(row, ["category", "category_name"], "")).toLowerCase();
+      return isExpense(row) && category.includes("dental supplies");
+    }
+
+    function isLabSuppliesExpense(row) {
+      const category = String(getValue(row, ["category", "category_name"], "")).toLowerCase();
+      return isExpense(row) && (category.includes("lab supplies") || category.includes("reagent"));
+    }
+
+    function isAppointmentCalendarType(value) {
+      return String(value || "").toLowerCase().includes("appointment");
+    }
+
+    function isSurgeryCalendarType(value) {
+      return String(value || "").toLowerCase().includes("surgery");
+    }
+
+    function isSampleCollectionCalendarType(value) {
+      return String(value || "").toLowerCase().includes("sample");
+    }
+
+    function isPatientFollowUpTaskType(value) {
+      return String(value || "").toLowerCase().includes("patient follow");
+    }
+
+    function findOpenTasksByType(data, matcher) {
+      return (data.tasks || []).filter(function (task) {
+        const type = String(getValue(task, ["task_type", "type"], ""));
+        const status = statusText(task);
+        return matcher(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        return String(getValue(a, ["due_date", "created_at"], "")).localeCompare(String(getValue(b, ["due_date", "created_at"], "")));
+      });
+    }
+
+    function findTodaysCalendarEvents(data, matcher, todayStr) {
+      return (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return matcher(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+    }
+
+    function buildHealthcareRevenueAndAttention(data, ctx, calendarMatcher, calendarNoun, extraTaskGroup) {
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, ctx.monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, ctx.lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+
+      const todaysEvents = findTodaysCalendarEvents(data, calendarMatcher, ctx.todayStr);
+      const overdueTasks = findOverdueTasksForSection(data, ctx.todayStr);
+
+      const attentionGroups = [];
+
+      if (overdueTasks.length > 0) {
+        attentionGroups.push({
+          title: "Overdue Tasks (Oldest First)",
+          rows: overdueTasks.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Task");
+            const due = formatDate(getValue(task, ["due_date"], ""));
+            return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", ctx.tasksHref + "?highlight=" + task.id, null, "task:" + task.id);
+          })
+        });
+      }
+
+      if (extraTaskGroup && extraTaskGroup.rows.length > 0) {
+        attentionGroups.push({
+          title: extraTaskGroup.title,
+          rows: extraTaskGroup.rows.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], extraTaskGroup.title);
+            const due = task.due_date ? formatDate(getValue(task, ["due_date"], "")) : "No due date";
+            return attentionRow(extraTaskGroup.icon, title, due, "Open", "orange", ctx.tasksHref + "?highlight=" + task.id, null, extraTaskGroup.ackPrefix + ":" + task.id);
+          })
+        });
+      }
+
+      if (todaysEvents.length > 0) {
+        attentionGroups.push({
+          title: "Today's " + calendarNoun,
+          rows: todaysEvents.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], calendarNoun);
+            return attentionRow("📅", title, getValue(event, ["event_type", "type"], calendarNoun), "Today", "blue", ctx.calendarHref + "?highlight=" + event.id, null, null);
+          })
+        });
+      }
+
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks or " + calendarNoun.toLowerCase() + " need attention right now.");
+
+      const greetingMessages = [];
+      if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: ctx.tasksHref });
+      if (todaysEvents.length > 0) greetingMessages.push({ text: todaysEvents.length === 1 ? "1 " + calendarNoun.toLowerCase().replace(/s$/, "") + " today" : todaysEvents.length + " " + calendarNoun.toLowerCase() + " today", href: ctx.calendarHref });
+
+      return { revenueThisMonth, revenueLastMonth, revenueDelta, revenueTrendMonths, todaysEvents, overdueTasks, attentionHtml, greetingMessages };
+    }
+
+    function buildClinicSectionContent(data, ctx) {
+      const followUps = findOpenTasksByType(data, isPatientFollowUpTaskType);
+      const base = buildHealthcareRevenueAndAttention(data, ctx, isAppointmentCalendarType, "Appointments", { title: "Patient Follow-ups Due", icon: "🩺", ackPrefix: "follow-up", rows: followUps });
+
+      return {
+        subtitle: "Today's appointments, overdue tasks, and patient follow-ups for Clinic.",
+        kpisHtml: [
+          kpiCard("Clinic Revenue", compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🩺"),
+          kpiCard("Today's Appointments", base.todaysEvents.length, "Appointments scheduled today", "#2563EB", ctx.calendarHref, countSpan(base.todaysEvents.length, "plain"), null, "📅"),
+          kpiCard("Patient Follow-ups Due", followUps.length, "Open patient follow-up tasks", followUps.length > 0 ? "#D4A63A" : "#16A34A", ctx.tasksHref, countSpan(followUps.length, "plain"), null, "🔔"),
+          kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Overdue tasks, patient follow-ups due, and today's appointments — in priority order.",
+        attentionHtml: base.attentionHtml,
+        quickActionsHtml: [
+          quickAction("📅", "New Appointment", "Book a patient appointment", ctx.calendarHref, "#2563EB"),
+          quickAction("💵", "Log Payment", "Record a consultation payment", ctx.moneyHref, "#16A34A"),
+          quickAction("🩺", "Add Service", "Add a consultation or clinic service", ctx.itemsHref, "#D4A63A"),
+          quickAction("🧑", "Add Patient", "Register a new patient", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Clinic Revenue — Last 6 Months",
+        trendSubtitle: "Monthly revenue trend from your money records.",
+        trendMonths: base.revenueTrendMonths,
+        trendLabel: "Clinic Revenue",
+        trendColor: "#16A34A",
+        trendEmpty: { icon: "🩺", title: "Put your numbers here", message: "Log your first consultation payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
+          todayItem("📅", "Today's Appointments", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
+        ].join(""),
+        greetingMessages: base.greetingMessages
+      };
+    }
+
+    function buildMedicalCentreSectionContent(data, ctx) {
+      const maintenanceDue = findOpenTasksByType(data, isMaintenanceTaskType);
+      const base = buildHealthcareRevenueAndAttention(data, ctx, isAppointmentCalendarType, "Appointments", { title: "Equipment Maintenance Due", icon: "🛠️", ackPrefix: "maintenance", rows: maintenanceDue });
+
+      return {
+        subtitle: "Today's appointments, overdue tasks, and equipment maintenance for Medical Centre.",
+        kpisHtml: [
+          kpiCard("Medical Centre Revenue", compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🏥"),
+          kpiCard("Today's Appointments", base.todaysEvents.length, "Appointments scheduled today", "#2563EB", ctx.calendarHref, countSpan(base.todaysEvents.length, "plain"), null, "📅"),
+          kpiCard("Equipment Maintenance Due", maintenanceDue.length, "Diagnostic equipment needing service", maintenanceDue.length > 0 ? "#D4A63A" : "#16A34A", ctx.tasksHref, countSpan(maintenanceDue.length, "plain"), null, "🛠️"),
+          kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Overdue tasks, equipment maintenance due, and today's appointments — in priority order.",
+        attentionHtml: base.attentionHtml,
+        quickActionsHtml: [
+          quickAction("📅", "New Appointment", "Book a treatment appointment", ctx.calendarHref, "#2563EB"),
+          quickAction("💵", "Log Payment", "Record a treatment payment", ctx.moneyHref, "#16A34A"),
+          quickAction("🏥", "Add Equipment / Service", "Add a treatment room or diagnostic equipment", ctx.itemsHref, "#D4A63A"),
+          quickAction("🧑", "Add Patient", "Register a new patient", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Medical Centre Revenue — Last 6 Months",
+        trendSubtitle: "Monthly revenue trend from your money records.",
+        trendMonths: base.revenueTrendMonths,
+        trendLabel: "Medical Centre Revenue",
+        trendColor: "#16A34A",
+        trendEmpty: { icon: "🏥", title: "Put your numbers here", message: "Log your first treatment payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
+          todayItem("📅", "Today's Appointments", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
+        ].join(""),
+        greetingMessages: base.greetingMessages
+      };
+    }
+
+    function buildHospitalSectionContent(data, ctx) {
+      const base = buildHealthcareRevenueAndAttention(data, ctx, isSurgeryCalendarType, "Surgeries", null);
+      const wardCostThisMonth = sumTransactionsByMatcher(data.transactions, ctx.monthKey, isWardSuppliesExpense);
+
+      return {
+        subtitle: "Today's surgeries, overdue tasks, and ward supplies costs for Hospital.",
+        kpisHtml: [
+          kpiCard("Hospital Revenue", compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🏨"),
+          kpiCard("Today's Surgeries", base.todaysEvents.length, "Surgeries scheduled today", "#2563EB", ctx.calendarHref, countSpan(base.todaysEvents.length, "plain"), null, "🔪"),
+          kpiCard("Ward Supplies Costs", compactMoney(wardCostThisMonth), "This month's ward supplies spend", "#D4A63A", ctx.moneyHref, countSpan(wardCostThisMonth, "money"), null, "🩹"),
+          kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Overdue tasks and today's surgeries — in priority order.",
+        attentionHtml: base.attentionHtml,
+        quickActionsHtml: [
+          quickAction("🔪", "Schedule Surgery", "Book a surgery on the schedule", ctx.calendarHref, "#2563EB"),
+          quickAction("💵", "Log Payment", "Record an admission or surgery payment", ctx.moneyHref, "#16A34A"),
+          quickAction("🏨", "Add Ward / Equipment", "Add a ward bed or medical equipment", ctx.itemsHref, "#D4A63A"),
+          quickAction("🧑", "Add Patient", "Register a new patient", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Hospital Revenue — Last 6 Months",
+        trendSubtitle: "Monthly revenue trend from your money records.",
+        trendMonths: base.revenueTrendMonths,
+        trendLabel: "Hospital Revenue",
+        trendColor: "#16A34A",
+        trendEmpty: { icon: "🏨", title: "Put your numbers here", message: "Log your first admission or surgery payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
+          todayItem("🔪", "Today's Surgeries", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
+        ].join(""),
+        greetingMessages: base.greetingMessages
+      };
+    }
+
+    function buildDentalSectionContent(data, ctx) {
+      const base = buildHealthcareRevenueAndAttention(data, ctx, isAppointmentCalendarType, "Appointments", null);
+      const suppliesCostThisMonth = sumTransactionsByMatcher(data.transactions, ctx.monthKey, isDentalSuppliesExpense);
+
+      return {
+        subtitle: "Today's appointments, overdue tasks, and dental supplies costs for Dental Clinic.",
+        kpisHtml: [
+          kpiCard("Dental Revenue", compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🦷"),
+          kpiCard("Today's Appointments", base.todaysEvents.length, "Appointments scheduled today", "#2563EB", ctx.calendarHref, countSpan(base.todaysEvents.length, "plain"), null, "📅"),
+          kpiCard("Dental Supplies Costs", compactMoney(suppliesCostThisMonth), "This month's dental supplies spend", "#D4A63A", ctx.moneyHref, countSpan(suppliesCostThisMonth, "money"), null, "🦷"),
+          kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Overdue tasks and today's appointments — in priority order.",
+        attentionHtml: base.attentionHtml,
+        quickActionsHtml: [
+          quickAction("📅", "New Appointment", "Book a dental appointment", ctx.calendarHref, "#2563EB"),
+          quickAction("💵", "Log Payment", "Record a dental procedure payment", ctx.moneyHref, "#16A34A"),
+          quickAction("🦷", "Add Supply / Equipment", "Add dental equipment or supplies", ctx.itemsHref, "#D4A63A"),
+          quickAction("🧑", "Add Patient", "Register a new patient", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Dental Revenue — Last 6 Months",
+        trendSubtitle: "Monthly revenue trend from your money records.",
+        trendMonths: base.revenueTrendMonths,
+        trendLabel: "Dental Revenue",
+        trendColor: "#16A34A",
+        trendEmpty: { icon: "🦷", title: "Put your numbers here", message: "Log your first dental procedure payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
+          todayItem("📅", "Today's Appointments", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
+        ].join(""),
+        greetingMessages: base.greetingMessages
+      };
+    }
+
+    function buildLabSectionContent(data, ctx) {
+      const base = buildHealthcareRevenueAndAttention(data, ctx, isSampleCollectionCalendarType, "Sample Collections", null);
+      const suppliesCostThisMonth = sumTransactionsByMatcher(data.transactions, ctx.monthKey, isLabSuppliesExpense);
+
+      return {
+        subtitle: "Today's sample collections, overdue tasks, and lab supplies costs for Diagnostic Laboratory.",
+        kpisHtml: [
+          kpiCard("Lab Revenue", compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🧪"),
+          kpiCard("Today's Sample Collections", base.todaysEvents.length, "Sample collections scheduled today", "#2563EB", ctx.calendarHref, countSpan(base.todaysEvents.length, "plain"), null, "📅"),
+          kpiCard("Lab Supplies & Reagents Costs", compactMoney(suppliesCostThisMonth), "This month's supplies & reagents spend", "#D4A63A", ctx.moneyHref, countSpan(suppliesCostThisMonth, "money"), null, "🧫"),
+          kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Overdue tasks and today's sample collections — in priority order.",
+        attentionHtml: base.attentionHtml,
+        quickActionsHtml: [
+          quickAction("📅", "Schedule Sample Collection", "Book a sample collection", ctx.calendarHref, "#2563EB"),
+          quickAction("💵", "Log Payment", "Record a lab test payment", ctx.moneyHref, "#16A34A"),
+          quickAction("🧪", "Add Test Kit / Equipment", "Add lab equipment or a test kit", ctx.itemsHref, "#D4A63A"),
+          quickAction("🧑", "Add Patient", "Register a new patient", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Lab Revenue — Last 6 Months",
+        trendSubtitle: "Monthly revenue trend from your money records.",
+        trendMonths: base.revenueTrendMonths,
+        trendLabel: "Lab Revenue",
+        trendColor: "#16A34A",
+        trendEmpty: { icon: "🧪", title: "Put your numbers here", message: "Log your first lab test payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
+          todayItem("📅", "Today's Sample Collections", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
+        ].join(""),
+        greetingMessages: base.greetingMessages
+      };
+    }
+
+    function getHealthcareSectionContent(scopeLabel, data, ctx) {
+      if (scopeLabel === "Medical Centre") return buildMedicalCentreSectionContent(data, ctx);
+      if (scopeLabel === "Hospital") return buildHospitalSectionContent(data, ctx);
+      if (scopeLabel === "Dental Clinic") return buildDentalSectionContent(data, ctx);
+      if (scopeLabel === "Diagnostic Laboratory") return buildLabSectionContent(data, ctx);
+      return buildClinicSectionContent(data, ctx);
+    }
+
+    function buildHealthcareCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+
+      const items = [];
+
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+
+        items.push({
+          date: date,
+          title: getValue(row, ["event_title", "title", "name"], "Activity"),
+          type: getValue(row, ["event_type", "type"], "Activity"),
+          section: getValue(row, ["section_label"], ""),
+          ackKey: "event:" + row.id,
+          href: "my-calendar.html?highlight=" + row.id
+        });
+      });
+
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderHealthcareTrendChart(months, label, color) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      const chartLabel = label || "Revenue";
+      const chartColor = color || "#16A34A";
+
+      try {
+        await UnganiAnalytics.createChart("healthcareTrendChart", {
+          type: "bar",
+          data: {
+            labels: months.map(function (m) { return m.label; }),
+            datasets: [
+              {
+                label: chartLabel,
+                data: months.map(function (m) { return m.value; }),
+                backgroundColor: chartColor,
+                borderRadius: 10
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: function (v) { return compactMoney(v); } }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("Healthcare trend chart warning:", error.message);
+      }
+    }
+
+    function renderHealthcareDashboard(scopedData, scopeLabel) {
+      const data = scopedData || dashboardData;
+      const isScoped = !!scopeLabel;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const sectionParam = isScoped ? "?section=" + encodeURIComponent(scopeLabel) : "";
+      const ctx = {
+        todayStr: todayStr,
+        monthKey: monthKey,
+        lastMonthKey: lastMonthKey,
+        moneyHref: "my-money.html" + sectionParam,
+        calendarHref: "my-calendar.html" + sectionParam,
+        tasksHref: "my-tasks.html" + sectionParam,
+        itemsHref: "my-items.html" + sectionParam,
+        peopleHref: "my-people.html" + sectionParam
+      };
+
+      const content = getHealthcareSectionContent(isScoped ? scopeLabel : "Clinic", data, ctx);
+      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+      const calendarPreview = buildHealthcareCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(data);
+
+      const greetingMessages = content.greetingMessages.slice();
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health = null;
+      if (!isScoped) {
+        try {
+          health = computeGenericHealthScore({
+            tasks: calculateTaskSummary(data.tasks),
+            money: calculateMoneySummary(data.transactions),
+            support: calculateSupportSummary(data.support),
+            dashboardData: data
+          });
+        } catch (healthError) {
+          health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+        }
+      }
+
+      document.getElementById("content").innerHTML = `
+        ${isScoped ? `
+          <section class="card" style="margin-bottom:14px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div>
+              <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+              <p style="margin:8px 0 0;color:var(--muted);">${safe(content.subtitle)}</p>
+            </div>
+            <a class="btn small light" href="client.html">← Back to Overview</a>
+          </section>
+        ` : `
+          <section class="hero">
+            <div class="hero-grid">
+              <div class="hero-greet-enter">
+                <span class="badge gold">${safe(businessPreset.name)}</span>
+                <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+                ${buildGreetingRotatorHtml(greetingMessages)}
+                <p class="desktop-only">
+                  Here's what needs attention today across your clinic. Use it to see overdue tasks, today's appointments or surgeries, and revenue, then click any card or row to open the right record.
+                </p>
+                <p class="mobile-only">
+                  Your healthcare summary for today. Tap any card or use ☰ for full sections.
+                </p>
+
+                <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                  <a class="btn gold" href="${attr(ctx.calendarHref)}">New Appointment</a>
+                  <a class="btn green" href="${attr(ctx.moneyHref)}">Log Payment</a>
+                  <a class="btn light" href="${attr(ctx.peopleHref)}">Patients</a>
+                  <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+                </div>
+              </div>
+
+              <div class="hero-mini">
+                ${renderHealthGaugeHtml(health.score, health.summary)}
+                <div class="hero-mini-divider"></div>
+                <h4>Today / Attention</h4>
+                <div class="today-list">
+                  ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                  ${content.todayListHtml}
+                </div>
+              </div>
+            </div>
+          </section>
+        `}
+
+        <section class="kpi-grid">
+          ${content.kpisHtml}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(content.attentionTitle)}</h3>
+              <p>${safe(content.attentionSubtitle)}</p>
+            </div>
+          </div>
+
+          ${content.attentionHtml}
+        </section>
+
+        <section class="quick-actions">
+          ${content.quickActionsHtml}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(content.trendTitle)}</h3>
+              <p>${safe(content.trendSubtitle)}</p>
+            </div>
+            <a class="btn small gold" href="${attr(ctx.moneyHref)}">Money</a>
+          </div>
+
+          ${hasAnyTrendHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="healthcareTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Appointments, surgeries, and sample collections coming up.</p>
+            </div>
+            <a class="btn small gold" href="${attr(ctx.calendarHref)}">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Healthcare · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderHealthcareTrendChart(content.trendMonths, content.trendLabel, content.trendColor);
+      initCountAnimations();
+
+      if (!isScoped) {
+        startGreetingRotation(greetingMessages.length || 1);
+        animateHealthGauges();
+      }
+    }
+
+    function renderHealthcareOverview(sections) {
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const ctx = {
+        todayStr: todayStr,
+        monthKey: monthKey,
+        lastMonthKey: lastMonthKey,
+        moneyHref: "my-money.html",
+        calendarHref: "my-calendar.html",
+        tasksHref: "my-tasks.html",
+        itemsHref: "my-items.html",
+        peopleHref: "my-people.html"
+      };
+
+      const content = getHealthcareSectionContent(sections[0], dashboardData, ctx);
+      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+
+      const sectionSummaries = sections.map(function (label) {
+        return calculateSectionSummary(label, monthKey, todayStr);
+      });
+
+      const calendarPreview = buildHealthcareCalendarPreview(today);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(dashboardData);
+
+      const greetingMessages = content.greetingMessages.slice();
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(dashboardData.tasks),
+          money: calculateMoneySummary(dashboardData.transactions),
+          support: calculateSupportSummary(dashboardData.support),
+          dashboardData: dashboardData
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                Combined view across all your sections: ${safe(sections.join(", "))}. Compare performance below, or switch to a single section from the sidebar.
+              </p>
+              <p class="mobile-only">
+                Your combined healthcare summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">New Appointment</a>
+                <a class="btn green" href="my-money.html">Log Payment</a>
+                <a class="btn light" href="my-people.html">Patients</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${content.todayListHtml}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${content.kpisHtml}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(content.attentionTitle)}</h3>
+              <p>${safe(content.attentionSubtitle)}</p>
+            </div>
+          </div>
+
+          ${content.attentionHtml}
+        </section>
+
+        <section class="quick-actions">
+          ${content.quickActionsHtml}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Section Comparison</h3>
+              <p>Same metrics, side by side, so you can compare how each section is performing.</p>
+            </div>
+          </div>
+
+          <div style="position:relative;height:${Math.max(140, sectionSummaries.length * 56)}px;margin-bottom:20px;">
+            <canvas id="sectionComparisonChart"></canvas>
+          </div>
+
+          <div class="section-scroll-row">
+            ${sectionSummaries.map(sectionComparisonCard).join("")}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(content.trendTitle)}</h3>
+              <p>${safe(content.trendSubtitle)}</p>
+            </div>
+            <a class="btn small gold" href="my-money.html">Money</a>
+          </div>
+
+          ${hasAnyTrendHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="healthcareTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Appointments, surgeries, and sample collections coming up, tagged by section.</p>
+            </div>
+            <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview, true)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Healthcare Multi-Section Overview · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderHealthcareTrendChart(content.trendMonths, content.trendLabel, content.trendColor);
+      renderSectionComparisonChart(sectionSummaries);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
     function detectRealEstate(tenant) {
       if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
         const matched = UnganiBusinessConfig.resolve(tenant);
@@ -9604,6 +10339,18 @@
       const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("automotive") || businessType.includes("car wash") || businessType.includes("repair shop") || businessTypeKey.includes("automotive");
+    }
+
+    function detectHealthcare(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "healthcare";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("clinic") || businessType.includes("health") || businessType.includes("medical") || businessType.includes("hospital") || businessTypeKey.includes("healthcare");
     }
 
     function todayItem(icon, title, value, subtitle, href) {
