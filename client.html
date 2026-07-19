@@ -2474,6 +2474,7 @@
     let isWarehouse = false;
     let isAutomotive = false;
     let isHealthcare = false;
+    let isSalon = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3125,6 +3126,34 @@
         };
       }
 
+      if (isSalon) {
+        if (section === "Barber") {
+          return {
+            itemKey: "item", itemLabel: "Service", itemPlaceholder: "Skin Fade + Beard Trim", itemTypeValue: "Barber Service",
+            eventKey: "event", eventLabel: "Appointment", eventTypeValue: "Appointment", eventPlaceholder: "Appointment - 10am"
+          };
+        }
+
+        if (section === "Spa") {
+          return {
+            itemKey: "item", itemLabel: "Treatment", itemPlaceholder: "Full Body Massage", itemTypeValue: "Spa Treatment",
+            eventKey: "event", eventLabel: "Appointment", eventTypeValue: "Appointment", eventPlaceholder: "Appointment - 10am"
+          };
+        }
+
+        if (section === "Beauty Services") {
+          return {
+            itemKey: "item", itemLabel: "Treatment / Product", itemPlaceholder: "Gel Manicure", itemTypeValue: "Beauty Treatment",
+            eventKey: "event", eventLabel: "Appointment", eventTypeValue: "Appointment", eventPlaceholder: "Appointment - 10am"
+          };
+        }
+
+        return {
+          itemKey: "item", itemLabel: "Service", itemPlaceholder: "Haircut & Blow Dry", itemTypeValue: "Hair Service",
+          eventKey: "event", eventLabel: "Appointment", eventTypeValue: "Appointment", eventPlaceholder: "Appointment - 10am"
+        };
+      }
+
       return {
         itemKey: "item", itemLabel: "Item", itemPlaceholder: "New item name",
         itemTypeValue: (businessPreset && businessPreset.itemTypes && businessPreset.itemTypes[0]) || "Item",
@@ -3520,6 +3549,7 @@
       isWarehouse = detectWarehouse(currentTenant);
       isAutomotive = detectAutomotive(currentTenant);
       isHealthcare = detectHealthcare(currentTenant);
+      isSalon = detectSalon(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -3910,6 +3940,22 @@
         }
 
         renderHealthcareDashboard();
+        return;
+      }
+
+      if (isSalon) {
+        const sections = (businessPreset.selectedSectionLabels || []);
+
+        if (sections.length > 1) {
+          if (currentSection && sections.indexOf(currentSection) !== -1) {
+            renderSalonDashboard(buildSectionScopedData(currentSection), currentSection);
+          } else {
+            renderSalonOverview(sections);
+          }
+          return;
+        }
+
+        renderSalonDashboard();
         return;
       }
 
@@ -10269,6 +10315,553 @@
       animateHealthGauges();
     }
 
+    // Salon has 4 sections (Salon, Barber, Spa, Beauty Services) but the
+    // thinnest vocab of any full-custom type so far - no expense categories
+    // at all, and all 4 share the exact same "Appointment" calendar type
+    // (ungani-business-config.js). The genuine per-section differentiators
+    // are peopleTypes (Stylist/Barber/Therapist - mirrors Logistics'
+    // "Available Drivers" pattern) and, for Beauty Services specifically,
+    // its second item type "Cosmetic Product" (the only section that also
+    // sells a physical retail product rather than pure services).
+    function findAvailableSpecialists(data, personType) {
+      const all = (data.people || []).filter(function (person) {
+        return String(getValue(person, ["person_type", "type"], "")).toLowerCase() === personType;
+      });
+
+      const available = all.filter(function (person) {
+        const status = String(getValue(person, ["status"], "active")).toLowerCase();
+        return !status.includes("inactive") && !status.includes("lost");
+      });
+
+      return { all, available };
+    }
+
+    function buildSalonRevenueAndAttention(data, ctx) {
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, ctx.monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, ctx.lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+
+      const todaysAppointments = findTodaysCalendarEvents(data, isAppointmentCalendarType, ctx.todayStr);
+      const overdueTasks = findOverdueTasksForSection(data, ctx.todayStr);
+
+      const attentionGroups = [];
+
+      if (overdueTasks.length > 0) {
+        attentionGroups.push({
+          title: "Overdue Tasks (Oldest First)",
+          rows: overdueTasks.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Task");
+            const due = formatDate(getValue(task, ["due_date"], ""));
+            return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", ctx.tasksHref + "?highlight=" + task.id, null, "task:" + task.id);
+          })
+        });
+      }
+
+      if (todaysAppointments.length > 0) {
+        attentionGroups.push({
+          title: "Today's Appointments",
+          rows: todaysAppointments.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Appointment");
+            return attentionRow("📅", title, getValue(event, ["event_type", "type"], "Appointment"), "Today", "blue", ctx.calendarHref + "?highlight=" + event.id, null, null);
+          })
+        });
+      }
+
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks or appointments need attention right now.");
+
+      const greetingMessages = [];
+      if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: ctx.tasksHref });
+      if (todaysAppointments.length > 0) greetingMessages.push({ text: todaysAppointments.length === 1 ? "1 appointment today" : todaysAppointments.length + " appointments today", href: ctx.calendarHref });
+
+      return { revenueThisMonth, revenueLastMonth, revenueDelta, revenueTrendMonths, todaysAppointments, overdueTasks, attentionHtml, greetingMessages };
+    }
+
+    function buildSalonSpecialistSectionContent(data, ctx, sectionNoun, personType, icon, revenueTitle, itemPlaceholder) {
+      const base = buildSalonRevenueAndAttention(data, ctx);
+      const specialists = findAvailableSpecialists(data, personType);
+
+      return {
+        subtitle: "Today's appointments, overdue tasks, and " + sectionNoun.toLowerCase() + " availability for " + sectionNoun + ".",
+        kpisHtml: [
+          kpiCard(revenueTitle, compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), icon),
+          kpiCard("Today's Appointments", base.todaysAppointments.length, "Appointments scheduled today", "#2563EB", ctx.calendarHref, countSpan(base.todaysAppointments.length, "plain"), null, "📅"),
+          kpiCard("Available " + sectionNoun + "s", specialists.available.length + " / " + specialists.all.length, sectionNoun + "s available now", "#16A34A", ctx.peopleHref, countSpan(specialists.available.length, "ratio", " / " + specialists.all.length), staticProportionBar(specialists.all.length > 0 ? specialists.available.length / specialists.all.length : 0, "#16A34A", (specialists.all.length > 0 ? Math.round((specialists.available.length / specialists.all.length) * 100) : 0) + "% available"), "🧑"),
+          kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Overdue tasks and today's appointments — in priority order.",
+        attentionHtml: base.attentionHtml,
+        quickActionsHtml: [
+          quickAction("📅", "New Appointment", "Book a client appointment", ctx.calendarHref, "#2563EB"),
+          quickAction("💵", "Log Payment", "Record a service payment", ctx.moneyHref, "#16A34A"),
+          quickAction(icon, "Add Service", "Add a " + sectionNoun.toLowerCase() + " service", ctx.itemsHref, "#D4A63A"),
+          quickAction("🧑", "Add Client", "Register a new client", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: revenueTitle + " — Last 6 Months",
+        trendSubtitle: "Monthly revenue trend from your money records.",
+        trendMonths: base.revenueTrendMonths,
+        trendLabel: revenueTitle,
+        trendColor: "#16A34A",
+        trendEmpty: { icon: icon, title: "Put your numbers here", message: "Log your first service payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
+          todayItem("📅", "Today's Appointments", base.todaysAppointments.length, "scheduled today", ctx.calendarHref)
+        ].join(""),
+        greetingMessages: base.greetingMessages
+      };
+    }
+
+    function buildSalonSectionContent(data, ctx) {
+      return buildSalonSpecialistSectionContent(data, ctx, "Stylist", "stylist", "💇", "Salon Revenue", "Haircut & Blow Dry");
+    }
+
+    function buildBarberSectionContent(data, ctx) {
+      return buildSalonSpecialistSectionContent(data, ctx, "Barber", "barber", "💈", "Barber Revenue", "Skin Fade + Beard Trim");
+    }
+
+    function buildSpaSectionContent(data, ctx) {
+      return buildSalonSpecialistSectionContent(data, ctx, "Therapist", "therapist", "💆", "Spa Revenue", "Full Body Massage");
+    }
+
+    function buildBeautySectionContent(data, ctx) {
+      const base = buildSalonRevenueAndAttention(data, ctx);
+
+      const cosmeticProducts = (data.items || []).filter(function (item) {
+        return String(getValue(item, ["item_type", "type"], "")).toLowerCase() === "cosmetic product";
+      });
+
+      const inStockProducts = cosmeticProducts.filter(function (item) {
+        return !isInactiveItemStatus(getValue(item, ["property_status", "item_status", "status"], ""));
+      });
+
+      return {
+        subtitle: "Today's appointments, overdue tasks, and cosmetic product stock for Beauty Services.",
+        kpisHtml: [
+          kpiCard("Beauty Revenue", compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "💄"),
+          kpiCard("Today's Appointments", base.todaysAppointments.length, "Appointments scheduled today", "#2563EB", ctx.calendarHref, countSpan(base.todaysAppointments.length, "plain"), null, "📅"),
+          kpiCard("Cosmetic Products in Stock", inStockProducts.length + " / " + cosmeticProducts.length, "Products available to sell", "#D4A63A", ctx.itemsHref, countSpan(inStockProducts.length, "ratio", " / " + cosmeticProducts.length), null, "💄"),
+          kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+        ].join(""),
+        attentionTitle: "Needs Attention Today",
+        attentionSubtitle: "Overdue tasks and today's appointments — in priority order.",
+        attentionHtml: base.attentionHtml,
+        quickActionsHtml: [
+          quickAction("📅", "New Appointment", "Book a client appointment", ctx.calendarHref, "#2563EB"),
+          quickAction("💵", "Log Payment", "Record a service or product sale", ctx.moneyHref, "#16A34A"),
+          quickAction("💄", "Add Treatment / Product", "Add a beauty treatment or cosmetic product", ctx.itemsHref, "#D4A63A"),
+          quickAction("🧑", "Add Client", "Register a new client", ctx.peopleHref, "#14B8A6")
+        ].join(""),
+        trendTitle: "Beauty Revenue — Last 6 Months",
+        trendSubtitle: "Monthly revenue trend from your money records.",
+        trendMonths: base.revenueTrendMonths,
+        trendLabel: "Beauty Revenue",
+        trendColor: "#16A34A",
+        trendEmpty: { icon: "💄", title: "Put your numbers here", message: "Log your first service or product sale and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
+        todayListHtml: [
+          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
+          todayItem("📅", "Today's Appointments", base.todaysAppointments.length, "scheduled today", ctx.calendarHref)
+        ].join(""),
+        greetingMessages: base.greetingMessages
+      };
+    }
+
+    function getSalonSectionContent(scopeLabel, data, ctx) {
+      if (scopeLabel === "Barber") return buildBarberSectionContent(data, ctx);
+      if (scopeLabel === "Spa") return buildSpaSectionContent(data, ctx);
+      if (scopeLabel === "Beauty Services") return buildBeautySectionContent(data, ctx);
+      return buildSalonSectionContent(data, ctx);
+    }
+
+    function buildSalonCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+
+      const items = [];
+
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+
+        items.push({
+          date: date,
+          title: getValue(row, ["event_title", "title", "name"], "Appointment"),
+          type: getValue(row, ["event_type", "type"], "Appointment"),
+          section: getValue(row, ["section_label"], ""),
+          ackKey: "event:" + row.id,
+          href: "my-calendar.html?highlight=" + row.id
+        });
+      });
+
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderSalonTrendChart(months, label, color) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      const chartLabel = label || "Revenue";
+      const chartColor = color || "#16A34A";
+
+      try {
+        await UnganiAnalytics.createChart("salonTrendChart", {
+          type: "bar",
+          data: {
+            labels: months.map(function (m) { return m.label; }),
+            datasets: [
+              {
+                label: chartLabel,
+                data: months.map(function (m) { return m.value; }),
+                backgroundColor: chartColor,
+                borderRadius: 10
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: function (v) { return compactMoney(v); } }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("Salon trend chart warning:", error.message);
+      }
+    }
+
+    function renderSalonDashboard(scopedData, scopeLabel) {
+      const data = scopedData || dashboardData;
+      const isScoped = !!scopeLabel;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const sectionParam = isScoped ? "?section=" + encodeURIComponent(scopeLabel) : "";
+      const ctx = {
+        todayStr: todayStr,
+        monthKey: monthKey,
+        lastMonthKey: lastMonthKey,
+        moneyHref: "my-money.html" + sectionParam,
+        calendarHref: "my-calendar.html" + sectionParam,
+        tasksHref: "my-tasks.html" + sectionParam,
+        itemsHref: "my-items.html" + sectionParam,
+        peopleHref: "my-people.html" + sectionParam
+      };
+
+      const content = getSalonSectionContent(isScoped ? scopeLabel : "Salon", data, ctx);
+      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+      const calendarPreview = buildSalonCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(data);
+
+      const greetingMessages = content.greetingMessages.slice();
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health = null;
+      if (!isScoped) {
+        try {
+          health = computeGenericHealthScore({
+            tasks: calculateTaskSummary(data.tasks),
+            money: calculateMoneySummary(data.transactions),
+            support: calculateSupportSummary(data.support),
+            dashboardData: data
+          });
+        } catch (healthError) {
+          health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+        }
+      }
+
+      document.getElementById("content").innerHTML = `
+        ${isScoped ? `
+          <section class="card" style="margin-bottom:14px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div>
+              <span class="badge gold" style="display:inline-flex;">Viewing: ${safe(scopeLabel)}</span>
+              <p style="margin:8px 0 0;color:var(--muted);">${safe(content.subtitle)}</p>
+            </div>
+            <a class="btn small light" href="client.html">← Back to Overview</a>
+          </section>
+        ` : `
+          <section class="hero">
+            <div class="hero-grid">
+              <div class="hero-greet-enter">
+                <span class="badge gold">${safe(businessPreset.name)}</span>
+                <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+                ${buildGreetingRotatorHtml(greetingMessages)}
+                <p class="desktop-only">
+                  Here's what needs attention today across your salon. Use it to see overdue tasks, today's appointments, and revenue, then click any card or row to open the right record.
+                </p>
+                <p class="mobile-only">
+                  Your salon summary for today. Tap any card or use ☰ for full sections.
+                </p>
+
+                <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                  <a class="btn gold" href="${attr(ctx.calendarHref)}">New Appointment</a>
+                  <a class="btn green" href="${attr(ctx.moneyHref)}">Log Payment</a>
+                  <a class="btn light" href="${attr(ctx.peopleHref)}">Clients</a>
+                  <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+                </div>
+              </div>
+
+              <div class="hero-mini">
+                ${renderHealthGaugeHtml(health.score, health.summary)}
+                <div class="hero-mini-divider"></div>
+                <h4>Today / Attention</h4>
+                <div class="today-list">
+                  ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                  ${content.todayListHtml}
+                </div>
+              </div>
+            </div>
+          </section>
+        `}
+
+        <section class="kpi-grid">
+          ${content.kpisHtml}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(content.attentionTitle)}</h3>
+              <p>${safe(content.attentionSubtitle)}</p>
+            </div>
+          </div>
+
+          ${content.attentionHtml}
+        </section>
+
+        <section class="quick-actions">
+          ${content.quickActionsHtml}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(content.trendTitle)}</h3>
+              <p>${safe(content.trendSubtitle)}</p>
+            </div>
+            <a class="btn small gold" href="${attr(ctx.moneyHref)}">Money</a>
+          </div>
+
+          ${hasAnyTrendHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="salonTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Appointments coming up.</p>
+            </div>
+            <a class="btn small gold" href="${attr(ctx.calendarHref)}">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Salon / Barber / Spa / Beauty · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderSalonTrendChart(content.trendMonths, content.trendLabel, content.trendColor);
+      initCountAnimations();
+
+      if (!isScoped) {
+        startGreetingRotation(greetingMessages.length || 1);
+        animateHealthGauges();
+      }
+    }
+
+    function renderSalonOverview(sections) {
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const ctx = {
+        todayStr: todayStr,
+        monthKey: monthKey,
+        lastMonthKey: lastMonthKey,
+        moneyHref: "my-money.html",
+        calendarHref: "my-calendar.html",
+        tasksHref: "my-tasks.html",
+        itemsHref: "my-items.html",
+        peopleHref: "my-people.html"
+      };
+
+      const content = getSalonSectionContent(sections[0], dashboardData, ctx);
+      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+
+      const sectionSummaries = sections.map(function (label) {
+        return calculateSectionSummary(label, monthKey, todayStr);
+      });
+
+      const calendarPreview = buildSalonCalendarPreview(today);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(dashboardData);
+
+      const greetingMessages = content.greetingMessages.slice();
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(dashboardData.tasks),
+          money: calculateMoneySummary(dashboardData.transactions),
+          support: calculateSupportSummary(dashboardData.support),
+          dashboardData: dashboardData
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                Combined view across all your sections: ${safe(sections.join(", "))}. Compare performance below, or switch to a single section from the sidebar.
+              </p>
+              <p class="mobile-only">
+                Your combined salon summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">New Appointment</a>
+                <a class="btn green" href="my-money.html">Log Payment</a>
+                <a class="btn light" href="my-people.html">Clients</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${content.todayListHtml}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${content.kpisHtml}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(content.attentionTitle)}</h3>
+              <p>${safe(content.attentionSubtitle)}</p>
+            </div>
+          </div>
+
+          ${content.attentionHtml}
+        </section>
+
+        <section class="quick-actions">
+          ${content.quickActionsHtml}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Section Comparison</h3>
+              <p>Same metrics, side by side, so you can compare how each section is performing.</p>
+            </div>
+          </div>
+
+          <div style="position:relative;height:${Math.max(140, sectionSummaries.length * 56)}px;margin-bottom:20px;">
+            <canvas id="sectionComparisonChart"></canvas>
+          </div>
+
+          <div class="section-scroll-row">
+            ${sectionSummaries.map(sectionComparisonCard).join("")}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>${safe(content.trendTitle)}</h3>
+              <p>${safe(content.trendSubtitle)}</p>
+            </div>
+            <a class="btn small gold" href="my-money.html">Money</a>
+          </div>
+
+          ${hasAnyTrendHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="salonTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Appointments coming up, tagged by section.</p>
+            </div>
+            <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview, true)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Salon / Barber / Spa / Beauty Multi-Section Overview · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderSalonTrendChart(content.trendMonths, content.trendLabel, content.trendColor);
+      renderSectionComparisonChart(sectionSummaries);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
     function detectRealEstate(tenant) {
       if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
         const matched = UnganiBusinessConfig.resolve(tenant);
@@ -10351,6 +10944,18 @@
       const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("clinic") || businessType.includes("health") || businessType.includes("medical") || businessType.includes("hospital") || businessTypeKey.includes("healthcare");
+    }
+
+    function detectSalon(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "salon";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("salon") || businessType.includes("barber") || businessType.includes("spa") || businessType.includes("beauty") || businessTypeKey.includes("salon");
     }
 
     function todayItem(icon, title, value, subtitle, href) {
