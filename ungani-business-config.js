@@ -3364,7 +3364,15 @@
     valueLabel: "Price / Value",
     statusOptions: ["available", "in use", "maintenance", "inactive"],
     fields: [
-      { id: "quantity", label: "Quantity / Stock", type: "number", placeholder: "Example: 10" },
+      // id must be "stock_quantity", not "quantity" - client.html's
+      // getStockQuantity()/isLowStockItem() (built for Retail's low-stock
+      // KPI, now also used by Wholesale) read custom_fields.stock_quantity
+      // specifically. This field previously used id "quantity", so every
+      // business type on this generic fallback (Wholesale, Security,
+      // School, and any Retail section without its own field set) silently
+      // saved stock counts to a key nothing ever reads back - same class of
+      // bug as the units_available mismatch fixed for Retail earlier.
+      { id: "stock_quantity", label: "Quantity / Stock", type: "number", placeholder: "Example: 10" },
       { id: "supplier", label: "Supplier / Source", type: "text", placeholder: "Example: ABC Distributors" }
     ]
   };
