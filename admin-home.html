@@ -2659,6 +2659,7 @@
     }
 
     function loadAdminData() {
+      __sharedFetchCache = {};
       loadPlatformHealth();
       loadKPIs();
       loadNeedsAttention();
@@ -2670,31 +2671,58 @@
       loadChatPreview();
     }
 
+    // loadKPIs() and loadPerformanceChart() both run concurrently off
+    // loadAdminData() and both need a 6-month tenants trend and a 6-month
+    // transactions trend - this cache shares one in-flight request between
+    // them instead of firing the same unbounded query twice per page load.
+    var __sharedFetchCache = {};
+
+    function fetchShared(key, queryFn) {
+      if (!__sharedFetchCache[key]) {
+        __sharedFetchCache[key] = queryFn();
+      }
+      return __sharedFetchCache[key];
+    }
+
+    function sixMonthsAgoISO() {
+      var d = new Date();
+      d.setMonth(d.getMonth() - 6);
+      return d.toISOString();
+    }
+
     function loadKPIs() {
       var grid = document.getElementById('kpiGridWrap');
 
       safeDataFetch(async function() {
-        var tenantsCount = await supabaseClient.from('tenants').select('*', { count: 'exact', head: true });
-        var tenantsTrend = await supabaseClient.from('tenants').select('created_at');
-        var usersCount = await supabaseClient.from('users').select('*', { count: 'exact', head: true });
-        var usersTrend = await supabaseClient.from('users').select('created_at');
-        var itemsCount = await supabaseClient.from('business_items').select('*', { count: 'exact', head: true });
-        var itemsTrend = await supabaseClient.from('business_items').select('created_at');
-        var txRes = await supabaseClient.from('transactions').select('amount, created_at');
+        var sixMonthsAgo = sixMonthsAgoISO();
 
-        if (tenantsCount.error || usersCount.error || itemsCount.error || txRes.error) {
-          throw (tenantsCount.error || usersCount.error || itemsCount.error || txRes.error);
+        var results = await Promise.all([
+          supabaseClient.from('tenants').select('*', { count: 'exact', head: true }),
+          fetchShared('tenantsTrend6mo', function () { return supabaseClient.from('tenants').select('created_at').gte('created_at', sixMonthsAgo); }),
+          supabaseClient.from('users').select('*', { count: 'exact', head: true }),
+          supabaseClient.from('users').select('created_at').gte('created_at', sixMonthsAgo),
+          supabaseClient.from('business_items').select('*', { count: 'exact', head: true }),
+          supabaseClient.from('business_items').select('created_at').gte('created_at', sixMonthsAgo),
+          supabaseClient.from('transactions').select('amount'),
+          fetchShared('txTrend6mo', function () { return supabaseClient.from('transactions').select('amount, created_at').gte('created_at', sixMonthsAgo); })
+        ]);
+
+        var tenantsCount = results[0], tenantsTrend = results[1], usersCount = results[2], usersTrend = results[3],
+            itemsCount = results[4], itemsTrend = results[5], txSumRes = results[6], txTrendRes = results[7];
+
+        if (tenantsCount.error || usersCount.error || itemsCount.error || txSumRes.error) {
+          throw (tenantsCount.error || usersCount.error || itemsCount.error || txSumRes.error);
         }
 
         var tenantsTotal = (tenantsCount.count !== null && tenantsCount.count !== undefined) ? tenantsCount.count : 0;
         var usersTotal = (usersCount.count !== null && usersCount.count !== undefined) ? usersCount.count : 0;
         var itemsTotal = (itemsCount.count !== null && itemsCount.count !== undefined) ? itemsCount.count : 0;
-        var ledgerVolume = (txRes.data || []).reduce(function(sum, tx) { return sum + (parseFloat(tx.amount) || 0); }, 0);
+        var ledgerVolume = (txSumRes.data || []).reduce(function(sum, tx) { return sum + (parseFloat(tx.amount) || 0); }, 0);
 
         var tenantsSpark = buildMonthlyTrend(tenantsTrend.data || [], 'created_at', null, 6);
         var usersSpark = buildMonthlyTrend(usersTrend.data || [], 'created_at', null, 6);
         var itemsSpark = buildMonthlyTrend(itemsTrend.data || [], 'created_at', null, 6);
-        var ledgerSpark = buildMonthlyTrend(txRes.data || [], 'created_at', function (tx) { return parseFloat(tx.amount) || 0; }, 6);
+        var ledgerSpark = buildMonthlyTrend(txTrendRes.data || [], 'created_at', function (tx) { return parseFloat(tx.amount) || 0; }, 6);
 
         if (grid) {
           grid.innerHTML =
@@ -2711,13 +2739,17 @@
       });
 
       safeDataFetch(async function() {
-        var pendingReg = await supabaseClient.from('tenants').select('status').eq('status', 'pending');
-        document.getElementById('todayRegistrations').textContent = pendingReg.data ? pendingReg.data.length : 0;
+        var fetches = await Promise.all([
+          supabaseClient.from('tenants').select('status', { count: 'exact', head: true }).eq('status', 'pending'),
+          supabaseClient.from('support_issues').select('status', { count: 'exact', head: true }).not('status', 'in', '("resolved","closed")'),
+          supabaseClient.from('tasks').select('status,due_date').neq('status', 'completed')
+        ]);
 
-        var openTickets = await supabaseClient.from('support_issues').select('status').not('status', 'in', '("resolved","closed")');
-        document.getElementById('todaySupport').textContent = openTickets.data ? openTickets.data.length : 0;
+        var pendingReg = fetches[0], openTickets = fetches[1], activeTasks = fetches[2];
 
-        var activeTasks = await supabaseClient.from('tasks').select('status,due_date');
+        document.getElementById('todayRegistrations').textContent = (pendingReg.count !== null && pendingReg.count !== undefined) ? pendingReg.count : 0;
+        document.getElementById('todaySupport').textContent = (openTickets.count !== null && openTickets.count !== undefined) ? openTickets.count : 0;
+
         if (activeTasks.data) {
           var overdue = activeTasks.data.filter(function(t) {
             return t.status === 'overdue' || (t.due_date && new Date(t.due_date) < new Date() && t.status !== 'completed');
@@ -2821,8 +2853,12 @@
     function loadChatPreview() {
       var list = document.getElementById('chatPreviewList');
       safeDataFetch(async function () {
-        var tenantsRes = await supabaseClient.from('tenants').select('*');
-        var messagesRes = await supabaseClient.from('admin_client_messages').select('*');
+        var results = await Promise.all([
+          supabaseClient.from('tenants').select('id, business_name, company_name, name'),
+          supabaseClient.from('admin_client_messages').select('*').order('created_at', { ascending: false }).limit(500)
+        ]);
+
+        var tenantsRes = results[0], messagesRes = results[1];
         if (tenantsRes.error || messagesRes.error) throw (tenantsRes.error || messagesRes.error);
 
         var tenantsById = {};
@@ -3730,9 +3766,15 @@
 
     function loadPerformanceChart() {
       safeDataFetch(async function () {
-        var tenantsTrendRes = await supabaseClient.from('tenants').select('created_at');
-        var txTrendRes = await supabaseClient.from('transactions').select('amount, created_at');
-        var supportTrendRes = await supabaseClient.from('support_issues').select('created_at, resolved_at');
+        var sixMonthsAgo = sixMonthsAgoISO();
+
+        var results = await Promise.all([
+          fetchShared('tenantsTrend6mo', function () { return supabaseClient.from('tenants').select('created_at').gte('created_at', sixMonthsAgo); }),
+          fetchShared('txTrend6mo', function () { return supabaseClient.from('transactions').select('amount, created_at').gte('created_at', sixMonthsAgo); }),
+          supabaseClient.from('support_issues').select('created_at, resolved_at').or('created_at.gte.' + sixMonthsAgo + ',resolved_at.gte.' + sixMonthsAgo)
+        ]);
+
+        var tenantsTrendRes = results[0], txTrendRes = results[1], supportTrendRes = results[2];
 
         if (tenantsTrendRes.error || txTrendRes.error || supportTrendRes.error) {
           throw (tenantsTrendRes.error || txTrendRes.error || supportTrendRes.error);
