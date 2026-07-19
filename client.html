@@ -2251,7 +2251,7 @@
     <div class="notification-head">
       <div>
         <h3>Quick Add</h3>
-        <p>Add a task, payment, property, or viewing without leaving this page.</p>
+        <p>Add a task, payment, or new record without leaving this page.</p>
       </div>
       <button class="btn small light" type="button" onclick="closeQuickAddPanel()">Close</button>
     </div>
@@ -3015,6 +3015,65 @@
 
     let quickAddType = "task";
 
+    function getQuickAddConfig() {
+      const section = currentSection;
+
+      if (isRealEstate) {
+        return {
+          itemKey: "property", itemLabel: "Property", itemPlaceholder: "Clove Garden A12",
+          eventKey: "viewing", eventLabel: "Viewing", eventPlaceholder: "Viewing - Clove Garden A12"
+        };
+      }
+
+      if (isHospitality) {
+        const isFnB = section === "Restaurant" || section === "Bar Lounge" || section === "Catering";
+
+        return isFnB
+          ? {
+              itemKey: "item", itemLabel: "Menu Item", itemPlaceholder: "Grilled Tilapia", itemTypeValue: "Menu Item",
+              eventKey: "event", eventLabel: "Booking", eventTypeValue: "Reservation", eventPlaceholder: "Table Booking - 4pm"
+            }
+          : {
+              itemKey: "item", itemLabel: "Room", itemPlaceholder: "Room 204 - Deluxe", itemTypeValue: "Room",
+              eventKey: "event", eventLabel: "Reservation", eventTypeValue: "Reservation", eventPlaceholder: "Reservation - Room 204"
+            };
+      }
+
+      if (isLogistics) {
+        const isClearing = section === "Clearing & Forwarding";
+
+        return isClearing
+          ? {
+              itemKey: "item", itemLabel: "Shipment", itemPlaceholder: "Container KCB4521", itemTypeValue: "Shipment",
+              eventKey: "event", eventLabel: "Clearance", eventTypeValue: "Clearance", eventPlaceholder: "Clearance - Container KCB4521"
+            }
+          : {
+              itemKey: "item", itemLabel: "Vehicle", itemPlaceholder: "Truck - KDA 123B", itemTypeValue: "Vehicle",
+              eventKey: "event", eventLabel: "Trip", eventTypeValue: "Trip", eventPlaceholder: "Trip - Mombasa Run"
+            };
+      }
+
+      if (isRetail) {
+        return {
+          itemKey: "item", itemLabel: "Stock Item", itemPlaceholder: "Paracetamol 500mg", itemTypeValue: "Stock Item",
+          eventKey: "event", eventLabel: "Restock", eventTypeValue: "Restock", eventPlaceholder: "Restock - Paracetamol 500mg"
+        };
+      }
+
+      if (isWarehouse) {
+        return {
+          itemKey: "item", itemLabel: "Stock Item", itemPlaceholder: "Pallet - SKU 4821", itemTypeValue: "Storage Unit",
+          eventKey: "event", eventLabel: "Dispatch", eventTypeValue: "Dispatch", eventPlaceholder: "Dispatch - Pallet SKU 4821"
+        };
+      }
+
+      return {
+        itemKey: "item", itemLabel: "Item", itemPlaceholder: "New item name",
+        itemTypeValue: (businessPreset && businessPreset.itemTypes && businessPreset.itemTypes[0]) || "Item",
+        eventKey: "event", eventLabel: "Event", eventTypeValue: "Event", eventPlaceholder: "New event"
+      };
+    }
+
     function toggleQuickAddPanel() {
       closeSidebar();
 
@@ -3047,11 +3106,13 @@
       const wrap = document.getElementById("quickAddFormWrap");
       if (!wrap) return;
 
+      const config = getQuickAddConfig();
+
       const types = [
         { key: "task", label: "Task" },
         { key: "payment", label: "Payment" },
-        { key: "property", label: "Property" },
-        { key: "viewing", label: "Viewing" }
+        { key: config.itemKey, label: config.itemLabel },
+        { key: config.eventKey, label: config.eventLabel }
       ];
 
       wrap.innerHTML = `
@@ -3117,6 +3178,32 @@
         `;
       }
 
+      if (type === "item") {
+        const config = getQuickAddConfig();
+        return `
+          <label style="${labelStyle}">${safe(config.itemLabel)} Name</label>
+          <input id="qaTitle" style="${fieldStyle}" required placeholder="${attr(config.itemPlaceholder)}" />
+          <label style="${labelStyle}">Price / Value</label>
+          <input id="qaAmount" type="number" min="0" step="any" style="${fieldStyle}" placeholder="Optional" />
+          <label style="${labelStyle}">Notes</label>
+          <textarea id="qaNotes" style="${fieldStyle}" rows="3" placeholder="Short note..."></textarea>
+        `;
+      }
+
+      if (type === "event") {
+        const config = getQuickAddConfig();
+        return `
+          <label style="${labelStyle}">Activity Title</label>
+          <input id="qaTitle" style="${fieldStyle}" required placeholder="${attr(config.eventPlaceholder)}" />
+          <label style="${labelStyle}">Date</label>
+          <input id="qaDate" type="date" style="${fieldStyle}" required />
+          <label style="${labelStyle}">Related To</label>
+          <input id="qaRelated" style="${fieldStyle}" placeholder="Optional" />
+          <label style="${labelStyle}">Notes</label>
+          <textarea id="qaNotes" style="${fieldStyle}" rows="3" placeholder="Short note..."></textarea>
+        `;
+      }
+
       return `
         <label style="${labelStyle}">Task Title</label>
         <input id="qaTitle" style="${fieldStyle}" required placeholder="Follow up with client after viewing" />
@@ -3167,6 +3254,7 @@
             transaction_date: new Date().toISOString().slice(0, 10),
             status: "completed",
             description: notes,
+            section_label: currentSection || null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           }]);
@@ -3187,6 +3275,7 @@
             item_status: "available",
             status: "available",
             property_status: "available",
+            section_label: currentSection || null,
             notes: notes,
             updated_at: new Date().toISOString()
           }]);
@@ -3206,6 +3295,48 @@
             event_date: date,
             status: "scheduled",
             related_item: related,
+            section_label: currentSection || null,
+            notes: notes
+          }]);
+        } else if (quickAddType === "item") {
+          const config = getQuickAddConfig();
+          const amount = Number((document.getElementById("qaAmount") || {}).value || 0) || null;
+          const itemType = config.itemTypeValue || "Item";
+
+          response = await supabaseClient.from("business_items").insert([{
+            tenant_id: currentTenantId,
+            item_name: title,
+            name: title,
+            title: title,
+            item_type: itemType,
+            type: itemType,
+            item_category: itemType,
+            category: itemType,
+            property_price: amount,
+            item_status: "active",
+            status: "active",
+            section_label: currentSection || null,
+            notes: notes,
+            updated_at: new Date().toISOString()
+          }]);
+        } else if (quickAddType === "event") {
+          const config = getQuickAddConfig();
+          const date = (document.getElementById("qaDate") || {}).value;
+          const related = (document.getElementById("qaRelated") || {}).value || null;
+
+          if (!date) {
+            alert("Please select a date.");
+            return;
+          }
+
+          response = await supabaseClient.from("business_events").insert([{
+            tenant_id: currentTenantId,
+            event_title: title,
+            event_type: config.eventTypeValue || "Event",
+            event_date: date,
+            status: "scheduled",
+            related_item: related,
+            section_label: currentSection || null,
             notes: notes
           }]);
         } else {
@@ -3218,6 +3349,7 @@
             priority: priority,
             status: "pending",
             due_date: dueDate,
+            section_label: currentSection || null,
             notes: notes
           }]);
         }
