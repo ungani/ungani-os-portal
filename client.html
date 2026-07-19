@@ -2477,6 +2477,7 @@
     let isSalon = false;
     let isEvents = false;
     let isSchool = false;
+    let isSecurity = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3177,6 +3178,13 @@
         };
       }
 
+      if (isSecurity) {
+        return {
+          itemKey: "item", itemLabel: "Site", itemPlaceholder: "Warehouse Complex - Industrial Area", itemTypeValue: "Site",
+          eventKey: "event", eventLabel: "Shift", eventTypeValue: "Shift", eventPlaceholder: "Shift - Night Guard"
+        };
+      }
+
       return {
         itemKey: "item", itemLabel: "Item", itemPlaceholder: "New item name",
         itemTypeValue: (businessPreset && businessPreset.itemTypes && businessPreset.itemTypes[0]) || "Item",
@@ -3575,6 +3583,7 @@
       isSalon = detectSalon(currentTenant);
       isEvents = detectEvents(currentTenant);
       isSchool = detectSchool(currentTenant);
+      isSecurity = detectSecurity(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -4002,6 +4011,11 @@
 
       if (isSchool) {
         renderSchoolDashboard();
+        return;
+      }
+
+      if (isSecurity) {
+        renderSecurityDashboard();
         return;
       }
 
@@ -11752,6 +11766,310 @@
       animateHealthGauges();
     }
 
+    // Security/Guarding has no sections in the business config (one
+    // operational model per tenant, same shape as Warehouse/School) - just
+    // one dashboard, always shown with the full greeting/health-gauge hero.
+    // Calendar types "Shift"/"Site Visit"/"Client Meeting"/"Payment
+    // Reminder"/"Training" and task types "Shift Assignment"/"Site
+    // Follow-up"/"Incident Follow-up"/... have no substring collisions, but
+    // matchers still use exact equality per the Events lesson.
+    function isShiftCalendarType(value) {
+      return String(value || "").trim().toLowerCase() === "shift";
+    }
+
+    function isIncidentFollowUpTaskType(value) {
+      return String(value || "").trim().toLowerCase() === "incident follow-up";
+    }
+
+    function isSiteItemType(value) {
+      return String(value || "").trim().toLowerCase() === "site";
+    }
+
+    function buildSecurityCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+
+      const items = [];
+
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+
+        items.push({
+          date: date,
+          title: getValue(row, ["event_title", "title", "name"], "Shift"),
+          type: getValue(row, ["event_type", "type"], "Activity"),
+          section: getValue(row, ["section_label"], ""),
+          ackKey: "event:" + row.id,
+          href: "my-calendar.html?highlight=" + row.id
+        });
+      });
+
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderSecurityTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      try {
+        await UnganiAnalytics.createChart("securityRevenueTrendChart", {
+          type: "bar",
+          data: {
+            labels: months.map(function (m) { return m.label; }),
+            datasets: [
+              {
+                label: "Security Revenue",
+                data: months.map(function (m) { return m.value; }),
+                backgroundColor: "#D4A63A",
+                borderRadius: 10
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: function (v) { return compactMoney(v); } }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("Security trend chart warning:", error.message);
+      }
+    }
+
+    function renderSecurityDashboard() {
+      const data = dashboardData;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const sites = (data.items || []).filter(function (item) {
+        return isSiteItemType(getValue(item, ["item_type", "type"], ""));
+      });
+      const activeSites = sites.filter(function (item) {
+        return !isInactiveItemStatus(getValue(item, ["property_status", "item_status", "status"], ""));
+      });
+
+      const todaysShifts = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isShiftCalendarType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const incidentFollowUps = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isIncidentFollowUpTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const overdueTasks = findOverdueTasksForSection(data, todayStr);
+
+      const calendarPreview = buildSecurityCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+
+      if (overdueTasks.length > 0) {
+        greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
+      }
+      if (incidentFollowUps.length > 0) {
+        greetingMessages.push({ text: incidentFollowUps.length === 1 ? "1 incident follow-up is open" : incidentFollowUps.length + " incident follow-ups are open", href: "my-tasks.html" });
+      }
+      if (todaysShifts.length > 0) {
+        greetingMessages.push({ text: todaysShifts.length === 1 ? "1 shift today" : todaysShifts.length + " shifts today", href: "my-calendar.html" });
+      }
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(data.tasks),
+          money: calculateMoneySummary(data.transactions),
+          support: calculateSupportSummary(data.support),
+          dashboardData: data
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
+      const attentionGroups = [];
+
+      if (overdueTasks.length > 0) {
+        attentionGroups.push({
+          title: "Overdue Tasks (Oldest First)",
+          rows: overdueTasks.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Task");
+            const due = formatDate(getValue(task, ["due_date"], ""));
+            return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id);
+          })
+        });
+      }
+
+      if (incidentFollowUps.length > 0) {
+        attentionGroups.push({
+          title: "Incident Follow-ups Open",
+          rows: incidentFollowUps.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Incident Follow-up");
+            const due = getValue(task, ["due_date"], "");
+            return attentionRow("🚨", title, due ? "Due " + formatDate(due) : "No due date set", "Open", "red", "my-tasks.html?highlight=" + task.id, null, "incident:" + task.id);
+          })
+        });
+      }
+
+      if (todaysShifts.length > 0) {
+        attentionGroups.push({
+          title: "Today's Shifts",
+          rows: todaysShifts.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Shift");
+            return attentionRow("🛡️", title, getValue(event, ["event_type", "type"], "Shift"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null);
+          })
+        });
+      }
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, incident follow-ups, or shifts need attention right now.</p></div>`
+        : attentionGroups.map(function (g) {
+            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+          }).join("");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                Here's what needs attention today across your sites and guards. Use it to see overdue tasks, open incident follow-ups, and today's shifts, then click any card or row to open the right record.
+              </p>
+              <p class="mobile-only">
+                Your security summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">New Shift</a>
+                <a class="btn green" href="my-money.html">Log Payment</a>
+                <a class="btn light" href="my-people.html">Guards</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
+                ${todayItem("🚨", "Incident Follow-ups", incidentFollowUps.length, "open", "my-tasks.html")}
+                ${todayItem("🛡️", "Today's Shifts", todaysShifts.length, "scheduled today", "my-calendar.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("Security Revenue", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), "#16A34A", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🛡️")}
+          ${kpiCard("Active Sites", activeSites.length + " / " + sites.length, sites.length > 0 ? "Sites currently under contract" : "No sites tracked yet", "#2563EB", "my-items.html", countSpan(activeSites.length, "ratio", " / " + sites.length), staticProportionBar(sites.length > 0 ? activeSites.length / sites.length : 0, "#2563EB", sites.length > 0 ? (Math.round((activeSites.length / sites.length) * 100) + "% active") : "No sites tracked yet"), "🏢")}
+          ${kpiCard("Incident Follow-ups Open", incidentFollowUps.length, "Incidents needing action", incidentFollowUps.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(incidentFollowUps.length, "plain"), null, "🚨")}
+          ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "⚠️")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue tasks, open incident follow-ups, and today's shifts — in priority order.</p>
+            </div>
+          </div>
+
+          ${attentionHtml}
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("🛡️", "New Shift", "Schedule a guard shift or site visit", "my-calendar.html", "#2563EB")}
+          ${quickAction("💵", "Log Payment", "Record a client or contract payment", "my-money.html", "#16A34A")}
+          ${quickAction("🏢", "Add Site", "Add a new site under contract", "my-items.html", "#D4A63A")}
+          ${quickAction("🧑", "Add Guard", "Register a new guard or client", "my-people.html", "#14B8A6")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Security Revenue — Last 6 Months</h3>
+              <p>Monthly client and contract payment income from your money records.</p>
+            </div>
+            <a class="btn small gold" href="my-money.html">Money</a>
+          </div>
+
+          ${hasAnyRevenueHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="securityRevenueTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge("💰", "Put your numbers here", "Log your first client or contract payment and this chart will start tracking your monthly revenue trend.", "Log Payment", "my-money.html")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Shifts, site visits, and training coming up.</p>
+            </div>
+            <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Security / Guarding · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderSecurityTrendChart(revenueTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
     function detectRealEstate(tenant) {
       if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
         const matched = UnganiBusinessConfig.resolve(tenant);
@@ -11870,6 +12188,18 @@
       const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("school") || businessType.includes("training") || businessType.includes("academy") || businessType.includes("education") || businessTypeKey.includes("school");
+    }
+
+    function detectSecurity(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "security";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("security") || businessType.includes("guarding") || businessType.includes("guards") || businessTypeKey.includes("security");
     }
 
     function todayItem(icon, title, value, subtitle, href) {
