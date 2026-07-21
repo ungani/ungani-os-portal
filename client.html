@@ -3814,6 +3814,45 @@
       }
     }
 
+    // action_url on ungani_notifications rows is free-text database
+    // content - not guaranteed to match a real client page filename (a
+    // stale reference to a renamed page, a typo, or an admin-only page
+    // accidentally set on a client-facing row would all 404 the moment
+    // someone clicks "Open" on this notification). client-notifications.html
+    // already validates this correctly via its own normalizeActionUrl() -
+    // this dashboard's bell dropdown rendered the raw value straight into
+    // an href with no validation at all. Same fix, same allowed-page list.
+    const SAFE_CLIENT_NOTIFICATION_PAGES = new Set([
+      "client.html", "client-notifications.html", "my-money.html", "my-tasks.html",
+      "my-records.html", "my-items.html", "my-people.html", "my-documents.html",
+      "my-calendar.html", "my-support.html", "my-chat.html", "my-team-chat.html",
+      "my-notices.html", "my-charts.html", "reports.html", "my-profile.html"
+    ]);
+
+    function safeNotificationActionUrl(url, notificationType) {
+      let value = String(url || "").trim();
+      const type = String(notificationType || "").toLowerCase();
+
+      const fallback = function () {
+        if (type === "support_update" || type === "support") return "my-support.html";
+        if (type === "notice") return "my-notices.html";
+        if (type === "billing" || type === "payment") return "my-notices.html";
+        return "client-notifications.html";
+      };
+
+      if (!value) return fallback();
+
+      value = value.replace(/^\/+/, "");
+      if (value.includes("?")) value = value.split("?")[0] + value.slice(value.indexOf("?"));
+      const base = value.split("?")[0].split("#")[0];
+
+      if (base.startsWith("admin") || !SAFE_CLIENT_NOTIFICATION_PAGES.has(base)) {
+        return fallback();
+      }
+
+      return value;
+    }
+
     function renderNotifications() {
       const box = document.getElementById("notificationList");
 
@@ -3827,7 +3866,8 @@
 
       box.innerHTML = notifications.map(row => {
         const isUnread = String(getValue(row, ["status"], "")).toLowerCase() !== "read";
-        const actionUrl = getValue(row, ["action_url"], "");
+        const rawActionUrl = getValue(row, ["action_url"], "");
+        const actionUrl = rawActionUrl ? safeNotificationActionUrl(rawActionUrl, getValue(row, ["notification_type"], "")) : "";
         const actionLabel = getValue(row, ["action_label"], "Open");
         const priority = String(getValue(row, ["priority"], "normal")).toLowerCase();
 

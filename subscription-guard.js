@@ -30,8 +30,7 @@
     "index.html",
     "my-package.html",
     "my-support.html",
-    "client-notifications.html",
-    "client-package.html"
+    "client-notifications.html"
   ];
 
   const ADMIN_PAGE_PREFIXES = [
@@ -39,6 +38,21 @@
     "support.html",
     "billing.html",
     "admin-health.html"
+  ];
+
+  // accessStatus.redirect_url (from get_my_ungani_access_status) is a
+  // free-text database string - not guaranteed to match a real client page
+  // filename. safeClientRedirect() below only ever checked it wasn't an
+  // admin page, so any other wrong/stale value would pass straight through
+  // to window.location.href and 404. Validate against the real client page
+  // list too now (same pages client-notifications.html's own
+  // normalizeActionUrl() already trusts).
+  const SAFE_CLIENT_PAGES = [
+    "client.html", "client-notifications.html", "my-money.html", "my-tasks.html",
+    "my-records.html", "my-items.html", "my-people.html", "my-documents.html",
+    "my-calendar.html", "my-support.html", "my-chat.html", "my-team-chat.html",
+    "my-notices.html", "my-charts.html", "reports.html", "my-profile.html",
+    "my-package.html", "my-account-status.html"
   ];
 
   const BLOCKED_REDIRECT_URL = "my-package.html";
@@ -231,6 +245,11 @@
     }
 
     if (lower.includes("admin.html")) {
+      return BLOCKED_REDIRECT_URL;
+    }
+
+    const base = clean.split("?")[0].split("#")[0];
+    if (!SAFE_CLIENT_PAGES.includes(base)) {
       return BLOCKED_REDIRECT_URL;
     }
 

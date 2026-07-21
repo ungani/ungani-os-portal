@@ -3632,6 +3632,26 @@
         '</a>';
     }
 
+    // get_admin_ungani_system_action_items returns recommended_page as a
+    // free-text string from the database - not guaranteed to match an
+    // actual admin page filename (a typo, stale reference to a renamed
+    // page, or an easy-to-guess-wrong name like "admin-support.html"
+    // instead of the real "support.html" all produce a live 404 the
+    // moment an admin clicks that action item). Validate against the
+    // real admin page list before ever using it as an href, same pattern
+    // already proven in admin-notifications.html's normalizeActionUrl().
+    var SAFE_ADMIN_PAGES = ['admin-home.html', 'admin.html', 'admin-profiles.html', 'support.html', 'billing.html', 'admin-money.html', 'admin-tasks.html', 'admin-records.html', 'admin-documents.html', 'admin-calendar.html', 'admin-chat.html', 'admin-health.html', 'admin-reports.html', 'admin-settings.html', 'users.html', 'notices.html'];
+
+    function safeRecommendedPage(page) {
+      var clean = String(page || '').trim();
+      if (!clean) return 'admin-health.html';
+
+      var base = clean.split('?')[0].split('#')[0];
+      if (SAFE_ADMIN_PAGES.indexOf(base) === -1) return 'admin-health.html';
+
+      return clean;
+    }
+
     function renderNeedsAttention() {
       var container = document.getElementById('attentionList');
       if (!container) return;
@@ -3649,7 +3669,7 @@
 
       var html = shown.map(function (item) {
         var priority = String(item.priority || 'medium').toLowerCase();
-        var page = item.recommended_page || 'admin-health.html';
+        var page = safeRecommendedPage(item.recommended_page);
         var count = item.count;
         var badgeText = (count !== undefined && count !== null && count !== '') ? String(count) : (priority.charAt(0).toUpperCase() + priority.slice(1));
 

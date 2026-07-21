@@ -6,13 +6,13 @@
   let supabaseClient = null;
   let guardStarted = false;
 
+  // Registration lives on index.html and password reset lives on
+  // login.html in this app - register.html/signup.html/forgot-password.html/
+  // reset-password.html never existed as real pages here, removed to avoid
+  // implying otherwise.
   const PUBLIC_PAGES = [
     "index.html",
-    "login.html",
-    "register.html",
-    "signup.html",
-    "forgot-password.html",
-    "reset-password.html"
+    "login.html"
   ];
 
   document.addEventListener("DOMContentLoaded", function () {

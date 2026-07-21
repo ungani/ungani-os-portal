@@ -1580,6 +1580,22 @@
       `;
     }
 
+    // recommended_page comes from get_admin_ungani_system_action_items as a
+    // free-text database string - not guaranteed to match a real admin page
+    // filename. Validate before using it as an href (same list/pattern as
+    // admin-home.html's Needs Attention widget, which reads the same RPC).
+    const SAFE_ADMIN_PAGES = ["admin-home.html", "admin.html", "admin-profiles.html", "support.html", "billing.html", "admin-money.html", "admin-tasks.html", "admin-records.html", "admin-documents.html", "admin-calendar.html", "admin-chat.html", "admin-health.html", "admin-reports.html", "admin-settings.html", "users.html", "notices.html"];
+
+    function safeRecommendedPage(page) {
+      const clean = String(page || "").trim();
+      if (!clean) return "admin-home.html";
+
+      const base = clean.split("?")[0].split("#")[0];
+      if (!SAFE_ADMIN_PAGES.includes(base)) return "admin-home.html";
+
+      return clean;
+    }
+
     function renderActionItems(items) {
       if (!Array.isArray(items) || items.length === 0) {
         return `<div class="empty">No action items loaded yet.</div>`;
@@ -1587,7 +1603,7 @@
 
       return items.map(item => {
         const priority = String(getValue(item, ["priority"], "normal")).toLowerCase();
-        const page = getValue(item, ["recommended_page"], "admin-home.html");
+        const page = safeRecommendedPage(getValue(item, ["recommended_page"], "admin-home.html"));
         const count = getValue(item, ["count"], 0);
 
         return `
