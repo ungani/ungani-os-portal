@@ -2481,6 +2481,11 @@
     let isWholesale = false;
     let isTourism = false;
     let isGym = false;
+    let isPrinting = false;
+    let isCleaning = false;
+    let isConstruction = false;
+    let isPhotography = false;
+    let isFurniture = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3209,6 +3214,41 @@
         };
       }
 
+      if (isPrinting) {
+        return {
+          itemKey: "item", itemLabel: "Print / Branding Job", itemPlaceholder: "500 Business Cards - Full Color", itemTypeValue: "Print Job",
+          eventKey: "event", eventLabel: "Job Deadline", eventTypeValue: "Job Deadline", eventPlaceholder: "Deadline - 500 Business Cards"
+        };
+      }
+
+      if (isCleaning) {
+        return {
+          itemKey: "item", itemLabel: "Site / Contract", itemPlaceholder: "ABC Offices - Weekly Contract", itemTypeValue: "Site",
+          eventKey: "event", eventLabel: "Cleaning Schedule", eventTypeValue: "Cleaning Schedule", eventPlaceholder: "Cleaning - ABC Offices"
+        };
+      }
+
+      if (isConstruction) {
+        return {
+          itemKey: "item", itemLabel: "Project", itemPlaceholder: "3-Bedroom Residential Build - Karen", itemTypeValue: "Project",
+          eventKey: "event", eventLabel: "Inspection", eventTypeValue: "Inspection", eventPlaceholder: "Inspection - Karen Site"
+        };
+      }
+
+      if (isPhotography) {
+        return {
+          itemKey: "item", itemLabel: "Shoot / Package", itemPlaceholder: "Wedding Photography Package", itemTypeValue: "Shoot",
+          eventKey: "event", eventLabel: "Shoot Date", eventTypeValue: "Shoot Date", eventPlaceholder: "Shoot - Wedding Session"
+        };
+      }
+
+      if (isFurniture) {
+        return {
+          itemKey: "item", itemLabel: "Order / Furniture Item", itemPlaceholder: "Custom Dining Table - 6 Seater", itemTypeValue: "Order",
+          eventKey: "event", eventLabel: "Order Deadline", eventTypeValue: "Order Deadline", eventPlaceholder: "Deadline - Dining Table Order"
+        };
+      }
+
       return {
         itemKey: "item", itemLabel: "Item", itemPlaceholder: "New item name",
         itemTypeValue: (businessPreset && businessPreset.itemTypes && businessPreset.itemTypes[0]) || "Item",
@@ -3611,6 +3651,11 @@
       isWholesale = detectWholesale(currentTenant);
       isTourism = detectTourism(currentTenant);
       isGym = detectGym(currentTenant);
+      isPrinting = detectPrinting(currentTenant);
+      isCleaning = detectCleaning(currentTenant);
+      isConstruction = detectConstruction(currentTenant);
+      isPhotography = detectPhotography(currentTenant);
+      isFurniture = detectFurniture(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -4098,6 +4143,31 @@
 
       if (isGym) {
         renderGymDashboard();
+        return;
+      }
+
+      if (isPrinting) {
+        renderPrintingDashboard();
+        return;
+      }
+
+      if (isCleaning) {
+        renderCleaningDashboard();
+        return;
+      }
+
+      if (isConstruction) {
+        renderConstructionDashboard();
+        return;
+      }
+
+      if (isPhotography) {
+        renderPhotographyDashboard();
+        return;
+      }
+
+      if (isFurniture) {
+        renderFurnitureDashboard();
         return;
       }
 
@@ -13081,6 +13151,763 @@
       animateHealthGauges();
     }
 
+    // ==================================================================
+    // Printing / Branding Company - no sections, single operational model.
+    // Job Deadline (calendar) is genuinely time-critical (a print job due
+    // today matters), so uses the "today only" pattern like Warehouse/
+    // School/Security/Wholesale/Gym rather than Tourism's "upcoming" style.
+    // ==================================================================
+    function isJobDeadlineCalendarType(value) {
+      return String(value || "").trim().toLowerCase() === "job deadline";
+    }
+
+    function isMaterialRestockTaskType(value) {
+      return String(value || "").trim().toLowerCase() === "material restock";
+    }
+
+    function buildPrintingCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+      for (let i = 0; i < 5; i++) { const d = new Date(start); d.setDate(d.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
+      const items = [];
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+        items.push({ date: date, title: getValue(row, ["event_title", "title", "name"], "Job Deadline"), type: getValue(row, ["event_type", "type"], "Activity"), section: getValue(row, ["section_label"], ""), ackKey: "event:" + row.id, href: "my-calendar.html?highlight=" + row.id });
+      });
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderPrintingTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+      try {
+        await UnganiAnalytics.createChart("printingRevenueTrendChart", { type: "bar", data: { labels: months.map(function (m) { return m.label; }), datasets: [{ label: "Printing Revenue", data: months.map(function (m) { return m.value; }), backgroundColor: "#D4A63A", borderRadius: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return compactMoney(v); } } } } } });
+      } catch (error) { console.warn("Printing trend chart warning:", error.message); }
+    }
+
+    function renderPrintingDashboard() {
+      const data = dashboardData;
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const deadlinesToday = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isJobDeadlineCalendarType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const restocksDue = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isMaterialRestockTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) { return String(getValue(a, ["due_date", "created_at"], "")).localeCompare(String(getValue(b, ["due_date", "created_at"], ""))); });
+
+      const overdueTasks = findOverdueTasksForSection(data, todayStr);
+      const calendarPreview = buildPrintingCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+      if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
+      if (deadlinesToday.length > 0) greetingMessages.push({ text: deadlinesToday.length === 1 ? "1 job deadline today" : deadlinesToday.length + " job deadlines today", href: "my-calendar.html" });
+      if (restocksDue.length > 0) greetingMessages.push({ text: restocksDue.length === 1 ? "1 material restock is due" : restocksDue.length + " material restocks are due", href: "my-tasks.html" });
+      if (mostRecentRecord) greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+
+      let health;
+      try { health = computeGenericHealthScore({ tasks: calculateTaskSummary(data.tasks), money: calculateMoneySummary(data.transactions), support: calculateSupportSummary(data.support), dashboardData: data }); }
+      catch (healthError) { health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) }; }
+
+      const attentionGroups = [];
+      if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
+      if (deadlinesToday.length > 0) attentionGroups.push({ title: "Today's Job Deadlines", rows: deadlinesToday.map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Job Deadline"); return attentionRow("🖨️", title, getValue(event, ["event_type", "type"], "Job Deadline"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null); }) });
+      if (restocksDue.length > 0) attentionGroups.push({ title: "Material Restocks Due", rows: restocksDue.map(function (task) { const title = getValue(task, ["task_title", "title"], "Material Restock"); const due = getValue(task, ["due_date"], ""); return attentionRow("📦", title, due ? "Due " + formatDate(due) : "No due date set", "Due", "orange", "my-tasks.html?highlight=" + task.id, null, "restock:" + task.id); }) });
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, job deadlines, or material restocks need attention right now.</p></div>`
+        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">Here's what needs attention today across your print and branding jobs. Use it to see overdue tasks, today's job deadlines, and material restocks due, then click any card or row to open the right record.</p>
+              <p class="mobile-only">Your printing summary for today. Tap any card or use ☰ for full sections.</p>
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">New Job Deadline</a>
+                <a class="btn green" href="my-money.html">Log Payment</a>
+                <a class="btn light" href="my-people.html">Clients</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
+                ${todayItem("🖨️", "Job Deadlines", deadlinesToday.length, "due today", "my-calendar.html")}
+                ${todayItem("📦", "Restocks Due", restocksDue.length, "material", "my-tasks.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="kpi-grid">
+          ${kpiCard("Printing Revenue", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), "#16A34A", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🖨️")}
+          ${kpiCard("Job Deadlines Today", deadlinesToday.length, "Print or branding jobs due today", deadlinesToday.length > 0 ? "#DC2626" : "#16A34A", "my-calendar.html", countSpan(deadlinesToday.length, "plain"), null, "📅")}
+          ${kpiCard("Material Restocks Due", restocksDue.length, "Materials needing reorder", restocksDue.length > 0 ? "#D4A63A" : "#16A34A", "my-tasks.html", countSpan(restocksDue.length, "plain"), null, "📦")}
+          ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "⚠️")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, today's job deadlines, and material restocks due — in priority order.</p></div></div>
+          ${attentionHtml}
+        </section>
+        <section class="quick-actions">
+          ${quickAction("📅", "New Job Deadline", "Schedule a print or branding job deadline", "my-calendar.html", "#2563EB")}
+          ${quickAction("💵", "Log Payment", "Record a print or branding job payment", "my-money.html", "#16A34A")}
+          ${quickAction("🖨️", "Add Print / Branding Job", "Add a new job or design project", "my-items.html", "#D4A63A")}
+          ${quickAction("🧑", "Add Client", "Register a new client", "my-people.html", "#14B8A6")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Printing Revenue — Last 6 Months</h3><p>Monthly print and branding income from your money records.</p></div><a class="btn small gold" href="my-money.html">Money</a></div>
+          ${hasAnyRevenueHistory ? `<div style="position:relative;height:260px;"><canvas id="printingRevenueTrendChart"></canvas></div>` : emptyStateNudge("💰", "Put your numbers here", "Log your first print or branding job payment and this chart will start tracking your monthly revenue trend.", "Log Payment", "my-money.html")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Job deadlines and client approvals coming up.</p></div><a class="btn small gold" href="my-calendar.html">Open Calendar</a></div>
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+        ${contactSupportCard()}
+        <p class="footer">Client Dashboard Version: Printing / Branding Company · ungani.com · info@ungani.com</p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderPrintingTrendChart(revenueTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
+    // ==================================================================
+    // Cleaning / Facility Services - no sections, single operational model.
+    // ==================================================================
+    function isCleaningScheduleCalendarType(value) {
+      return String(value || "").trim().toLowerCase() === "cleaning schedule";
+    }
+
+    function isSupplyRestockTaskType(value) {
+      return String(value || "").trim().toLowerCase() === "supply restock";
+    }
+
+    function buildCleaningCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+      for (let i = 0; i < 5; i++) { const d = new Date(start); d.setDate(d.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
+      const items = [];
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+        items.push({ date: date, title: getValue(row, ["event_title", "title", "name"], "Cleaning Job"), type: getValue(row, ["event_type", "type"], "Activity"), section: getValue(row, ["section_label"], ""), ackKey: "event:" + row.id, href: "my-calendar.html?highlight=" + row.id });
+      });
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderCleaningTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+      try {
+        await UnganiAnalytics.createChart("cleaningRevenueTrendChart", { type: "bar", data: { labels: months.map(function (m) { return m.label; }), datasets: [{ label: "Cleaning Revenue", data: months.map(function (m) { return m.value; }), backgroundColor: "#D4A63A", borderRadius: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return compactMoney(v); } } } } } });
+      } catch (error) { console.warn("Cleaning trend chart warning:", error.message); }
+    }
+
+    function renderCleaningDashboard() {
+      const data = dashboardData;
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const jobsToday = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isCleaningScheduleCalendarType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const restocksDue = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isSupplyRestockTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) { return String(getValue(a, ["due_date", "created_at"], "")).localeCompare(String(getValue(b, ["due_date", "created_at"], ""))); });
+
+      const overdueTasks = findOverdueTasksForSection(data, todayStr);
+      const calendarPreview = buildCleaningCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+      if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
+      if (jobsToday.length > 0) greetingMessages.push({ text: jobsToday.length === 1 ? "1 cleaning job today" : jobsToday.length + " cleaning jobs today", href: "my-calendar.html" });
+      if (restocksDue.length > 0) greetingMessages.push({ text: restocksDue.length === 1 ? "1 supply restock is due" : restocksDue.length + " supply restocks are due", href: "my-tasks.html" });
+      if (mostRecentRecord) greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+
+      let health;
+      try { health = computeGenericHealthScore({ tasks: calculateTaskSummary(data.tasks), money: calculateMoneySummary(data.transactions), support: calculateSupportSummary(data.support), dashboardData: data }); }
+      catch (healthError) { health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) }; }
+
+      const attentionGroups = [];
+      if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
+      if (jobsToday.length > 0) attentionGroups.push({ title: "Today's Cleaning Jobs", rows: jobsToday.map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Cleaning Job"); return attentionRow("🧹", title, getValue(event, ["event_type", "type"], "Cleaning Job"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null); }) });
+      if (restocksDue.length > 0) attentionGroups.push({ title: "Supply Restocks Due", rows: restocksDue.map(function (task) { const title = getValue(task, ["task_title", "title"], "Supply Restock"); const due = getValue(task, ["due_date"], ""); return attentionRow("🧴", title, due ? "Due " + formatDate(due) : "No due date set", "Due", "orange", "my-tasks.html?highlight=" + task.id, null, "restock:" + task.id); }) });
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, cleaning jobs, or supply restocks need attention right now.</p></div>`
+        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">Here's what needs attention today across your cleaning jobs and sites. Use it to see overdue tasks, today's cleaning jobs, and supply restocks due, then click any card or row to open the right record.</p>
+              <p class="mobile-only">Your cleaning summary for today. Tap any card or use ☰ for full sections.</p>
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">New Cleaning Job</a>
+                <a class="btn green" href="my-money.html">Log Payment</a>
+                <a class="btn light" href="my-people.html">Clients</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
+                ${todayItem("🧹", "Cleaning Jobs", jobsToday.length, "scheduled today", "my-calendar.html")}
+                ${todayItem("🧴", "Restocks Due", restocksDue.length, "supply", "my-tasks.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="kpi-grid">
+          ${kpiCard("Cleaning Revenue", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), "#16A34A", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🧹")}
+          ${kpiCard("Today's Cleaning Jobs", jobsToday.length, "Jobs scheduled today", "#2563EB", "my-calendar.html", countSpan(jobsToday.length, "plain"), null, "🧽")}
+          ${kpiCard("Supply Restocks Due", restocksDue.length, "Supplies needing reorder", restocksDue.length > 0 ? "#D4A63A" : "#16A34A", "my-tasks.html", countSpan(restocksDue.length, "plain"), null, "🧴")}
+          ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "⚠️")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, today's cleaning jobs, and supply restocks due — in priority order.</p></div></div>
+          ${attentionHtml}
+        </section>
+        <section class="quick-actions">
+          ${quickAction("📅", "New Cleaning Job", "Schedule a cleaning job or site visit", "my-calendar.html", "#2563EB")}
+          ${quickAction("💵", "Log Payment", "Record a cleaning service or contract payment", "my-money.html", "#16A34A")}
+          ${quickAction("🧹", "Add Site / Contract", "Add a new site, contract, or supply", "my-items.html", "#D4A63A")}
+          ${quickAction("🧑", "Add Client", "Register a new client", "my-people.html", "#14B8A6")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Cleaning Revenue — Last 6 Months</h3><p>Monthly cleaning and contract income from your money records.</p></div><a class="btn small gold" href="my-money.html">Money</a></div>
+          ${hasAnyRevenueHistory ? `<div style="position:relative;height:260px;"><canvas id="cleaningRevenueTrendChart"></canvas></div>` : emptyStateNudge("💰", "Put your numbers here", "Log your first cleaning service payment and this chart will start tracking your monthly revenue trend.", "Log Payment", "my-money.html")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Cleaning jobs and site visits coming up.</p></div><a class="btn small gold" href="my-calendar.html">Open Calendar</a></div>
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+        ${contactSupportCard()}
+        <p class="footer">Client Dashboard Version: Cleaning / Facility Services · ungani.com · info@ungani.com</p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderCleaningTrendChart(revenueTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
+    // ==================================================================
+    // Construction / Contractors - no sections, single operational model.
+    // "Inspection" appears in BOTH taskTypes and calendarTypes (same
+    // string, different DB column) - verified explicitly, no collision.
+    // Upcoming Inspections use the "from today onward" pattern (Tourism-
+    // style) since inspections are typically scheduled ahead, not same-day.
+    // ==================================================================
+    function isInspectionCalendarType(value) {
+      return String(value || "").trim().toLowerCase() === "inspection";
+    }
+
+    function isProjectItemType(value) {
+      return String(value || "").trim().toLowerCase() === "project";
+    }
+
+    function buildConstructionCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+      for (let i = 0; i < 5; i++) { const d = new Date(start); d.setDate(d.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
+      const items = [];
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+        items.push({ date: date, title: getValue(row, ["event_title", "title", "name"], "Site Activity"), type: getValue(row, ["event_type", "type"], "Activity"), section: getValue(row, ["section_label"], ""), ackKey: "event:" + row.id, href: "my-calendar.html?highlight=" + row.id });
+      });
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderConstructionTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+      try {
+        await UnganiAnalytics.createChart("constructionRevenueTrendChart", { type: "bar", data: { labels: months.map(function (m) { return m.label; }), datasets: [{ label: "Construction Revenue", data: months.map(function (m) { return m.value; }), backgroundColor: "#D4A63A", borderRadius: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return compactMoney(v); } } } } } });
+      } catch (error) { console.warn("Construction trend chart warning:", error.message); }
+    }
+
+    function renderConstructionDashboard() {
+      const data = dashboardData;
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const upcomingInspections = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isInspectionCalendarType(type) && date && date >= todayStr && !status.includes("cancelled") && !status.includes("completed");
+      }).sort(function (a, b) { return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], ""))); });
+
+      const todaysInspections = upcomingInspections.filter(function (event) { return String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; });
+
+      const projects = (data.items || []).filter(function (item) { return isProjectItemType(getValue(item, ["item_type", "type"], "")); });
+      const activeProjects = projects.filter(function (item) { return !isInactiveItemStatus(getValue(item, ["property_status", "item_status", "status"], "")); });
+
+      const overdueTasks = findOverdueTasksForSection(data, todayStr);
+      const calendarPreview = buildConstructionCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+      if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
+      if (todaysInspections.length > 0) greetingMessages.push({ text: todaysInspections.length === 1 ? "1 inspection today" : todaysInspections.length + " inspections today", href: "my-calendar.html" });
+      if (mostRecentRecord) greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+
+      let health;
+      try { health = computeGenericHealthScore({ tasks: calculateTaskSummary(data.tasks), money: calculateMoneySummary(data.transactions), support: calculateSupportSummary(data.support), dashboardData: data }); }
+      catch (healthError) { health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) }; }
+
+      const attentionGroups = [];
+      if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
+      if (upcomingInspections.length > 0) attentionGroups.push({ title: "Upcoming Inspections (Next First)", rows: upcomingInspections.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Inspection"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; return attentionRow("🏗️", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null); }) });
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks or upcoming inspections need attention right now.</p></div>`
+        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">Here's what needs attention today across your projects and sites. Use it to see overdue tasks and upcoming inspections, then click any card or row to open the right record.</p>
+              <p class="mobile-only">Your construction summary for today. Tap any card or use ☰ for full sections.</p>
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">Schedule Inspection</a>
+                <a class="btn green" href="my-money.html">Log Payment</a>
+                <a class="btn light" href="my-people.html">Workers / Clients</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
+                ${todayItem("🏗️", "Upcoming Inspections", upcomingInspections.length, "from today onward", "my-calendar.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="kpi-grid">
+          ${kpiCard("Construction Revenue", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), "#16A34A", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🏗️")}
+          ${kpiCard("Upcoming Inspections", upcomingInspections.length, "Inspections scheduled from today onward", "#2563EB", "my-calendar.html", countSpan(upcomingInspections.length, "plain"), null, "🔍")}
+          ${kpiCard("Active Projects", activeProjects.length + " / " + projects.length, "Projects currently active", "#D4A63A", "my-items.html", countSpan(activeProjects.length, "ratio", " / " + projects.length), staticProportionBar(projects.length > 0 ? activeProjects.length / projects.length : 0, "#D4A63A", projects.length > 0 ? (Math.round((activeProjects.length / projects.length) * 100) + "% active") : "No projects tracked yet"), "🏢")}
+          ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "⚠️")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks and upcoming inspections — in priority order.</p></div></div>
+          ${attentionHtml}
+        </section>
+        <section class="quick-actions">
+          ${quickAction("📅", "Schedule Inspection", "Book a site visit or inspection", "my-calendar.html", "#2563EB")}
+          ${quickAction("💵", "Log Payment", "Record a project or contract payment", "my-money.html", "#16A34A")}
+          ${quickAction("🏗️", "Add Project", "Add a new construction project", "my-items.html", "#D4A63A")}
+          ${quickAction("🧑", "Add Worker / Client", "Register a new worker or client", "my-people.html", "#14B8A6")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Construction Revenue — Last 6 Months</h3><p>Monthly project and contract income from your money records.</p></div><a class="btn small gold" href="my-money.html">Money</a></div>
+          ${hasAnyRevenueHistory ? `<div style="position:relative;height:260px;"><canvas id="constructionRevenueTrendChart"></canvas></div>` : emptyStateNudge("💰", "Put your numbers here", "Log your first project payment and this chart will start tracking your monthly revenue trend.", "Log Payment", "my-money.html")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Inspections, site visits, and material deliveries coming up.</p></div><a class="btn small gold" href="my-calendar.html">Open Calendar</a></div>
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+        ${contactSupportCard()}
+        <p class="footer">Client Dashboard Version: Construction / Contractors · ungani.com · info@ungani.com</p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderConstructionTrendChart(revenueTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
+    // ==================================================================
+    // Photography / Videography - no sections, single operational model.
+    // Upcoming Shoots uses "from today onward" (Tourism-style, shoots are
+    // booked ahead). Team Available uses the people-ratio pattern
+    // (Logistics/Salon/Tourism/Gym) for photographer/videographer/editor.
+    // ==================================================================
+    function isShootDateCalendarType(value) {
+      return String(value || "").trim().toLowerCase() === "shoot date";
+    }
+
+    function isCreativeTeamPersonType(value) {
+      const lower = String(value || "").trim().toLowerCase();
+      return lower === "photographer" || lower === "videographer" || lower === "editor";
+    }
+
+    function buildPhotographyCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+      for (let i = 0; i < 5; i++) { const d = new Date(start); d.setDate(d.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
+      const items = [];
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+        items.push({ date: date, title: getValue(row, ["event_title", "title", "name"], "Shoot"), type: getValue(row, ["event_type", "type"], "Activity"), section: getValue(row, ["section_label"], ""), ackKey: "event:" + row.id, href: "my-calendar.html?highlight=" + row.id });
+      });
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderPhotographyTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+      try {
+        await UnganiAnalytics.createChart("photographyRevenueTrendChart", { type: "bar", data: { labels: months.map(function (m) { return m.label; }), datasets: [{ label: "Photography Revenue", data: months.map(function (m) { return m.value; }), backgroundColor: "#D4A63A", borderRadius: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return compactMoney(v); } } } } } });
+      } catch (error) { console.warn("Photography trend chart warning:", error.message); }
+    }
+
+    function renderPhotographyDashboard() {
+      const data = dashboardData;
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const upcomingShoots = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isShootDateCalendarType(type) && date && date >= todayStr && !status.includes("cancelled") && !status.includes("completed");
+      }).sort(function (a, b) { return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], ""))); });
+
+      const todaysShoots = upcomingShoots.filter(function (event) { return String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; });
+
+      const team = (data.people || []).filter(function (person) { return isCreativeTeamPersonType(getValue(person, ["person_type", "type"], "")); });
+      const availableTeam = team.filter(function (person) { const status = String(getValue(person, ["status"], "active")).toLowerCase(); return !status.includes("inactive") && !status.includes("lost"); });
+
+      const overdueTasks = findOverdueTasksForSection(data, todayStr);
+      const calendarPreview = buildPhotographyCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+      if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
+      if (todaysShoots.length > 0) greetingMessages.push({ text: todaysShoots.length === 1 ? "1 shoot today" : todaysShoots.length + " shoots today", href: "my-calendar.html" });
+      if (mostRecentRecord) greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+
+      let health;
+      try { health = computeGenericHealthScore({ tasks: calculateTaskSummary(data.tasks), money: calculateMoneySummary(data.transactions), support: calculateSupportSummary(data.support), dashboardData: data }); }
+      catch (healthError) { health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) }; }
+
+      const attentionGroups = [];
+      if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
+      if (upcomingShoots.length > 0) attentionGroups.push({ title: "Upcoming Shoots (Next First)", rows: upcomingShoots.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Shoot"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; return attentionRow("📷", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null); }) });
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks or upcoming shoots need attention right now.</p></div>`
+        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">Here's what needs attention today across your shoots and edits. Use it to see overdue tasks and upcoming shoots, then click any card or row to open the right record.</p>
+              <p class="mobile-only">Your photography summary for today. Tap any card or use ☰ for full sections.</p>
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">New Shoot Booking</a>
+                <a class="btn green" href="my-money.html">Log Payment</a>
+                <a class="btn light" href="my-people.html">Team / Clients</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
+                ${todayItem("📷", "Upcoming Shoots", upcomingShoots.length, "from today onward", "my-calendar.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="kpi-grid">
+          ${kpiCard("Photography Revenue", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), "#16A34A", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "📷")}
+          ${kpiCard("Upcoming Shoots", upcomingShoots.length, "Shoots scheduled from today onward", "#2563EB", "my-calendar.html", countSpan(upcomingShoots.length, "plain"), null, "🎬")}
+          ${kpiCard("Team Available", availableTeam.length + " / " + team.length, "Photographers, videographers & editors available", "#D4A63A", "my-people.html", countSpan(availableTeam.length, "ratio", " / " + team.length), staticProportionBar(team.length > 0 ? availableTeam.length / team.length : 0, "#D4A63A", team.length > 0 ? (Math.round((availableTeam.length / team.length) * 100) + "% available") : "No team members tracked yet"), "🧑‍🎨")}
+          ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "⚠️")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks and upcoming shoots — in priority order.</p></div></div>
+          ${attentionHtml}
+        </section>
+        <section class="quick-actions">
+          ${quickAction("📅", "New Shoot Booking", "Schedule a shoot date", "my-calendar.html", "#2563EB")}
+          ${quickAction("💵", "Log Payment", "Record a shoot or editing payment", "my-money.html", "#16A34A")}
+          ${quickAction("📷", "Add Shoot / Package", "Add a new shoot, project, or package", "my-items.html", "#D4A63A")}
+          ${quickAction("🧑", "Add Client", "Register a new client", "my-people.html", "#14B8A6")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Photography Revenue — Last 6 Months</h3><p>Monthly shoot and editing income from your money records.</p></div><a class="btn small gold" href="my-money.html">Money</a></div>
+          ${hasAnyRevenueHistory ? `<div style="position:relative;height:260px;"><canvas id="photographyRevenueTrendChart"></canvas></div>` : emptyStateNudge("💰", "Put your numbers here", "Log your first shoot payment and this chart will start tracking your monthly revenue trend.", "Log Payment", "my-money.html")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Shoots, editing deadlines, and client meetings coming up.</p></div><a class="btn small gold" href="my-calendar.html">Open Calendar</a></div>
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+        ${contactSupportCard()}
+        <p class="footer">Client Dashboard Version: Photography / Videography · ungani.com · info@ungani.com</p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderPhotographyTrendChart(revenueTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
+    // ==================================================================
+    // Furniture / Carpentry - no sections, single operational model.
+    // "Client Approval" appears in BOTH calendarTypes and taskTypes (same
+    // string, different DB column) - verified explicitly, no collision.
+    // ==================================================================
+    function isOrderDeadlineCalendarType(value) {
+      return String(value || "").trim().toLowerCase() === "order deadline";
+    }
+
+    function isMaterialFollowUpTaskType(value) {
+      return String(value || "").trim().toLowerCase() === "material follow-up";
+    }
+
+    function buildFurnitureCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+      for (let i = 0; i < 5; i++) { const d = new Date(start); d.setDate(d.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
+      const items = [];
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+        items.push({ date: date, title: getValue(row, ["event_title", "title", "name"], "Order Deadline"), type: getValue(row, ["event_type", "type"], "Activity"), section: getValue(row, ["section_label"], ""), ackKey: "event:" + row.id, href: "my-calendar.html?highlight=" + row.id });
+      });
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderFurnitureTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+      try {
+        await UnganiAnalytics.createChart("furnitureRevenueTrendChart", { type: "bar", data: { labels: months.map(function (m) { return m.label; }), datasets: [{ label: "Furniture Revenue", data: months.map(function (m) { return m.value; }), backgroundColor: "#D4A63A", borderRadius: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return compactMoney(v); } } } } } });
+      } catch (error) { console.warn("Furniture trend chart warning:", error.message); }
+    }
+
+    function renderFurnitureDashboard() {
+      const data = dashboardData;
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const upcomingDeadlines = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isOrderDeadlineCalendarType(type) && date && date >= todayStr && !status.includes("cancelled") && !status.includes("completed");
+      }).sort(function (a, b) { return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], ""))); });
+
+      const todaysDeadlines = upcomingDeadlines.filter(function (event) { return String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; });
+
+      const followUpsOpen = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isMaterialFollowUpTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) { return String(getValue(a, ["due_date", "created_at"], "")).localeCompare(String(getValue(b, ["due_date", "created_at"], ""))); });
+
+      const overdueTasks = findOverdueTasksForSection(data, todayStr);
+      const calendarPreview = buildFurnitureCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+      if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
+      if (followUpsOpen.length > 0) greetingMessages.push({ text: followUpsOpen.length === 1 ? "1 material follow-up is open" : followUpsOpen.length + " material follow-ups are open", href: "my-tasks.html" });
+      if (todaysDeadlines.length > 0) greetingMessages.push({ text: todaysDeadlines.length === 1 ? "1 order deadline today" : todaysDeadlines.length + " order deadlines today", href: "my-calendar.html" });
+      if (mostRecentRecord) greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+
+      let health;
+      try { health = computeGenericHealthScore({ tasks: calculateTaskSummary(data.tasks), money: calculateMoneySummary(data.transactions), support: calculateSupportSummary(data.support), dashboardData: data }); }
+      catch (healthError) { health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) }; }
+
+      const attentionGroups = [];
+      if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
+      if (followUpsOpen.length > 0) attentionGroups.push({ title: "Material Follow-ups Open", rows: followUpsOpen.map(function (task) { const title = getValue(task, ["task_title", "title"], "Material Follow-up"); const due = getValue(task, ["due_date"], ""); return attentionRow("🪵", title, due ? "Due " + formatDate(due) : "No due date set", "Open", "orange", "my-tasks.html?highlight=" + task.id, null, "followup:" + task.id); }) });
+      if (upcomingDeadlines.length > 0) attentionGroups.push({ title: "Upcoming Order Deadlines (Next First)", rows: upcomingDeadlines.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Order Deadline"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; return attentionRow("🪑", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null); }) });
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, material follow-ups, or upcoming order deadlines need attention right now.</p></div>`
+        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">Here's what needs attention today across your orders and workshop. Use it to see overdue tasks, material follow-ups, and upcoming order deadlines, then click any card or row to open the right record.</p>
+              <p class="mobile-only">Your furniture summary for today. Tap any card or use ☰ for full sections.</p>
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">New Order Deadline</a>
+                <a class="btn green" href="my-money.html">Log Payment</a>
+                <a class="btn light" href="my-people.html">Clients</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
+                ${todayItem("🪵", "Material Follow-ups", followUpsOpen.length, "open", "my-tasks.html")}
+                ${todayItem("🪑", "Order Deadlines", upcomingDeadlines.length, "from today onward", "my-calendar.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="kpi-grid">
+          ${kpiCard("Furniture Revenue", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), "#16A34A", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🪑")}
+          ${kpiCard("Upcoming Order Deadlines", upcomingDeadlines.length, "Orders due from today onward", "#2563EB", "my-calendar.html", countSpan(upcomingDeadlines.length, "plain"), null, "📅")}
+          ${kpiCard("Material Follow-ups Open", followUpsOpen.length, "Materials needing follow-up", followUpsOpen.length > 0 ? "#D4A63A" : "#16A34A", "my-tasks.html", countSpan(followUpsOpen.length, "plain"), null, "🪵")}
+          ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "⚠️")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, material follow-ups, and upcoming order deadlines — in priority order.</p></div></div>
+          ${attentionHtml}
+        </section>
+        <section class="quick-actions">
+          ${quickAction("📅", "New Order Deadline", "Schedule a custom order deadline", "my-calendar.html", "#2563EB")}
+          ${quickAction("💵", "Log Payment", "Record a furniture sale or order payment", "my-money.html", "#16A34A")}
+          ${quickAction("🪑", "Add Order / Furniture Item", "Add a new order or furniture item", "my-items.html", "#D4A63A")}
+          ${quickAction("🧑", "Add Client", "Register a new client", "my-people.html", "#14B8A6")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Furniture Revenue — Last 6 Months</h3><p>Monthly furniture sale and custom order income from your money records.</p></div><a class="btn small gold" href="my-money.html">Money</a></div>
+          ${hasAnyRevenueHistory ? `<div style="position:relative;height:260px;"><canvas id="furnitureRevenueTrendChart"></canvas></div>` : emptyStateNudge("💰", "Put your numbers here", "Log your first furniture sale and this chart will start tracking your monthly revenue trend.", "Log Payment", "my-money.html")}
+        </section>
+        <section class="card">
+          <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Order deadlines and material deliveries coming up.</p></div><a class="btn small gold" href="my-calendar.html">Open Calendar</a></div>
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+        ${contactSupportCard()}
+        <p class="footer">Client Dashboard Version: Furniture / Carpentry · ungani.com · info@ungani.com</p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderFurnitureTrendChart(revenueTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
     function detectRealEstate(tenant) {
       if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
         const matched = UnganiBusinessConfig.resolve(tenant);
@@ -13247,6 +14074,66 @@
       const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("gym") || businessType.includes("fitness") || businessType.includes("wellness") || businessTypeKey.includes("gym");
+    }
+
+    function detectPrinting(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "printing";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("printing") || businessType.includes("branding") || businessTypeKey.includes("printing");
+    }
+
+    function detectCleaning(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "cleaning";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("cleaning") || businessType.includes("janitorial") || businessTypeKey.includes("cleaning");
+    }
+
+    function detectConstruction(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "construction";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("construction") || businessType.includes("contractor") || businessTypeKey.includes("construction");
+    }
+
+    function detectPhotography(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "photography";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("photography") || businessType.includes("videography") || businessTypeKey.includes("photography");
+    }
+
+    function detectFurniture(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "furniture";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("furniture") || businessType.includes("carpentry") || businessTypeKey.includes("furniture");
     }
 
     function todayItem(icon, title, value, subtitle, href) {
