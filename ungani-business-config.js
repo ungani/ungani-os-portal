@@ -1152,7 +1152,9 @@
       "printing",
       "branding",
       "print",
-      "design"
+      "graphic design",
+      "design studio",
+      "design agency"
     ],
     "dashboardTitle": "Printing Operations Dashboard",
     "chartsTitle": "Printing Analytics",
@@ -1966,8 +1968,9 @@
     "name": "Cleaning / Facility Services",
     "match": [
       "cleaning",
-      "facility",
-      "facilities"
+      "facilities management",
+      "facility management",
+      "janitorial"
     ],
     "dashboardTitle": "Cleaning Operations Dashboard",
     "chartsTitle": "Cleaning Analytics",
@@ -2398,6 +2401,8 @@
     "name": "School / Training Center",
     "match": [
       "school",
+      "preschool",
+      "pre-school",
       "training",
       "academy",
       "education"
@@ -3229,6 +3234,23 @@
     ].join(" ").toLowerCase();
   }
 
+  // Plain raw.includes(keyword) matched a keyword as a substring ANYWHERE,
+  // including inside an unrelated word - e.g. salon's "spa" keyword matched
+  // inside "Sparkle" (as in "Sparkle Cleaning Services"), misclassifying a
+  // cleaning business as a salon. Found while testing the 2026-07-21 batch
+  // (Printing/Gym/Cleaning/Construction/Photography/Furniture), the same
+  // day three OTHER keywords ("club"/"land"/"building") were found matching
+  // as substrings of unrelated multi-word business names. Both are the same
+  // underlying flaw - matching without word boundaries - so this checks the
+  // keyword is bounded by non-alphanumeric characters (or string start/end)
+  // on both sides, same idea as \b in regex but tolerant of the keyword
+  // itself containing spaces (e.g. "real estate", "cold chain").
+  function matchesKeyword(raw, keyword) {
+    const escaped = keyword.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const pattern = new RegExp("(^|[^a-z0-9])" + escaped + "([^a-z0-9]|$)");
+    return pattern.test(raw);
+  }
+
   function resolve(tenant) {
     const raw = getRawBusinessText(tenant);
 
@@ -3236,7 +3258,7 @@
       const type = TYPES[i];
 
       for (let j = 0; j < type.match.length; j++) {
-        if (raw.includes(type.match[j])) {
+        if (matchesKeyword(raw, type.match[j])) {
           return type;
         }
       }
