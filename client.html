@@ -3265,12 +3265,27 @@
       closeAllPanels();
 
       if (!isOpen) {
-        panel.classList.add("open");
-        document.getElementById("notificationOverlay").classList.add("open");
-        document.body.style.overflow = "hidden";
-        renderQuickAddForm(quickAddType);
+        openQuickAddPanelAs(quickAddType);
       }
     }
+
+    function openQuickAddPanelAs(type) {
+      quickAddType = type;
+      const panel = document.getElementById("quickAddPanel");
+      panel.classList.add("open");
+      document.getElementById("notificationOverlay").classList.add("open");
+      document.body.style.overflow = "hidden";
+      renderQuickAddForm(type);
+    }
+
+    // Bridges for nia-assistant.js: it's a self-contained script with no
+    // access to this page's isHospitality/isRetail/etc. locals, so rather
+    // than duplicating this whole per-business-type-and-section vocabulary
+    // a second time (and risking the two copies drifting apart), it reads
+    // the one already-tested source of truth through these globals.
+    window.getUnganiSectionVocab = getQuickAddConfig;
+    window.openUnganiSectionItem = function () { openQuickAddPanelAs(getQuickAddConfig().itemKey); };
+    window.openUnganiSectionEvent = function () { openQuickAddPanelAs(getQuickAddConfig().eventKey); };
 
     function closeQuickAddPanel() {
       const panel = document.getElementById("quickAddPanel");
@@ -3577,7 +3592,8 @@
           tenant: currentTenant,
           userId: currentUser ? currentUser.id : null,
           pageKey: "dashboard",
-          surface: "client"
+          surface: "client",
+          section: currentSection || ""
         });
       }
 

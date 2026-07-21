@@ -398,9 +398,43 @@
     }
   };
 
+  // The dashboard is the ONLY page with a live "section" concept in this
+  // app (client.html?section=X, wired via UnganiClientShared's "Sections"
+  // sidebar group) - Money/Items/People/etc. show data for the whole
+  // business regardless of section. So section-aware chips only ever
+  // apply here.
+  function getSectionQuickAddVocab() {
+    return (window.getUnganiSectionVocab && typeof window.getUnganiSectionVocab === "function")
+      ? window.getUnganiSectionVocab()
+      : null;
+  }
+
+  function getSectionPageConfig() {
+    const vocab = getSectionQuickAddVocab();
+    if (!vocab) return null;
+
+    return {
+      greeting: "Welcome back! Here's what I can help with in " + state.section + ".",
+      chips: [
+        { label: "Add " + vocab.itemLabel, type: "call", fnName: "openUnganiSectionItem", confirm: "Opening Quick Add for you." },
+        { label: "Add " + vocab.eventLabel, type: "call", fnName: "openUnganiSectionEvent", confirm: "Opening Quick Add for you." },
+        { label: "Find in " + state.section, type: "search-prompt" },
+        { label: "How do I add a " + vocab.itemLabel.toLowerCase() + "?", type: "section-howto", vocabKey: "item" },
+        { label: "How do I add a " + vocab.eventLabel.toLowerCase() + "?", type: "section-howto", vocabKey: "event" },
+        { label: "Overview", type: "nav", key: "dashboard" },
+        { label: "Help", type: "help" }
+      ]
+    };
+  }
+
   function getPageConfig() {
     if (state.surface === "admin") {
       return ADMIN_PAGE_CONFIGS[state.pageKey] || ADMIN_PAGE_CONFIGS.dashboard;
+    }
+
+    if (state.pageKey === "dashboard" && state.section) {
+      const sectionConfig = getSectionPageConfig();
+      if (sectionConfig) return sectionConfig;
     }
 
     return PAGE_CONFIGS[state.pageKey] || PAGE_CONFIGS.dashboard;
@@ -410,6 +444,7 @@
     open: false,
     surface: "unknown",
     pageKey: "",
+    section: "",
     supabaseClient: null,
     tenantId: null,
     tenant: null,
@@ -1124,6 +1159,12 @@
       return;
     }
 
+    if (item.type === "section-howto") {
+      addUserMessage(item.label);
+      replyWithDelay(function () { answerSectionQuickAddHowTo(item.vocabKey); });
+      return;
+    }
+
     if (item.type === "call") {
       addUserMessage(item.label);
       replyWithDelay(function () {
@@ -1431,6 +1472,23 @@
     return { spoken: "Here's how to do that. I've listed the steps for you." };
   }
 
+  function answerSectionQuickAddHowTo(vocabKey) {
+    const vocab = getSectionQuickAddVocab();
+    if (!vocab) return showFallback();
+
+    const label = vocabKey === "event" ? vocab.eventLabel : vocab.itemLabel;
+    const steps = [
+      "Select the gold \"+ Quick Add\" button (top bar, or the floating + button on mobile).",
+      "Choose the \"" + label + "\" tab.",
+      "Fill in the details and select Save."
+    ];
+    const stepsHtml = "<ol>" + steps.map(function (step) { return "<li>" + safe(step) + "</li>"; }).join("") + "</ol>";
+
+    addNiaMessage("Here's how to add a " + safe(label.toLowerCase()) + " in " + safe(state.section) + ":" + stepsHtml);
+
+    return { spoken: "Here's how to do that. I've listed the steps for you." };
+  }
+
   function answerHelpTopic(topic) {
     addNiaMessage(
       "<strong>" + safe(topic.question) + "</strong><br>" + safe(topic.answer) +
@@ -1654,6 +1712,7 @@
     if (settings.userId) state.userId = settings.userId;
     if (settings.pageKey) state.pageKey = settings.pageKey;
     if (settings.surface) state.surface = settings.surface;
+    if (settings.section) state.section = settings.section;
 
     state.ready = !!(state.supabaseClient && state.tenantId);
     loadPreferredLanguage();
