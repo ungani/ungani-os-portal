@@ -398,6 +398,55 @@
     }
   };
 
+  // Full list of the tenant's configured business sections (e.g. Rooms +
+  // Food & Beverage for Hospitality), independent of which page/section
+  // Nia happens to be open on - used for the first-time greeting and the
+  // "Show me around" overview, which should orient a user to their whole
+  // business, not just whatever page they first opened Nia on. Computed
+  // directly from UnganiBusinessConfig (loaded on every client page, not
+  // just client.html) via the exact same calls client-shared.js's own
+  // "Sections" sidebar group uses, so the two stay in agreement about
+  // what counts as a real, user-facing section (same length > 1 threshold
+  // for "this business actually has multiple sections worth mentioning").
+  function getBusinessSectionLabels() {
+    if (
+      !window.UnganiBusinessConfig ||
+      typeof UnganiBusinessConfig.resolveWithSections !== "function" ||
+      typeof UnganiBusinessConfig.mergeWithGeneral !== "function"
+    ) {
+      return [];
+    }
+
+    try {
+      const resolved = UnganiBusinessConfig.resolveWithSections(state.tenant);
+      const merged = UnganiBusinessConfig.mergeWithGeneral(resolved);
+      return (merged && merged.selectedSectionLabels) || [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function joinWithAnd(items) {
+    if (items.length === 0) return "";
+    if (items.length === 1) return items[0];
+    if (items.length === 2) return items[0] + " and " + items[1];
+    return items.slice(0, -1).join(", ") + ", and " + items[items.length - 1];
+  }
+
+  function buildFirstTimeGreeting() {
+    if (state.surface === "admin") {
+      return "Hello 👋<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant.<br><br>I can help you:<br>• Navigate the admin console<br>• Explain features<br>• Open pages<br>• Walk you through admin tasks<br><br>What would you like to do today?";
+    }
+
+    const sections = getBusinessSectionLabels();
+    const sectionsLine = sections.length > 1
+      ? "<br><br>You have " + joinWithAnd(sections.map(function (label) { return "<strong>" + safe(label) + "</strong>"; })) + " set up — I can help with any of them."
+      : "";
+
+    return "Hello 👋<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant." + sectionsLine +
+      "<br><br>I can help you:<br>• Navigate the system<br>• Find records<br>• Explain features<br>• Open pages<br>• Help you complete tasks<br><br>What would you like to do today?";
+  }
+
   // The dashboard is the ONLY page with a live "section" concept in this
   // app (client.html?section=X, wired via UnganiClientShared's "Sections"
   // sidebar group) - Money/Items/People/etc. show data for the whole
@@ -959,11 +1008,7 @@
       renderShell();
 
       if (!hasSeenNia()) {
-        addNiaMessage(
-          state.surface === "admin"
-            ? "Hello 👋<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant.<br><br>I can help you:<br>• Navigate the admin console<br>• Explain features<br>• Open pages<br>• Walk you through admin tasks<br><br>What would you like to do today?"
-            : "Hello 👋<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant.<br><br>I can help you:<br>• Navigate the system<br>• Find records<br>• Explain features<br>• Open pages<br>• Help you complete tasks<br><br>What would you like to do today?"
-        );
+        addNiaMessage(buildFirstTimeGreeting());
         markSeenNia();
       } else {
         addNiaMessage(getPageConfig().greeting);
@@ -1190,6 +1235,19 @@
     addNiaMessage("Here are common questions I can help with:<br><br>" + lines + "<br><br>Type your question, or tap Contact Support if you'd like a person.");
   }
 
+  function buildSectionsOverviewHtml() {
+    const sections = getBusinessSectionLabels();
+    if (sections.length <= 1) return "";
+
+    const lines = sections.map(function (label) {
+      const href = "client.html?section=" + encodeURIComponent(label);
+      return `<div style="margin-top:7px;">🏷️ <strong>${safe(label)}</strong> ` +
+        `<a href="${attr(href)}" style="color:${BRAND.gold};font-weight:800;text-decoration:none;">Open →</a></div>`;
+    }).join("");
+
+    return "Your business has " + sections.length + " sections set up:" + lines + "<br><br>";
+  }
+
   function showOverview() {
     const lines = OVERVIEW_SECTIONS.map(function (section) {
       const navItem = NAV_BY_KEY[section.key];
@@ -1199,7 +1257,7 @@
         `<a href="${attr(navItem.href)}" style="color:${BRAND.gold};font-weight:800;text-decoration:none;">Open →</a></div>`;
     }).join("");
 
-    addNiaMessage("Here's a quick overview of UNGANI OS:" + lines);
+    addNiaMessage(buildSectionsOverviewHtml() + "Here's a quick overview of UNGANI OS:" + lines);
   }
 
   function isVoiceSupported() {
