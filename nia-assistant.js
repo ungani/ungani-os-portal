@@ -1457,6 +1457,44 @@
     return null;
   }
 
+  // Full-phrase match against the CURRENT section's item/event label, e.g.
+  // "menu item" or "order deadline" - deliberately matches the whole
+  // label as a substring (same convention CREATE_ACTIONS/HOW_TO_TOPICS
+  // already use) rather than tokenizing into words, since several labels
+  // contain generic filler words ("Item", "Service", "Order") that would
+  // false-positive on almost any query if matched individually.
+  function findSectionVocabMatch(text) {
+    if (state.pageKey !== "dashboard" || !state.section) return null;
+
+    const vocab = getSectionQuickAddVocab();
+    if (!vocab) return null;
+
+    const lower = text.toLowerCase();
+    if (lower.indexOf(vocab.itemLabel.toLowerCase()) !== -1) return { vocab: vocab, vocabKey: "item" };
+    if (lower.indexOf(vocab.eventLabel.toLowerCase()) !== -1) return { vocab: vocab, vocabKey: "event" };
+    return null;
+  }
+
+  function findSectionCreateIntent(text) {
+    if (!/\b(add|create|new|log)\b/i.test(text) || /\bhow\b/i.test(text)) return null;
+    return findSectionVocabMatch(text);
+  }
+
+  function findSectionHowToIntent(text) {
+    if (!/\bhow\b/i.test(text)) return null;
+    return findSectionVocabMatch(text);
+  }
+
+  function runSectionCreateIntent(match) {
+    const fnName = match.vocabKey === "event" ? "openUnganiSectionEvent" : "openUnganiSectionItem";
+
+    if (typeof window[fnName] !== "function") return showFallback();
+
+    addNiaMessage("Opening Quick Add for you.");
+    window[fnName]();
+    return { spoken: "Opening Quick Add for you." };
+  }
+
   function isGreeting(text) {
     const lower = text.trim().toLowerCase();
     return ["hi", "hello", "hey", "hiya", "howdy", "good morning", "good afternoon", "good evening"].indexOf(lower) !== -1;
@@ -1478,6 +1516,17 @@
         return { spoken: "Hi there! What would you like to do?" };
       }
 
+      // Checked ahead of the generic createAction/howTo matchers below:
+      // free text using the CURRENT section's own vocabulary ("add a menu
+      // item" while viewing Restaurant) is more specific than anything a
+      // generic phrase list could match, and generic HOW_TO_TOPICS/
+      // CREATE_ACTIONS entries are grounded in real-estate/generic
+      // wording that doesn't apply well mid-section anyway.
+      const sectionCreate = findSectionCreateIntent(text);
+      if (sectionCreate) {
+        return runSectionCreateIntent(sectionCreate);
+      }
+
       const createAction = findCreateAction(text);
       if (createAction) {
         addNiaMessage(safe(createAction.confirm));
@@ -1492,6 +1541,11 @@
         }
 
         return runSearchIntent(text.replace(/^(find|search for|search|look up|where is|where's)\b/i, "").trim());
+      }
+
+      const sectionHowTo = findSectionHowToIntent(text);
+      if (sectionHowTo) {
+        return answerSectionQuickAddHowTo(sectionHowTo.vocabKey);
       }
 
       const howTo = findHowTo(text);
@@ -1601,7 +1655,11 @@
       return { spoken: "I'm still loading your workspace." };
     }
 
-    addNiaMessage("Searching for \"" + safe(query) + "\"...");
+    addNiaMessage(
+      state.section
+        ? "Searching for \"" + safe(query) + "\" (prioritizing " + safe(state.section) + ")..."
+        : "Searching for \"" + safe(query) + "\"..."
+    );
 
     const results = await runGlobalSearch(query);
 
@@ -1612,7 +1670,8 @@
 
     const listHtml = results.slice(0, 6).map(function (item) {
       const url = item.id ? item.href + "?highlight=" + encodeURIComponent(item.id) : item.href;
-      return `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(item.label)}: ${safe(item.title)}</a></div>`;
+      const sectionBadge = item.matchesSection ? ` <span style="color:${BRAND.gold};font-weight:800;">· ${safe(state.section)}</span>` : "";
+      return `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(item.label)}: ${safe(item.title)}</a>${sectionBadge}</div>`;
     }).join("");
 
     addNiaMessage("I found " + results.length + " match" + (results.length === 1 ? "" : "es") + ":" + listHtml);
@@ -1643,12 +1702,23 @@
             label: config.label,
             href: config.href,
             title: pickField(row, config.titleFields, config.label),
-            detail: config.detailFields.map(function (field) { return pickField(row, [field], ""); }).filter(Boolean).slice(0, 3).join(" · ")
+            detail: config.detailFields.map(function (field) { return pickField(row, [field], ""); }).filter(Boolean).slice(0, 3).join(" · "),
+            matchesSection: !!(state.section && row.section_label === state.section)
           });
         });
       } catch (error) {
         // Skip tables the current tenant can't read.
       }
+    }
+
+    // Prioritize (not filter) matches tagged to the currently-viewed
+    // section - Array.sort is spec-stable, so non-matching results keep
+    // their original relative order rather than being hidden outright;
+    // plenty of real records (created before Quick Add's section_label
+    // tagging, or added via my-items.html directly) won't have a
+    // section_label at all and are still worth surfacing.
+    if (state.section) {
+      results.sort(function (a, b) { return (b.matchesSection ? 1 : 0) - (a.matchesSection ? 1 : 0); });
     }
 
     return results.slice(0, 12);
