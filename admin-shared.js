@@ -14,35 +14,37 @@
 
   const translations = {
     en: {
-      main: "Main",
-      adminHome: "Admin Home",
+      navMain: "Main",
+      adminHome: "Dashboard",
       mainAdmin: "Main Admin",
       portal: "Portal",
-      healthCheck: "Health Check",
-      clients: "Clients",
-      registrations: "Registrations",
+      healthCheck: "System Health",
+      navOperations: "Operations",
+      registrations: "Client Registrations",
       clientProfiles: "Client Profiles",
-      peopleStaff: "People / Staff",
-      users: "Users",
-      sections: "Sections",
-      billing: "Billing",
-      operations: "Operations",
-      money: "Money",
-      records: "Records",
-      documents: "Documents",
+      sections: "Business Types & Sections",
+      users: "Users & Permissions",
       tasks: "Tasks",
-      itemsAssets: "Items / Assets",
       calendar: "Calendar",
-      communication: "Communication",
-      adminChat: "Admin Chat",
-      teamChat: "Team Chat",
-      support: "Support",
-      notices: "Notices",
+      navBusiness: "Business",
+      money: "Money Records",
+      itemsAssets: "Assets",
+      peopleStaff: "People",
+      records: "Business Records",
+      documents: "Documents",
       reports: "Reports",
-      charts: "Charts",
-      settings: "Settings",
+      charts: "System Analytics",
+      navSupport: "Support",
+      support: "Support Desk",
+      adminChat: "Client Chat",
+      notifications: "Notifications",
+      notices: "Notices",
+      navAccount: "Account",
+      billing: "Billing",
+      packages: "Packages",
+      adminSettings: "Settings",
+      navSystem: "System",
       auditLogs: "Audit Logs",
-      adminSettings: "Admin Settings",
       refresh: "Refresh",
       logout: "Logout",
       menu: "Menu",
@@ -62,35 +64,37 @@
       darkMode: "dark mode"
     },
     sw: {
-      main: "Kuu",
-      adminHome: "Nyumbani kwa Admin",
+      navMain: "Kuu",
+      adminHome: "Dashibodi",
       mainAdmin: "Admin Kuu",
       portal: "Portal",
-      healthCheck: "Ukaguzi wa Mfumo",
-      clients: "Wateja",
-      registrations: "Usajili",
+      healthCheck: "Afya ya Mfumo",
+      navOperations: "Uendeshaji",
+      registrations: "Usajili wa Wateja",
       clientProfiles: "Wasifu wa Wateja",
-      peopleStaff: "Watu / Wafanyakazi",
-      users: "Watumiaji",
-      sections: "Sehemu",
-      billing: "Malipo",
-      operations: "Uendeshaji",
-      money: "Fedha",
-      records: "Rekodi",
-      documents: "Nyaraka",
+      sections: "Aina za Biashara na Sehemu",
+      users: "Watumiaji na Ruhusa",
       tasks: "Kazi",
-      itemsAssets: "Vitu / Mali",
       calendar: "Kalenda",
-      communication: "Mawasiliano",
-      adminChat: "Gumzo la Admin",
-      teamChat: "Gumzo la Timu",
-      support: "Msaada",
-      notices: "Matangazo",
+      navBusiness: "Biashara",
+      money: "Kumbukumbu za Fedha",
+      itemsAssets: "Mali",
+      peopleStaff: "Watu",
+      records: "Kumbukumbu za Biashara",
+      documents: "Nyaraka",
       reports: "Ripoti",
-      charts: "Chati",
-      settings: "Mipangilio",
+      charts: "Uchambuzi wa Mfumo",
+      navSupport: "Msaada",
+      support: "Dawati la Msaada",
+      adminChat: "Gumzo la Mteja",
+      notifications: "Arifa",
+      notices: "Matangazo",
+      navAccount: "Akaunti",
+      billing: "Malipo",
+      packages: "Vifurushi",
+      adminSettings: "Mipangilio",
+      navSystem: "Mfumo",
       auditLogs: "Kumbukumbu za Ukaguzi",
-      adminSettings: "Mipangilio ya Admin",
       refresh: "Sasisha",
       logout: "Toka",
       menu: "Menyu",
@@ -111,59 +115,74 @@
     }
   };
 
+  // Restructured 2026-07-21 to match UI-UX-MASTER-SPEC.md's 6-group admin
+  // sidebar (MAIN/OPERATIONS/BUSINESS/SUPPORT/ACCOUNT/SYSTEM). "portal.html"
+  // and "sections.html" aren't named in the spec's example list but are
+  // real, working pages that were already linked pre-restructure - kept
+  // rather than silently dropped. "Business Health"/"Today's Activity" as
+  // standalone destinations and the whole "Global Controls"/"Automation
+  // Rules"/"AI Settings" system-group trio are spec items with no page
+  // built yet - intentionally omitted rather than linking to something
+  // that 404s; add them here once those pages exist.
+  //
+  // Dropped "teamChat" (my-team-chat.html) - that page loads client-shared.js
+  // and resolves a CLIENT tenant, not an admin destination; it had no
+  // business being in the admin nav at all. Also dropped the duplicate
+  // "Main Admin" link that pointed at the same admin.html href as
+  // "Client Registrations" under a different label.
   const adminNavSections = [
     {
-      titleKey: "main",
+      titleKey: "navMain",
       links: [
-        { key: "adminHome", href: "admin-home.html", icon: "🏠", activeKey: "admin-home" },
-        { key: "mainAdmin", href: "admin.html", icon: "🧭", activeKey: "admin-main" },
-        { key: "portal", href: "portal.html", icon: "🌐", activeKey: "portal" },
-        { key: "healthCheck", href: "admin-health.html", icon: "✅", activeKey: "admin-health" }
+        { key: "adminHome", href: "admin-home.html", icon: "🏠", activeKey: "admin-home" }
       ]
     },
     {
-      titleKey: "clients",
+      titleKey: "navOperations",
       links: [
-        { key: "registrations", href: "admin.html", icon: "📝", activeKey: "registrations" },
+        { key: "registrations", href: "admin.html", icon: "📝", activeKey: "admin-main" },
         { key: "clientProfiles", href: "admin-profiles.html", icon: "🏢", activeKey: "admin-profiles" },
-        { key: "peopleStaff", href: "admin-people.html", icon: "👥", activeKey: "admin-people" },
-        { key: "users", href: "users.html", icon: "🔐", activeKey: "admin-users" },
         { key: "sections", href: "sections.html", icon: "🧩", activeKey: "admin-sections" },
-        { key: "billing", href: "billing.html", icon: "💳", activeKey: "admin-billing" }
-      ]
-    },
-    {
-      titleKey: "operations",
-      links: [
-        { key: "money", href: "admin-money.html", icon: "💰", activeKey: "admin-money" },
-        { key: "records", href: "admin-records.html", icon: "📋", activeKey: "admin-records" },
-        { key: "documents", href: "admin-documents.html", icon: "📁", activeKey: "admin-documents" },
+        { key: "users", href: "users.html", icon: "🔐", activeKey: "admin-users" },
         { key: "tasks", href: "admin-tasks.html", icon: "✅", activeKey: "admin-tasks" },
-        { key: "itemsAssets", href: "admin-items.html", icon: "📦", activeKey: "admin-items" },
         { key: "calendar", href: "admin-calendar.html", icon: "📅", activeKey: "admin-calendar" }
       ]
     },
     {
-      titleKey: "communication",
+      titleKey: "navBusiness",
       links: [
-        { key: "adminChat", href: "admin-chat.html", icon: "💬", activeKey: "admin-chat" },
-        { key: "teamChat", href: "my-team-chat.html", icon: "👥", activeKey: "team-chat" },
+        { key: "money", href: "admin-money.html", icon: "💰", activeKey: "admin-money" },
+        { key: "itemsAssets", href: "admin-items.html", icon: "📦", activeKey: "admin-items" },
+        { key: "peopleStaff", href: "admin-people.html", icon: "🧑‍💼", activeKey: "admin-people" },
+        { key: "records", href: "admin-records.html", icon: "📋", activeKey: "admin-records" },
+        { key: "documents", href: "admin-documents.html", icon: "📁", activeKey: "admin-documents" },
+        { key: "reports", href: "admin-reports.html", icon: "📄", activeKey: "admin-reports" },
+        { key: "charts", href: "admin-charts.html", icon: "📊", activeKey: "admin-charts" }
+      ]
+    },
+    {
+      titleKey: "navSupport",
+      links: [
         { key: "support", href: "support.html", icon: "🛟", activeKey: "admin-support" },
+        { key: "adminChat", href: "admin-chat.html", icon: "💬", activeKey: "admin-chat" },
+        { key: "notifications", href: "admin-notifications.html", icon: "🔔", activeKey: "admin-notifications" },
         { key: "notices", href: "notices.html", icon: "📢", activeKey: "admin-notices" }
       ]
     },
     {
-      titleKey: "reports",
+      titleKey: "navAccount",
       links: [
-        { key: "charts", href: "admin-charts.html", icon: "📊", activeKey: "admin-charts" },
-        { key: "reports", href: "admin-reports.html", icon: "📄", activeKey: "admin-reports" }
+        { key: "billing", href: "billing.html", icon: "💳", activeKey: "admin-billing" },
+        { key: "packages", href: "admin-subscriptions.html", icon: "🗃️", activeKey: "admin-subscriptions" },
+        { key: "adminSettings", href: "admin-settings.html", icon: "⚙️", activeKey: "admin-settings" }
       ]
     },
     {
-      titleKey: "settings",
+      titleKey: "navSystem",
       links: [
-        { key: "auditLogs", href: "admin-audit-logs.html", icon: "🛡️", activeKey: "auditLogs" },
-        { key: "adminSettings", href: "admin-settings.html", icon: "⚙️", activeKey: "admin-settings" }
+        { key: "healthCheck", href: "admin-health.html", icon: "❤️", activeKey: "admin-health" },
+        { key: "auditLogs", href: "admin-audit-logs.html", icon: "📜", activeKey: "admin-audit-logs" },
+        { key: "portal", href: "portal.html", icon: "🌐", activeKey: "portal" }
       ]
     }
   ];
