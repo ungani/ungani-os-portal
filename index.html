@@ -591,7 +591,7 @@
             <input id="phone" type="tel" placeholder="+254..." autocomplete="tel" required />
           </div>
 
-          <div class="field">
+          <div class="field full">
             <label for="email">Email</label>
             <input id="email" type="email" placeholder="you@example.com" autocomplete="email" required />
           </div>
@@ -599,6 +599,11 @@
           <div class="field">
             <label for="password">Password</label>
             <input id="password" type="password" placeholder="Create password" autocomplete="new-password" required minlength="6" />
+          </div>
+
+          <div class="field">
+            <label for="confirmPassword">Confirm Password</label>
+            <input id="confirmPassword" type="password" placeholder="Re-enter password" autocomplete="new-password" required minlength="6" />
           </div>
 
           <div class="field full">
@@ -762,17 +767,23 @@
       const phone = value("phone");
       const email = value("email");
       const password = value("password");
+      const confirmPassword = value("confirmPassword");
       const businessType = value("businessType");
       const notes = value("notes");
       const selectedSections = getSelectedSubSections();
 
-      if (!businessName || !contactName || !phone || !email || !password || !businessType) {
+      if (!businessName || !contactName || !phone || !email || !password || !confirmPassword || !businessType) {
         showStatus("Please fill in all required fields.", "error");
         return;
       }
 
       if (password.length < 6) {
         showStatus("Password must be at least 6 characters.", "error");
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        showStatus("Passwords do not match. Please re-enter them.", "error");
         return;
       }
 
@@ -793,7 +804,10 @@
 
       const signupResponse = await supabaseClient.auth.signUp({
         email,
-        password
+        password,
+        options: {
+          emailRedirectTo: window.location.origin + "/login.html?mode=client"
+        }
       });
 
       if (signupResponse.error) {
