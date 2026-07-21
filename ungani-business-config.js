@@ -241,7 +241,9 @@
       "property",
       "properties",
       "housing",
-      "land"
+      "land agency",
+      "land developer",
+      "land developers"
     ],
     "dashboardTitle": "Property Operations Dashboard",
     "chartsTitle": "Property Analytics",
@@ -423,7 +425,8 @@
       "sports bar",
       "cocktail bar",
       "wine bar",
-      "club",
+      "night club",
+      "nightclub",
       "venue",
       "lounge",
       "bnb",
@@ -2069,7 +2072,9 @@
       "construction",
       "contractor",
       "contractors",
-      "building"
+      "building contractor",
+      "building contractors",
+      "builders"
     ],
     "dashboardTitle": "Construction Operations Dashboard",
     "chartsTitle": "Construction Analytics",

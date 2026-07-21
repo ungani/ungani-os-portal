@@ -2480,6 +2480,7 @@
     let isSecurity = false;
     let isWholesale = false;
     let isTourism = false;
+    let isGym = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3201,6 +3202,13 @@
         };
       }
 
+      if (isGym) {
+        return {
+          itemKey: "item", itemLabel: "Membership / Service", itemPlaceholder: "Monthly Unlimited Package", itemTypeValue: "Membership Package",
+          eventKey: "event", eventLabel: "Class / Session", eventTypeValue: "Class", eventPlaceholder: "Class - Yoga 6pm"
+        };
+      }
+
       return {
         itemKey: "item", itemLabel: "Item", itemPlaceholder: "New item name",
         itemTypeValue: (businessPreset && businessPreset.itemTypes && businessPreset.itemTypes[0]) || "Item",
@@ -3602,6 +3610,7 @@
       isSecurity = detectSecurity(currentTenant);
       isWholesale = detectWholesale(currentTenant);
       isTourism = detectTourism(currentTenant);
+      isGym = detectGym(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -4084,6 +4093,11 @@
 
       if (isTourism) {
         renderTourismDashboard();
+        return;
+      }
+
+      if (isGym) {
+        renderGymDashboard();
         return;
       }
 
@@ -12758,6 +12772,315 @@
       animateHealthGauges();
     }
 
+    // Gym/Fitness Center has no sections in the business config (one
+    // operational model per tenant, same shape as Warehouse/School/
+    // Security/Wholesale/Tourism) - just one dashboard, always shown with
+    // the full greeting/health-gauge hero. "Membership Renewal" appears in
+    // BOTH taskTypes and calendarTypes - same literal string, but read from
+    // two different DB columns (task_type vs event_type) by two different
+    // matchers below, so there's no actual collision risk (unlike the
+    // Events "Event Date"/"Catering Event Date" case, which was a same-FIELD
+    // substring collision) - still worth calling out explicitly per the
+    // checklist rather than assuming it's fine.
+    function isMembershipRenewalTaskType(value) {
+      return String(value || "").trim().toLowerCase() === "membership renewal";
+    }
+
+    function isClassOrTrainingCalendarType(value) {
+      const lower = String(value || "").trim().toLowerCase();
+      return lower === "class" || lower === "training session";
+    }
+
+    function isMemberPersonType(value) {
+      return String(value || "").trim().toLowerCase() === "member";
+    }
+
+    function buildGymCalendarPreview(today, scopedData) {
+      const data = scopedData || dashboardData;
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = [];
+
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+
+      const items = [];
+
+      (data.events || []).forEach(function (row) {
+        const status = statusText(row);
+        if (status.includes("cancelled") || status.includes("completed")) return;
+
+        const date = String(getValue(row, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (!days.includes(date)) return;
+
+        items.push({
+          date: date,
+          title: getValue(row, ["event_title", "title", "name"], "Class"),
+          type: getValue(row, ["event_type", "type"], "Activity"),
+          section: getValue(row, ["section_label"], ""),
+          ackKey: "event:" + row.id,
+          href: "my-calendar.html?highlight=" + row.id
+        });
+      });
+
+      items.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return items;
+    }
+
+    async function renderGymTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      try {
+        await UnganiAnalytics.createChart("gymRevenueTrendChart", {
+          type: "bar",
+          data: {
+            labels: months.map(function (m) { return m.label; }),
+            datasets: [
+              {
+                label: "Gym Revenue",
+                data: months.map(function (m) { return m.value; }),
+                backgroundColor: "#D4A63A",
+                borderRadius: 10
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: function (v) { return compactMoney(v); } }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("Gym trend chart warning:", error.message);
+      }
+    }
+
+    function renderGymDashboard() {
+      const data = dashboardData;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const members = (data.people || []).filter(function (person) {
+        return isMemberPersonType(getValue(person, ["person_type", "type"], ""));
+      });
+      const activeMembers = members.filter(function (person) {
+        const status = String(getValue(person, ["status"], "active")).toLowerCase();
+        return !status.includes("inactive") && !status.includes("lost");
+      });
+
+      const renewalsDue = (data.tasks || []).filter(function (task) {
+        const type = getValue(task, ["task_type", "type"], "");
+        const status = statusText(task);
+        return isMembershipRenewalTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+      }).sort(function (a, b) {
+        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+        return dueA.localeCompare(dueB);
+      });
+
+      const todaysClasses = (data.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return isClassOrTrainingCalendarType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const overdueTasks = findOverdueTasksForSection(data, todayStr);
+
+      const calendarPreview = buildGymCalendarPreview(today, data);
+      const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
+
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+
+      if (overdueTasks.length > 0) {
+        greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
+      }
+      if (renewalsDue.length > 0) {
+        greetingMessages.push({ text: renewalsDue.length === 1 ? "1 membership renewal is due" : renewalsDue.length + " membership renewals are due", href: "my-tasks.html" });
+      }
+      if (todaysClasses.length > 0) {
+        greetingMessages.push({ text: todaysClasses.length === 1 ? "1 class or session today" : todaysClasses.length + " classes or sessions today", href: "my-calendar.html" });
+      }
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(data.tasks),
+          money: calculateMoneySummary(data.transactions),
+          support: calculateSupportSummary(data.support),
+          dashboardData: data
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
+      const attentionGroups = [];
+
+      if (overdueTasks.length > 0) {
+        attentionGroups.push({
+          title: "Overdue Tasks (Oldest First)",
+          rows: overdueTasks.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Task");
+            const due = formatDate(getValue(task, ["due_date"], ""));
+            return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id);
+          })
+        });
+      }
+
+      if (renewalsDue.length > 0) {
+        attentionGroups.push({
+          title: "Membership Renewals Due",
+          rows: renewalsDue.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Membership Renewal");
+            const due = getValue(task, ["due_date"], "");
+            return attentionRow("🔁", title, due ? "Due " + formatDate(due) : "No due date set", "Due", "orange", "my-tasks.html?highlight=" + task.id, null, "renewal:" + task.id);
+          })
+        });
+      }
+
+      if (todaysClasses.length > 0) {
+        attentionGroups.push({
+          title: "Today's Classes / Sessions",
+          rows: todaysClasses.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Class");
+            return attentionRow("🏋️", title, getValue(event, ["event_type", "type"], "Class"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null);
+          })
+        });
+      }
+
+      const attentionHtml = attentionGroups.length === 0
+        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, membership renewals, or classes need attention right now.</p></div>`
+        : attentionGroups.map(function (g) {
+            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+          }).join("");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortTenantName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages)}
+              <p class="desktop-only">
+                Here's what needs attention today across your gym. Use it to see overdue tasks, membership renewals due, and today's classes or sessions, then click any card or row to open the right record.
+              </p>
+              <p class="mobile-only">
+                Your gym summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="btn gold" href="my-calendar.html">New Class</a>
+                <a class="btn green" href="my-money.html">Log Payment</a>
+                <a class="btn light" href="my-people.html">Members</a>
+                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health.score, health.summary)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
+                ${todayItem("🔁", "Renewals Due", renewalsDue.length, "membership", "my-tasks.html")}
+                ${todayItem("🏋️", "Today's Classes", todaysClasses.length, "scheduled today", "my-calendar.html")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid">
+          ${kpiCard("Gym Revenue", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), "#16A34A", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🏋️")}
+          ${kpiCard("Membership Renewals Due", renewalsDue.length, "Members needing renewal follow-up", renewalsDue.length > 0 ? "#D4A63A" : "#16A34A", "my-tasks.html", countSpan(renewalsDue.length, "plain"), null, "🔁")}
+          ${kpiCard("Active Members", activeMembers.length + " / " + members.length, "Members currently active", "#2563EB", "my-people.html", countSpan(activeMembers.length, "ratio", " / " + members.length), staticProportionBar(members.length > 0 ? activeMembers.length / members.length : 0, "#2563EB", members.length > 0 ? (Math.round((activeMembers.length / members.length) * 100) + "% active") : "No members tracked yet"), "🧑")}
+          ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "⚠️")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue tasks, membership renewals due, and today's classes or sessions — in priority order.</p>
+            </div>
+          </div>
+
+          ${attentionHtml}
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("📅", "New Class / Session", "Schedule a class or training session", "my-calendar.html", "#2563EB")}
+          ${quickAction("💵", "Log Payment", "Record a membership or session payment", "my-money.html", "#16A34A")}
+          ${quickAction("🏋️", "Add Membership / Service", "Add a membership package or training service", "my-items.html", "#D4A63A")}
+          ${quickAction("🧑", "Add Member", "Register a new gym member", "my-people.html", "#14B8A6")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Gym Revenue — Last 6 Months</h3>
+              <p>Monthly membership and training income from your money records.</p>
+            </div>
+            <a class="btn small gold" href="my-money.html">Money</a>
+          </div>
+
+          ${hasAnyRevenueHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="gymRevenueTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge("💰", "Put your numbers here", "Log your first membership or training payment and this chart will start tracking your monthly revenue trend.", "Log Payment", "my-money.html")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Calendar — Next 5 Days</h3>
+              <p>Classes, training sessions, and renewals coming up.</p>
+            </div>
+            <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
+          </div>
+
+          ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Gym / Fitness Center · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderGymTrendChart(revenueTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
     function detectRealEstate(tenant) {
       if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
         const matched = UnganiBusinessConfig.resolve(tenant);
@@ -12912,6 +13235,18 @@
       const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("tourism") || businessType.includes("travel") || businessType.includes("tour ") || businessType.includes("safari") || businessType.includes("excursion") || businessTypeKey.includes("tourism");
+    }
+
+    function detectGym(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "gym";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("gym") || businessType.includes("fitness") || businessType.includes("wellness") || businessTypeKey.includes("gym");
     }
 
     function todayItem(icon, title, value, subtitle, href) {
