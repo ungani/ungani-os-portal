@@ -655,7 +655,7 @@
       <a class="nav-link" href="admin-health.html">System Health</a>
       <a class="nav-link" href="admin-audit-logs.html">Audit Logs</a>
       <button class="nav-link" type="button" onclick="toggleTheme()" id="themeToggleLink" style="border:0; width:100%; background:transparent; text-align:left; cursor:pointer; font-family:inherit;">Dark Mode</button>
-      <a class="nav-link" href="login.html">Logout</a>
+      <a class="nav-link" href="#" onclick="logout(); return false;">Logout</a>
     </aside>
 
     <main class="main">
@@ -743,6 +743,27 @@
     const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
     const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function logout() {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (token) {
+          fetch("/api/log-audit-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify({ action: "logout", entityType: "session" }),
+            keepalive: true
+          }).catch(function () {});
+        }
+
+        await supabaseClient.auth.signOut();
+      } catch (error) {
+        console.warn(error.message);
+      }
+
+      window.location.href = "login.html?mode=admin";
+    }
 
     function updateThemeToggleLabel() {
       const isDark = document.documentElement.getAttribute("data-theme") === "dark";
