@@ -471,6 +471,7 @@
             <p>Please wait.</p>
           </div>
         </div>
+        <div id="moneyPagination"></div>
       </section>
     `;
 
@@ -674,6 +675,13 @@
     }
 
     let activeMoneyCategory = "all";
+    const MONEY_PAGE_SIZE = 25;
+    let moneyCurrentPage = 1;
+
+    function goToMoneyPage(page) {
+      moneyCurrentPage = page;
+      renderMoneyRecords();
+    }
 
     const MONEY_CATEGORIES = [
       { key: "all", label: "All Records", accent: "#D4A63A", match: () => true },
@@ -782,6 +790,7 @@
     }
 
     function renderMoneyPage() {
+      moneyCurrentPage = 1;
       renderCategoryTiles();
       renderBalanceBanner();
       renderClientSummary();
@@ -861,6 +870,8 @@
 
       document.getElementById("recordsCountText").innerText = `${rows.length} record(s) shown`;
 
+      const paginationBox = document.getElementById("moneyPagination");
+
       if (rows.length === 0) {
         document.getElementById("moneyRecordsBox").innerHTML = `
           <div class="empty">
@@ -868,8 +879,14 @@
             <p>Try changing the category, filters, or wait for clients to add records.</p>
           </div>
         `;
+        if (paginationBox) paginationBox.innerHTML = "";
         return;
       }
+
+      const totalPages = Math.max(1, Math.ceil(rows.length / MONEY_PAGE_SIZE));
+      moneyCurrentPage = Math.min(Math.max(1, moneyCurrentPage), totalPages);
+      const startIdx = (moneyCurrentPage - 1) * MONEY_PAGE_SIZE;
+      const pageRows = rows.slice(startIdx, startIdx + MONEY_PAGE_SIZE);
 
       document.getElementById("moneyRecordsBox").innerHTML = `
         <div class="table-wrap">
@@ -886,7 +903,8 @@
               </tr>
             </thead>
             <tbody>
-              ${rows.map((row, index) => {
+              ${pageRows.map((row, i) => {
+                const index = startIdx + i;
                 const type = moneyType(row);
                 const accentMap = { income: "#15803D", expense: "#B91C1C", petty_cash: "#C77700" };
                 const accent = accentMap[type] || "#2563EB";
@@ -907,6 +925,8 @@
           </table>
         </div>
       `;
+
+      if (paginationBox) paginationBox.innerHTML = UnganiAdminShared.buildPaginationHtml(moneyCurrentPage, totalPages, "goToMoneyPage");
     }
 
     function openMoneyModal(index) {

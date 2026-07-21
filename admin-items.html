@@ -478,6 +478,7 @@
             </tbody>
           </table>
         </div>
+        <div id="itemsPagination"></div>
       </section>
     `;
 
@@ -714,6 +715,13 @@
     }
 
     let activeItemCategory = "all";
+    const ITEMS_PAGE_SIZE = 25;
+    let itemsCurrentPage = 1;
+
+    function goToItemsPage(page) {
+      itemsCurrentPage = page;
+      renderItemsList();
+    }
 
     const ITEM_CATEGORIES = [
       { key: "all", label: "All", accent: "#D4A63A", match: () => true },
@@ -794,6 +802,7 @@
     }
 
     function renderItemsPage() {
+      itemsCurrentPage = 1;
       renderCategoryTiles();
       renderClientSummary();
       renderItemsList();
@@ -913,24 +922,37 @@
 
       document.getElementById("itemsCountText").innerText = `${rows.length} item record(s) shown`;
 
+      const paginationBox = document.getElementById("itemsPagination");
+
       if (rows.length === 0) {
         document.getElementById("itemsListBox").innerHTML =
           '<tr><td colspan="6">' +
           emptyStateNudge("📦", "No items found", "Try changing the category, filters, or wait for clients to add items, assets, or stock.") +
           '</td></tr>';
+        if (paginationBox) paginationBox.innerHTML = "";
         return;
       }
 
-      document.getElementById("itemsListBox").innerHTML = rows.map((row, index) => `
-        <tr style="--accent:${statusAccent(row)};" onclick="openItemModal(${index})">
-          <td>${safe(getItemName(row))}<span class="row-sub">${safe(getItemLocation(row))}</span></td>
-          <td>${safe(getTenantNameById(row.tenant_id))}</td>
-          <td>${typeBadge(getItemType(row))}</td>
-          <td>${statusBadge(getItemStatus(row))}${isLowStock(row) ? ' <span class="badge orange">Low</span>' : ""}</td>
-          <td>${safe(getItemQuantity(row))}</td>
-          <td>${safe(getItemValue(row))}</td>
-        </tr>
-      `).join("");
+      const totalPages = Math.max(1, Math.ceil(rows.length / ITEMS_PAGE_SIZE));
+      itemsCurrentPage = Math.min(Math.max(1, itemsCurrentPage), totalPages);
+      const startIdx = (itemsCurrentPage - 1) * ITEMS_PAGE_SIZE;
+      const pageRows = rows.slice(startIdx, startIdx + ITEMS_PAGE_SIZE);
+
+      document.getElementById("itemsListBox").innerHTML = pageRows.map((row, i) => {
+        const index = startIdx + i;
+        return `
+          <tr style="--accent:${statusAccent(row)};" onclick="openItemModal(${index})">
+            <td>${safe(getItemName(row))}<span class="row-sub">${safe(getItemLocation(row))}</span></td>
+            <td>${safe(getTenantNameById(row.tenant_id))}</td>
+            <td>${typeBadge(getItemType(row))}</td>
+            <td>${statusBadge(getItemStatus(row))}${isLowStock(row) ? ' <span class="badge orange">Low</span>' : ""}</td>
+            <td>${safe(getItemQuantity(row))}</td>
+            <td>${safe(getItemValue(row))}</td>
+          </tr>
+        `;
+      }).join("");
+
+      if (paginationBox) paginationBox.innerHTML = UnganiAdminShared.buildPaginationHtml(itemsCurrentPage, totalPages, "goToItemsPage");
     }
 
     function openItemModal(index) {

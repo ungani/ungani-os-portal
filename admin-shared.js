@@ -617,6 +617,26 @@
         margin-bottom: 12px;
       }
 
+      .ungani-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        margin-top: 16px;
+        padding: 10px 0;
+      }
+
+      .ungani-pagination-status {
+        font-size: 13px;
+        font-weight: 800;
+        color: var(--ungani-navy);
+        opacity: 0.7;
+      }
+
+      html[data-ungani-theme="dark"] .ungani-pagination-status {
+        color: #F5F5F3;
+      }
+
       .ungani-toast {
         position: fixed;
         right: 18px;
@@ -831,6 +851,29 @@
         restore();
         throw error;
       });
+  }
+
+  // Shared pagination control, used by every row-list page (Users, Money,
+  // Items, People, Tasks, Documents, Records) - none had pagination before
+  // 2026-07-21, all rendered every filtered row at once. changeFnName is
+  // the string name of a page-local global function (e.g. "goToItemsPage")
+  // that the caller defines to update its own currentPage state and
+  // re-render - kept page-local rather than centralized here since each
+  // page's row array/render function is structured differently.
+  function buildPaginationHtml(currentPage, totalPages, changeFnName) {
+    if (totalPages <= 1) return "";
+
+    const page = Math.max(1, Math.min(currentPage, totalPages));
+    const prevDisabled = page <= 1 ? "disabled" : "";
+    const nextDisabled = page >= totalPages ? "disabled" : "";
+
+    return `
+      <div class="ungani-pagination">
+        <button type="button" class="ungani-btn small light" ${prevDisabled} onclick="${changeFnName}(${page - 1})">‹ Prev</button>
+        <span class="ungani-pagination-status">Page ${page} of ${totalPages}</span>
+        <button type="button" class="ungani-btn small light" ${nextDisabled} onclick="${changeFnName}(${page + 1})">Next ›</button>
+      </div>
+    `;
   }
 
   function showToast(message) {
@@ -1365,6 +1408,7 @@
     showToast,
     openModal,
     closeModal,
+    buildPaginationHtml,
     withButtonLoading,
     safe,
     cleanText,

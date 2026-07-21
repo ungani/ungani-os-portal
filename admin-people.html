@@ -466,6 +466,7 @@
             <p>Please wait.</p>
           </div>
         </div>
+        <div id="peoplePagination"></div>
       </section>
     `;
 
@@ -664,6 +665,13 @@
     ];
 
     let activePersonCategory = "all";
+    const PEOPLE_PAGE_SIZE = 25;
+    let peopleCurrentPage = 1;
+
+    function goToPeoplePage(page) {
+      peopleCurrentPage = page;
+      renderPeopleList();
+    }
 
     async function safeSelect(tableName) {
       try {
@@ -783,6 +791,7 @@
     }
 
     function renderPeoplePage() {
+      peopleCurrentPage = 1;
       renderCategoryTiles();
       renderClientSummary();
       renderPeopleList();
@@ -896,11 +905,18 @@
       document.getElementById("peopleCountText").innerText = `${rows.length} people record(s) shown`;
 
       const wrap = document.getElementById("peopleListBox");
+      const paginationBox = document.getElementById("peoplePagination");
 
       if (rows.length === 0) {
         wrap.innerHTML = emptyStateNudge("👥", "No people found", "Try changing the filters, or add a client person record.");
+        if (paginationBox) paginationBox.innerHTML = "";
         return;
       }
+
+      const totalPages = Math.max(1, Math.ceil(rows.length / PEOPLE_PAGE_SIZE));
+      peopleCurrentPage = Math.min(Math.max(1, peopleCurrentPage), totalPages);
+      const startIdx = (peopleCurrentPage - 1) * PEOPLE_PAGE_SIZE;
+      const pageRows = rows.slice(startIdx, startIdx + PEOPLE_PAGE_SIZE);
 
       wrap.innerHTML = `
         <table class="ungani-table">
@@ -914,7 +930,9 @@
             </tr>
           </thead>
           <tbody>
-            ${rows.map((row, index) => `
+            ${pageRows.map((row, i) => {
+              const index = startIdx + i;
+              return `
               <tr style="--accent:${statusAccent(row)};" onclick="openPersonModal(${index})">
                 <td>
                   ${safe(getPersonName(row))}
@@ -928,10 +946,13 @@
                 <td>${typeBadge(getPersonType(row))}</td>
                 <td>${statusBadge(getPersonStatus(row))}</td>
               </tr>
-            `).join("")}
+            `;
+            }).join("")}
           </tbody>
         </table>
       `;
+
+      if (paginationBox) paginationBox.innerHTML = UnganiAdminShared.buildPaginationHtml(peopleCurrentPage, totalPages, "goToPeoplePage");
     }
 
     function openPersonModal(index) {

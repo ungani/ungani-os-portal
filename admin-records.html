@@ -444,6 +444,7 @@
             </tbody>
           </table>
         </div>
+        <div id="recordsPagination"></div>
       </section>
     `;
 
@@ -673,6 +674,13 @@
     }
 
     let activeRecordCategory = "all";
+    const RECORDS_PAGE_SIZE = 25;
+    let recordsCurrentPage = 1;
+
+    function goToRecordsPage(page) {
+      recordsCurrentPage = page;
+      renderRecordsList();
+    }
 
     const RECORD_CATEGORIES = [
       { key: "all", label: "All", accent: "#D4A63A", match: () => true },
@@ -757,6 +765,7 @@
     }
 
     function renderRecordsPage() {
+      recordsCurrentPage = 1;
       renderCategoryTiles();
       renderClientSummary();
       renderRecordsList();
@@ -848,15 +857,25 @@
 
       document.getElementById("recordsCountText").innerText = `${rows.length} business record(s) shown`;
 
+      const paginationBox = document.getElementById("recordsPagination");
+
       if (rows.length === 0) {
         document.getElementById("recordsListBox").innerHTML =
           '<tr><td colspan="5">' +
           emptyStateNudge("🗂️", "No business records found", "Try changing the category, filters, or wait for clients to add records.") +
           '</td></tr>';
+        if (paginationBox) paginationBox.innerHTML = "";
         return;
       }
 
-      document.getElementById("recordsListBox").innerHTML = rows.map((row, index) => `
+      const totalPages = Math.max(1, Math.ceil(rows.length / RECORDS_PAGE_SIZE));
+      recordsCurrentPage = Math.min(Math.max(1, recordsCurrentPage), totalPages);
+      const startIdx = (recordsCurrentPage - 1) * RECORDS_PAGE_SIZE;
+      const pageRows = rows.slice(startIdx, startIdx + RECORDS_PAGE_SIZE);
+
+      document.getElementById("recordsListBox").innerHTML = pageRows.map((row, i) => {
+        const index = startIdx + i;
+        return `
         <tr style="--accent:${statusAccent(getRecordStatus(row))};" onclick="openRecordModal(${index})">
           <td>${safe(getRecordTitle(row))}<span class="row-sub">${safe(getRecordReference(row))}</span></td>
           <td>${safe(getTenantNameById(row.tenant_id))}</td>
@@ -864,7 +883,10 @@
           <td>${statusBadge(getRecordStatus(row))}</td>
           <td>${safe(formatDateTime(getRecordDate(row)))}</td>
         </tr>
-      `).join("");
+      `;
+      }).join("");
+
+      if (paginationBox) paginationBox.innerHTML = UnganiAdminShared.buildPaginationHtml(recordsCurrentPage, totalPages, "goToRecordsPage");
     }
 
     function openRecordModal(index) {

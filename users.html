@@ -419,14 +419,14 @@
                 <th>Status</th>
                 <th>Client</th>
                 <th>Created</th>
-                <th></th>
               </tr>
             </thead>
             <tbody id="usersListBox">
-              <tr><td colspan="6"><div class="empty"><h3>Loading users...</h3><p>Please wait.</p></div></td></tr>
+              <tr><td colspan="5"><div class="empty"><h3>Loading users...</h3><p>Please wait.</p></div></td></tr>
             </tbody>
           </table>
         </div>
+        <div id="usersPagination"></div>
       </section>
     `;
 
@@ -629,6 +629,13 @@
     }
 
     let activeRoleCategory = "all";
+    const USERS_PAGE_SIZE = 25;
+    let usersCurrentPage = 1;
+
+    function goToUsersPage(page) {
+      usersCurrentPage = page;
+      renderUsersList();
+    }
 
     const ROLE_CATEGORIES = [
       { key: "all", label: "All Users", accent: "#D4A63A", match: () => true },
@@ -710,6 +717,7 @@
     }
 
     function renderUsersPage() {
+      usersCurrentPage = 1;
       renderCategoryTiles();
       renderClientSummary();
       renderUsersList();
@@ -794,19 +802,27 @@
 
       document.getElementById("usersCountText").innerText = `${rows.length} user record(s) shown`;
 
+      const paginationBox = document.getElementById("usersPagination");
+
       if (rows.length === 0) {
         document.getElementById("usersListBox").innerHTML = `
-          <tr><td colspan="6">
+          <tr><td colspan="5">
             <div class="empty">
               <h3>No users found</h3>
               <p>Try changing the category, client filter, or search.</p>
             </div>
           </td></tr>
         `;
+        if (paginationBox) paginationBox.innerHTML = "";
         return;
       }
 
-      document.getElementById("usersListBox").innerHTML = rows.map(row => `
+      const totalPages = Math.max(1, Math.ceil(rows.length / USERS_PAGE_SIZE));
+      usersCurrentPage = Math.min(Math.max(1, usersCurrentPage), totalPages);
+      const startIdx = (usersCurrentPage - 1) * USERS_PAGE_SIZE;
+      const pageRows = rows.slice(startIdx, startIdx + USERS_PAGE_SIZE);
+
+      document.getElementById("usersListBox").innerHTML = pageRows.map(row => `
         <tr style="--accent:${statusAccent(getUserStatus(row))};" onclick="openUserModal('${safe(row.id)}')">
           <td>
             ${safe(getUserName(row))}
@@ -816,15 +832,10 @@
           <td>${statusBadge(getUserStatus(row))}</td>
           <td>${safe(getTenantNameById(row.tenant_id))}</td>
           <td>${safe(formatDateTime(getCreatedDate(row)))}</td>
-          <td onclick="event.stopPropagation();">
-            <div class="row-actions">
-              <button class="btn green" onclick="quickUpdateStatus('${safe(row.id)}','active')">Active</button>
-              <button class="btn orange" onclick="quickUpdateStatus('${safe(row.id)}','pending')">Pending</button>
-              <button class="btn red" onclick="quickUpdateStatus('${safe(row.id)}','suspended')">Suspend</button>
-            </div>
-          </td>
         </tr>
       `).join("");
+
+      if (paginationBox) paginationBox.innerHTML = UnganiAdminShared.buildPaginationHtml(usersCurrentPage, totalPages, "goToUsersPage");
     }
 
     function openUserModal(userId) {

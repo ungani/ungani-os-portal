@@ -489,6 +489,7 @@
             </tbody>
           </table>
         </div>
+        <div id="documentsPagination"></div>
       </section>
 
       <section class="ungani-card">
@@ -698,6 +699,13 @@
     }
 
     let activeDocCategory = "all";
+    const DOCUMENTS_PAGE_SIZE = 25;
+    let documentsCurrentPage = 1;
+
+    function goToDocumentsPage(page) {
+      documentsCurrentPage = page;
+      renderDocumentsList();
+    }
 
     const DOC_CATEGORIES = [
       { key: "all", label: "All Documents", accent: "#D4A63A", match: () => true },
@@ -782,22 +790,35 @@
     let lastRenderedDocuments = [];
 
     function renderDocuments() {
+      documentsCurrentPage = 1;
       renderCategoryTiles();
+      renderDocumentsList();
+    }
 
+    function renderDocumentsList() {
       const rows = filteredDocuments();
       lastRenderedDocuments = rows;
+
+      const paginationBox = document.getElementById("documentsPagination");
 
       if (rows.length === 0) {
         document.getElementById("documentsList").innerHTML =
           '<tr><td colspan="5">' +
           emptyStateNudge("🗂️", "No documents found", "Try changing the category, filters, or add a new document link with the button above.") +
           '</td></tr>';
+        if (paginationBox) paginationBox.innerHTML = "";
         return;
       }
 
       const sourceIcon = { google_drive: "📁", external_link: "🔗", manual: "📄" };
 
-      document.getElementById("documentsList").innerHTML = rows.map((row, index) => {
+      const totalPages = Math.max(1, Math.ceil(rows.length / DOCUMENTS_PAGE_SIZE));
+      documentsCurrentPage = Math.min(Math.max(1, documentsCurrentPage), totalPages);
+      const startIdx = (documentsCurrentPage - 1) * DOCUMENTS_PAGE_SIZE;
+      const pageRows = rows.slice(startIdx, startIdx + DOCUMENTS_PAGE_SIZE);
+
+      document.getElementById("documentsList").innerHTML = pageRows.map((row, i) => {
+        const index = startIdx + i;
         const title = getDocumentTitle(row);
         const clientName = getTenantNameById(row.tenant_id);
         const source = row.document_source || "manual";
@@ -814,6 +835,8 @@
           </tr>
         `;
       }).join("");
+
+      if (paginationBox) paginationBox.innerHTML = UnganiAdminShared.buildPaginationHtml(documentsCurrentPage, totalPages, "goToDocumentsPage");
     }
 
     function renderDriveFolders() {

@@ -466,6 +466,7 @@
             <p>Please wait.</p>
           </div>
         </div>
+        <div id="tasksPagination"></div>
       </section>
     `;
 
@@ -699,6 +700,13 @@
     ];
 
     let activeTaskCategory = "all";
+    const TASKS_PAGE_SIZE = 25;
+    let tasksCurrentPage = 1;
+
+    function goToTasksPage(page) {
+      tasksCurrentPage = page;
+      renderTasksList();
+    }
 
     async function safeSelect(tableName) {
       try {
@@ -831,6 +839,7 @@
     }
 
     function renderTasksPage() {
+      tasksCurrentPage = 1;
       renderCategoryTiles();
       renderClientSummary();
       renderTasksList();
@@ -941,11 +950,18 @@
       document.getElementById("tasksCountText").innerText = `${rows.length} task(s) shown`;
 
       const wrap = document.getElementById("tasksListBox");
+      const paginationBox = document.getElementById("tasksPagination");
 
       if (rows.length === 0) {
         wrap.innerHTML = emptyStateNudge("✅", "No tasks found", "Try changing the filters, or wait for clients to add tasks.");
+        if (paginationBox) paginationBox.innerHTML = "";
         return;
       }
+
+      const totalPages = Math.max(1, Math.ceil(rows.length / TASKS_PAGE_SIZE));
+      tasksCurrentPage = Math.min(Math.max(1, tasksCurrentPage), totalPages);
+      const startIdx = (tasksCurrentPage - 1) * TASKS_PAGE_SIZE;
+      const pageRows = rows.slice(startIdx, startIdx + TASKS_PAGE_SIZE);
 
       wrap.innerHTML = `
         <table class="ungani-table">
@@ -959,7 +975,9 @@
             </tr>
           </thead>
           <tbody>
-            ${rows.map((row, index) => `
+            ${pageRows.map((row, i) => {
+              const index = startIdx + i;
+              return `
               <tr style="--accent:${statusAccent(row)};" onclick="openTaskModal(${index})">
                 <td>
                   ${safe(getTaskTitle(row))}
@@ -977,10 +995,13 @@
                   ${isDueSoonTask(row) ? `<span class="badge orange">Due Soon</span>` : ""}
                 </td>
               </tr>
-            `).join("")}
+            `;
+            }).join("")}
           </tbody>
         </table>
       `;
+
+      if (paginationBox) paginationBox.innerHTML = UnganiAdminShared.buildPaginationHtml(tasksCurrentPage, totalPages, "goToTasksPage");
     }
 
     function openTaskModal(index) {
