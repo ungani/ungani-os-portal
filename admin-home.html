@@ -1737,12 +1737,22 @@
 
       theme = String(theme || "").toLowerCase();
 
+      // Also mirror onto <html data-ungani-theme> - client-shared.js (loaded
+      // on this page for unrelated utilities) sets that attribute once at
+      // parse time and Nia's isDarkMode() checks it FIRST, before ever
+      // looking at this page's own body[data-theme]. Left unsynced, Nia's
+      // panel silently stays on whatever theme was active on first page
+      // load even after this page's own toggle flips body[data-theme] -
+      // the "one part of the page still shows the old theme" bug class.
       if (theme.indexOf("dark") !== -1) {
         document.body.setAttribute("data-theme", "dark");
+        document.documentElement.setAttribute("data-ungani-theme", "dark");
       } else if (theme.indexOf("light") !== -1) {
         document.body.removeAttribute("data-theme");
+        document.documentElement.setAttribute("data-ungani-theme", "light");
       } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
         document.body.setAttribute("data-theme", "dark");
+        document.documentElement.setAttribute("data-ungani-theme", "dark");
       }
     })();
   </script>
@@ -2536,8 +2546,10 @@
       var targetTheme = theme || localStorage.getItem("ungani_theme") || localStorage.getItem("ungani_client_theme") || localStorage.getItem("ungani_admin_theme") || "light";
       if (targetTheme === "dark") {
         document.body.setAttribute("data-theme", "dark");
+        document.documentElement.setAttribute("data-ungani-theme", "dark");
       } else {
         document.body.removeAttribute("data-theme");
+        document.documentElement.setAttribute("data-ungani-theme", "light");
       }
       var btn = document.getElementById('profileThemeState');
       if (btn) {

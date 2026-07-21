@@ -744,6 +744,15 @@
   function applyTheme(theme) {
     currentTheme = theme === "dark" ? "dark" : "light";
     document.documentElement.dataset.unganiTheme = currentTheme;
+
+    // client-shared.js's applyTheme() sets this on both <html> and <body> -
+    // mirrored here so any inline page CSS written against the client-side
+    // convention (body[data-ungani-theme]) doesn't silently never fire on
+    // the admin side.
+    if (document.body) {
+      document.body.dataset.unganiTheme = currentTheme;
+    }
+
     localStorage.setItem("ungani_theme", currentTheme);
     localStorage.setItem("ungani_client_theme", currentTheme);
   }
