@@ -434,8 +434,11 @@
   }
 
   function buildFirstTimeGreeting() {
+    const name = getPersonName();
+    const greetingLine = name ? "Hello " + safe(name) + " 👋" : "Hello 👋";
+
     if (state.surface === "admin") {
-      return "Hello 👋<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant.<br><br>I can help you:<br>• Navigate the admin console<br>• Explain features<br>• Open pages<br>• Walk you through admin tasks<br><br>What would you like to do today?";
+      return greetingLine + "<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant.<br><br>I can help you:<br>• Navigate the admin console<br>• Explain features<br>• Open pages<br>• Walk you through admin tasks<br><br>What would you like to do today?";
     }
 
     const sections = getBusinessSectionLabels();
@@ -443,7 +446,7 @@
       ? "<br><br>You have " + joinWithAnd(sections.map(function (label) { return "<strong>" + safe(label) + "</strong>"; })) + " set up — I can help with any of them."
       : "";
 
-    return "Hello 👋<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant." + sectionsLine +
+    return greetingLine + "<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant." + sectionsLine +
       "<br><br>I can help you:<br>• Navigate the system<br>• Find records<br>• Explain features<br>• Open pages<br>• Help you complete tasks<br><br>What would you like to do today?";
   }
 
@@ -498,6 +501,7 @@
     tenantId: null,
     tenant: null,
     userId: null,
+    userName: "",
     preferredLanguage: "en",
     ready: false,
     messages: [],
@@ -1011,7 +1015,7 @@
         addNiaMessage(buildFirstTimeGreeting());
         markSeenNia();
       } else {
-        addNiaMessage(getPageConfig().greeting);
+        addNiaMessage(personalizeGreeting(getPageConfig().greeting));
       }
 
       showQuickActions();
@@ -1507,13 +1511,16 @@
   function interpretMessage(text) {
     try {
       if (isGreeting(text)) {
+        const name = getPersonName();
+        const hi = name ? "Hi " + safe(name) + "!" : "Hi there!";
+
         addNiaMessage(
           state.surface === "admin"
-            ? "Hi there! What would you like to do — navigate somewhere, or get help with an admin task?"
-            : "Hi there! What would you like to do — navigate somewhere, find a record, or get help with a task?"
+            ? hi + " What would you like to do — navigate somewhere, or get help with an admin task?"
+            : hi + " What would you like to do — navigate somewhere, find a record, or get help with a task?"
         );
         showQuickActions();
-        return { spoken: "Hi there! What would you like to do?" };
+        return { spoken: (name ? "Hi " + name + "!" : "Hi there!") + " What would you like to do?" };
       }
 
       // Checked ahead of the generic createAction/howTo matchers below:
@@ -1821,6 +1828,7 @@
         state.tenantId = shared.tenantId;
         state.tenant = shared.tenant;
         state.userId = shared.authUser ? shared.authUser.id : null;
+        state.userName = derivePersonName(shared.userProfile, shared.authUser);
         state.pageKey = shared.currentPageKey || state.pageKey;
         state.ready = true;
         renderFab();
@@ -1831,6 +1839,48 @@
     }
   }
 
+  // Real person's name for greetings ("Hi Charlie" rather than a business
+  // name or generic "Hi there") - the users table's own full_name column,
+  // same field client.html's profile block and client-shared.js's chat
+  // sender-name fallback already read, falling back to a name derived from
+  // the email local-part so a never-populated full_name still reads better
+  // than nothing.
+  function derivePersonName(userProfile, authUser) {
+    const fullName = String((userProfile && (userProfile.full_name || userProfile.name)) || "").trim();
+    if (fullName) return fullName;
+
+    const email = (userProfile && userProfile.email) || (authUser && authUser.email) || "";
+    const local = String(email).split("@")[0];
+    if (!local) return "";
+
+    return local.replace(/[.\-_]+/g, " ").replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
+  }
+
+  // client.html sets loadUserRole() off (not awaited) right before calling
+  // init(), so the real full_name can still be in flight when userName is
+  // passed in here - checking this live bridge at greeting-build time
+  // (rather than only trusting the state.userName snapshot) means Nia's
+  // greeting is correct even if it's opened before that fetch settles.
+  function getPersonName() {
+    if (typeof window.getUnganiPersonName === "function") {
+      const bridged = window.getUnganiPersonName();
+      if (bridged) return bridged;
+    }
+
+    return state.userName || "";
+  }
+
+  // Every PAGE_CONFIGS/ADMIN_PAGE_CONFIGS greeting starts with the exact
+  // literal "Welcome back!" - swap in the person's name there rather than
+  // duplicating every greeting string as a function just to interpolate one
+  // word.
+  function personalizeGreeting(text) {
+    const name = getPersonName();
+    if (!name) return text;
+
+    return String(text || "").replace(/^Welcome back!/, "Welcome back, " + safe(name) + "!");
+  }
+
   function init(config) {
     const settings = config || {};
 
@@ -1838,6 +1888,7 @@
     if (settings.tenantId) state.tenantId = settings.tenantId;
     if (settings.tenant) state.tenant = settings.tenant;
     if (settings.userId) state.userId = settings.userId;
+    if (settings.userName) state.userName = settings.userName;
     if (settings.pageKey) state.pageKey = settings.pageKey;
     if (settings.surface) state.surface = settings.surface;
     if (settings.section) state.section = settings.section;

@@ -2578,31 +2578,68 @@
     }
 
     let currentUserRole = "";
+    let currentUserFullName = "";
+    let currentUserIsOwner = true;
 
     async function loadUserRole() {
       if (!currentUser) return;
 
       try {
-        let response = await supabaseClient.from("users").select("role").eq("id", currentUser.id).limit(1).maybeSingle();
+        let response = await supabaseClient.from("users").select("role, full_name").eq("id", currentUser.id).limit(1).maybeSingle();
 
         if ((!response.data || !response.data.role) && currentUser.email) {
-          response = await supabaseClient.from("users").select("role").eq("email", currentUser.email).limit(1).maybeSingle();
+          response = await supabaseClient.from("users").select("role, full_name").eq("email", currentUser.email).limit(1).maybeSingle();
         }
 
         currentUserRole = getValue(response.data, ["role"], "Client");
+        currentUserFullName = getValue(response.data, ["full_name"], "");
       } catch (error) {
         console.warn("Could not load user role:", error.message);
         currentUserRole = "Client";
       }
 
+      try {
+        const staffResponse = await supabaseClient.rpc("get_my_ungani_staff_access");
+        const access = (staffResponse && !staffResponse.error && staffResponse.data) || {};
+        const roleKey = String(access.role_key || "").toLowerCase();
+        const isConfirmedStaffRecord = roleKey !== "" && roleKey !== "guest";
+
+        // Mirrors staff-permission-guard.js's own rule: a real owner who
+        // never went through Team Access has no team_members row at all,
+        // so an empty/missing response must NOT be read as "not owner."
+        currentUserIsOwner = access.is_owner === true || !isConfirmedStaffRecord;
+      } catch (error) {
+        currentUserIsOwner = true;
+      }
+
       renderProfileBlock();
     }
 
+    function derivePersonNameFromEmail(email) {
+      const local = String(email || "").split("@")[0];
+      if (!local) return "";
+      return toTitle(local.replace(/[.\-_]+/g, " "));
+    }
+
+    function getPersonDisplayName() {
+      const fullName = String(currentUserFullName || "").trim();
+      if (fullName) return fullName;
+
+      const emailName = derivePersonNameFromEmail(currentUser ? currentUser.email : "");
+      return emailName || "Team Member";
+    }
+
+    // Bridge for nia-assistant.js: loadUserRole() (which resolves the real
+    // full_name) isn't awaited before NiaAssistant.init() runs, so Nia reads
+    // this live function at greeting-build time instead of trusting a
+    // one-time snapshot that could still be mid-flight.
+    window.getUnganiPersonName = getPersonDisplayName;
+
     function renderProfileBlock() {
-      const name = getTenantName();
-      const initials = getInitials(name);
+      const personName = getPersonDisplayName();
+      const initials = getInitials(personName);
       const logoUrl = getValue(currentTenant, ["logo_url"], "");
-      const roleLabel = toTitle(currentUserRole || "Client");
+      const roleLabel = currentUserIsOwner ? "Owner" : "Staff";
 
       const circleHtml = logoUrl
         ? `<img src="${attr(logoUrl)}" alt="" onerror="this.parentElement.innerText='${attr(initials)}';" />`
@@ -2615,7 +2652,7 @@
 
       ["profileBusinessName", "profilePanelBusinessName"].forEach(function (id) {
         const el = document.getElementById(id);
-        if (el) el.innerText = name;
+        if (el) el.innerText = personName;
       });
 
       ["profileRole", "profilePanelRole"].forEach(function (id) {
@@ -3591,6 +3628,7 @@
           tenantId: currentTenantId,
           tenant: currentTenant,
           userId: currentUser ? currentUser.id : null,
+          userName: getPersonDisplayName(),
           pageKey: "dashboard",
           surface: "client",
           section: currentSection || ""
