@@ -908,6 +908,69 @@
       color: rgba(255,255,255,0.78);
     }
 
+    .health-gauge-trend {
+      color: rgba(255,255,255,0.94);
+    }
+
+    .biz-health-lists {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .biz-health-list-title {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .biz-health-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .biz-health-list li {
+      position: relative;
+      padding: 10px 12px 10px 32px;
+      border-radius: 14px;
+      background: var(--soft);
+      border: 1px solid var(--border);
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: var(--text-soft);
+    }
+
+    .biz-health-list li strong {
+      color: var(--text);
+    }
+
+    .biz-health-list li::before {
+      position: absolute;
+      left: 11px;
+      top: 10px;
+      font-size: 13px;
+      font-weight: 950;
+    }
+
+    .biz-health-list.strengths li::before {
+      content: "\2713";
+      color: #15803D;
+    }
+
+    .biz-health-list.weaknesses li::before {
+      content: "!";
+      color: #C77700;
+    }
+
+    .biz-health-list.recommendations li::before {
+      content: "\2192";
+      color: #2563EB;
+    }
+
     .hero-mini-divider {
       height: 1px;
       background: rgba(255,255,255,0.14);
@@ -1705,6 +1768,10 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
+      .biz-health-lists {
+        grid-template-columns: 1fr;
+      }
+
       .mobile-hide {
         display: none !important;
       }
@@ -1768,6 +1835,10 @@
       }
 
       .health-status-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .biz-health-lists {
         grid-template-columns: 1fr;
       }
     }
@@ -2360,6 +2431,19 @@
             <div class="loading" data-i18n="loading_health">Checking system health...</div>
           </div>
         </div>
+
+        <!-- BUSINESS HEALTH BREAKDOWN -->
+        <div class="card" style="margin-bottom:18px;">
+          <div class="section-title">
+            <div>
+              <h3 data-i18n="sec_bizhealth_title">Business Health Breakdown</h3>
+              <p data-i18n="sec_bizhealth_desc">Strengths, weaknesses, and recommendations behind the score above.</p>
+            </div>
+          </div>
+          <div id="businessHealthBreakdown">
+            <div class="loading" data-i18n="loading_bizhealth">Analyzing business health...</div>
+          </div>
+        </div>
       </div>
 
       <footer class="footer">
@@ -2475,6 +2559,20 @@
         health_lbl_emails: "Emails",
         health_lbl_notifications: "Notifications",
         health_lbl_jobs: "Background Jobs",
+        sec_bizhealth_title: "Business Health Breakdown",
+        sec_bizhealth_desc: "Strengths, weaknesses, and recommendations behind the score above.",
+        loading_bizhealth: "Analyzing business health...",
+        bizhealth_strengths: "Strengths",
+        bizhealth_weaknesses: "Weaknesses",
+        bizhealth_recommendations: "Recommendations",
+        health_lbl_revenue: "Revenue",
+        health_lbl_expenses: "Expenses",
+        health_lbl_cashflow: "Cash Flow",
+        health_lbl_outstanding: "Outstanding Payments",
+        health_lbl_inventory: "Inventory",
+        health_lbl_overduetasks: "Overdue Tasks",
+        health_lbl_staffactivity: "Staff Activity",
+        health_lbl_growth: "Business Growth",
         footer_text: "© 2026 UNGANI OS Ecosystem. All Rights Reserved. Command Cluster Cloud Layer.",
         no_data: "No records found",
         no_notif: "No notices found",
@@ -2598,6 +2696,20 @@
         health_lbl_emails: "Barua Pepe",
         health_lbl_notifications: "Arifa",
         health_lbl_jobs: "Kazi za Nyuma",
+        sec_bizhealth_title: "Uchambuzi wa Afya ya Biashara",
+        sec_bizhealth_desc: "Nguvu, udhaifu, na mapendekezo nyuma ya alama iliyo hapo juu.",
+        loading_bizhealth: "Inachambua afya ya biashara...",
+        bizhealth_strengths: "Nguvu",
+        bizhealth_weaknesses: "Udhaifu",
+        bizhealth_recommendations: "Mapendekezo",
+        health_lbl_revenue: "Mapato",
+        health_lbl_expenses: "Matumizi",
+        health_lbl_cashflow: "Mtiririko wa Fedha",
+        health_lbl_outstanding: "Malipo Yanayodaiwa",
+        health_lbl_inventory: "Hisa",
+        health_lbl_overduetasks: "Majukumu Yaliyochelewa",
+        health_lbl_staffactivity: "Shughuli za Wafanyakazi",
+        health_lbl_growth: "Ukuaji wa Biashara",
         footer_text: "© 2026 Mfumo wa UNGANI OS. Haki zote zimehifadhiwa. Tabaka la Wingu la Kundi la Amri.",
         no_data: "Hakuna rekodi zilizopatikana",
         no_notif: "Hakuna notisi zilizopatikana",
@@ -2793,6 +2905,7 @@
     function loadAdminData() {
       __sharedFetchCache = {};
       loadPlatformHealth();
+      loadBusinessHealthExpansion();
       loadKPIs();
       loadNeedsAttention();
       loadPerformanceChart();
@@ -3506,7 +3619,13 @@
 
     // ---- Platform Health Score (mirrors client.html's computeGenericHealthScore pattern) ----
 
-    var healthSnapshot = {};
+    // healthSnapshot/businessHealthExtras both start null so
+    // tryRenderExpandedHealth() can tell "not loaded yet" apart from
+    // "loaded, possibly with a __failed/failed sentinel" - both fetches set
+    // their var unconditionally (success or failure) before calling it, so
+    // whichever resolves last triggers the one real render.
+    var healthSnapshot = null;
+    var businessHealthExtras = null;
 
     // ---- System Health widget (Phase 4) - reuses data already fetched for
     // other widgets rather than firing new RPCs: "database" tracks the RPC
@@ -3635,12 +3754,129 @@
       return PLATFORM_HEALTH_BANDS.find(function (band) { return score >= band.min; }) || PLATFORM_HEALTH_BANDS[PLATFORM_HEALTH_BANDS.length - 1];
     }
 
-    function computePlatformHealthScore(summary, flags) {
+    // ---- Expanded Business Health Score (Phase 5) ----
+    // Extends the original 5-factor platform score (support/registrations/
+    // warnings/email/notifications) with 7 more factors from the master spec:
+    // Revenue, Cash Flow, Outstanding, Inventory, Overdue Tasks, Staff
+    // Activity, Growth. Per the user's 2026-07-22 decision, "Revenue" here
+    // means UNGANI's OWN platform billing revenue (admin-billing's
+    // billing_records - subscription income collected from clients), not an
+    // aggregate of each client's individual business revenue - that answers
+    // "is my own platform business healthy," a different question from each
+    // client's own Health Score on their side. "Inventory"/"Overdue Tasks"
+    // are scoped as cross-tenant aggregates (how many items/tasks need
+    // attention platform-wide), matching the same pattern the ORIGINAL score
+    // already used for "open support issues"/"pending registrations" - this
+    // dashboard's factors have always been cross-tenant operational signals,
+    // never a single business's own numbers. "Expenses" has no backing data
+    // anywhere in this app (no UNGANI-internal operating-expense tracking
+    // exists) - rather than fabricate a number, it's shown as an honest
+    // "Not Tracked" tile and excluded from the score entirely (applicable:false),
+    // the same pattern already used for System Health's Storage tile.
+
+    function scoreToStatus(score) {
+      if (score >= 80) return 'ok';
+      if (score >= 55) return 'warn';
+      return 'error';
+    }
+
+    function scoreTrend(thisPeriod, lastPeriod) {
+      var cur = Number(thisPeriod) || 0;
+      var prev = Number(lastPeriod) || 0;
+      if (prev <= 0 && cur <= 0) return { score: 60, pct: null, direction: 'flat' };
+      if (prev <= 0 && cur > 0) return { score: 100, pct: null, direction: 'up' };
+      var pct = ((cur - prev) / prev) * 100;
+      var score = pct >= 0 ? 100 : (pct >= -20 ? 75 : (pct >= -50 ? 50 : 25));
+      var direction = pct > 2 ? 'up' : (pct < -2 ? 'down' : 'flat');
+      return { score: score, pct: pct, direction: direction };
+    }
+
+    function scoreCollectionRate(paid, outstanding) {
+      var p = Number(paid) || 0;
+      var o = Number(outstanding) || 0;
+      var total = p + o;
+      if (total <= 0) return { score: 60, rate: null };
+      var rate = p / total;
+      var score = rate >= 0.9 ? 100 : (rate >= 0.75 ? 80 : (rate >= 0.5 ? 55 : 30));
+      return { score: score, rate: rate };
+    }
+
+    function computeHealthTrend(revenueDir, growthDir) {
+      var ups = [revenueDir, growthDir].filter(function (d) { return d === 'up'; }).length;
+      var downs = [revenueDir, growthDir].filter(function (d) { return d === 'down'; }).length;
+      if (ups > 0 && downs === 0) return { arrow: '▲', label: 'Improving' };
+      if (downs > 0 && ups === 0) return { arrow: '▼', label: 'Declining' };
+      if (ups > 0 && downs > 0) return { arrow: '▬', label: 'Mixed' };
+      return { arrow: '▬', label: 'Stable' };
+    }
+
+    function monthKey(date) {
+      return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+    }
+
+    function processBillingRecords(records) {
+      records = records || [];
+      var now = new Date();
+      var thisMonthKey = monthKey(now);
+      var lastMonthKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+      var thisMonthPaid = 0, lastMonthPaid = 0, outstandingAmount = 0, outstandingCount = 0;
+
+      records.forEach(function (r) {
+        var status = String(r.payment_status || r.status || 'pending').toLowerCase();
+        var amount = Number(r.amount) || 0;
+        var isPaid = status === 'paid' || !!r.paid_date;
+
+        if (isPaid && r.paid_date) {
+          var key = String(r.paid_date).slice(0, 7);
+          if (key === thisMonthKey) thisMonthPaid += amount;
+          else if (key === lastMonthKey) lastMonthPaid += amount;
+        }
+
+        if (!isPaid && ['pending', 'unpaid', 'partial', 'overdue'].indexOf(status) !== -1) {
+          outstandingAmount += amount;
+          outstandingCount += 1;
+        }
+      });
+
+      return { thisMonthPaid: thisMonthPaid, lastMonthPaid: lastMonthPaid, outstandingAmount: outstandingAmount, outstandingCount: outstandingCount };
+    }
+
+    function processGrowth(rows) {
+      rows = rows || [];
+      var now = new Date();
+      var thisMonthKey = monthKey(now);
+      var lastMonthKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+      var thisMonth = 0, lastMonth = 0;
+
+      rows.forEach(function (r) {
+        if (!r.created_at) return;
+        var key = String(r.created_at).slice(0, 7);
+        if (key === thisMonthKey) thisMonth++;
+        else if (key === lastMonthKey) lastMonth++;
+      });
+
+      return { thisMonth: thisMonth, lastMonth: lastMonth };
+    }
+
+    function countLowStockItems(rows) {
+      rows = rows || [];
+      return rows.filter(function (row) {
+        var status = String(row.status || row.item_status || row.asset_status || row.stock_status || '').toLowerCase();
+        if (status === 'low_stock') return true;
+        var rawQty = row.quantity !== undefined && row.quantity !== null ? row.quantity : (row.qty !== undefined && row.qty !== null ? row.qty : (row.stock_quantity !== undefined ? row.stock_quantity : row.count));
+        var qty = Number(rawQty);
+        var type = String(row.item_type || row.asset_type || row.stock_type || row.type || row.category || 'other').toLowerCase();
+        return !isNaN(qty) && qty <= 2 && ['stock', 'item', 'other'].indexOf(type) !== -1;
+      }).length;
+    }
+
+    function computeExpandedPlatformHealthScore(summary, flags, extras, snapshotFailed) {
       var pendingReg = summary.pending_registrations || 0;
       var openSupport = summary.open_support_issues || 0;
       var warnings = summary.warning_logs_last_7_days || 0;
       var pendingEmail = summary.pending_email_queue || 0;
       var unreadNotif = summary.unread_notifications || 0;
+      var snapshotOk = !snapshotFailed;
 
       var regScore = tierScore(pendingReg, [[0, 100], [3, 80], [8, 55], [Infinity, 30]]);
       var supportScore = tierScore(openSupport, [[0, 100], [3, 80], [8, 55], [Infinity, 30]]);
@@ -3648,33 +3884,221 @@
       var emailScore = tierScore(pendingEmail, [[0, 100], [5, 80], [20, 55], [Infinity, 30]]);
       var notifScore = tierScore(unreadNotif, [[0, 100], [10, 80], [30, 55], [Infinity, 30]]);
 
-      var factors = [
-        { key: 'support', weight: 30, score: supportScore },
-        { key: 'registrations', weight: 25, score: regScore },
-        { key: 'warnings', weight: 25, score: warningScore },
-        { key: 'email', weight: 10, score: emailScore },
-        { key: 'notifications', weight: 10, score: notifScore }
+      var billingOk = !!extras.billingOk;
+      var itemsOk = !!extras.itemsOk;
+      var tasksOk = !!extras.tasksOk;
+      var auditOk = !!extras.auditOk;
+      var tenantsOk = !!extras.tenantsOk;
+      var billing = extras.billing || {};
+      var growth = extras.growth || { thisMonth: 0, lastMonth: 0 };
+      var revenueResult = scoreTrend(billing.thisMonthPaid, billing.lastMonthPaid);
+      var cashFlowResult = scoreCollectionRate(billing.thisMonthPaid, billing.outstandingAmount);
+      var outstandingScore = tierScore(billing.outstandingCount, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
+      var growthResult = scoreTrend(growth.thisMonth, growth.lastMonth);
+      var overdueTaskScore = tierScore(extras.overdueTasksCount, [[0, 100], [5, 80], [15, 55], [Infinity, 30]]);
+      var inventoryScore = tierScore(extras.lowStockCount, [[0, 100], [5, 80], [20, 55], [Infinity, 30]]);
+      var staffScore = extras.staffActivityCount >= 5 ? 100 : (extras.staffActivityCount >= 1 ? 70 : 40);
+
+      var entries = [
+        {
+          key: 'support', weight: 15, score: supportScore, label: 'Support Issues', applicable: snapshotOk,
+          problemText: (openSupport === 1 ? '1 open support issue is' : openSupport + ' open support issues are') + ' waiting on a response.',
+          goodText: 'No open support issues are waiting on a response.',
+          recommendation: 'Work through the open tickets in Support Desk, starting with the oldest.'
+        },
+        {
+          key: 'registrations', weight: 10, score: regScore, label: 'Pending Registrations', applicable: snapshotOk,
+          problemText: (pendingReg === 1 ? '1 registration is' : pendingReg + ' registrations are') + ' waiting for review.',
+          goodText: 'No registrations are waiting for review.',
+          recommendation: 'Review and approve or reject pending signups in Client Registrations.'
+        },
+        {
+          key: 'warnings', weight: 10, score: warningScore, label: 'System Warnings', applicable: snapshotOk,
+          problemText: warnings + ' warning/error log(s) in the last 7 days need a look.',
+          goodText: 'No warning or error logs in the last 7 days.',
+          recommendation: 'Open Smart Checks to review recent warning logs.'
+        },
+        {
+          key: 'revenue', weight: 15, score: revenueResult.score, label: 'Revenue', applicable: billingOk,
+          problemText: 'Collected revenue this month (' + formatMoney(billing.thisMonthPaid) + ') is down vs last month (' + formatMoney(billing.lastMonthPaid) + ').',
+          goodText: 'Collected revenue is ' + formatMoney(billing.thisMonthPaid) + ' this month, flat or up vs last month.',
+          recommendation: 'Review overdue client invoices in Billing and follow up on renewals.'
+        },
+        {
+          key: 'cashflow', weight: 10, score: cashFlowResult.score, label: 'Cash Flow', applicable: billingOk,
+          problemText: cashFlowResult.rate !== null ? 'Only ' + Math.round(cashFlowResult.rate * 100) + '% of this month’s billed amount has been collected.' : 'Not enough billing activity yet to judge cash flow.',
+          goodText: cashFlowResult.rate !== null ? Math.round(cashFlowResult.rate * 100) + '% of billed amount collected this month.' : 'No cash flow issues detected.',
+          recommendation: 'Chase outstanding invoices before they age further - see Billing.'
+        },
+        {
+          key: 'outstanding', weight: 15, score: outstandingScore, label: 'Outstanding Payments', applicable: billingOk,
+          problemText: billing.outstandingCount + ' client payment(s) totalling ' + formatMoney(billing.outstandingAmount) + ' are pending or overdue.',
+          goodText: 'No outstanding client payments right now.',
+          recommendation: 'Send payment reminders for overdue accounts in Billing.'
+        },
+        {
+          key: 'growth', weight: 10, score: growthResult.score, label: 'Business Growth', applicable: tenantsOk,
+          problemText: 'New client signups are down this month (' + growth.thisMonth + ' vs ' + growth.lastMonth + ' last month).',
+          goodText: growth.thisMonth + ' new client(s) this month, flat or up vs last month.',
+          recommendation: 'Review Client Registrations and referral/marketing channels to boost signups.'
+        },
+        {
+          key: 'overdueTasks', weight: 5, score: overdueTaskScore, label: 'Overdue Tasks', applicable: tasksOk,
+          problemText: extras.overdueTasksCount + ' task(s) across all clients are overdue.',
+          goodText: 'No overdue tasks across any client right now.',
+          recommendation: 'Nudge affected clients or check in via Support.'
+        },
+        {
+          key: 'inventory', weight: 5, score: inventoryScore, label: 'Inventory', applicable: itemsOk,
+          problemText: extras.lowStockCount + ' item(s) across all clients are low on stock.',
+          goodText: 'No clients are currently flagged low on stock.',
+          recommendation: 'Encourage affected clients to restock via Assets.'
+        },
+        {
+          key: 'staff', weight: 3, score: staffScore, label: 'Staff Activity', applicable: auditOk,
+          problemText: extras.staffActivityCount === 0 ? 'No admin activity logged in the last 7 days.' : 'Only ' + extras.staffActivityCount + ' admin action(s) logged in the last 7 days.',
+          goodText: extras.staffActivityCount + ' admin action(s) logged in the last 7 days.',
+          recommendation: 'Make sure the platform is being actively monitored by an admin.'
+        },
+        {
+          key: 'email', weight: 1, score: emailScore, label: 'Email Queue', applicable: snapshotOk,
+          problemText: pendingEmail + ' email(s) queued and waiting to send.',
+          goodText: 'No emails waiting in the queue.',
+          recommendation: 'Check Email Queue for stuck or failing sends.'
+        },
+        {
+          key: 'notifications', weight: 1, score: notifScore, label: 'Notifications', applicable: snapshotOk,
+          problemText: unreadNotif + ' unread notification(s) across the platform.',
+          goodText: 'No unread notifications across the platform.',
+          recommendation: 'Review unread notifications from the bell menu.'
+        },
+        { key: 'expenses', weight: 0, score: 0, label: 'Expenses', applicable: false, problemText: '', goodText: '', recommendation: '' }
       ];
 
-      var score = weightedHealthScore(factors);
+      var score = weightedHealthScore(entries);
 
-      var summaryText = healthSummaryFromWeakest([
-        { label: 'open support issues', score: supportScore, text: openSupport === 1 ? '1 open support issue is waiting on a response.' : openSupport + ' open support issues are waiting on a response.' },
-        { label: 'pending registrations', score: regScore, text: pendingReg === 1 ? '1 registration is waiting for review.' : pendingReg + ' registrations are waiting for review.' },
-        { label: 'recent warnings', score: warningScore, text: warnings + ' warning/error log(s) in the last 7 days need a look.' },
-        { label: 'email queue backlog', score: emailScore, text: pendingEmail + ' email(s) queued and waiting to send.' },
-        { label: 'unread notifications', score: notifScore, text: unreadNotif + ' unread notification(s) across the platform.' }
-      ], 'Registrations, support, and system checks are all in good shape.');
+      var summaryText = healthSummaryFromWeakest(
+        entries.map(function (e) { return { label: e.label.toLowerCase(), score: e.score, text: e.problemText, applicable: e.applicable }; }),
+        'Registrations, support, revenue, and system checks are all in good shape.'
+      );
 
-      return { score: score, summary: summaryText };
+      var trend = computeHealthTrend(billingOk ? revenueResult.direction : 'flat', tenantsOk ? growthResult.direction : 'flat');
+
+      var metricTiles = [
+        {
+          label: translations[currentLang].health_lbl_revenue,
+          status: billingOk ? scoreToStatus(revenueResult.score) : 'unknown',
+          pillLabel: billingOk ? formatMoney(billing.thisMonthPaid) : 'Unknown',
+          sub: billingOk ? ('Collected this month' + (billing.lastMonthPaid ? ' (' + (revenueResult.pct >= 0 ? '+' : '') + Math.round(revenueResult.pct) + '% vs last month)' : '.')) : 'Billing data unavailable right now.'
+        },
+        {
+          label: translations[currentLang].health_lbl_expenses,
+          status: 'unknown',
+          pillLabel: 'Not Tracked',
+          sub: 'UNGANI’s own operating expenses aren’t tracked in this app yet.'
+        },
+        {
+          label: translations[currentLang].health_lbl_cashflow,
+          status: billingOk ? scoreToStatus(cashFlowResult.score) : 'unknown',
+          pillLabel: billingOk && cashFlowResult.rate !== null ? Math.round(cashFlowResult.rate * 100) + '% collected' : 'No data yet',
+          sub: 'Share of this month’s billed amount already collected.'
+        },
+        {
+          label: translations[currentLang].health_lbl_outstanding,
+          status: billingOk ? scoreToStatus(outstandingScore) : 'unknown',
+          pillLabel: billingOk ? formatMoney(billing.outstandingAmount) : 'Unknown',
+          sub: billingOk ? (billing.outstandingCount + ' pending/overdue client payment(s).') : 'Billing data unavailable right now.'
+        },
+        {
+          label: translations[currentLang].health_lbl_inventory,
+          status: itemsOk ? scoreToStatus(inventoryScore) : 'unknown',
+          pillLabel: itemsOk ? (extras.lowStockCount === 0 ? 'Clear' : extras.lowStockCount + ' low stock') : 'Unknown',
+          sub: 'Items flagged low-stock across every client.'
+        },
+        {
+          label: translations[currentLang].health_lbl_overduetasks,
+          status: tasksOk ? scoreToStatus(overdueTaskScore) : 'unknown',
+          pillLabel: tasksOk ? (extras.overdueTasksCount === 0 ? 'Clear' : extras.overdueTasksCount + ' overdue') : 'Unknown',
+          sub: 'Overdue tasks across every client.'
+        },
+        {
+          label: translations[currentLang].health_lbl_staffactivity,
+          status: auditOk ? scoreToStatus(staffScore) : 'unknown',
+          pillLabel: auditOk ? extras.staffActivityCount + ' action(s)/7d' : 'Unknown',
+          sub: 'UNGANI admin actions logged in the last 7 days.'
+        },
+        {
+          label: translations[currentLang].health_lbl_growth,
+          status: tenantsOk ? scoreToStatus(growthResult.score) : 'unknown',
+          pillLabel: tenantsOk ? growth.thisMonth + ' new this month' : 'Unknown',
+          sub: tenantsOk ? ('vs ' + growth.lastMonth + ' last month.') : 'Registration data unavailable right now.'
+        }
+      ];
+
+      return { score: score, summary: summaryText, entries: entries, trend: trend, metricTiles: metricTiles };
     }
 
-    function renderHealthGaugeHtml(score, summary) {
+    function renderBusinessHealthBreakdown(result) {
+      var container = document.getElementById('businessHealthBreakdown');
+      if (!container) return;
+
+      if (!result) {
+        container.innerHTML = '<div class="empty">' + escapeHtml(translations[currentLang].no_data) + '</div>';
+        return;
+      }
+
+      var strengths = result.entries.filter(function (e) { return e.applicable !== false && e.score >= 80; })
+        .sort(function (a, b) { return b.score - a.score; }).slice(0, 5);
+      var weaknesses = result.entries.filter(function (e) { return e.applicable !== false && e.score < 65; })
+        .sort(function (a, b) { return a.score - b.score; }).slice(0, 5);
+
+      var strengthsHtml = strengths.length
+        ? strengths.map(function (e) { return '<li><strong>' + escapeHtml(e.label) + '</strong> — ' + escapeHtml(e.goodText) + '</li>'; }).join('')
+        : '<li>No standout strengths yet - most areas are still building a track record.</li>';
+
+      var weaknessesHtml = weaknesses.length
+        ? weaknesses.map(function (e) { return '<li><strong>' + escapeHtml(e.label) + '</strong> — ' + escapeHtml(e.problemText) + '</li>'; }).join('')
+        : '<li>Nothing urgent - every tracked area is holding steady.</li>';
+
+      var recommendationsHtml = weaknesses.length
+        ? weaknesses.map(function (e) { return '<li>' + escapeHtml(e.recommendation) + '</li>'; }).join('')
+        : '<li>Keep monitoring - no corrective action needed right now.</li>';
+
+      var factorTilesHtml = result.metricTiles.map(function (tile) {
+        return '<div class="health-status-item" style="' + accentVars(healthTierColor(tile.status)) + '">' +
+          '<div class="health-status-head">' +
+            '<strong>' + escapeHtml(tile.label) + '</strong>' +
+            '<span class="' + healthTierPillClass(tile.status) + '">' + escapeHtml(tile.pillLabel) + '</span>' +
+          '</div>' +
+          '<p>' + escapeHtml(tile.sub) + '</p>' +
+        '</div>';
+      }).join('');
+
+      container.innerHTML =
+        '<div class="biz-health-lists">' +
+          '<div>' +
+            '<h4 class="biz-health-list-title">' + escapeHtml(translations[currentLang].bizhealth_strengths) + '</h4>' +
+            '<ul class="biz-health-list strengths">' + strengthsHtml + '</ul>' +
+          '</div>' +
+          '<div>' +
+            '<h4 class="biz-health-list-title">' + escapeHtml(translations[currentLang].bizhealth_weaknesses) + '</h4>' +
+            '<ul class="biz-health-list weaknesses">' + weaknessesHtml + '</ul>' +
+          '</div>' +
+          '<div>' +
+            '<h4 class="biz-health-list-title">' + escapeHtml(translations[currentLang].bizhealth_recommendations) + '</h4>' +
+            '<ul class="biz-health-list recommendations">' + recommendationsHtml + '</ul>' +
+          '</div>' +
+        '</div>' +
+        '<div class="health-status-grid" style="margin-top:18px;">' + factorTilesHtml + '</div>';
+    }
+
+    function renderHealthGaugeHtml(score, summary, trend) {
       var band = healthBandFor(score);
       var radius = 42;
       var circumference = 2 * Math.PI * radius;
       var offset = circumference * (1 - score / 100);
       var gaugeId = 'healthArc' + Math.random().toString(36).slice(2, 10);
+      var trendPrefix = trend ? '<strong class="health-gauge-trend">' + trend.arrow + ' ' + escapeHtml(trend.label) + '</strong> — ' : '';
 
       return '' +
         '<div class="health-gauge-block">' +
@@ -3689,7 +4113,7 @@
             '</svg>' +
             '<div class="health-gauge-center"><strong>' + score + '</strong><span>' + escapeHtml(band.label) + '</span></div>' +
           '</div>' +
-          '<p class="health-gauge-summary">' + escapeHtml(summary) + '</p>' +
+          '<p class="health-gauge-summary">' + trendPrefix + escapeHtml(summary) + '</p>' +
         '</div>';
     }
 
@@ -3714,30 +4138,127 @@
     }
 
     async function loadPlatformHealth() {
-      var wrap = document.getElementById('platformHealthGaugeWrap');
       safeDataFetch(async function () {
         var res = await supabaseClient.rpc('get_admin_ungani_system_health_snapshot');
         if (res.error) throw res.error;
         healthSnapshot = res.data || {};
-        var summary = healthSnapshot.summary || {};
-        var flags = healthSnapshot.status_flags || {};
-        var health = computePlatformHealthScore(summary, flags);
-        if (wrap) wrap.innerHTML = renderHealthGaugeHtml(health.score, health.summary);
-        animateHealthGauges();
-
-        systemHealthState.database = { status: 'ok', label: 'Operational', sub: 'Core backend functions responding normally.' };
-        systemHealthState.emails = queueHealthTier(summary.pending_email_queue, 20, 'No emails waiting in the queue.', function (n) { return n + ' email(s) queued and waiting to send.'; });
-        systemHealthState.notifications = queueHealthTier(summary.unread_notifications, 30, 'No unread notifications.', function (n) { return n + ' unread notification(s) across the platform.'; });
-        renderSystemHealthWidget();
+        tryRenderExpandedHealth();
       }, function () {
-        if (wrap) wrap.innerHTML = renderHealthGaugeHtml(0, 'Health snapshot is unavailable right now.');
-        animateHealthGauges();
+        healthSnapshot = { __failed: true };
+        tryRenderExpandedHealth();
+      });
+    }
 
+    async function loadBusinessHealthExpansion() {
+      safeDataFetch(async function () {
+        var sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+        var results = await Promise.all([
+          supabaseClient.rpc('get_admin_ungani_billing_page_data'),
+          supabaseClient.from('business_items').select('*').limit(10000),
+          supabaseClient.from('tasks').select('status,due_date').neq('status', 'completed'),
+          supabaseClient.from('ungani_audit_log').select('id', { count: 'exact', head: true }).is('actor_tenant_id', null).gte('created_at', sevenDaysAgo),
+          supabaseClient.from('tenants').select('created_at')
+        ]);
+
+        var billingRes = results[0], itemsRes = results[1], tasksRes = results[2], auditRes = results[3], tenantsRes = results[4];
+
+        // Each source tracks its own ok flag rather than one blanket
+        // "failed" - a query that errors without throwing (the normal
+        // supabase-js behavior) must NOT be scored as if it legitimately
+        // returned zero/empty, or a genuine outage would show up as a
+        // perfect factor score instead of being excluded from the score.
+        var billingOk = !!(billingRes && !billingRes.error && billingRes.data && billingRes.data.ok);
+        var itemsOk = !!(itemsRes && !itemsRes.error);
+        var tasksOk = !!(tasksRes && !tasksRes.error && Array.isArray(tasksRes.data));
+        var auditOk = !!(auditRes && !auditRes.error && typeof auditRes.count === 'number');
+        var tenantsOk = !!(tenantsRes && !tenantsRes.error);
+
+        var billing = processBillingRecords(billingOk ? billingRes.data.billing_records : []);
+        var lowStockCount = itemsOk ? countLowStockItems(itemsRes.data) : 0;
+
+        var overdueTasksCount = 0;
+        if (tasksOk) {
+          var todayDate = new Date();
+          overdueTasksCount = tasksRes.data.filter(function (t) {
+            return t.status === 'overdue' || (t.due_date && new Date(t.due_date) < todayDate && t.status !== 'completed');
+          }).length;
+        }
+
+        var staffActivityCount = auditOk ? auditRes.count : 0;
+        var growth = tenantsOk ? processGrowth(tenantsRes.data) : { thisMonth: 0, lastMonth: 0 };
+
+        businessHealthExtras = {
+          billing: billing, billingOk: billingOk,
+          lowStockCount: lowStockCount, itemsOk: itemsOk,
+          overdueTasksCount: overdueTasksCount, tasksOk: tasksOk,
+          staffActivityCount: staffActivityCount, auditOk: auditOk,
+          growth: growth, tenantsOk: tenantsOk,
+          failed: false
+        };
+        tryRenderExpandedHealth();
+      }, function () {
+        businessHealthExtras = {
+          billing: { thisMonthPaid: 0, lastMonthPaid: 0, outstandingAmount: 0, outstandingCount: 0 }, billingOk: false,
+          lowStockCount: 0, itemsOk: false,
+          overdueTasksCount: 0, tasksOk: false,
+          staffActivityCount: 0, auditOk: false,
+          growth: { thisMonth: 0, lastMonth: 0 }, tenantsOk: false,
+          failed: true
+        };
+        tryRenderExpandedHealth();
+      });
+    }
+
+    // Coordinator: fires once both loadPlatformHealth() and
+    // loadBusinessHealthExpansion() have set their global var (success OR
+    // failure - both always set a non-null sentinel), regardless of which
+    // resolves last. Renders the gauge, the System Health tiles that depend
+    // on the snapshot, and the new Business Health Breakdown card together
+    // so the score never flickers between a partial and a full value.
+    function tryRenderExpandedHealth() {
+      if (!healthSnapshot || !businessHealthExtras) return;
+
+      var snapshotFailed = !!healthSnapshot.__failed;
+      var wrap = document.getElementById('platformHealthGaugeWrap');
+
+      // Nothing usable loaded at all: every source failed (not just the
+      // coarse extras.failed catch, but every individual per-source ok flag
+      // too). Without this check weightedHealthScore's zero-weight fallback
+      // (everything applicable:false) would silently return a fake 100 -
+      // show an explicit "unavailable" state instead.
+      var nothingUsable = snapshotFailed && !businessHealthExtras.billingOk && !businessHealthExtras.itemsOk &&
+        !businessHealthExtras.tasksOk && !businessHealthExtras.auditOk && !businessHealthExtras.tenantsOk;
+
+      if (nothingUsable) {
+        if (wrap) wrap.innerHTML = renderHealthGaugeHtml(0, 'Health snapshot is unavailable right now.', null);
+        animateHealthGauges();
+        renderBusinessHealthBreakdown(null);
         systemHealthState.database = { status: 'error', label: 'Unavailable', sub: 'Backend RPC calls are failing – retry shortly.' };
         systemHealthState.emails = { status: 'unknown', label: 'Unknown', sub: 'Could not load queue status.' };
         systemHealthState.notifications = { status: 'unknown', label: 'Unknown', sub: 'Could not load queue status.' };
         renderSystemHealthWidget();
-      });
+        return;
+      }
+
+      var summary = healthSnapshot.summary || {};
+      var flags = healthSnapshot.status_flags || {};
+      var result = computeExpandedPlatformHealthScore(summary, flags, businessHealthExtras, snapshotFailed);
+
+      if (wrap) wrap.innerHTML = renderHealthGaugeHtml(result.score, result.summary, result.trend);
+      animateHealthGauges();
+      renderBusinessHealthBreakdown(result);
+
+      systemHealthState.database = snapshotFailed
+        ? { status: 'error', label: 'Unavailable', sub: 'Backend RPC calls are failing – retry shortly.' }
+        : { status: 'ok', label: 'Operational', sub: 'Core backend functions responding normally.' };
+      systemHealthState.emails = snapshotFailed
+        ? { status: 'unknown', label: 'Unknown', sub: 'Could not load queue status.' }
+        : queueHealthTier(summary.pending_email_queue, 20, 'No emails waiting in the queue.', function (n) { return n + ' email(s) queued and waiting to send.'; });
+      systemHealthState.notifications = snapshotFailed
+        ? { status: 'unknown', label: 'Unknown', sub: 'Could not load queue status.' }
+        : queueHealthTier(summary.unread_notifications, 30, 'No unread notifications.', function (n) { return n + ' unread notification(s) across the platform.'; });
+      renderSystemHealthWidget();
     }
 
     // ---- KPI cards with sparklines (mirrors client.html's kpiCard/sparklineSvg/buildMonthlyTrend) ----
