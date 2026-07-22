@@ -167,7 +167,14 @@
       }
     }
 
-    const DOCUMENT_SUMMARY_COLUMNS = "id, status, document_type, type";
+    // "type" was mistakenly included here (no such column on documents -
+    // only document_type is real; likely copy-pasted from business_items,
+    // where item_type AND type both genuinely exist). Selecting a
+    // nonexistent column fails the whole query, which loadDocumentRows()
+    // treats as fatal and bails out before ever reaching the select("*")
+    // fetches later in the page - so this one line blocked the entire
+    // Documents page for every tenant, not just one business type.
+    const DOCUMENT_SUMMARY_COLUMNS = "id, status, document_type";
 
     function applyDocumentCommonFilters(query) {
       query = query.eq("tenant_id", currentContext.tenantId);
