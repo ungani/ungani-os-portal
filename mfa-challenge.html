@@ -181,6 +181,15 @@
     let activeFactorId = null;
     let sessionAccessToken = null;
 
+    // Shared by both admin-access-guard.js and client-access-guard.js,
+    // which each pass their own &surface= so this page knows which
+    // allowlist/default applies - a bare "redirect=my-money.html" would
+    // otherwise fall through the admin-only allowlist and land everyone
+    // on admin-home.html regardless of which surface sent them here.
+    function currentSurface() {
+      return new URLSearchParams(window.location.search).get("surface") === "client" ? "client" : "admin";
+    }
+
     // Same allowlist-before-navigation pattern used everywhere else in this
     // app that builds a redirect target from a URL/DB value instead of a
     // hardcoded string (see client-notifications.html's normalizeActionUrl)
@@ -190,11 +199,26 @@
       const raw = new URLSearchParams(window.location.search).get("redirect") || "";
       let page = raw.replace(/^\/+/, "").split("?")[0].split("#")[0].toLowerCase();
 
+      if (currentSurface() === "client") {
+        const isKnownClientPage = page.startsWith("my-") ||
+          page === "client.html" || page === "reports.html" || page === "client-notifications.html";
+
+        return isKnownClientPage ? page : "client.html";
+      }
+
       const isKnownAdminPage = page.startsWith("admin") ||
         page === "support.html" || page === "billing.html" ||
         page === "users.html" || page === "sections.html" || page === "notices.html";
 
       return isKnownAdminPage ? page : "admin-home.html";
+    }
+
+    // login.html defaults to the Business/client tab already, so a bare
+    // "login.html" would work either way - this is for explicitness/UX
+    // polish (matches client-access-guard.js's own ?mode=client
+    // convention) rather than a functional requirement.
+    function loginPageForSurface() {
+      return currentSurface() === "client" ? "login.html?mode=client" : "login.html";
     }
 
     function show(id) {
@@ -210,7 +234,7 @@
       const session = data && data.session;
 
       if (error || !session || !session.user) {
-        window.location.href = "login.html";
+        window.location.href = loginPageForSurface();
         return;
       }
 
@@ -231,7 +255,7 @@
         // No verified factor but the guard sent us here anyway (e.g. it
         // was unenrolled in another tab moments ago) - nothing to
         // challenge, safest path is back to login rather than a dead end.
-        window.location.href = "login.html";
+        window.location.href = loginPageForSurface();
         return;
       }
 
@@ -309,7 +333,7 @@
       } catch (error) {
         // ignore - redirect regardless
       }
-      window.location.href = "login.html";
+      window.location.href = loginPageForSurface();
     }
   </script>
 </body>

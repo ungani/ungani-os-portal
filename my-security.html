@@ -46,6 +46,20 @@
     let auditRows = [];
     let dataVolume = null;
 
+    // 2FA is scoped to owner accounts only (explicit decision - avoids a
+    // staff member enabling it and then leaving without disabling it
+    // first, which nobody but a Supabase dashboard admin could undo).
+    // Defaults to true (shown) until the RPC resolves, and stays true if
+    // it errors - worst case a staff account sees an Enable option that
+    // client-access-guard.js's MFA check never actually enforces for
+    // them anyway (see that guard's own owner-only insertion point), not
+    // a security gap either way.
+    let mfaIsOwner = true;
+    let mfaEnabledFactorId = null;
+    let mfaEnrollFactorId = null;
+    let mfaEnrollQrCode = "";
+    let mfaEnrollSecret = "";
+
     const ACTIVITY_TABLES = [
       { key: "transactions", label: "Money Records" },
       { key: "tasks", label: "Tasks" },
@@ -70,10 +84,24 @@
       const [statusResult, auditResult, volumeResult] = await Promise.all([
         loadAccessStatus(),
         loadRecentActivity(),
-        loadDataVolume()
+        loadDataVolume(),
+        loadMfaAccess()
       ]);
 
       renderSecurityPage();
+
+      if (mfaIsOwner) loadMfaStatus();
+    }
+
+    async function loadMfaAccess() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_staff_access");
+        if (response.error) return;
+
+        mfaIsOwner = !(response.data && response.data.account_type === "staff");
+      } catch (error) {
+        // leave mfaIsOwner at its default (true) - see comment above
+      }
     }
 
     async function loadAccessStatus() {
@@ -173,6 +201,17 @@
       return "#D4A63A";
     }
 
+    // renderSecurityPage() rebuilds the whole page (including #mfaBox,
+    // reset to its "Loading..." placeholder) via UnganiClientShared's
+    // single setContent() call - a plain re-render after Refresh would
+    // otherwise leave the 2FA card stuck on "Loading..." since nothing
+    // would re-populate it.
+    async function refreshActivity() {
+      await loadRecentActivity();
+      renderSecurityPage();
+      if (mfaIsOwner) loadMfaStatus();
+    }
+
     async function signOutOtherSessions() {
       const confirmed = confirm("This will sign you out on every other device and browser where you're currently logged in. This browser will stay signed in. Continue?");
       if (!confirmed) return;
@@ -192,6 +231,183 @@
         UnganiClientShared.showToast("Could not sign out other sessions: " + error.message);
       } finally {
         if (btn) { btn.disabled = false; btn.innerText = "Sign Out of All Other Devices"; }
+      }
+    }
+
+    // ---- Two-Factor Authentication (Supabase Auth TOTP MFA) ----
+    // Mirrors admin-settings.html's Two-Factor Authentication card
+    // exactly (same enroll/verify/disable flow against
+    // supabase.auth.mfa.*), adapted to this page's UnganiClientShared
+    // conventions (.ungani-btn/.ungani-badge, safe()/showToast()/
+    // logAuditEvent()) instead of admin-settings.html's page-local ones.
+    async function loadMfaStatus() {
+      try {
+        const { data, error } = await currentContext.supabaseClient.auth.mfa.listFactors();
+
+        if (error) {
+          mfaEnabledFactorId = null;
+          renderMfaBox("error");
+          return;
+        }
+
+        const totpFactors = (data && data.totp) || [];
+        const verified = totpFactors.find(function (f) { return f.status === "verified"; });
+
+        mfaEnabledFactorId = verified ? verified.id : null;
+        mfaEnrollFactorId = null;
+
+        renderMfaBox(mfaEnabledFactorId ? "enabled" : "disabled");
+      } catch (error) {
+        mfaEnabledFactorId = null;
+        renderMfaBox("error");
+      }
+    }
+
+    function renderMfaBox(state) {
+      const box = document.getElementById("mfaBox");
+      if (!box) return;
+
+      if (state === "error") {
+        box.innerHTML = `<p class="ungani-small">Could not load two-factor status right now.</p>`;
+        return;
+      }
+
+      if (state === "enabled") {
+        box.innerHTML = `
+          <span class="ungani-badge green">Enabled</span>
+          <div class="ungani-button-row" style="margin-top:12px;">
+            <button class="ungani-btn dark" type="button" onclick="disableMfa()">Disable Two-Factor Authentication</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (state === "enroll") {
+        box.innerHTML = `
+          <div class="ungani-small" style="font-weight:800;color:var(--ungani-text);margin-bottom:4px;">Scan this code with your authenticator app</div>
+          <p class="ungani-small">Open Google Authenticator, Authy, or a similar app, then scan the QR code below.</p>
+          <div class="mfa-qr-wrap" id="mfaQrWrap"></div>
+          <p class="ungani-small">Can't scan it? Enter this code manually:</p>
+          <span class="mfa-secret">${UnganiClientShared.safe(mfaEnrollSecret || "")}</span>
+          <form onsubmit="submitMfaVerify(event)">
+            <label for="mfaCodeInput">Enter the 6-digit code from your app</label>
+            <input id="mfaCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" required />
+            <div id="mfaVerifyMessage" class="ungani-small" style="margin-bottom:8px;"></div>
+            <div class="ungani-button-row">
+              <button class="ungani-btn gold" type="submit">Verify & Enable</button>
+              <button class="ungani-btn dark" type="button" onclick="cancelMfaEnroll()">Cancel</button>
+            </div>
+          </form>
+        `;
+        renderMfaQrImage();
+        return;
+      }
+
+      box.innerHTML = `
+        <span class="ungani-badge red">Not Enabled</span>
+        <div class="ungani-button-row" style="margin-top:12px;">
+          <button class="ungani-btn gold" type="button" onclick="startMfaEnroll()">Enable Two-Factor Authentication</button>
+        </div>
+      `;
+    }
+
+    // Built via DOM property assignment, not string interpolation - see
+    // the admin-settings.html fix this mirrors: Supabase's
+    // data.totp.qr_code is a data: URI with RAW (unescaped) SVG markup,
+    // whose own embedded quotes (xmlns="...") would break a
+    // template-literal src="${...}" attribute and leak trailing text
+    // like alt="QR code" /> onto the page as visible content.
+    function renderMfaQrImage() {
+      const wrap = document.getElementById("mfaQrWrap");
+      if (!wrap || !mfaEnrollQrCode) return;
+
+      const img = document.createElement("img");
+      img.src = mfaEnrollQrCode.startsWith("data:")
+        ? mfaEnrollQrCode
+        : "data:image/svg+xml;utf-8," + encodeURIComponent(mfaEnrollQrCode);
+      img.alt = "QR code";
+      wrap.appendChild(img);
+    }
+
+    async function startMfaEnroll() {
+      try {
+        // Clean up any stale unverified factor from an earlier abandoned
+        // attempt before starting a fresh one.
+        const listResponse = await currentContext.supabaseClient.auth.mfa.listFactors();
+        const staleFactors = (listResponse.data && listResponse.data.totp || []).filter(function (f) { return f.status === "unverified"; });
+
+        for (const stale of staleFactors) {
+          await currentContext.supabaseClient.auth.mfa.unenroll({ factorId: stale.id });
+        }
+
+        const { data, error } = await currentContext.supabaseClient.auth.mfa.enroll({ factorType: "totp" });
+
+        if (error || !data) {
+          UnganiClientShared.showToast("Could not start two-factor setup. Please try again.");
+          return;
+        }
+
+        mfaEnrollFactorId = data.id;
+        mfaEnrollQrCode = (data.totp && data.totp.qr_code) || "";
+        mfaEnrollSecret = (data.totp && data.totp.secret) || "";
+
+        renderMfaBox("enroll");
+      } catch (error) {
+        UnganiClientShared.showToast("Could not start two-factor setup. Please try again.");
+      }
+    }
+
+    async function submitMfaVerify(event) {
+      event.preventDefault();
+
+      const code = document.getElementById("mfaCodeInput").value.trim();
+      const msgEl = document.getElementById("mfaVerifyMessage");
+      if (msgEl) msgEl.innerHTML = "";
+
+      if (!mfaEnrollFactorId || !code) return;
+
+      try {
+        const { error } = await currentContext.supabaseClient.auth.mfa.challengeAndVerify({
+          factorId: mfaEnrollFactorId,
+          code: code
+        });
+
+        if (error) {
+          if (msgEl) msgEl.innerHTML = `<span style="color:#DC2626;">That code didn't match. Check your app and try again.</span>`;
+          return;
+        }
+
+        UnganiClientShared.logAuditEvent("mfa_enabled", { entityType: "session" });
+        UnganiClientShared.showToast("Two-factor authentication enabled ✓");
+        mfaEnrollFactorId = null;
+        await loadMfaStatus();
+      } catch (error) {
+        if (msgEl) msgEl.innerHTML = `<span style="color:#DC2626;">That code didn't match. Check your app and try again.</span>`;
+      }
+    }
+
+    function cancelMfaEnroll() {
+      mfaEnrollFactorId = null;
+      renderMfaBox(mfaEnabledFactorId ? "enabled" : "disabled");
+    }
+
+    async function disableMfa() {
+      if (!mfaEnabledFactorId) return;
+      if (!confirm("Turn off two-factor authentication for your account? You will only need your password to sign in after this.")) return;
+
+      try {
+        const { error } = await currentContext.supabaseClient.auth.mfa.unenroll({ factorId: mfaEnabledFactorId });
+
+        if (error) {
+          UnganiClientShared.showToast("Could not disable two-factor authentication: " + error.message);
+          return;
+        }
+
+        UnganiClientShared.logAuditEvent("mfa_disabled", { entityType: "session" });
+        UnganiClientShared.showToast("Two-factor authentication disabled");
+        await loadMfaStatus();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not disable two-factor authentication: " + error.message);
       }
     }
 
@@ -239,6 +455,35 @@
           }
 
           .activity-row:last-child { border-bottom: none; }
+
+          .mfa-qr-wrap {
+            display: flex;
+            justify-content: center;
+            margin: 14px 0;
+          }
+
+          .mfa-qr-wrap img {
+            width: 200px;
+            height: 200px;
+            border-radius: 12px;
+            background: #FFFFFF;
+            padding: 10px;
+          }
+
+          .mfa-secret {
+            display: block;
+            text-align: center;
+            font-family: monospace;
+            font-size: 15px;
+            letter-spacing: 1px;
+            background: var(--ungani-bg);
+            border: 1px solid var(--ungani-border);
+            border-radius: 10px;
+            padding: 8px;
+            margin: 6px 0 14px;
+            word-break: break-all;
+            color: var(--ungani-text);
+          }
 
           .activity-badge {
             display: inline-block;
@@ -327,6 +572,21 @@
           </div>
         </section>
 
+        ${mfaIsOwner ? `
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Two-Factor Authentication</h3>
+              <p class="ungani-small">Add a second step to your login using an authenticator app (Google Authenticator, Authy, or similar). Optional, but recommended.</p>
+            </div>
+          </div>
+
+          <div id="mfaBox">
+            <p class="ungani-small">Loading...</p>
+          </div>
+        </section>
+        ` : ""}
+
         <section class="ungani-card">
           <div class="ungani-section-title">
             <div>
@@ -354,7 +614,7 @@
               <p class="ungani-small">Your own sign-ins, sign-outs, deletions, and permission changes.</p>
             </div>
 
-            <button class="ungani-btn green" onclick="loadRecentActivity().then(renderSecurityPage)">Refresh</button>
+            <button class="ungani-btn green" onclick="refreshActivity()">Refresh</button>
           </div>
 
           ${auditRows.length ? auditRows.map(function (row) {

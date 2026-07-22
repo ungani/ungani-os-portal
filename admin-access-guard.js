@@ -151,7 +151,7 @@
       const nextLevel = aalResponse.data.nextLevel;
 
       if (nextLevel === "aal2" && currentLevel !== "aal2") {
-        return "mfa-challenge.html?redirect=" + encodeURIComponent(pageName);
+        return "mfa-challenge.html?redirect=" + encodeURIComponent(pageName) + "&surface=admin";
       }
 
       return null;

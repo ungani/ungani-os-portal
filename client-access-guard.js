@@ -96,6 +96,22 @@
       ];
 
       if (access.can_access === true || allowedStatuses.includes(status)) {
+        // Reaching this point (rather than returning earlier via one of
+        // the two staff-account_type checks above) means this is an owner
+        // account - 2FA is scoped to owners only, by explicit decision, so
+        // this is the one correct place to check it. Same
+        // getAuthenticatorAssuranceLevel() pattern as admin-access-guard.js:
+        // nextLevel only ever comes back "aal2" for an account that has a
+        // verified TOTP factor enrolled, so this never blocks an owner who
+        // hasn't opted in, and fails OPEN on an API error rather than
+        // blocking access over a transient hiccup.
+        const mfaRedirect = await checkMfaRequirement(supabaseClient, page);
+
+        if (mfaRedirect) {
+          window.location.href = mfaRedirect;
+          return;
+        }
+
         return;
       }
 
@@ -109,6 +125,30 @@
       }
     } catch (error) {
       console.warn("Client access guard:", error.message);
+    }
+  }
+
+  // Opt-in TOTP MFA (supabase.auth.mfa), owners only - mirrors
+  // admin-access-guard.js's checkMfaRequirement() exactly.
+  async function checkMfaRequirement(supabaseClient, page) {
+    try {
+      const aalResponse = await supabaseClient.auth.mfa.getAuthenticatorAssuranceLevel();
+
+      if (aalResponse.error || !aalResponse.data) {
+        return null;
+      }
+
+      const currentLevel = aalResponse.data.currentLevel;
+      const nextLevel = aalResponse.data.nextLevel;
+
+      if (nextLevel === "aal2" && currentLevel !== "aal2") {
+        return "mfa-challenge.html?redirect=" + encodeURIComponent(page) + "&surface=client";
+      }
+
+      return null;
+    } catch (error) {
+      console.warn("UNGANI client MFA check failed:", error);
+      return null;
     }
   }
 
