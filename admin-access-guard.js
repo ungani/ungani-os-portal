@@ -15,9 +15,23 @@
     "login.html"
   ];
 
-  document.addEventListener("DOMContentLoaded", function () {
+  // Injected dynamically (pwa-register.js's loadScriptOnce, via
+  // document.createElement("script") + appendChild) - the .defer=true it
+  // sets has NO effect on a script inserted this way (defer only applies
+  // to parser-inserted scripts per the HTML spec); a dynamically-inserted
+  // script always runs as soon as it loads, which can be before OR after
+  // DOMContentLoaded depending on network timing. An unconditional
+  // addEventListener("DOMContentLoaded", ...) would silently never fire -
+  // and this guard never runs at all - if the fetch happens to finish
+  // after the event already dispatched. Matches the readyState check
+  // client-access-guard.js already uses correctly.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      initUnganiAdminAccessGuard();
+    });
+  } else {
     initUnganiAdminAccessGuard();
-  });
+  }
 
   async function initUnganiAdminAccessGuard() {
     if (guardStarted) return;
@@ -47,10 +61,10 @@
     supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     if (!supabaseClient) return;
 
-    await protectAdminPage();
+    await protectAdminPage(pageName);
   }
 
-  async function protectAdminPage() {
+  async function protectAdminPage(pageName) {
     try {
       const sessionResponse = await supabaseClient.auth.getSession();
       const session =
@@ -82,6 +96,13 @@
       }
 
       if (adminResponse.data === true) {
+        const mfaRedirect = await checkMfaRequirement(pageName);
+
+        if (mfaRedirect) {
+          window.location.href = mfaRedirect;
+          return;
+        }
+
         return;
       }
 
@@ -102,6 +123,41 @@
         actionText: "Back to Login",
         actionUrl: "login.html"
       });
+    }
+  }
+
+  // Opt-in TOTP MFA (supabase.auth.mfa). getAuthenticatorAssuranceLevel()'s
+  // nextLevel only ever comes back "aal2" for an account that has a
+  // verified TOTP factor enrolled - an admin who never turned 2FA on
+  // always gets nextLevel === currentLevel here, so this never blocks
+  // anyone who hasn't opted in. Checked here rather than in login.html's
+  // submit handler because this guard is the one thing every admin page
+  // already loads (confirmed via admin-settings.html, which has its own
+  // separate legacy sign-in form that bypasses login.html entirely) - a
+  // login-page-only check would miss that second entry point.
+  async function checkMfaRequirement(pageName) {
+    try {
+      const aalResponse = await supabaseClient.auth.mfa.getAuthenticatorAssuranceLevel();
+
+      if (aalResponse.error || !aalResponse.data) {
+        // Fail OPEN, not closed: this is an enhancement layered on top of
+        // an already-confirmed admin session, not the security boundary
+        // itself - a transient MFA-API hiccup should not lock every admin
+        // out of the console.
+        return null;
+      }
+
+      const currentLevel = aalResponse.data.currentLevel;
+      const nextLevel = aalResponse.data.nextLevel;
+
+      if (nextLevel === "aal2" && currentLevel !== "aal2") {
+        return "mfa-challenge.html?redirect=" + encodeURIComponent(pageName);
+      }
+
+      return null;
+    } catch (error) {
+      console.warn("UNGANI MFA check failed:", error);
+      return null;
     }
   }
 

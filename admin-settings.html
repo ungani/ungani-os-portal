@@ -444,6 +444,38 @@
       color: #061C3D;
     }
 
+    .badge-red {
+      background: #DC2626;
+    }
+
+    .mfa-qr-wrap {
+      display: flex;
+      justify-content: center;
+      margin: 14px 0;
+    }
+
+    .mfa-qr-wrap img {
+      width: 200px;
+      height: 200px;
+      border-radius: 12px;
+      background: #FFFFFF;
+      padding: 10px;
+    }
+
+    .mfa-secret {
+      display: block;
+      text-align: center;
+      font-family: monospace;
+      font-size: 15px;
+      letter-spacing: 1px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      margin: 6px 0 14px;
+      word-break: break-all;
+    }
+
     .toast {
       position: fixed;
       right: 18px;
@@ -733,6 +765,17 @@
           </div>
         </div>
       </section>
+
+      <section class="card">
+        <h2 data-i18n="mfaTitle">Two-Factor Authentication</h2>
+        <p class="row-detail" data-i18n="mfaIntro">Add a second step to your admin login using an authenticator app (Google Authenticator, Authy, or similar). Optional, but strongly recommended for admin accounts.</p>
+        <div id="mfaBox">
+          <div class="row-card">
+            <div class="row-title">Loading...</div>
+            <p class="row-detail">Please wait.</p>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -820,7 +863,25 @@
         currencySaved: "Currency saved ✓",
         timezoneSaved: "Timezone saved ✓",
         refreshing: "Refreshing admin settings...",
-        refreshed: "Admin settings refreshed ✓"
+        refreshed: "Admin settings refreshed ✓",
+        mfaTitle: "Two-Factor Authentication",
+        mfaIntro: "Add a second step to your admin login using an authenticator app (Google Authenticator, Authy, or similar). Optional, but strongly recommended for admin accounts.",
+        mfaNotEnabled: "Not Enabled",
+        mfaEnabled: "Enabled",
+        mfaEnableBtn: "Enable Two-Factor Authentication",
+        mfaDisableBtn: "Disable Two-Factor Authentication",
+        mfaDisableConfirm: "Turn off two-factor authentication for your admin account? You will only need your password to sign in after this.",
+        mfaScanTitle: "Scan this code with your authenticator app",
+        mfaScanDesc: "Open Google Authenticator, Authy, or a similar app, then scan the QR code below.",
+        mfaManualEntry: "Can't scan it? Enter this code manually:",
+        mfaCodeLabel: "Enter the 6-digit code from your app",
+        mfaVerifyBtn: "Verify & Enable",
+        mfaCancelBtn: "Cancel",
+        mfaEnrollError: "Could not start two-factor setup. Please try again.",
+        mfaVerifyError: "That code didn't match. Check your app and try again.",
+        mfaEnabledToast: "Two-factor authentication enabled ✓",
+        mfaDisabledToast: "Two-factor authentication disabled",
+        mfaStatusError: "Could not load two-factor status right now."
       },
       sw: {
         main: "Kuu",
@@ -884,7 +945,25 @@
         currencySaved: "Sarafu imehifadhiwa ✓",
         timezoneSaved: "Saa za eneo zimehifadhiwa ✓",
         refreshing: "Inasasisha mipangilio ya admin...",
-        refreshed: "Mipangilio ya admin imesasishwa ✓"
+        refreshed: "Mipangilio ya admin imesasishwa ✓",
+        mfaTitle: "Uthibitishaji wa Hatua Mbili",
+        mfaIntro: "Ongeza hatua ya pili kwenye kuingia kwako kwa admin kwa kutumia programu ya uthibitishaji (Google Authenticator, Authy, au sawa). Si lazima, lakini inashauriwa sana kwa akaunti za admin.",
+        mfaNotEnabled: "Haijawashwa",
+        mfaEnabled: "Imewashwa",
+        mfaEnableBtn: "Washa Uthibitishaji wa Hatua Mbili",
+        mfaDisableBtn: "Zima Uthibitishaji wa Hatua Mbili",
+        mfaDisableConfirm: "Zima uthibitishaji wa hatua mbili kwa akaunti yako ya admin? Utahitaji tu nenosiri lako kuingia baada ya hii.",
+        mfaScanTitle: "Changanua msimbo huu kwa programu yako ya uthibitishaji",
+        mfaScanDesc: "Fungua Google Authenticator, Authy, au programu kama hiyo, kisha changanua msimbo wa QR hapa chini.",
+        mfaManualEntry: "Huwezi kuchanganua? Ingiza msimbo huu mwenyewe:",
+        mfaCodeLabel: "Ingiza namba 6 kutoka kwenye programu yako",
+        mfaVerifyBtn: "Thibitisha na Washa",
+        mfaCancelBtn: "Ghairi",
+        mfaEnrollError: "Imeshindwa kuanzisha mpangilio wa hatua mbili. Tafadhali jaribu tena.",
+        mfaVerifyError: "Namba hiyo haikulingana. Angalia programu yako na ujaribu tena.",
+        mfaEnabledToast: "Uthibitishaji wa hatua mbili umewashwa ✓",
+        mfaDisabledToast: "Uthibitishaji wa hatua mbili umezimwa",
+        mfaStatusError: "Imeshindwa kupakia hali ya uthibitishaji wa hatua mbili."
       }
     };
 
@@ -1083,6 +1162,7 @@
       document.getElementById("timezoneSelect").value = currentTimezone;
 
       renderAdminDetails();
+      loadMfaStatus();
     }
 
     function renderAdminDetails() {
@@ -1105,6 +1185,201 @@
           <span class="badge badge-gold">${safe(currentLanguage === "sw" ? "Imehifadhiwa kwa Akaunti ya Admin" : "Saved to Admin User Account")}</span>
         </div>
       `;
+    }
+
+    // ---- Two-Factor Authentication (Supabase Auth TOTP MFA) ----
+    // No custom backend needed - supabase.auth.mfa.* is built into every
+    // Supabase project by default. mfaEnrollFactorId holds the in-progress
+    // (not-yet-verified) factor between "Enable" and "Verify & Enable".
+    let mfaEnabledFactorId = null;
+    let mfaEnrollFactorId = null;
+
+    async function loadMfaStatus() {
+      try {
+        const { data, error } = await supabaseClient.auth.mfa.listFactors();
+
+        if (error) {
+          mfaEnabledFactorId = null;
+          renderMfaBox("error");
+          return;
+        }
+
+        const totpFactors = (data && data.totp) || [];
+        const verified = totpFactors.find(function (f) { return f.status === "verified"; });
+
+        // Stale unverified factors (an earlier "Enable" click that was
+        // never completed) are cleaned up lazily the next time enrollment
+        // starts, not here - listing/rendering should never mutate state.
+        mfaEnabledFactorId = verified ? verified.id : null;
+        mfaEnrollFactorId = null;
+
+        renderMfaBox(mfaEnabledFactorId ? "enabled" : "disabled");
+      } catch (error) {
+        mfaEnabledFactorId = null;
+        renderMfaBox("error");
+      }
+    }
+
+    function renderMfaBox(state) {
+      const box = document.getElementById("mfaBox");
+      if (!box) return;
+
+      if (state === "error") {
+        box.innerHTML = `
+          <div class="row-card">
+            <p class="row-detail">${safe(t("mfaStatusError"))}</p>
+          </div>
+        `;
+        return;
+      }
+
+      if (state === "enabled") {
+        box.innerHTML = `
+          <div class="row-card">
+            <span class="badge badge-green">${safe(t("mfaEnabled"))}</span>
+            <p class="row-detail" style="margin-top:10px;">
+              <button class="dark-btn" type="button" onclick="disableMfa()">${safe(t("mfaDisableBtn"))}</button>
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      if (state === "enroll") {
+        box.innerHTML = `
+          <div class="row-card">
+            <div class="row-title">${safe(t("mfaScanTitle"))}</div>
+            <p class="row-detail">${safe(t("mfaScanDesc"))}</p>
+            <div class="mfa-qr-wrap" id="mfaQrWrap">${mfaQrHtml || ""}</div>
+            <p class="row-detail">${safe(t("mfaManualEntry"))}</p>
+            <span class="mfa-secret">${safe(mfaEnrollSecret || "")}</span>
+            <form onsubmit="submitMfaVerify(event)">
+              <label for="mfaCodeInput">${safe(t("mfaCodeLabel"))}</label>
+              <input id="mfaCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" required />
+              <div id="mfaVerifyMessage"></div>
+              <button type="submit">${safe(t("mfaVerifyBtn"))}</button>
+              <button type="button" class="dark-btn" onclick="cancelMfaEnroll()">${safe(t("mfaCancelBtn"))}</button>
+            </form>
+          </div>
+        `;
+        return;
+      }
+
+      box.innerHTML = `
+        <div class="row-card">
+          <span class="badge badge-red">${safe(t("mfaNotEnabled"))}</span>
+          <p class="row-detail" style="margin-top:10px;">
+            <button type="button" onclick="startMfaEnroll()">${safe(t("mfaEnableBtn"))}</button>
+          </p>
+        </div>
+      `;
+    }
+
+    let mfaQrHtml = "";
+    let mfaEnrollSecret = "";
+
+    async function startMfaEnroll() {
+      try {
+        // Clean up any stale unverified factor from an earlier abandoned
+        // attempt before starting a fresh one, so listFactors() doesn't
+        // accumulate dead entries every time someone clicks Enable without
+        // finishing.
+        const listResponse = await supabaseClient.auth.mfa.listFactors();
+        const staleFactors = (listResponse.data && listResponse.data.totp || []).filter(function (f) { return f.status === "unverified"; });
+
+        for (const stale of staleFactors) {
+          await supabaseClient.auth.mfa.unenroll({ factorId: stale.id });
+        }
+
+        const { data, error } = await supabaseClient.auth.mfa.enroll({ factorType: "totp" });
+
+        if (error || !data) {
+          alert(t("mfaEnrollError"));
+          return;
+        }
+
+        mfaEnrollFactorId = data.id;
+        const qrCode = data.totp && data.totp.qr_code;
+        mfaEnrollSecret = (data.totp && data.totp.secret) || "";
+        mfaQrHtml = qrCode
+          ? `<img src="${qrCode.startsWith("data:") ? qrCode : "data:image/svg+xml;utf-8," + encodeURIComponent(qrCode)}" alt="QR code" />`
+          : "";
+
+        renderMfaBox("enroll");
+      } catch (error) {
+        alert(t("mfaEnrollError"));
+      }
+    }
+
+    async function submitMfaVerify(event) {
+      event.preventDefault();
+
+      const code = document.getElementById("mfaCodeInput").value.trim();
+      const msgEl = document.getElementById("mfaVerifyMessage");
+      if (msgEl) msgEl.innerHTML = "";
+
+      if (!mfaEnrollFactorId || !code) return;
+
+      try {
+        const { error } = await supabaseClient.auth.mfa.challengeAndVerify({
+          factorId: mfaEnrollFactorId,
+          code: code
+        });
+
+        if (error) {
+          if (msgEl) msgEl.innerHTML = `<p class="danger">${safe(t("mfaVerifyError"))}</p>`;
+          return;
+        }
+
+        logAdminAuditEvent("mfa_enabled", { entityType: "session" });
+        showToast(t("mfaEnabledToast"));
+        mfaEnrollFactorId = null;
+        await loadMfaStatus();
+      } catch (error) {
+        if (msgEl) msgEl.innerHTML = `<p class="danger">${safe(t("mfaVerifyError"))}</p>`;
+      }
+    }
+
+    function cancelMfaEnroll() {
+      mfaEnrollFactorId = null;
+      renderMfaBox(mfaEnabledFactorId ? "enabled" : "disabled");
+    }
+
+    async function disableMfa() {
+      if (!mfaEnabledFactorId) return;
+      if (!confirm(t("mfaDisableConfirm"))) return;
+
+      try {
+        const { error } = await supabaseClient.auth.mfa.unenroll({ factorId: mfaEnabledFactorId });
+
+        if (error) {
+          alert(error.message);
+          return;
+        }
+
+        logAdminAuditEvent("mfa_disabled", { entityType: "session" });
+        showToast(t("mfaDisabledToast"));
+        await loadMfaStatus();
+      } catch (error) {
+        alert(error.message);
+      }
+    }
+
+    async function logAdminAuditEvent(action, details) {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (!token) return;
+
+        await fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(Object.assign({ action: action }, details || {})),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
     }
 
     function previewTheme() {

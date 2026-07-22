@@ -102,7 +102,12 @@
       "index.html",
       "login.html",
       "staff-login.html",
-      "portal.html"
+      "portal.html",
+      // Reached mid-login (after password, before the session is fully
+      // trusted) by either guard once MFA is enrolled - must not load
+      // admin-access-guard.js/client-access-guard.js itself, or the guard
+      // that sent the user here would immediately bounce them right back.
+      "mfa-challenge.html"
     ];
 
     if (publicPages.includes(page)) return;

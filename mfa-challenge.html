@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Two-Factor Verification</title>
+
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/ungani-icon-180.png" />
+  <link rel="icon" href="/ungani-icon-32.png" type="image/png" />
+
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --gold: #D4A63A;
+      --muted: #64748B;
+      --gray: #E5E7EB;
+      --red: #B91C1C;
+      --green: #15803D;
+      --shadow: 0 28px 80px rgba(0,0,0,0.28);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, Arial, sans-serif;
+      color: var(--navy);
+      background:
+        radial-gradient(circle at top right, rgba(212,166,58,0.20), transparent 34%),
+        linear-gradient(135deg, #020617 0%, #061C3D 58%, #0F172A 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+
+    .mfa-card {
+      width: min(440px, 100%);
+      background: rgba(255,255,255,0.97);
+      border-radius: 28px;
+      padding: 30px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,0.18);
+      text-align: center;
+    }
+
+    .mfa-card img.logo {
+      width: 56px;
+      height: 56px;
+      object-fit: contain;
+      background: white;
+      border-radius: 16px;
+      padding: 7px;
+      border: 1px solid var(--gray);
+      margin-bottom: 14px;
+    }
+
+    .mfa-card h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      letter-spacing: -0.04em;
+    }
+
+    .mfa-card p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .mfa-card label {
+      display: block;
+      text-align: left;
+      font-size: 13px;
+      font-weight: 900;
+      margin: 0 0 7px;
+    }
+
+    .mfa-card input {
+      width: 100%;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--gray);
+      font-size: 20px;
+      letter-spacing: 6px;
+      text-align: center;
+      font-weight: 800;
+      margin-bottom: 14px;
+    }
+
+    .mfa-card button {
+      width: 100%;
+      border: none;
+      border-radius: 999px;
+      padding: 14px;
+      font-weight: 900;
+      font-size: 14px;
+      cursor: pointer;
+      background: var(--gold);
+      color: var(--navy);
+      margin-bottom: 10px;
+    }
+
+    .mfa-card button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .mfa-card .signout-link {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration: underline;
+      cursor: pointer;
+      background: none;
+      border: none;
+      width: auto;
+      padding: 0;
+    }
+
+    .mfa-status {
+      min-height: 18px;
+      font-size: 13.5px;
+      margin-bottom: 10px;
+    }
+
+    .mfa-status.error { color: var(--red); }
+    .mfa-status.success { color: var(--green); }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+
+<body>
+  <main class="mfa-card">
+    <img class="logo" src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
+
+    <div id="loadingState">
+      <h1>Checking your session...</h1>
+      <p>Please wait a moment.</p>
+    </div>
+
+    <div id="challengeState" class="hidden">
+      <h1>Enter your verification code</h1>
+      <p id="challengeIntro">Open your authenticator app and enter the 6-digit code for UNGANI OS.</p>
+
+      <form id="challengeForm" onsubmit="submitChallenge(event)">
+        <label for="codeInput">6-digit code</label>
+        <input id="codeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" required />
+
+        <div id="challengeMessage" class="mfa-status"></div>
+
+        <button id="verifyBtn" type="submit">Verify</button>
+      </form>
+
+      <button class="signout-link" type="button" onclick="signOutAndReturn()">Sign out and use a different account</button>
+    </div>
+
+    <div id="noFactorState" class="hidden">
+      <h1>Verification unavailable</h1>
+      <p id="noFactorMessage">We couldn't find an active two-factor method on this account.</p>
+      <button class="signout-link" type="button" onclick="signOutAndReturn()">Back to login</button>
+    </div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+
+    const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let activeFactorId = null;
+    let sessionAccessToken = null;
+
+    // Same allowlist-before-navigation pattern used everywhere else in this
+    // app that builds a redirect target from a URL/DB value instead of a
+    // hardcoded string (see client-notifications.html's normalizeActionUrl)
+    // - the ?redirect= param here is attacker-controllable, so it must be
+    // checked against known-real pages before ever being used as an href.
+    function safeRedirectTarget() {
+      const raw = new URLSearchParams(window.location.search).get("redirect") || "";
+      let page = raw.replace(/^\/+/, "").split("?")[0].split("#")[0].toLowerCase();
+
+      const isKnownAdminPage = page.startsWith("admin") ||
+        page === "support.html" || page === "billing.html" ||
+        page === "users.html" || page === "sections.html" || page === "notices.html";
+
+      return isKnownAdminPage ? page : "admin-home.html";
+    }
+
+    function show(id) {
+      ["loadingState", "challengeState", "noFactorState"].forEach(function (elId) {
+        document.getElementById(elId).classList.toggle("hidden", elId !== id);
+      });
+    }
+
+    window.addEventListener("load", init);
+
+    async function init() {
+      const { data, error } = await supabaseClient.auth.getSession();
+      const session = data && data.session;
+
+      if (error || !session || !session.user) {
+        window.location.href = "login.html";
+        return;
+      }
+
+      sessionAccessToken = session.access_token;
+
+      const { data: factorsData, error: factorsError } = await supabaseClient.auth.mfa.listFactors();
+
+      if (factorsError) {
+        document.getElementById("noFactorMessage").innerText = "Could not load your two-factor method. Please try again or sign out.";
+        show("noFactorState");
+        return;
+      }
+
+      const totpFactors = (factorsData && factorsData.totp) || [];
+      const verified = totpFactors.find(function (f) { return f.status === "verified"; });
+
+      if (!verified) {
+        // No verified factor but the guard sent us here anyway (e.g. it
+        // was unenrolled in another tab moments ago) - nothing to
+        // challenge, safest path is back to login rather than a dead end.
+        window.location.href = "login.html";
+        return;
+      }
+
+      activeFactorId = verified.id;
+      show("challengeState");
+      document.getElementById("codeInput").focus();
+    }
+
+    async function submitChallenge(event) {
+      event.preventDefault();
+
+      const code = document.getElementById("codeInput").value.trim();
+      const msgEl = document.getElementById("challengeMessage");
+      const btn = document.getElementById("verifyBtn");
+
+      msgEl.className = "mfa-status";
+      msgEl.innerText = "";
+
+      if (!code || !activeFactorId) return;
+
+      btn.disabled = true;
+
+      try {
+        const { error } = await supabaseClient.auth.mfa.challengeAndVerify({
+          factorId: activeFactorId,
+          code: code
+        });
+
+        if (error) {
+          msgEl.className = "mfa-status error";
+          msgEl.innerText = "That code didn't match. Check your app and try again.";
+          document.getElementById("codeInput").value = "";
+          document.getElementById("codeInput").focus();
+          btn.disabled = false;
+          return;
+        }
+
+        msgEl.className = "mfa-status success";
+        msgEl.innerText = "Verified. Continuing...";
+
+        // Fired synchronously with the token already cached from init()'s
+        // getSession() call - a version that re-awaited getSession() here
+        // would yield control before ever reaching fetch(), and the
+        // navigation on the next line would fire first, so the POST would
+        // never actually go out even with keepalive (keepalive only saves
+        // a request that has already been dispatched).
+        logMfaAuditEvent(sessionAccessToken);
+
+        window.location.href = safeRedirectTarget();
+      } catch (error) {
+        msgEl.className = "mfa-status error";
+        msgEl.innerText = "Something went wrong. Please try again.";
+        btn.disabled = false;
+      }
+    }
+
+    function logMfaAuditEvent(token) {
+      try {
+        if (!token) return;
+
+        fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ action: "mfa_challenge_success", entityType: "session" }),
+          keepalive: true
+        }).catch(function () {});
+      } catch (error) {
+        // non-critical - never block the redirect on this
+      }
+    }
+
+    async function signOutAndReturn() {
+      try {
+        await supabaseClient.auth.signOut();
+      } catch (error) {
+        // ignore - redirect regardless
+      }
+      window.location.href = "login.html";
+    }
+  </script>
+</body>
+</html>
