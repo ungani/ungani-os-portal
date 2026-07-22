@@ -189,6 +189,24 @@
       steps: ["Open Items.", "Select \"Add Property\".", "Fill in the name, listing type, location, and price.", "Select Save."]
     },
     {
+      key: "print-label",
+      match: ["print a label", "print label", "print a qr code", "generate a qr code", "asset label", "qr code for"],
+      pageKey: "items",
+      steps: ["Open the property or item's profile page.", "Select \"Print Label\".", "Use \"Print / Save PDF\" — the QR code links straight back to this item's profile, so scanning it with any phone camera opens the record."]
+    },
+    {
+      key: "log-maintenance",
+      match: ["log maintenance", "record maintenance", "maintenance log", "schedule maintenance", "add maintenance"],
+      pageKey: "items",
+      steps: ["Open the property or item's profile page.", "In the Maintenance card, select \"Log Maintenance\".", "Fill in the date performed, notes, and next due date, then select Save."]
+    },
+    {
+      key: "attach-document-item",
+      match: ["attach a document to an item", "attach document to item", "link a document to an item", "add a document to an item", "attach a document to a property", "link a document to a property"],
+      pageKey: "items",
+      steps: ["Open the property or item's profile page.", "In the Documents card, select \"Attach Document\".", "Fill in the document details and save — it's linked to this item automatically."]
+    },
+    {
       key: "add-record",
       match: ["add a record", "add record", "create a record", "new record", "log a record"],
       pageKey: "records",
@@ -351,7 +369,10 @@
       chips: [
         { label: "Add Property", type: "create", actionKey: "createProperty" },
         { label: "Find a Property", type: "search-prompt" },
-        { label: "How do I add a property?", type: "howto", key: "add-property" },
+        { label: "What needs attention?", type: "asset-attention" },
+        { label: "How many do I have?", type: "asset-count" },
+        { label: "How do I log maintenance?", type: "howto", key: "log-maintenance" },
+        { label: "How do I print a QR label?", type: "howto", key: "print-label" },
         { label: "Dashboard", type: "nav", key: "dashboard" },
         { label: "Help", type: "help" }
       ]
@@ -1214,6 +1235,18 @@
       return;
     }
 
+    if (item.type === "asset-attention") {
+      addUserMessage(item.label);
+      replyWithDelay(function () { runAssetAttentionIntent(); });
+      return;
+    }
+
+    if (item.type === "asset-count") {
+      addUserMessage(item.label);
+      replyWithDelay(function () { runAssetCountIntent(item.label); });
+      return;
+    }
+
     if (item.type === "call") {
       addUserMessage(item.label);
       replyWithDelay(function () {
@@ -1550,6 +1583,29 @@
         return runSearchIntent(text.replace(/^(find|search for|search|look up|where is|where's)\b/i, "").trim());
       }
 
+      // Live-data questions about assets specifically ("what needs
+      // attention", "how many items do I have") - checked ahead of the
+      // static howTo/help matchers since these need a real Supabase query,
+      // not a canned answer, but after search so an explicit "find X"
+      // still goes through the general record search.
+      if (isAssetAttentionPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Asset attention checks aren't available on the admin side yet.");
+          return { spoken: "That's not available on the admin side yet." };
+        }
+
+        return runAssetAttentionIntent();
+      }
+
+      if (isAssetCountPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Item and property counts aren't available on the admin side yet.");
+          return { spoken: "That's not available on the admin side yet." };
+        }
+
+        return runAssetCountIntent(text);
+      }
+
       const sectionHowTo = findSectionHowToIntent(text);
       if (sectionHowTo) {
         return answerSectionQuickAddHowTo(sectionHowTo.vocabKey);
@@ -1678,7 +1734,8 @@
     const listHtml = results.slice(0, 6).map(function (item) {
       const url = item.id ? item.href + "?highlight=" + encodeURIComponent(item.id) : item.href;
       const sectionBadge = item.matchesSection ? ` <span style="color:${BRAND.gold};font-weight:800;">· ${safe(state.section)}</span>` : "";
-      return `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(item.label)}: ${safe(item.title)}</a>${sectionBadge}</div>`;
+      const detailHtml = item.detail ? ` <span class="ungani-small" style="opacity:.75;">— ${safe(item.detail)}</span>` : "";
+      return `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(item.label)}: ${safe(item.title)}</a>${detailHtml}${sectionBadge}</div>`;
     }).join("");
 
     addNiaMessage("I found " + results.length + " match" + (results.length === 1 ? "" : "es") + ":" + listHtml);
@@ -1704,12 +1761,23 @@
           const haystack = JSON.stringify(row || {}).toLowerCase();
           if (!haystack.includes(queryLower)) return;
 
+          let detail = config.detailFields.map(function (field) { return pickField(row, [field], ""); }).filter(Boolean).slice(0, 3).join(" · ");
+
+          // Bonus: an item/property result already carries its full row
+          // (select("*") above), so the same attention rules used for the
+          // dedicated "what needs attention" intent can flag it here too,
+          // for free, without a second query.
+          if (config.table === "business_items") {
+            const flags = computeAssetAttentionEntries([row]);
+            if (flags.length) detail = (detail ? detail + " · " : "") + "⚠️ " + flags[0].label;
+          }
+
           results.push({
             id: row.id,
             label: config.label,
             href: config.href,
             title: pickField(row, config.titleFields, config.label),
-            detail: config.detailFields.map(function (field) { return pickField(row, [field], ""); }).filter(Boolean).slice(0, 3).join(" · "),
+            detail: detail,
             matchesSection: !!(state.section && row.section_label === state.section)
           });
         });
@@ -1738,6 +1806,205 @@
       }
     }
     return fallback;
+  }
+
+  const ASSET_SUMMARY_COLUMNS = "id, status, item_status, property_status, item_name, name, title, property_name, custom_fields";
+
+  function niaDaysUntil(dateStr) {
+    const target = new Date(dateStr);
+    if (isNaN(target.getTime())) return null;
+
+    const now = new Date();
+    target.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0);
+
+    return Math.round((target.getTime() - now.getTime()) / 86400000);
+  }
+
+  // Mirrors my-items.html's computeAttentionEntries() severity rules
+  // exactly, so Nia's answer always agrees with the dashboard's own
+  // "Assets Needing Attention" panel. Kept as a separate copy (this repo
+  // has no module system to share it from) rather than a shorter label
+  // set - drifting out of sync would be worse than the duplication.
+  function computeAssetAttentionEntries(rows) {
+    const entries = [];
+
+    rows.forEach(function (row) {
+      const name = pickField(row, ["property_name", "item_name", "name", "title"], "Item");
+      const href = "my-item-profile.html?id=" + encodeURIComponent(row.id);
+      const customFields = row.custom_fields || {};
+      const status = String(pickField(row, ["property_status", "item_status", "status"], "")).toLowerCase();
+
+      const expiryDays = customFields.expiry_date ? niaDaysUntil(customFields.expiry_date) : null;
+      if (expiryDays !== null) {
+        if (expiryDays < 0) {
+          entries.push({ id: row.id, name: name, href: href, severity: "red", kind: "expiry", label: "expired " + Math.abs(expiryDays) + "d ago", sortKey: expiryDays });
+        } else if (expiryDays <= 7) {
+          entries.push({ id: row.id, name: name, href: href, severity: "red", kind: "expiry", label: "expiring " + (expiryDays === 0 ? "today" : "in " + expiryDays + "d"), sortKey: expiryDays });
+        } else if (expiryDays <= 30) {
+          entries.push({ id: row.id, name: name, href: href, severity: "gold", kind: "expiry", label: "expiring in " + expiryDays + "d", sortKey: expiryDays });
+        }
+      }
+
+      const warrantyDays = customFields.warranty_expiry ? niaDaysUntil(customFields.warranty_expiry) : null;
+      if (warrantyDays !== null) {
+        if (warrantyDays < 0) {
+          entries.push({ id: row.id, name: name, href: href, severity: "gold", kind: "warranty", label: "warranty expired " + Math.abs(warrantyDays) + "d ago", sortKey: 1000 + warrantyDays });
+        } else if (warrantyDays <= 30) {
+          entries.push({ id: row.id, name: name, href: href, severity: "gold", kind: "warranty", label: "warranty expiring in " + warrantyDays + "d", sortKey: 1000 + warrantyDays });
+        }
+      }
+
+      const maintenanceDueDays = customFields.next_maintenance_date ? niaDaysUntil(customFields.next_maintenance_date) : null;
+      if (maintenanceDueDays !== null) {
+        if (maintenanceDueDays < 0) {
+          entries.push({ id: row.id, name: name, href: href, severity: "red", kind: "maintenance", label: "maintenance overdue " + Math.abs(maintenanceDueDays) + "d", sortKey: maintenanceDueDays });
+        } else if (maintenanceDueDays <= 7) {
+          entries.push({ id: row.id, name: name, href: href, severity: "red", kind: "maintenance", label: "maintenance due " + (maintenanceDueDays === 0 ? "today" : "in " + maintenanceDueDays + "d"), sortKey: maintenanceDueDays });
+        } else if (maintenanceDueDays <= 30) {
+          entries.push({ id: row.id, name: name, href: href, severity: "gold", kind: "maintenance", label: "maintenance due in " + maintenanceDueDays + "d", sortKey: maintenanceDueDays });
+        }
+      }
+
+      const stockQty = Number(customFields.stock_quantity);
+      const reorderLevel = Number(customFields.reorder_level);
+      const hasNumericStock = customFields.stock_quantity !== undefined && customFields.stock_quantity !== null && customFields.stock_quantity !== "" &&
+        customFields.reorder_level !== undefined && customFields.reorder_level !== null && customFields.reorder_level !== "" &&
+        !isNaN(stockQty) && !isNaN(reorderLevel);
+
+      if (hasNumericStock) {
+        if (stockQty <= 0) {
+          entries.push({ id: row.id, name: name, href: href, severity: "red", kind: "stock", label: "out of stock", sortKey: 2000 });
+        } else if (stockQty <= reorderLevel) {
+          entries.push({ id: row.id, name: name, href: href, severity: "orange", kind: "stock", label: "low stock (" + stockQty + " left)", sortKey: 2000 });
+        }
+      } else if (status.includes("out of stock")) {
+        entries.push({ id: row.id, name: name, href: href, severity: "red", kind: "stock", label: "out of stock", sortKey: 2000 });
+      } else if (status.includes("low stock")) {
+        entries.push({ id: row.id, name: name, href: href, severity: "orange", kind: "stock", label: "low stock", sortKey: 2000 });
+      }
+
+      if (status.includes("maintenance")) {
+        entries.push({ id: row.id, name: name, href: href, severity: "gold", kind: "maintenance", label: "in maintenance", sortKey: 3000 });
+      }
+    });
+
+    const severityRank = { red: 0, orange: 1, gold: 2 };
+
+    entries.sort(function (a, b) {
+      const rankDiff = severityRank[a.severity] - severityRank[b.severity];
+      if (rankDiff !== 0) return rankDiff;
+      return a.sortKey - b.sortKey;
+    });
+
+    return entries;
+  }
+
+  async function fetchAssetRowsForTenant() {
+    const response = await state.supabaseClient
+      .from("business_items")
+      .select(ASSET_SUMMARY_COLUMNS)
+      .eq("tenant_id", state.tenantId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    if (response.error) throw new Error(response.error.message);
+    return response.data || [];
+  }
+
+  function isAssetAttentionPhrase(text) {
+    const lower = text.toLowerCase();
+    return [
+      "needs attention", "need attention", "what needs attention", "what's expiring", "whats expiring",
+      "expiring soon", "expired items", "expiring items", "maintenance due", "overdue maintenance",
+      "what's overdue", "whats overdue", "low stock", "out of stock"
+    ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  function isAssetCountPhrase(text) {
+    const lower = text.toLowerCase();
+    if (!/\bhow many\b/.test(lower)) return false;
+    return ["item", "property", "properties", "asset", "stock"].some(function (word) { return lower.indexOf(word) !== -1; });
+  }
+
+  async function runAssetAttentionIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your items and properties for anything that needs attention...");
+
+    let rows;
+    try {
+      rows = await fetchAssetRowsForTenant();
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const entries = computeAssetAttentionEntries(rows);
+
+    if (!entries.length) {
+      addNiaMessage("Nothing needs attention right now — no expiring dates, low stock, or overdue maintenance.");
+      return { spoken: "Nothing needs attention right now." };
+    }
+
+    const shown = entries.slice(0, 6);
+    const remaining = entries.length - shown.length;
+    const severityIcon = { red: "🔴", orange: "🟠", gold: "🟡" };
+
+    const listHtml = shown.map(function (entry) {
+      const url = "my-item-profile.html?id=" + encodeURIComponent(entry.id);
+      return `<div style="margin-top:6px;">${severityIcon[entry.severity] || "•"} <a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(entry.name)}</a> — ${safe(entry.label)}</div>`;
+    }).join("");
+
+    addNiaMessage(
+      entries.length + " item" + (entries.length === 1 ? "" : "s") + " need" + (entries.length === 1 ? "s" : "") + " attention:" + listHtml +
+      (remaining > 0 ? `<div style="margin-top:8px;"><a class="nia-link-btn" style="margin-top:0;" href="my-items.html">See ${remaining} more →</a></div>` : "")
+    );
+
+    return { spoken: entries.length + " items need attention." };
+  }
+
+  async function runAssetCountIntent(text) {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Counting your items and properties...");
+
+    let rows;
+    try {
+      rows = await fetchAssetRowsForTenant();
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const total = rows.length;
+    const lower = text.toLowerCase();
+    const wantsMaintenance = lower.indexOf("maintenance") !== -1;
+    const wantsExpiring = lower.indexOf("expir") !== -1;
+    const wantsStock = lower.indexOf("stock") !== -1;
+
+    if (wantsMaintenance || wantsExpiring || wantsStock) {
+      const entries = computeAssetAttentionEntries(rows);
+      let kind = "maintenance";
+      let noun = "need maintenance";
+
+      if (wantsExpiring) { kind = "expiry"; noun = "are expiring or expired"; }
+      else if (wantsStock) { kind = "stock"; noun = "are low or out of stock"; }
+
+      const filteredIds = new Set(entries.filter(function (e) { return e.kind === kind; }).map(function (e) { return e.id; }));
+
+      addNiaMessage(filteredIds.size + " out of " + total + " item" + (total === 1 ? "" : "s") + " " + noun + ".");
+      return { spoken: filteredIds.size + " items " + noun + "." };
+    }
+
+    addNiaMessage("You have " + total + " item" + (total === 1 ? "" : "s") + " on record.");
+    return { spoken: "You have " + total + " items on record." };
   }
 
   function showFallback() {
