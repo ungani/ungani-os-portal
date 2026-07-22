@@ -1356,6 +1356,58 @@
       border-color: rgba(220,38,38,0.16);
     }
 
+    .status.gray {
+      background: rgba(100,116,139,0.12);
+      color: var(--muted);
+      border-color: rgba(100,116,139,0.18);
+    }
+
+    .health-status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .health-status-item {
+      position: relative;
+      padding: 14px 14px 14px 17px;
+      border: 1px solid var(--border);
+      background: var(--card-solid);
+      border-radius: 18px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .health-status-item::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 4px;
+      border-radius: 0 999px 999px 0;
+      background: var(--accent, var(--muted));
+    }
+
+    .health-status-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .health-status-head strong {
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .health-status-item p {
+      margin: 0;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
     .empty {
       text-align: center;
       padding: 30px 16px;
@@ -1649,6 +1701,10 @@
         margin-bottom: 12px;
       }
 
+      .health-status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
       .mobile-hide {
         display: none !important;
       }
@@ -1708,6 +1764,10 @@
       }
 
       .summary-row {
+        grid-template-columns: 1fr;
+      }
+
+      .health-status-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -2286,6 +2346,20 @@
             </div>
           </div>
         </div>
+
+        <!-- SYSTEM HEALTH -->
+        <div class="card" style="margin-bottom:18px;">
+          <div class="section-title">
+            <div>
+              <h3 data-i18n="sec_health_title">System Health</h3>
+              <p data-i18n="sec_health_desc">Live status across the platform's core systems.</p>
+            </div>
+            <a class="btn small light" href="admin-health.html" data-i18n="btn_view_all">View All</a>
+          </div>
+          <div id="systemHealthGrid" class="health-status-grid">
+            <div class="loading" data-i18n="loading_health">Checking system health...</div>
+          </div>
+        </div>
       </div>
 
       <footer class="footer">
@@ -2392,6 +2466,15 @@
         sec_activity_desc: "Registrations, support tickets, and money records across every client, newest first.",
         btn_view_all: "View All",
         loading_activity: "Loading recent activity...",
+        sec_health_title: "System Health",
+        sec_health_desc: "Live status across the platform's core systems.",
+        loading_health: "Checking system health...",
+        health_lbl_database: "Database",
+        health_lbl_api: "API",
+        health_lbl_storage: "Storage",
+        health_lbl_emails: "Emails",
+        health_lbl_notifications: "Notifications",
+        health_lbl_jobs: "Background Jobs",
         footer_text: "© 2026 UNGANI OS Ecosystem. All Rights Reserved. Command Cluster Cloud Layer.",
         no_data: "No records found",
         no_notif: "No notices found",
@@ -2506,6 +2589,15 @@
         sec_activity_desc: "Usajili, tiketi za msaada, na kumbukumbu za fedha za wateja wote, mpya kwanza.",
         btn_view_all: "Angalia Zote",
         loading_activity: "Inapakia shughuli za hivi karibuni...",
+        sec_health_title: "Afya ya Mfumo",
+        sec_health_desc: "Hali ya moja kwa moja ya mifumo mikuu ya jukwaa.",
+        loading_health: "Inakagua afya ya mfumo...",
+        health_lbl_database: "Hifadhidata",
+        health_lbl_api: "API",
+        health_lbl_storage: "Hifadhi",
+        health_lbl_emails: "Barua Pepe",
+        health_lbl_notifications: "Arifa",
+        health_lbl_jobs: "Kazi za Nyuma",
         footer_text: "© 2026 Mfumo wa UNGANI OS. Haki zote zimehifadhiwa. Tabaka la Wingu la Kundi la Amri.",
         no_data: "Hakuna rekodi zilizopatikana",
         no_notif: "Hakuna notisi zilizopatikana",
@@ -2707,6 +2799,7 @@
       loadActivityTimeline();
       loadNotifications();
       loadChatPreview();
+      loadBackgroundJobsHealth();
     }
 
     // loadKPIs() and loadPerformanceChart() both run concurrently off
@@ -2769,11 +2862,17 @@
             kpiCard(translations[currentLang].kpi_tracked_assets, itemsTotal.toLocaleString(), translations[currentLang].kpi_tracked_assets_desc, '#C77700', 'admin-items.html', sparklineSvg(itemsSpark, '#C77700'), '📦') +
             kpiCard(translations[currentLang].kpi_ledger_vol, formatMoney(ledgerVolume), translations[currentLang].kpi_ledger_vol_desc, '#15803D', 'admin-money.html', sparklineSvg(ledgerSpark, '#15803D'), '💰');
         }
+
+        systemHealthState.api = { status: 'ok', label: 'Operational', sub: 'Data queries responding normally.' };
+        renderSystemHealthWidget();
       }, function() {
         document.getElementById('kpiTenants') && (document.getElementById('kpiTenants').textContent = "0");
         document.getElementById('kpiUsers') && (document.getElementById('kpiUsers').textContent = "0");
         document.getElementById('kpiItems') && (document.getElementById('kpiItems').textContent = "0");
         document.getElementById('kpiLedger') && (document.getElementById('kpiLedger').textContent = formatMoney(0));
+
+        systemHealthState.api = { status: 'error', label: 'Unavailable', sub: 'Data queries are failing – retry shortly.' };
+        renderSystemHealthWidget();
       });
 
       safeDataFetch(async function() {
@@ -3409,6 +3508,97 @@
 
     var healthSnapshot = {};
 
+    // ---- System Health widget (Phase 4) - reuses data already fetched for
+    // other widgets rather than firing new RPCs: "database" tracks the RPC
+    // layer (get_admin_ungani_system_health_snapshot, set in loadPlatformHealth),
+    // "api" tracks the direct table-query layer (set in loadKPIs), "jobs"
+    // reads the real ungani_billing_reminder_logs cron log. "Storage" has no
+    // real quota tracking anywhere in this app (documents just store Google
+    // Drive/manual URLs) so it's rendered as an honest static "Not Tracked"
+    // tile rather than a fabricated number.
+    var systemHealthState = { database: null, api: null, emails: null, notifications: null, jobs: null };
+
+    function queueHealthTier(count, errorAt, zeroSub, queuedSubFn) {
+      var n = Number(count) || 0;
+      if (n === 0) return { status: 'ok', label: 'Clear', sub: zeroSub };
+      if (n < errorAt) return { status: 'warn', label: n + ' queued', sub: queuedSubFn(n) };
+      return { status: 'error', label: n + ' queued', sub: queuedSubFn(n) };
+    }
+
+    function healthTierPillClass(status) {
+      if (status === 'ok') return 'status green';
+      if (status === 'warn') return 'status gold';
+      if (status === 'error') return 'status red';
+      return 'status gray';
+    }
+
+    function healthTierColor(status) {
+      if (status === 'ok') return '#15803D';
+      if (status === 'warn') return '#C77700';
+      if (status === 'error') return '#B91C1C';
+      return '#64748B';
+    }
+
+    function renderSystemHealthWidget() {
+      var grid = document.getElementById('systemHealthGrid');
+      if (!grid) return;
+
+      var checking = { status: 'unknown', label: 'Checking...', sub: '' };
+      var db = systemHealthState.database || checking;
+      var api = systemHealthState.api || checking;
+      var emails = systemHealthState.emails || checking;
+      var notif = systemHealthState.notifications || checking;
+      var jobs = systemHealthState.jobs || checking;
+      var storage = { status: 'unknown', label: 'Not Tracked', sub: "Documents use Google Drive/manual links – no storage quota is monitored yet." };
+
+      var tiles = [
+        { label: translations[currentLang].health_lbl_database, tier: db },
+        { label: translations[currentLang].health_lbl_api, tier: api },
+        { label: translations[currentLang].health_lbl_storage, tier: storage },
+        { label: translations[currentLang].health_lbl_emails, tier: emails },
+        { label: translations[currentLang].health_lbl_notifications, tier: notif },
+        { label: translations[currentLang].health_lbl_jobs, tier: jobs }
+      ];
+
+      grid.innerHTML = tiles.map(function (tile) {
+        return '<div class="health-status-item" style="' + accentVars(healthTierColor(tile.tier.status)) + '">' +
+          '<div class="health-status-head">' +
+            '<strong>' + escapeHtml(tile.label) + '</strong>' +
+            '<span class="' + healthTierPillClass(tile.tier.status) + '">' + escapeHtml(tile.tier.label) + '</span>' +
+          '</div>' +
+          '<p>' + escapeHtml(tile.tier.sub || '') + '</p>' +
+        '</div>';
+      }).join('');
+    }
+
+    function loadBackgroundJobsHealth() {
+      safeDataFetch(async function () {
+        var res = await supabaseClient.from('ungani_billing_reminder_logs').select('created_at').order('created_at', { ascending: false }).limit(1);
+        if (res.error) throw res.error;
+        var rows = res.data || [];
+
+        if (!rows.length) {
+          systemHealthState.jobs = { status: 'unknown', label: 'No runs yet', sub: 'The daily billing automation job has not logged a run yet.' };
+        } else {
+          var lastRun = rows[0].created_at;
+          var hoursAgo = (Date.now() - new Date(lastRun).getTime()) / 3600000;
+
+          if (hoursAgo <= 48) {
+            systemHealthState.jobs = { status: 'ok', label: 'On schedule', sub: 'Last run ' + timeAgo(lastRun) + '.' };
+          } else if (hoursAgo <= 168) {
+            systemHealthState.jobs = { status: 'warn', label: 'Delayed', sub: 'Last run ' + timeAgo(lastRun) + ' – expected daily.' };
+          } else {
+            systemHealthState.jobs = { status: 'error', label: 'Stale', sub: 'Last run ' + timeAgo(lastRun) + ' – check the automation.' };
+          }
+        }
+
+        renderSystemHealthWidget();
+      }, function () {
+        systemHealthState.jobs = { status: 'unknown', label: 'Unknown', sub: 'Unable to read the billing automation log right now.' };
+        renderSystemHealthWidget();
+      });
+    }
+
     function tierScore(count, tiers) {
       var n = Number(count) || 0;
       for (var i = 0; i < tiers.length; i++) {
@@ -3534,9 +3724,19 @@
         var health = computePlatformHealthScore(summary, flags);
         if (wrap) wrap.innerHTML = renderHealthGaugeHtml(health.score, health.summary);
         animateHealthGauges();
+
+        systemHealthState.database = { status: 'ok', label: 'Operational', sub: 'Core backend functions responding normally.' };
+        systemHealthState.emails = queueHealthTier(summary.pending_email_queue, 20, 'No emails waiting in the queue.', function (n) { return n + ' email(s) queued and waiting to send.'; });
+        systemHealthState.notifications = queueHealthTier(summary.unread_notifications, 30, 'No unread notifications.', function (n) { return n + ' unread notification(s) across the platform.'; });
+        renderSystemHealthWidget();
       }, function () {
         if (wrap) wrap.innerHTML = renderHealthGaugeHtml(0, 'Health snapshot is unavailable right now.');
         animateHealthGauges();
+
+        systemHealthState.database = { status: 'error', label: 'Unavailable', sub: 'Backend RPC calls are failing – retry shortly.' };
+        systemHealthState.emails = { status: 'unknown', label: 'Unknown', sub: 'Could not load queue status.' };
+        systemHealthState.notifications = { status: 'unknown', label: 'Unknown', sub: 'Could not load queue status.' };
+        renderSystemHealthWidget();
       });
     }
 
