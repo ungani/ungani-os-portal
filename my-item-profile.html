@@ -269,6 +269,19 @@
         justify-self: start;
       }
     }
+
+    .maintenance-due-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--ungani-border, rgba(6,28,61,0.1));
+      background: var(--ungani-soft, rgba(6,28,61,0.03));
+      border-radius: 14px;
+      font-size: 13.5px;
+      font-weight: 700;
+    }
   </style>
 </head>
 
@@ -398,6 +411,21 @@
 
           <div class="detail-grid">
             ${renderFieldRows(row, fieldSet)}
+          </div>
+        </div>
+
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Maintenance</h3>
+              <p class="ungani-small">Scheduling and service history for this ${isRealEstate ? "property" : "item"}.</p>
+            </div>
+            <button class="ungani-btn small gold" type="button" onclick="openLogMaintenanceModal()">Log Maintenance</button>
+          </div>
+
+          <div class="maintenance-due-row">
+            <span>Next Maintenance Due</span>
+            ${maintenanceDueBadge(UnganiClientShared.getValue(row.custom_fields || {}, ["next_maintenance_date"], ""))}
           </div>
         </div>
 
@@ -569,7 +597,8 @@
         record_created: "Item created",
         record_updated: "Details updated",
         status_changed: "Status changed",
-        record_deleted: "Item deleted"
+        record_deleted: "Item deleted",
+        maintenance_performed: "Maintenance logged"
       };
 
       return map[action] || UnganiClientShared.cleanText(action);
@@ -580,7 +609,8 @@
         record_created: "✨",
         record_updated: "✏️",
         status_changed: "🔄",
-        record_deleted: "🗑️"
+        record_deleted: "🗑️",
+        maintenance_performed: "🔧"
       };
 
       return map[action] || "📋";
@@ -589,7 +619,7 @@
     function timelineActionAccent(action) {
       if (action === "record_created") return "#16A34A";
       if (action === "record_deleted") return "#DC2626";
-      if (action === "status_changed") return "#D4A63A";
+      if (action === "status_changed" || action === "maintenance_performed") return "#D4A63A";
       return "#2563EB";
     }
 
@@ -673,6 +703,124 @@
         .replace(/\w\S*/g, function (text) {
           return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
         });
+    }
+
+    // ---- Maintenance (Phase 5 of the Asset Management module) ----
+    // Universal, custom_fields-only - no schema change. next_maintenance_date
+    // is written by my-items.html's form and by submitMaintenanceLog() here;
+    // "maintenance_performed" audit log entries render automatically in the
+    // Activity Timeline above (Phase 2) once mapped in timelineActionLabel/
+    // timelineActionIcon/timelineActionAccent.
+
+    function daysUntil(dateStr) {
+      const target = new Date(dateStr);
+      if (isNaN(target.getTime())) return null;
+
+      const now = new Date();
+      target.setHours(0, 0, 0, 0);
+      now.setHours(0, 0, 0, 0);
+
+      return Math.round((target.getTime() - now.getTime()) / 86400000);
+    }
+
+    function maintenanceDueBadge(dateStr) {
+      if (!dateStr) {
+        return '<span class="ungani-badge blue">Not scheduled</span>';
+      }
+
+      const days = daysUntil(dateStr);
+      const formatted = UnganiClientShared.formatDate(dateStr);
+
+      if (days === null) {
+        return '<span class="ungani-badge blue">' + UnganiClientShared.safe(formatted) + '</span>';
+      }
+
+      if (days < 0) {
+        return '<span class="ungani-badge red">' + UnganiClientShared.safe(formatted) + ' – overdue</span>';
+      }
+
+      if (days <= 30) {
+        return '<span class="ungani-badge gold">' + UnganiClientShared.safe(formatted) + ' – due soon</span>';
+      }
+
+      return '<span class="ungani-badge green">' + UnganiClientShared.safe(formatted) + '</span>';
+    }
+
+    function openLogMaintenanceModal() {
+      if (!currentItem) return;
+
+      const customFields = currentItem.custom_fields || {};
+      const currentNextDue = customFields.next_maintenance_date || "";
+      const today = new Date().toISOString().slice(0, 10);
+
+      UnganiClientShared.openModal({
+        title: "Log Maintenance",
+        bodyHtml: `
+          <form id="maintenanceForm" onsubmit="submitMaintenanceLog(event)">
+            <label for="maintenancePerformedDate">Date Performed</label>
+            <input id="maintenancePerformedDate" type="date" required value="${UnganiClientShared.attr(today)}" />
+
+            <label for="maintenanceNotes">Notes (optional)</label>
+            <textarea id="maintenanceNotes" placeholder="What was done, cost, technician..."></textarea>
+
+            <label for="maintenanceNextDue">Next Maintenance Due (optional)</label>
+            <input id="maintenanceNextDue" type="date" value="${UnganiClientShared.attr(currentNextDue)}" />
+
+            <div class="ungani-button-row">
+              <button class="ungani-btn green" type="submit">Save</button>
+              <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
+            </div>
+          </form>
+        `
+      });
+    }
+
+    async function submitMaintenanceLog(event) {
+      event.preventDefault();
+      if (!currentItem) return;
+
+      const performedDate = UnganiClientShared.value("maintenancePerformedDate");
+      const notes = UnganiClientShared.value("maintenanceNotes");
+      const nextDue = UnganiClientShared.value("maintenanceNextDue") || null;
+
+      const updatedCustomFields = Object.assign({}, currentItem.custom_fields || {}, { next_maintenance_date: nextDue });
+
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .update({ custom_fields: updatedCustomFields, updated_at: new Date().toISOString() })
+          .eq("id", currentItem.id)
+          .eq("tenant_id", currentContext.tenantId);
+
+        if (response.error) {
+          UnganiClientShared.showToast("Could not log maintenance: " + response.error.message);
+          return;
+        }
+
+        let description = "Maintenance performed on " + UnganiClientShared.formatDate(performedDate);
+        if (notes) description += " – " + notes;
+        description += nextDue ? ". Next due " + UnganiClientShared.formatDate(nextDue) + "." : ".";
+
+        // Awaited (unlike the fire-and-forget logAuditEvent() calls
+        // elsewhere in this module) because the very next step reloads
+        // this same page's own Activity Timeline, which reads this same
+        // audit log back - without awaiting, the reload's read can race
+        // ahead of this write completing, and the just-logged entry
+        // wouldn't show up until a second refresh.
+        await UnganiClientShared.logAuditEvent("maintenance_performed", {
+          entityType: "business_items",
+          entityId: String(currentItem.id),
+          description: description,
+          metadata: { performed_date: performedDate, notes: notes || null, next_due: nextDue }
+        });
+
+        UnganiClientShared.showToast("Maintenance logged ✓");
+        UnganiClientShared.closeModal();
+
+        await loadItemProfile(currentItem.id);
+      } catch (error) {
+        UnganiClientShared.showToast("Could not log maintenance: " + ((error && error.message) || "Network error. Please check your connection."));
+      }
     }
 
     function detectRealEstate(tenant) {

@@ -991,6 +991,20 @@
           }
         }
 
+        // Universal field (Phase 5) - not tied to any field set, so this
+        // check applies regardless of business type, same as the
+        // maintenance-status check below.
+        const maintenanceDueDays = customFields.next_maintenance_date ? daysUntil(customFields.next_maintenance_date) : null;
+        if (maintenanceDueDays !== null) {
+          if (maintenanceDueDays < 0) {
+            entries.push({ id: row.id, name: name, href: href, severity: "red", icon: "🔧", label: "Maintenance overdue", detail: Math.abs(maintenanceDueDays) + "d ago", sortKey: maintenanceDueDays });
+          } else if (maintenanceDueDays <= 7) {
+            entries.push({ id: row.id, name: name, href: href, severity: "red", icon: "🔧", label: "Maintenance due", detail: maintenanceDueDays === 0 ? "today" : "in " + maintenanceDueDays + "d", sortKey: maintenanceDueDays });
+          } else if (maintenanceDueDays <= 30) {
+            entries.push({ id: row.id, name: name, href: href, severity: "gold", icon: "🔧", label: "Maintenance due", detail: "in " + maintenanceDueDays + "d", sortKey: maintenanceDueDays });
+          }
+        }
+
         // Prefer the precise numeric check when both fields exist on this
         // item's field set; fall back to status text (e.g. a tenant who
         // manually sets status to "Low Stock" on a field set without
@@ -1302,6 +1316,9 @@
             </div>
           </div>
 
+          <label for="nextMaintenanceDate">Next Maintenance Due (optional)</label>
+          <input id="nextMaintenanceDate" type="date" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row.custom_fields || {}, ["next_maintenance_date"], "")) : ""}" />
+
           <label for="notes">Notes</label>
           <textarea id="notes" placeholder="Short property, project, or listing notes...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
 
@@ -1357,6 +1374,9 @@
               ${renderExtraFieldsHtml(activeItemFieldSet, row)}
             </div>
           </div>
+
+          <label for="nextMaintenanceDate">Next Maintenance Due (optional)</label>
+          <input id="nextMaintenanceDate" type="date" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row.custom_fields || {}, ["next_maintenance_date"], "")) : ""}" />
 
           <label for="itemNotes">Notes</label>
           <textarea id="itemNotes" placeholder="Add notes, specifications, or details...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
@@ -1607,6 +1627,12 @@
             customFields[field.id] = fieldValue;
           }
         });
+
+        // Universal, not tied to any ITEM_FIELD_SETS entry (Phase 5 of the
+        // Asset Management module) - "Next Maintenance Due" applies to any
+        // business type, same treatment as Notes, so it lives directly in
+        // custom_fields rather than requiring every field set to declare it.
+        customFields.next_maintenance_date = UnganiClientShared.value("nextMaintenanceDate") || null;
 
         payload.custom_fields = customFields;
 
