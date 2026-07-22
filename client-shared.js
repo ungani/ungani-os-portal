@@ -3131,6 +3131,167 @@
     }
   }
 
+  // ---- CSV export ----
+  // Shared by every my-*.html list page (Money/Tasks/Documents/People/
+  // Records/Items), which all already compute a full matching-id list for
+  // their current filters (the same one their own summary-fetch/pagination
+  // logic uses) - callers just pass that id list straight through.
+
+  const CSV_EXPORT_COLUMN_BLOCKLIST = ["tenant_id"];
+  const CSV_EXPORT_CHUNK_SIZE = 200;
+  const CSV_EXPORT_MAX_ROWS = 10000;
+
+  function csvEscape(value) {
+    const str = String(value);
+    return /[",\r\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+  }
+
+  function csvFormatValue(value) {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  }
+
+  // custom_fields is business-type-specific JSONB - flattened into its own
+  // custom_fields.<key> columns (computed from whatever keys actually show
+  // up across the exported rows) rather than dumped as a single raw-JSON
+  // column, so the export is a real, readable spreadsheet regardless of
+  // which of the 19 business-type field sets produced the data.
+  function buildCsvFromRows(rows) {
+    if (!rows.length) return "";
+
+    const knownColumns = [];
+    const customFieldColumns = [];
+    const seenKnown = new Set();
+    const seenCustom = new Set();
+
+    rows.forEach(function (row) {
+      Object.keys(row).forEach(function (key) {
+        if (CSV_EXPORT_COLUMN_BLOCKLIST.includes(key) || key === "custom_fields") return;
+        if (!seenKnown.has(key)) { seenKnown.add(key); knownColumns.push(key); }
+      });
+
+      if (row.custom_fields && typeof row.custom_fields === "object") {
+        Object.keys(row.custom_fields).forEach(function (key) {
+          const col = "custom_fields." + key;
+          if (!seenCustom.has(col)) { seenCustom.add(col); customFieldColumns.push(col); }
+        });
+      }
+    });
+
+    knownColumns.sort(function (a, b) {
+      if (a === "id") return -1;
+      if (b === "id") return 1;
+      return a.localeCompare(b);
+    });
+    customFieldColumns.sort();
+
+    const columns = knownColumns.concat(customFieldColumns);
+    const lines = [columns.map(csvEscape).join(",")];
+
+    rows.forEach(function (row) {
+      const line = columns.map(function (col) {
+        const value = col.indexOf("custom_fields.") === 0
+          ? (row.custom_fields ? row.custom_fields[col.slice("custom_fields.".length)] : "")
+          : row[col];
+        return csvEscape(csvFormatValue(value));
+      });
+      lines.push(line.join(","));
+    });
+
+    return lines.join("\r\n");
+  }
+
+  function buildCsvExportFilename(prefix) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return (prefix || "export") + "-" + y + "-" + m + "-" + d + ".csv";
+  }
+
+  function downloadCsvFile(csvContent, filename) {
+    // BOM prefix - without it, Excel misreads UTF-8 special characters
+    // (e.g. non-ASCII names) as a different encoding and garbles them.
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  // options: { supabaseClient, table, ids, filenamePrefix }
+  //
+  // ids should be the CURRENT full matching-id list for whatever the page
+  // has filtered/searched/tile-selected down to right now (not just the
+  // visible page) - every caller already has this in memory from its own
+  // summary-fetch, so export matches exactly what "X of Y records shown"
+  // on the page claims, not a bigger or smaller set behind the scenes.
+  //
+  // Fetches full row data in small chunks (CSV_EXPORT_CHUNK_SIZE) rather
+  // than one unbounded query - a single large .in() risks silently hitting
+  // Supabase's own row cap with no error, which a small, verifiable chunk
+  // never will. Row count is checked against the known true total (ids.length)
+  // at the end, so a shortfall is reported honestly instead of assumed away.
+  async function exportRecordsToCsv(options) {
+    const opts = options || {};
+    const supabaseClient = opts.supabaseClient;
+    const table = opts.table;
+    const ids = Array.isArray(opts.ids) ? opts.ids : [];
+    const filenamePrefix = opts.filenamePrefix || "export";
+
+    if (!supabaseClient || !table) return;
+
+    if (!ids.length) {
+      showToast("Nothing to export - no records match the current filters.");
+      return;
+    }
+
+    const truncated = ids.length > CSV_EXPORT_MAX_ROWS;
+    const targetIds = truncated ? ids.slice(0, CSV_EXPORT_MAX_ROWS) : ids;
+    const collected = [];
+
+    for (let i = 0; i < targetIds.length; i += CSV_EXPORT_CHUNK_SIZE) {
+      const chunk = targetIds.slice(i, i + CSV_EXPORT_CHUNK_SIZE);
+      let response;
+
+      try {
+        response = await supabaseClient.from(table).select("*").in("id", chunk);
+      } catch (error) {
+        showToast("Export failed: " + (error.message || "network error") + ". Please try again.");
+        return;
+      }
+
+      if (response.error) {
+        showToast("Export failed: " + response.error.message);
+        return;
+      }
+
+      collected.push.apply(collected, response.data || []);
+      showToast("Exporting " + Math.min(collected.length, targetIds.length) + " of " + targetIds.length + "...");
+    }
+
+    const incomplete = collected.length < targetIds.length;
+
+    collected.sort(function (a, b) {
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
+
+    downloadCsvFile(buildCsvFromRows(collected), buildCsvExportFilename(filenamePrefix));
+
+    if (incomplete) {
+      showToast("Exported " + collected.length + " of " + targetIds.length + " matching records - some could not be loaded. Please try again.");
+    } else if (truncated) {
+      showToast("Exported the first " + CSV_EXPORT_MAX_ROWS + " of " + ids.length + " matching records. Narrow your filters to export the rest.");
+    } else {
+      showToast("Exported " + collected.length + " record(s) ✓");
+    }
+  }
+
   async function logout() {
     try {
       if (!state.supabaseClient && window.supabase) {
@@ -3396,6 +3557,7 @@
       toggleSidebar,
       logout,
       logAuditEvent,
+      exportRecordsToCsv,
       signInFromForm,
       getTenantName,
       getBusinessTypeLabel,
