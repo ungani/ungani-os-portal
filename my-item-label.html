@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Asset Label</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+
+  <style>
+    .no-print {
+      /* toggled off entirely under @media print below */
+    }
+
+    .label-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .label-card {
+      max-width: 380px;
+      margin: 0 auto;
+      background: #FFFFFF;
+      color: #061C3D;
+      border: 1px solid rgba(6,28,61,0.12);
+      border-radius: 20px;
+      box-shadow: var(--ungani-shadow, 0 18px 45px rgba(6,28,61,0.10));
+      padding: 28px;
+      text-align: center;
+    }
+
+    .label-business {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748B;
+      margin: 0 0 6px;
+    }
+
+    .label-name {
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      margin: 0 0 18px;
+      word-break: break-word;
+    }
+
+    .label-qr-wrap {
+      display: flex;
+      justify-content: center;
+      margin: 0 0 14px;
+    }
+
+    .label-qr-wrap canvas,
+    .label-qr-wrap img {
+      border-radius: 10px;
+    }
+
+    .label-reference {
+      font-size: 12px;
+      font-weight: 700;
+      color: #64748B;
+      letter-spacing: 0.04em;
+    }
+
+    .label-footer {
+      margin-top: 16px;
+      font-size: 10.5px;
+      color: #94A3B8;
+    }
+
+    @media (max-width: 560px) {
+      .label-card {
+        max-width: 100%;
+        padding: 22px;
+      }
+    }
+
+    @media print {
+      @page {
+        size: A4;
+        margin: 20mm;
+      }
+
+      body {
+        background: white !important;
+      }
+
+      .no-print,
+      .ungani-sidebar,
+      .ungani-mobile-bottom,
+      .ungani-mobile-nav,
+      .ungani-topbar,
+      .ungani-toast {
+        display: none !important;
+      }
+
+      .ungani-shell,
+      .ungani-main,
+      .ungani-content {
+        display: block !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        max-width: none !important;
+      }
+
+      .label-card {
+        box-shadow: none !important;
+        border: 1px solid #061C3D !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let isRealEstate = false;
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "items",
+        pageTitle: "Asset Label",
+        pageSubtitle: "Printable QR label for this item, property, or listing.",
+        onReady: startLabelPage
+      });
+    });
+
+    async function startLabelPage(context) {
+      currentContext = context;
+      isRealEstate = detectRealEstate(context.tenant);
+
+      const itemId = new URLSearchParams(window.location.search).get("id");
+
+      if (!itemId) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard(
+          "No item specified",
+          "This link is missing the item to print a label for."
+        );
+        return;
+      }
+
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading label...");
+
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, title, property_name")
+          .eq("id", itemId)
+          .eq("tenant_id", currentContext.tenantId)
+          .maybeSingle();
+      } catch (error) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard(
+          "Could not load item",
+          error.message || "Network error. Please check your connection."
+        );
+        return;
+      }
+
+      if (response.error) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load item", response.error.message);
+        return;
+      }
+
+      if (!response.data) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard(
+          isRealEstate ? "Property not found" : "Item not found",
+          "This record may have been deleted, or it does not belong to your business."
+        );
+        return;
+      }
+
+      renderLabel(response.data);
+    }
+
+    function renderLabel(row) {
+      const name = UnganiClientShared.getValue(row, ["item_name", "name", "title", "property_name"], isRealEstate ? "Property" : "Item");
+      const businessName = UnganiClientShared.getValue(currentContext.tenant, ["business_name", "company_name", "name"], "");
+      const reference = String(row.id || "").slice(0, 8).toUpperCase();
+      const profileUrl = window.location.origin + "/my-item-profile.html?id=" + encodeURIComponent(row.id);
+
+      currentContext.contentEl.innerHTML = `
+        <div class="label-toolbar no-print">
+          <a class="ungani-btn dark" href="${UnganiClientShared.attr("my-item-profile.html?id=" + encodeURIComponent(row.id))}">&larr; Back to Profile</a>
+          <button class="ungani-btn gold" type="button" onclick="window.print()">Print / Save PDF</button>
+        </div>
+
+        <div class="label-card">
+          ${businessName ? `<p class="label-business">${UnganiClientShared.safe(businessName)}</p>` : ""}
+          <h1 class="label-name">${UnganiClientShared.safe(name)}</h1>
+
+          <div class="label-qr-wrap">
+            <div id="labelQrCanvas" style="display:inline-block;"></div>
+          </div>
+
+          <p class="label-reference">Reference: ${UnganiClientShared.safe(reference)}</p>
+          <p class="label-footer">Scan with any phone camera to open this ${isRealEstate ? "property" : "item"}'s profile.</p>
+        </div>
+      `;
+
+      loadQrLibrary()
+        .then(function (QRCodeCtor) {
+          const target = document.getElementById("labelQrCanvas");
+          if (!target) return;
+
+          try {
+            new QRCodeCtor(target, {
+              text: profileUrl,
+              width: 220,
+              height: 220,
+              colorDark: "#061C3D",
+              colorLight: "#FFFFFF",
+              correctLevel: QRCodeCtor.CorrectLevel.M
+            });
+          } catch (error) {
+            showQrFallback(profileUrl);
+          }
+        })
+        .catch(function () {
+          showQrFallback(profileUrl);
+        });
+    }
+
+    function showQrFallback(profileUrl) {
+      const wrap = document.querySelector(".label-qr-wrap");
+      if (!wrap) return;
+      wrap.innerHTML = `<p class="ungani-small">Could not generate a QR code right now. Direct link:<br>${UnganiClientShared.safe(profileUrl)}</p>`;
+    }
+
+    let qrLibraryPromise = null;
+
+    // davidshimjs/qrcodejs - a real, verified CDN-hosted browser build
+    // (confirmed via cdnjs's package API before using it). The npm
+    // "qrcode" package was tried first but ships no bundled browser
+    // build at all (no dist/build directory, bundler-only per its
+    // package.json) - it 404s as a direct <script src>, so it never
+    // would have worked here despite looking like the obvious choice.
+    function loadQrLibrary() {
+      if (window.QRCode) return Promise.resolve(window.QRCode);
+      if (qrLibraryPromise) return qrLibraryPromise;
+
+      qrLibraryPromise = new Promise(function (resolve, reject) {
+        const script = document.createElement("script");
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+        script.async = true;
+        script.onload = function () { resolve(window.QRCode); };
+        script.onerror = function () { reject(new Error("QR code library could not load.")); };
+        document.head.appendChild(script);
+      });
+
+      return qrLibraryPromise;
+    }
+
+    function detectRealEstate(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "real_estate";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+    }
+  </script>
+</body>
+</html>
