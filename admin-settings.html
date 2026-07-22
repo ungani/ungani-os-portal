@@ -1250,7 +1250,7 @@
           <div class="row-card">
             <div class="row-title">${safe(t("mfaScanTitle"))}</div>
             <p class="row-detail">${safe(t("mfaScanDesc"))}</p>
-            <div class="mfa-qr-wrap" id="mfaQrWrap">${mfaQrHtml || ""}</div>
+            <div class="mfa-qr-wrap" id="mfaQrWrap"></div>
             <p class="row-detail">${safe(t("mfaManualEntry"))}</p>
             <span class="mfa-secret">${safe(mfaEnrollSecret || "")}</span>
             <form onsubmit="submitMfaVerify(event)">
@@ -1262,6 +1262,7 @@
             </form>
           </div>
         `;
+        renderMfaQrImage();
         return;
       }
 
@@ -1275,8 +1276,30 @@
       `;
     }
 
-    let mfaQrHtml = "";
+    let mfaEnrollQrCode = "";
     let mfaEnrollSecret = "";
+
+    // Builds the <img> via DOM property assignment rather than
+    // interpolating the QR value into an HTML string - Supabase's
+    // data.totp.qr_code is SVG markup (data-URI or raw), which contains
+    // literal double-quote characters (e.g. xmlns="..."). Dropping that
+    // straight into a template-literal src="${...}" attribute lets those
+    // quotes close the attribute early, corrupting the tag and leaving
+    // trailing text like alt="QR code" /> rendered as visible page text
+    // instead of parsed markup. Assigning to .src as a property is never
+    // re-parsed as HTML, so this is safe regardless of the exact string
+    // Supabase returns.
+    function renderMfaQrImage() {
+      const wrap = document.getElementById("mfaQrWrap");
+      if (!wrap || !mfaEnrollQrCode) return;
+
+      const img = document.createElement("img");
+      img.src = mfaEnrollQrCode.startsWith("data:")
+        ? mfaEnrollQrCode
+        : "data:image/svg+xml;utf-8," + encodeURIComponent(mfaEnrollQrCode);
+      img.alt = "QR code";
+      wrap.appendChild(img);
+    }
 
     async function startMfaEnroll() {
       try {
@@ -1299,11 +1322,8 @@
         }
 
         mfaEnrollFactorId = data.id;
-        const qrCode = data.totp && data.totp.qr_code;
+        mfaEnrollQrCode = (data.totp && data.totp.qr_code) || "";
         mfaEnrollSecret = (data.totp && data.totp.secret) || "";
-        mfaQrHtml = qrCode
-          ? `<img src="${qrCode.startsWith("data:") ? qrCode : "data:image/svg+xml;utf-8," + encodeURIComponent(qrCode)}" alt="QR code" />`
-          : "";
 
         renderMfaBox("enroll");
       } catch (error) {
