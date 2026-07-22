@@ -11,8 +11,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="ungani-business-config.js"></script>
-  <!-- Hooking into your existing language engine foundation -->
-  <script src="js/language.js"></script>
 
   <style>
     :root {
@@ -721,7 +719,7 @@
             <div class="form-grid">
               <div class="form-group">
                 <label for="prefLanguage" data-i18n="field_lang">Language</label>
-                <select id="prefLanguage" class="form-control">
+                <select id="prefLanguage" class="form-control" onchange="previewLanguage(this.value)">
                   <option value="en">English</option>
                   <option value="sw">Kiswahili</option>
                 </select>
@@ -809,10 +807,10 @@
 
             <a class="link-card" href="my-security.html">
               <div>
-                <strong>Security & Data</strong>
-                <span>Last login, recent activity, sessions, and data overview.</span>
+                <strong data-i18n="card_security_title">Security & Data</strong>
+                <span data-i18n="card_security_desc">Last login, recent activity, sessions, and data overview.</span>
               </div>
-              <span class="chip gold">Open</span>
+              <span class="chip gold" data-i18n="chip_open">Open</span>
             </a>
 
             <a class="link-card" href="client-notifications.html">
@@ -864,6 +862,148 @@
     let currentUserId = null;
     let currentTenantId = null;
 
+    // Same self-contained translations-object + applyLanguage() pattern
+    // proven on admin-home.html - replaces js/language.js, which only had
+    // 16 generic keys (none of this page's actual vocabulary) and fell
+    // back to printing the raw data-i18n key string when a key was
+    // missing, plus a window.LanguageEngine API that was never implemented.
+    var currentLang = localStorage.getItem('ungani_client_lang') || 'en';
+
+    var translations = {
+      en: {
+        topbar_sub: "Client Settings",
+        nav_package: "Package",
+        nav_billing: "Billing",
+        nav_back: "Back to Dashboard",
+        settings_title: "My Settings",
+        settings_desc: "Review your business profile, package, billing, reports, branch settings, and account status in one place.",
+        lbl_business: "Business",
+        lbl_package: "Package",
+        lbl_branch_mode: "Branch Mode",
+        lbl_attention: "Attention",
+        attention_desc: "Pending tasks, support, payments, and upgrade requests.",
+        loading_text: "Loading settings...",
+        biz_profile: "Business Profile",
+        row_biz_name: "Business Name",
+        row_contact_name: "Contact Name",
+        row_email: "Email",
+        row_phone: "Phone",
+        row_location: "Location",
+        row_registration: "Registration",
+        acc_status: "Account Status",
+        row_workspace: "Workspace",
+        row_access: "Access",
+        row_payments: "Payment Items",
+        row_support: "Open Support",
+        row_tasks: "Pending Tasks",
+        row_upgrades: "Upgrade Requests",
+        biz_sections: "Business Sections",
+        save_sections_btn: "Save Sections",
+        user_prefs: "User Preferences",
+        field_lang: "Language",
+        field_currency: "Currency",
+        field_theme: "Theme",
+        field_timezone: "Timezone",
+        save_btn: "Save Preferences",
+        quick_settings: "Quick Settings & Tools",
+        card_pkg_title: "Package",
+        card_pkg_desc: "View your plan, limits, trial, and upgrade options.",
+        chip_open: "Open",
+        card_bill_title: "Billing",
+        card_bill_desc: "View invoices, receipts, and upload payment proof.",
+        card_branch_title: "Branches",
+        card_branch_desc: "Manage branch records if multi-branch is enabled.",
+        card_rep_title: "Reports",
+        card_rep_desc: "See money, tasks, items, and business insights.",
+        card_status_title: "Account Status",
+        card_status_desc: "Check account access, trial, payment, and restrictions.",
+        card_notif_title: "Notifications",
+        card_notif_desc: "Review system, billing, support, and account notices.",
+        card_supp_title: "Support",
+        card_supp_desc: "Send an issue to UNGANI support.",
+        card_doc_title: "Documents",
+        card_doc_desc: "Open your business documents area.",
+        card_dash_title: "Dashboard",
+        card_dash_desc: "Return to your main client workspace.",
+        card_security_title: "Security & Data",
+        card_security_desc: "Last login, recent activity, sessions, and data overview."
+      },
+      sw: {
+        topbar_sub: "Mipangilio ya Mteja",
+        nav_package: "Kifurushi",
+        nav_billing: "Malipo",
+        nav_back: "Rudi kwa Dashibodi",
+        settings_title: "Mipangilio Yangu",
+        settings_desc: "Angalia wasifu wa biashara yako, kifurushi, malipo, ripoti, mipangilio ya matawi, na hali ya akaunti mahali pamoja.",
+        lbl_business: "Biashara",
+        lbl_package: "Kifurushi",
+        lbl_branch_mode: "Hali ya Matawi",
+        lbl_attention: "Yanayohitaji Uangalizi",
+        attention_desc: "Majukumu, msaada, malipo, na maombi ya kuboresha yanayosubiri.",
+        loading_text: "Inapakia mipangilio...",
+        biz_profile: "Wasifu wa Biashara",
+        row_biz_name: "Jina la Biashara",
+        row_contact_name: "Jina la Mawasiliano",
+        row_email: "Barua Pepe",
+        row_phone: "Simu",
+        row_location: "Mahali",
+        row_registration: "Usajili",
+        acc_status: "Hali ya Akaunti",
+        row_workspace: "Nafasi ya Kazi",
+        row_access: "Ufikiaji",
+        row_payments: "Vipengele vya Malipo",
+        row_support: "Msaada Uliofunguliwa",
+        row_tasks: "Majukumu Yanayosubiri",
+        row_upgrades: "Maombi ya Kuboresha",
+        biz_sections: "Sehemu za Biashara",
+        save_sections_btn: "Hifadhi Sehemu",
+        user_prefs: "Mapendeleo ya Mtumiaji",
+        field_lang: "Lugha",
+        field_currency: "Sarafu",
+        field_theme: "Muonekano",
+        field_timezone: "Saa za Eneo",
+        save_btn: "Hifadhi Mapendeleo",
+        quick_settings: "Mipangilio ya Haraka na Zana",
+        card_pkg_title: "Kifurushi",
+        card_pkg_desc: "Angalia mpango wako, mipaka, jaribio, na chaguo za kuboresha.",
+        chip_open: "Fungua",
+        card_bill_title: "Malipo",
+        card_bill_desc: "Angalia ankara, risiti, na pakia uthibitisho wa malipo.",
+        card_branch_title: "Matawi",
+        card_branch_desc: "Simamia kumbukumbu za matawi ikiwa matawi mengi yamewezeshwa.",
+        card_rep_title: "Ripoti",
+        card_rep_desc: "Ona fedha, majukumu, vitu, na maarifa ya biashara.",
+        card_status_title: "Hali ya Akaunti",
+        card_status_desc: "Angalia ufikiaji wa akaunti, jaribio, malipo, na vizuizi.",
+        card_notif_title: "Arifa",
+        card_notif_desc: "Angalia arifa za mfumo, malipo, msaada, na akaunti.",
+        card_supp_title: "Msaada",
+        card_supp_desc: "Tuma tatizo kwa msaada wa UNGANI.",
+        card_doc_title: "Nyaraka",
+        card_doc_desc: "Fungua sehemu ya nyaraka za biashara yako.",
+        card_dash_title: "Dashibodi",
+        card_dash_desc: "Rudi kwenye nafasi yako kuu ya kazi.",
+        card_security_title: "Usalama na Data",
+        card_security_desc: "Mwingilio wa mwisho, shughuli za hivi karibuni, vipindi, na muhtasari wa data."
+      }
+    };
+
+    function applyLanguage() {
+      document.querySelectorAll('[data-i18n]').forEach(function (el) {
+        var key = el.getAttribute('data-i18n');
+        if (translations[currentLang] && translations[currentLang][key]) {
+          el.textContent = translations[currentLang][key];
+        }
+      });
+      var langSelect = document.getElementById('prefLanguage');
+      if (langSelect) langSelect.value = currentLang;
+    }
+
+    function previewLanguage(value) {
+      currentLang = value;
+      applyLanguage();
+    }
+
     function withButtonLoading(button, asyncFn) {
       if (!button || button.disabled || button.classList.contains("is-loading")) {
         return Promise.resolve(typeof asyncFn === "function" ? asyncFn() : undefined);
@@ -892,6 +1032,7 @@
 
     document.addEventListener("DOMContentLoaded", async () => {
       applyExistingThemeSetting();
+      applyLanguage();
       await checkClientSession();
       await loadSettings();
       await fetchUserPreferences();
@@ -976,11 +1117,9 @@
 
         if (data) {
           if (data.language) {
-            document.getElementById("prefLanguage").value = data.language;
-            // Trigger your custom language engine if initialized globally
-            if (window.LanguageEngine && typeof window.LanguageEngine.changeLanguage === 'function') {
-              window.LanguageEngine.changeLanguage(data.language);
-            }
+            currentLang = data.language;
+            localStorage.setItem('ungani_client_lang', currentLang);
+            applyLanguage();
           }
           if (data.currency) document.getElementById("prefCurrency").value = data.currency;
           if (data.theme) {
@@ -1031,9 +1170,9 @@
           localStorage.setItem("ungani_theme", theme);
           previewTheme(theme);
 
-          if (window.LanguageEngine && typeof window.LanguageEngine.changeLanguage === 'function') {
-            window.LanguageEngine.changeLanguage(language);
-          }
+          currentLang = language;
+          localStorage.setItem('ungani_client_lang', currentLang);
+          applyLanguage();
 
           msgSpan.className = "action-msg success";
           msgSpan.textContent = "Preferences saved successfully.";
