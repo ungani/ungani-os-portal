@@ -135,9 +135,16 @@
       await loadItems();
     }
 
+    // custom_fields/section_label/name fields added for the "Needs
+    // Attention" panel (Phase 3 of the Asset Management module) - it
+    // reuses this same all-items summary fetch (already unpaginated,
+    // narrow-column, tenant-wide) instead of firing a second query, since
+    // custom_fields.expiry_date/warranty_expiry/stock_quantity/reorder_level
+    // are the fields that panel actually needs to read.
     const ITEM_SUMMARY_COLUMNS = "id, status, item_status, property_status, listing_type, item_type, type, " +
       "project_name, total_units, units_sold, units_available, project_progress_percent, " +
-      "property_price, selling_price, cost_price";
+      "property_price, selling_price, cost_price, item_name, name, title, property_name, " +
+      "custom_fields, section_label";
 
     function applyItemCommonFilters(query) {
       query = query.eq("tenant_id", currentContext.tenantId);
@@ -580,6 +587,60 @@
               font-size: 21px;
             }
           }
+
+          .attention-list {
+            display: grid;
+            gap: 10px;
+          }
+
+          .attention-row {
+            position: relative;
+            display: grid;
+            grid-template-columns: 38px minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            padding: 12px 12px 12px 14px;
+            border: 1px solid var(--ungani-border);
+            background: var(--ungani-soft);
+            border-radius: 16px;
+            border-left: 4px solid var(--accent, var(--ungani-muted));
+            text-decoration: none;
+            color: inherit;
+            transition: 0.18s ease;
+          }
+
+          .attention-row:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ungani-shadow);
+          }
+
+          .attention-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            background: var(--ungani-card);
+          }
+
+          .attention-body strong {
+            display: block;
+            font-size: 14px;
+            color: var(--ungani-text);
+          }
+
+          @media (max-width: 560px) {
+            .attention-row {
+              grid-template-columns: 32px minmax(0, 1fr);
+            }
+
+            .attention-row .ungani-badge {
+              grid-column: 2;
+              justify-self: start;
+            }
+          }
         </style>
 
         <section class="ungani-card ungani-hero">
@@ -618,6 +679,8 @@
             ${UnganiClientShared.metricCard("Estimated Total Value", UnganiClientShared.formatKES(summary.totalValue), "Visible item value", "green")}
           `}
         </section>
+
+        ${renderAttentionPanel(computeAttentionEntries(itemSummaryRows))}
 
         ${isRealEstate ? `
           <section class="ungani-card">
@@ -879,6 +942,137 @@
       });
 
       return { inStock, lowStock, outOfStock, totalValue };
+    }
+
+    // ---- Assets Needing Attention (Phase 3 of the Asset Management module) ----
+    // Client-computed, no new schema: reads expiry_date/warranty_expiry/
+    // stock_quantity/reorder_level out of custom_fields (already stored by
+    // whichever ITEM_FIELD_SETS the item's business type/section uses) plus
+    // status text, across ALL of the tenant's items regardless of the
+    // currently-selected category tile/filter.
+
+    function daysUntil(dateStr) {
+      const target = new Date(dateStr);
+      if (isNaN(target.getTime())) return null;
+
+      const now = new Date();
+      target.setHours(0, 0, 0, 0);
+      now.setHours(0, 0, 0, 0);
+
+      return Math.round((target.getTime() - now.getTime()) / 86400000);
+    }
+
+    function computeAttentionEntries(rows) {
+      const entries = [];
+
+      rows.forEach(function (row) {
+        const name = getItemName(row);
+        const href = "my-item-profile.html?id=" + encodeURIComponent(row.id);
+        const customFields = row.custom_fields || {};
+        const status = getStatus(row).toLowerCase();
+
+        const expiryDays = customFields.expiry_date ? daysUntil(customFields.expiry_date) : null;
+        if (expiryDays !== null) {
+          if (expiryDays < 0) {
+            entries.push({ id: row.id, name: name, href: href, severity: "red", icon: "⛔", label: "Expired", detail: Math.abs(expiryDays) + "d ago", sortKey: expiryDays });
+          } else if (expiryDays <= 7) {
+            entries.push({ id: row.id, name: name, href: href, severity: "red", icon: "⏰", label: "Expiring soon", detail: expiryDays === 0 ? "today" : "in " + expiryDays + "d", sortKey: expiryDays });
+          } else if (expiryDays <= 30) {
+            entries.push({ id: row.id, name: name, href: href, severity: "gold", icon: "⏳", label: "Expiring soon", detail: "in " + expiryDays + "d", sortKey: expiryDays });
+          }
+        }
+
+        const warrantyDays = customFields.warranty_expiry ? daysUntil(customFields.warranty_expiry) : null;
+        if (warrantyDays !== null) {
+          if (warrantyDays < 0) {
+            entries.push({ id: row.id, name: name, href: href, severity: "gold", icon: "🛡️", label: "Warranty expired", detail: Math.abs(warrantyDays) + "d ago", sortKey: 1000 + warrantyDays });
+          } else if (warrantyDays <= 30) {
+            entries.push({ id: row.id, name: name, href: href, severity: "gold", icon: "🛡️", label: "Warranty expiring", detail: "in " + warrantyDays + "d", sortKey: 1000 + warrantyDays });
+          }
+        }
+
+        // Prefer the precise numeric check when both fields exist on this
+        // item's field set; fall back to status text (e.g. a tenant who
+        // manually sets status to "Low Stock" on a field set without
+        // stock_quantity/reorder_level) so items on any business type still
+        // get flagged, just less precisely.
+        const stockQty = Number(customFields.stock_quantity);
+        const reorderLevel = Number(customFields.reorder_level);
+        const hasNumericStock = customFields.stock_quantity !== undefined && customFields.stock_quantity !== null && customFields.stock_quantity !== "" &&
+          customFields.reorder_level !== undefined && customFields.reorder_level !== null && customFields.reorder_level !== "" &&
+          !isNaN(stockQty) && !isNaN(reorderLevel);
+
+        if (hasNumericStock) {
+          if (stockQty <= 0) {
+            entries.push({ id: row.id, name: name, href: href, severity: "red", icon: "📦", label: "Out of stock", detail: "0 left", sortKey: 2000 });
+          } else if (stockQty <= reorderLevel) {
+            entries.push({ id: row.id, name: name, href: href, severity: "orange", icon: "📦", label: "Low stock", detail: stockQty + " left, reorder at " + reorderLevel, sortKey: 2000 });
+          }
+        } else if (status.includes("out of stock")) {
+          entries.push({ id: row.id, name: name, href: href, severity: "red", icon: "📦", label: "Out of stock", detail: "", sortKey: 2000 });
+        } else if (status.includes("low stock")) {
+          entries.push({ id: row.id, name: name, href: href, severity: "orange", icon: "📦", label: "Low stock", detail: "", sortKey: 2000 });
+        }
+
+        if (status.includes("maintenance")) {
+          entries.push({ id: row.id, name: name, href: href, severity: "gold", icon: "🔧", label: "In maintenance", detail: "", sortKey: 3000 });
+        }
+      });
+
+      const severityRank = { red: 0, orange: 1, gold: 2 };
+
+      entries.sort(function (a, b) {
+        const rankDiff = severityRank[a.severity] - severityRank[b.severity];
+        if (rankDiff !== 0) return rankDiff;
+        return a.sortKey - b.sortKey;
+      });
+
+      return entries;
+    }
+
+    function attentionAccentHex(severity) {
+      const map = { red: "#DC2626", orange: "#C77700", gold: "#D4A63A" };
+      return map[severity] || "#64748B";
+    }
+
+    function renderAttentionPanel(entries) {
+      const noun = isRealEstate ? "properties" : "items";
+      const shown = entries.slice(0, 8);
+      const remaining = entries.length - shown.length;
+
+      return `
+        <section class="ungani-card" style="margin-bottom:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>${isRealEstate ? "Properties Needing Attention" : "Assets Needing Attention"}</h3>
+              <p class="ungani-small">Expiry dates, warranties, stock levels, and maintenance status across every ${UnganiClientShared.safe(noun)}.</p>
+            </div>
+          </div>
+
+          ${shown.length ? `
+            <div class="attention-list">
+              ${shown.map(function (entry) {
+                return `
+                  <a class="attention-row" href="${UnganiClientShared.attr(entry.href)}" style="--accent:${attentionAccentHex(entry.severity)};">
+                    <span class="attention-icon">${entry.icon}</span>
+                    <span class="attention-body">
+                      <strong>${UnganiClientShared.safe(entry.name)}</strong>
+                      <span class="ungani-small">${UnganiClientShared.safe(entry.label)}${entry.detail ? " · " + UnganiClientShared.safe(entry.detail) : ""}</span>
+                    </span>
+                    <span class="ungani-badge ${entry.severity}">${UnganiClientShared.safe(entry.label)}</span>
+                  </a>
+                `;
+              }).join("")}
+            </div>
+            ${remaining > 0 ? `<p class="ungani-small" style="margin-top:10px;">+${remaining} more item(s) need attention.</p>` : ""}
+          ` : `
+            <div class="ungani-empty">
+              <h3>All caught up ✓</h3>
+              <p>No ${UnganiClientShared.safe(noun)} currently need attention.</p>
+            </div>
+          `}
+        </section>
+      `;
     }
 
     function renderPropertyGrid(rows) {
