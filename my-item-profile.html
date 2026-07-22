@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Item Profile</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="nia-assistant.js"></script>
+
+  <style>
+    .profile-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--ungani-muted, #6B7280);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      margin-bottom: 14px;
+    }
+
+    .profile-back:hover {
+      color: var(--ungani-navy, #061C3D);
+    }
+
+    .profile-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: flex-start;
+    }
+
+    .profile-photo {
+      width: 100%;
+      max-width: 320px;
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .profile-photo img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .profile-hero h1 {
+      margin: 0 0 6px;
+      font-size: 26px;
+      letter-spacing: -0.02em;
+    }
+
+    .profile-hero-sub {
+      margin: 0 0 14px;
+      color: var(--ungani-muted, #6B7280);
+      font-size: 14px;
+    }
+
+    .profile-value-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--ungani-gold, #D4A63A);
+      margin-bottom: 4px;
+    }
+
+    .profile-value {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+    }
+
+    .profile-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    @media (max-width: 720px) {
+      .profile-hero {
+        grid-template-columns: 1fr;
+      }
+
+      .profile-actions {
+        flex-direction: row;
+        align-items: center;
+      }
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px 24px;
+    }
+
+    @media (max-width: 640px) {
+      .detail-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.1));
+    }
+
+    .detail-row label {
+      color: var(--ungani-muted, #6B7280);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .detail-row span {
+      text-align: right;
+      font-size: 13.5px;
+      font-weight: 700;
+    }
+
+    .profile-footer-meta {
+      margin-top: 18px;
+      color: var(--ungani-muted, #6B7280);
+      font-size: 12.5px;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let isRealEstate = false;
+    let currentItem = null;
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "items",
+        pageTitle: "Item Profile",
+        pageSubtitle: "Full details for this item, property, or listing.",
+        onReady: startItemProfilePage
+      });
+    });
+
+    async function startItemProfilePage(context) {
+      currentContext = context;
+      isRealEstate = detectRealEstate(context.tenant);
+
+      const itemId = new URLSearchParams(window.location.search).get("id");
+
+      if (!itemId) {
+        context.contentEl.innerHTML = UnganiClientShared.errorCard(
+          "No item specified",
+          "This link is missing the item to show. Go back to Items / Assets and click a record to view its profile."
+        );
+        return;
+      }
+
+      await loadItemProfile(itemId);
+    }
+
+    async function loadItemProfile(itemId) {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading item profile...");
+
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("*")
+          .eq("id", itemId)
+          .eq("tenant_id", currentContext.tenantId)
+          .maybeSingle();
+      } catch (error) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard(
+          "Could not load item",
+          error.message || "Network error. Please check your connection."
+        );
+        return;
+      }
+
+      if (response.error) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load item", response.error.message);
+        return;
+      }
+
+      if (!response.data) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard(
+          isRealEstate ? "Property not found" : "Item not found",
+          "This record may have been deleted, or it does not belong to your business."
+        );
+        return;
+      }
+
+      currentItem = response.data;
+
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      if (titleEl) titleEl.innerText = getItemName(currentItem);
+
+      renderItemProfile(currentItem);
+    }
+
+    function renderItemProfile(row) {
+      const name = getItemName(row);
+      const status = getStatus(row);
+      const sectionLabel = UnganiClientShared.getValue(row, ["section_label"], "");
+      const itemType = UnganiClientShared.getValue(row, ["item_type", "type"], isRealEstate ? "Property" : "Item");
+      const value = Number(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], 0) || 0);
+      const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
+      const photo = UnganiClientShared.getValue(row, ["photo_url", "image_url", "thumbnail_url"], "");
+      const fieldSet = UnganiBusinessConfig.resolveItemFieldSet(currentContext.tenant, sectionLabel);
+
+      const backHref = isRealEstate ? "my-items.html" : "my-items.html";
+      const editHref = "my-items.html?highlight=" + encodeURIComponent(row.id);
+
+      const subtitleParts = [toTitle(itemType)];
+      if (sectionLabel) subtitleParts.push(sectionLabel);
+
+      currentContext.contentEl.innerHTML = `
+        <a class="profile-back" href="${UnganiClientShared.attr(backHref)}">&larr; ${isRealEstate ? "Back to Properties" : "Back to Items"}</a>
+
+        <div class="ungani-card">
+          <div class="profile-hero">
+            <div>
+              ${photo ? `
+                <div class="profile-photo">
+                  <img src="${UnganiClientShared.attr(photo)}" alt="${UnganiClientShared.attr(name)}" onerror="this.parentElement.style.display='none';" />
+                </div>
+              ` : ""}
+
+              <h1>${UnganiClientShared.safe(name)}</h1>
+              <p class="profile-hero-sub">${UnganiClientShared.safe(subtitleParts.join(" · "))}</p>
+
+              ${value > 0 ? `
+                <span class="profile-value-label">${UnganiClientShared.safe(fieldSet.valueLabel || "Price / Value")}</span>
+                <span class="profile-value">${UnganiClientShared.safe(UnganiClientShared.formatKES(value))}</span>
+              ` : ""}
+            </div>
+
+            <div class="profile-actions">
+              ${statusBadge(status)}
+              <a class="ungani-btn gold" href="${UnganiClientShared.attr(editHref)}">Edit Details</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Details</h3>
+            </div>
+          </div>
+
+          <div class="detail-grid">
+            ${renderFieldRows(row, fieldSet)}
+          </div>
+        </div>
+
+        ${notes ? `
+          <div class="ungani-card" style="margin-top:18px;">
+            <div class="ungani-section-title">
+              <div>
+                <h3>Notes</h3>
+              </div>
+            </div>
+            <p class="ungani-small" style="white-space:pre-wrap;">${UnganiClientShared.safe(notes)}</p>
+          </div>
+        ` : ""}
+
+        <p class="profile-footer-meta">
+          Added ${UnganiClientShared.safe(UnganiClientShared.formatDateTime(row.created_at))}
+          ${row.updated_at ? " · Last updated " + UnganiClientShared.safe(UnganiClientShared.formatDateTime(row.updated_at)) : ""}
+        </p>
+      `;
+    }
+
+    function renderFieldRows(row, fieldSet) {
+      const customFields = row.custom_fields || {};
+      const fields = fieldSet.fields || [];
+
+      if (!fields.length) {
+        return `<div class="ungani-empty" style="grid-column:1/-1;"><p>No additional fields for this business type.</p></div>`;
+      }
+
+      return fields.map(function (field) {
+        const raw = field.column
+          ? UnganiClientShared.getValue(row, [field.column], "")
+          : UnganiClientShared.getValue(customFields, [field.id], "");
+
+        let valueHtml;
+
+        if (!raw) {
+          valueHtml = "—";
+        } else if (field.type === "date") {
+          valueHtml = UnganiClientShared.safe(UnganiClientShared.formatDate(raw));
+        } else if (field.type === "url") {
+          valueHtml = `<a href="${UnganiClientShared.attr(raw)}" target="_blank" rel="noopener noreferrer">View ↗</a>`;
+        } else {
+          valueHtml = UnganiClientShared.safe(raw);
+        }
+
+        return `
+          <div class="detail-row">
+            <label>${UnganiClientShared.safe(field.label)}</label>
+            <span>${valueHtml}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function getItemName(row) {
+      return UnganiClientShared.getValue(row, ["property_name", "item_name", "name", "title"], isRealEstate ? "Property" : "Item");
+    }
+
+    function getStatus(row) {
+      return UnganiClientShared.getValue(row, ["property_status", "item_status", "status"], "available");
+    }
+
+    function statusBadge(status) {
+      const color = statusColor(status);
+      return `<span class="ungani-badge ${UnganiClientShared.attr(color)}">${UnganiClientShared.safe(toTitle(status))}</span>`;
+    }
+
+    function statusColor(status) {
+      const lower = String(status || "").toLowerCase();
+
+      if (lower.includes("available") || lower.includes("sold") || lower.includes("rented") || lower.includes("completed")) return "green";
+      if (lower.includes("reserved") || lower.includes("negotiation") || lower.includes("pending") || lower.includes("review")) return "gold";
+      if (lower.includes("maintenance") || lower.includes("inactive") || lower.includes("cancelled") || lower.includes("lost")) return "red";
+
+      return "blue";
+    }
+
+    function toTitle(value) {
+      return String(value || "")
+        .replace(/_/g, " ")
+        .replace(/\w\S*/g, function (text) {
+          return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
+        });
+    }
+
+    function detectRealEstate(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "real_estate";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+    }
+  </script>
+</body>
+</html>
