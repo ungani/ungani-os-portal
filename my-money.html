@@ -116,7 +116,13 @@
       await loadMoneyRows();
     }
 
-    const MONEY_SUMMARY_COLUMNS = "id, amount, transaction_type, type, category_name, category, category_key, status, transaction_date, created_at";
+    // category_key removed - never written anywhere for transactions
+    // (neither this page's own saveMoneyRecord() nor client-shared.js's
+    // Quick Add flow write it; both only ever write category/category_name).
+    // Same bug class as documents.type, introduced by the same commit
+    // (ae27767) across all six list pages - this one hadn't been hit live
+    // yet, found via a full repo sweep.
+    const MONEY_SUMMARY_COLUMNS = "id, amount, transaction_type, type, category_name, category, status, transaction_date, created_at";
 
     // Applies the filters that scope BOTH the summary fetch and the page
     // fetch: tenant, section, status dropdown, and free-text search. Search
@@ -327,9 +333,13 @@
 
     async function loadPersonOptions() {
       try {
+        // "name" removed - client_people has no such column (only
+        // full_name); was silently degrading this dropdown to empty for
+        // every Real Estate tenant since response.error was never checked
+        // here, not a hard crash but a real, found-via-sweep bug.
         const response = await currentContext.supabaseClient
           .from("client_people")
-          .select("id, full_name, name, person_type")
+          .select("id, full_name, person_type")
           .eq("tenant_id", currentContext.tenantId)
           .order("full_name", { ascending: true });
 

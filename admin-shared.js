@@ -561,34 +561,75 @@
         to { transform: rotate(360deg); }
       }
 
+      @keyframes unganiFadeUp {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      @keyframes unganiLoadingSlide {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(260%); }
+      }
+
+      /* Matches client-shared.js's showPreloader()/.ungani-preloader design
+         exactly - same dark glassmorphic card, gold accent glow, and
+         animated loading bar, always dark regardless of the viewer's saved
+         admin theme preference (same as the client side, which doesn't
+         theme-adapt this screen either - you haven't loaded your
+         preference yet when this is showing). Previously a plainer, flat
+         card with no animation - the two surfaces read as different apps
+         mid-navigation; this makes them the same experience. */
       .ungani-loading-shell,
       .ungani-login-shell,
       .ungani-blocked-shell {
         min-height: 100vh;
-        background: linear-gradient(135deg, #061C3D, #0b2b59);
+        width: 100%;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(212,166,58,0.30), transparent 28%),
+          radial-gradient(circle at 80% 10%, rgba(255,255,255,0.10), transparent 22%),
+          linear-gradient(135deg, #061C3D 0%, #082852 52%, #061C3D 100%);
+        color: white;
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 24px;
       }
 
-      html[data-ungani-theme="dark"] .ungani-loading-shell,
-      html[data-ungani-theme="dark"] .ungani-login-shell,
-      html[data-ungani-theme="dark"] .ungani-blocked-shell {
-        background: linear-gradient(135deg, #0B1220, #111C33);
-      }
-
       .ungani-login-card,
       .ungani-loading-card {
-        width: 100%;
+        width: min(460px, 100%);
         max-width: 460px;
-        background: var(--ungani-card);
-        color: var(--ungani-text);
-        border-radius: 22px;
-        padding: 28px;
-        box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+        background: rgba(255,255,255,0.10);
+        color: white;
+        border-radius: 28px;
+        padding: 32px;
+        box-shadow: 0 30px 90px rgba(0,0,0,0.28);
+        border: 1px solid rgba(255,255,255,0.18);
+        backdrop-filter: blur(16px);
         text-align: center;
-        border: 1px solid var(--ungani-border);
+        animation: unganiFadeUp 0.42s ease both;
+      }
+
+      .ungani-loading-card p,
+      .ungani-login-card > p {
+        color: rgba(255,255,255,0.72);
+      }
+
+      .ungani-loading-bar {
+        height: 8px;
+        width: 100%;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.16);
+        margin-top: 22px;
+      }
+
+      .ungani-loading-bar div {
+        height: 100%;
+        width: 45%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, var(--ungani-gold), transparent);
+        animation: unganiLoadingSlide 1.15s ease-in-out infinite;
       }
 
       .ungani-login-card input {
@@ -1028,6 +1069,7 @@
           <img src="ungani-logo.png" alt="UNGANI Logo" class="ungani-logo" />
           <h2 data-i18n="loadingAdmin">${safe(t("loadingAdmin"))}</h2>
           <p data-i18n="checkingSession">${safe(t("checkingSession"))}</p>
+          <div class="ungani-loading-bar"><div></div></div>
         </div>
       </div>
 

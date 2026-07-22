@@ -1345,9 +1345,18 @@
 
     async function loadNotifications() {
       try {
+        // notification_title/notification_message/link_url/is_read were
+        // never real - confirmed via client-notifications.html and
+        // admin-notifications.html, which both already read title/message/
+        // action_url/status successfully. This request errored on every
+        // load (silently, since the select("*") fallback below papered
+        // over the crash), and even after falling back, the render below
+        // was reading the wrong field names too - so this widget has been
+        // showing "Notification" placeholders with empty text this whole
+        // time, not a hard crash but a real, found-via-sweep bug.
         let response = await supabaseClient
           .from("ungani_notifications")
-          .select("id, tenant_id, notification_title, notification_message, notification_type, priority, status, is_read, link_url, created_at")
+          .select("id, tenant_id, title, message, notification_type, priority, status, action_url, created_at")
           .order("created_at", { ascending: false })
           .limit(60);
 
@@ -1390,12 +1399,18 @@
       }
 
       try {
+        // is_read/updated_at removed - neither is a real column (confirmed
+        // via client.html's and client-notifications.html's own working
+        // mark-as-read updates, which only ever write status/read_at).
+        // Including them here meant PostgREST rejected the WHOLE update
+        // payload, so "Mark all read" was silently doing nothing at all
+        // (response.error was only console.warn'd, never surfaced) - a
+        // real, found-via-sweep bug.
         const response = await supabaseClient
           .from("ungani_notifications")
           .update({
-            is_read: true,
             status: "read",
-            updated_at: new Date().toISOString()
+            read_at: new Date().toISOString()
           })
           .in("id", unreadIds);
 
@@ -1416,9 +1431,8 @@
         await supabaseClient
           .from("ungani_notifications")
           .update({
-            is_read: true,
             status: "read",
-            updated_at: new Date().toISOString()
+            read_at: new Date().toISOString()
           })
           .eq("id", id);
 
@@ -1803,8 +1817,8 @@
 
         return `
           <div class="notification-item ${isRead ? "" : "unread"}">
-            <strong>${escapeHtml(getValue(row, ["notification_title"], "Notification"))}</strong>
-            <p>${escapeHtml(getValue(row, ["notification_message"], ""))}</p>
+            <strong>${escapeHtml(getValue(row, ["title"], "Notification"))}</strong>
+            <p>${escapeHtml(getValue(row, ["message"], ""))}</p>
 
             <div class="notification-meta">
               <span class="${statusClass(getValue(row, ["priority"], "normal"))}">
