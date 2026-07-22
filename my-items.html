@@ -1417,6 +1417,7 @@
         payload.custom_fields = customFields;
 
         let response;
+        const wasEdit = !!currentEditId;
 
         if (currentEditId) {
           response = await currentContext.supabaseClient
@@ -1430,12 +1431,27 @@
 
           response = await currentContext.supabaseClient
             .from("business_items")
-            .insert(payload);
+            .insert(payload)
+            .select("id");
         }
 
         if (response.error) {
           alert(response.error.message);
           return;
+        }
+
+        // Fire-and-forget, same pattern as the existing "record_deleted" log
+        // below - extends audit logging (previously delete-only for this
+        // table, matching the app-wide convention) to cover create/update
+        // too, so the item's profile page has a real activity timeline.
+        const savedId = wasEdit ? currentEditId : (response.data && response.data[0] && response.data[0].id);
+        if (savedId) {
+          UnganiClientShared.logAuditEvent(wasEdit ? "record_updated" : "record_created", {
+            entityType: "business_items",
+            entityId: String(savedId),
+            description: (wasEdit ? "Updated" : "Created") + " \"" + name + "\" from the Items / Properties page",
+            metadata: { status: status }
+          });
         }
 
         currentEditId = null;
@@ -1470,6 +1486,13 @@
         alert(response.error.message);
         return;
       }
+
+      UnganiClientShared.logAuditEvent("status_changed", {
+        entityType: "business_items",
+        entityId: String(id),
+        description: "Status changed to \"" + toTitle(status) + "\" from the Items / Properties page",
+        metadata: { status: status }
+      });
 
       UnganiClientShared.showToast("Status updated ✓");
       currentEditId = null;

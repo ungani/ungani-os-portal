@@ -162,6 +162,62 @@
       font-size: 12.5px;
       text-align: center;
     }
+
+    .timeline-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .timeline-item {
+      position: relative;
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 12px 12px 14px;
+      border: 1px solid var(--ungani-border, rgba(6,28,61,0.1));
+      background: var(--ungani-soft, rgba(6,28,61,0.03));
+      border-radius: 14px;
+      border-left: 3px solid var(--accent, var(--ungani-muted, #64748B));
+    }
+
+    .timeline-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      background: var(--ungani-card, #FFFFFF);
+    }
+
+    .timeline-item strong {
+      display: block;
+      font-size: 13.5px;
+    }
+
+    .timeline-item p {
+      margin: 2px 0 0;
+      color: var(--ungani-muted, #6B7280);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .timeline-time {
+      white-space: nowrap;
+    }
+
+    @media (max-width: 560px) {
+      .timeline-item {
+        grid-template-columns: 30px minmax(0, 1fr);
+      }
+
+      .timeline-time {
+        grid-column: 2;
+        justify-self: start;
+      }
+    }
   </style>
 </head>
 
@@ -305,11 +361,123 @@
           </div>
         ` : ""}
 
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Activity Timeline</h3>
+              <p class="ungani-small">Everything logged against this record, newest first.</p>
+            </div>
+          </div>
+
+          <div id="itemTimelineList" class="timeline-list">
+            <p class="ungani-small">Loading activity...</p>
+          </div>
+        </div>
+
         <p class="profile-footer-meta">
           Added ${UnganiClientShared.safe(UnganiClientShared.formatDateTime(row.created_at))}
           ${row.updated_at ? " · Last updated " + UnganiClientShared.safe(UnganiClientShared.formatDateTime(row.updated_at)) : ""}
         </p>
       `;
+
+      loadItemTimeline(row.id);
+    }
+
+    async function loadItemTimeline(itemId) {
+      const container = document.getElementById("itemTimelineList");
+      if (!container) return;
+
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("ungani_audit_log")
+          .select("id, action, actor_email, description, metadata, created_at")
+          .eq("entity_type", "business_items")
+          .eq("entity_id", itemId)
+          .eq("tenant_id", currentContext.tenantId)
+          .order("created_at", { ascending: false })
+          .limit(30);
+      } catch (error) {
+        container.innerHTML = `<p class="ungani-small">Could not load activity history.</p>`;
+        return;
+      }
+
+      if (response.error) {
+        container.innerHTML = `<p class="ungani-small">Could not load activity history.</p>`;
+        return;
+      }
+
+      renderItemTimeline(response.data || []);
+    }
+
+    function renderItemTimeline(rows) {
+      const container = document.getElementById("itemTimelineList");
+      if (!container) return;
+
+      if (!rows.length) {
+        container.innerHTML = `<p class="ungani-small">No activity logged yet - creating, editing, or changing this record's status will show up here.</p>`;
+        return;
+      }
+
+      container.innerHTML = rows.map(function (row) {
+        return `
+          <div class="timeline-item" style="--accent:${timelineActionAccent(row.action)};">
+            <div class="timeline-icon">${timelineActionIcon(row.action)}</div>
+            <div>
+              <strong>${UnganiClientShared.safe(timelineActionLabel(row.action))}</strong>
+              <p>${UnganiClientShared.safe(row.description || "")}${row.actor_email ? " · " + UnganiClientShared.safe(row.actor_email) : ""}</p>
+            </div>
+            <span class="ungani-small timeline-time">${UnganiClientShared.safe(timeAgo(row.created_at))}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function timelineActionLabel(action) {
+      const map = {
+        record_created: "Item created",
+        record_updated: "Details updated",
+        status_changed: "Status changed",
+        record_deleted: "Item deleted"
+      };
+
+      return map[action] || UnganiClientShared.cleanText(action);
+    }
+
+    function timelineActionIcon(action) {
+      const map = {
+        record_created: "✨",
+        record_updated: "✏️",
+        status_changed: "🔄",
+        record_deleted: "🗑️"
+      };
+
+      return map[action] || "📋";
+    }
+
+    function timelineActionAccent(action) {
+      if (action === "record_created") return "#16A34A";
+      if (action === "record_deleted") return "#DC2626";
+      if (action === "status_changed") return "#D4A63A";
+      return "#2563EB";
+    }
+
+    function timeAgo(timestamp) {
+      if (!timestamp) return "";
+
+      const then = new Date(timestamp).getTime();
+      if (isNaN(then)) return "";
+
+      const diffSeconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
+
+      if (diffSeconds < 60) return "Just now";
+      if (diffSeconds < 3600) return Math.floor(diffSeconds / 60) + "m ago";
+      if (diffSeconds < 86400) return Math.floor(diffSeconds / 3600) + "h ago";
+      if (diffSeconds < 172800) return "Yesterday";
+      if (diffSeconds < 604800) return Math.floor(diffSeconds / 86400) + "d ago";
+
+      return UnganiClientShared.formatDate(timestamp);
     }
 
     function renderFieldRows(row, fieldSet) {
