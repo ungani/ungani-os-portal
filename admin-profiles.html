@@ -964,13 +964,11 @@
 
       // The update above only changes the display/cosmetic status on the
       // tenants row. Actual client write access is gated separately by
-      // ungani_subscriptions.subscription_status (read server-side by
-      // get_my_ungani_subscription_access) - without this second step,
-      // "Active" here never lifts a trial account out of read-only mode.
-      // These button values (active/trial/suspended/cancelled) match the
-      // subscription_status vocabulary 1:1, so pass the same status
-      // through; everything else about the subscription (package, payment
-      // status, trial end date, notes) is carried over unchanged.
+      // ungani_subscriptions.subscription_status/payment_status (read
+      // server-side by get_my_ungani_subscription_access, whose sibling
+      // get_my_ungani_access_status confirms both fields feed access_allowed
+      // together) - without this second step, "Active" here never lifts a
+      // trial account out of read-only mode.
       const row = tenants.find(item => String(item.id) === String(tenantId)) || {};
       let currentSub = {};
 
@@ -980,6 +978,7 @@
           .select("*")
           .eq("tenant_id", tenantId)
           .maybeSingle();
+        console.log("[quickUpdateStatus] current ungani_subscriptions row:", subResult);
         if (!subResult.error && subResult.data) {
           currentSub = subResult.data;
         }
@@ -987,14 +986,40 @@
         console.warn("Could not load current subscription record:", subError.message);
       }
 
-      const rpcResult = await supabaseClient.rpc("admin_update_ungani_subscription", {
+      // Marking a tenant "Active" is meant to fully unblock them, so
+      // payment_status has to move off a blocking value too (trial/pending)
+      // - leaving it untouched was the bug: subscription_status flipped to
+      // "active" but payment_status stayed "trial", and access_allowed very
+      // likely requires both. "waived" is left alone since it already
+      // means "don't require payment". Every other button (trial/suspended/
+      // cancelled) leaves payment_status exactly as it was - only Active
+      // has a defensible reason to touch it.
+      const existingPaymentStatus = currentSub.payment_status || row.payment_status || "trial";
+      const paymentStatus = status === "active"
+        ? (existingPaymentStatus === "waived" ? "waived" : "paid")
+        : existingPaymentStatus;
+
+      const rpcParams = {
         p_tenant_id: tenantId,
         p_package_key: currentSub.package_key || row.package_key || "starter",
         p_subscription_status: status,
-        p_payment_status: currentSub.payment_status || row.payment_status || "trial",
+        p_payment_status: paymentStatus,
         p_trial_end_at: currentSub.trial_end_at || row.trial_end_at || null,
         p_notes: currentSub.notes || null
-      });
+      };
+
+      console.log("[quickUpdateStatus] calling admin_update_ungani_subscription with:", rpcParams);
+
+      let rpcResult;
+      try {
+        rpcResult = await supabaseClient.rpc("admin_update_ungani_subscription", rpcParams);
+      } catch (rpcThrow) {
+        console.error("[quickUpdateStatus] RPC call threw:", rpcThrow);
+        alert("Status saved, but subscription access could not be updated (RPC threw): " + rpcThrow.message);
+        return false;
+      }
+
+      console.log("[quickUpdateStatus] RPC result:", rpcResult);
 
       if (rpcResult.error) {
         alert("Status saved, but subscription access could not be updated: " + rpcResult.error.message);

@@ -487,6 +487,8 @@
       .ungani-global-search-wrap {
         position: relative;
         width: 100%;
+        isolation: isolate;
+        z-index: 200;
       }
 
       .ungani-global-search {
@@ -517,7 +519,7 @@
         border-radius: 22px;
         box-shadow: 0 26px 70px rgba(6,28,61,0.24);
         overflow: hidden;
-        z-index: 80;
+        z-index: 500;
         animation: unganiFadeUp 0.18s ease both;
       }
 
@@ -741,6 +743,8 @@
       .ungani-quickadd-holder,
       .ungani-bell-holder {
         position: relative;
+        isolation: isolate;
+        z-index: 200;
       }
 
       .ungani-quickadd-overlay {
