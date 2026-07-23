@@ -1033,18 +1033,31 @@
         description: "Tenant status changed to " + status
       });
 
-      return true;
+      // admin_update_ungani_subscription RETURNS the actual row after the
+      // write - surfacing it directly means the next test is
+      // self-verifying from the UI alone, no console/SQL round-trip
+      // needed to know what really landed.
+      return rpcResult.data || true;
     }
 
     async function quickUpdateStatus(tenantId, status) {
-      const ok = await updateTenantStatus(tenantId, status);
+      const result = await updateTenantStatus(tenantId, status);
 
-      if (!ok) return;
+      if (!result) return;
 
       selectedTenantId = tenantId;
 
       UnganiAdminShared.closeModal();
-      UnganiAdminShared.showToast("Client status updated ✓");
+
+      if (result && typeof result === "object") {
+        UnganiAdminShared.showToast(
+          "Client status updated - subscription_status: " + result.subscription_status +
+          ", payment_status: " + result.payment_status
+        );
+      } else {
+        UnganiAdminShared.showToast("Client status updated ✓");
+      }
+
       await loadPageData();
     }
 
