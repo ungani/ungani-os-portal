@@ -962,6 +962,45 @@
         return false;
       }
 
+      // The update above only changes the display/cosmetic status on the
+      // tenants row. Actual client write access is gated separately by
+      // ungani_subscriptions.subscription_status (read server-side by
+      // get_my_ungani_subscription_access) - without this second step,
+      // "Active" here never lifts a trial account out of read-only mode.
+      // These button values (active/trial/suspended/cancelled) match the
+      // subscription_status vocabulary 1:1, so pass the same status
+      // through; everything else about the subscription (package, payment
+      // status, trial end date, notes) is carried over unchanged.
+      const row = tenants.find(item => String(item.id) === String(tenantId)) || {};
+      let currentSub = {};
+
+      try {
+        const subResult = await supabaseClient
+          .from("ungani_subscriptions")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .maybeSingle();
+        if (!subResult.error && subResult.data) {
+          currentSub = subResult.data;
+        }
+      } catch (subError) {
+        console.warn("Could not load current subscription record:", subError.message);
+      }
+
+      const rpcResult = await supabaseClient.rpc("admin_update_ungani_subscription", {
+        p_tenant_id: tenantId,
+        p_package_key: currentSub.package_key || row.package_key || "starter",
+        p_subscription_status: status,
+        p_payment_status: currentSub.payment_status || row.payment_status || "trial",
+        p_trial_end_at: currentSub.trial_end_at || row.trial_end_at || null,
+        p_notes: currentSub.notes || null
+      });
+
+      if (rpcResult.error) {
+        alert("Status saved, but subscription access could not be updated: " + rpcResult.error.message);
+        return false;
+      }
+
       UnganiAdminShared.logAuditEvent("tenant_status_changed", {
         entityType: "tenants",
         entityId: String(tenantId),
