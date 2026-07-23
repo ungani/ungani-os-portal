@@ -18,6 +18,17 @@
 -- A uuid->text cast is always safe (every uuid has a valid text
 -- representation), so this won't fail or lose data even if the column
 -- currently holds real UUID-shaped values.
+--
+-- First attempt at this migration failed: assigned_to also carries a real
+-- foreign key constraint (tasks_assigned_to_fkey), which a text column
+-- can't satisfy against a uuid primary key. Dropping it is safe - no app
+-- code anywhere treats this column as a real reference (see above), so
+-- the constraint has only ever enforced a relationship the app never
+-- uses. Dropping a constraint never touches data, only the "must match
+-- an existing row" restriction going forward.
+
+alter table public.tasks
+  drop constraint if exists tasks_assigned_to_fkey;
 
 alter table public.tasks
   alter column assigned_to type text using assigned_to::text;
