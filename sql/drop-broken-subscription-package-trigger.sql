@@ -1,0 +1,36 @@
+-- Fixes: "ON CONFLICT DO UPDATE command cannot affect row a second time"
+-- on admin_update_ungani_subscription - the real cause of every
+-- Active/Trial/Suspend button on admin-profiles.html (and
+-- admin-subscriptions.html's Save, which uses the same RPC) silently
+-- failing to change anything.
+--
+-- Root cause: trg_sync_ungani_subscription_from_package (BEFORE INSERT OR
+-- UPDATE OF package_key on ungani_subscriptions) runs its own UPDATE
+-- against the same table, matched by package_key rather than by the
+-- specific row. When the outer INSERT ... ON CONFLICT (tenant_id) DO
+-- UPDATE fires for a tenant that already shares its package_key with any
+-- other row (virtually guaranteed - "starter" is the default/most common
+-- tier), the trigger's own UPDATE touches that same conflict-target row
+-- before the outer statement's own resolution does, and Postgres refuses
+-- to let the same row be affected twice within one command.
+--
+-- This isn't just a mis-fire to guard against - the trigger's own logic
+-- is wrong independent of the crash: it doesn't look up a canonical
+-- user_limit from ungani_packages at all, it takes whatever user_limit
+-- was on the specific row being written and stamps that value onto every
+-- OTHER row sharing the same package_key. Even in scenarios where it
+-- doesn't crash (e.g. a genuinely new tenant with no prior row), it would
+-- silently overwrite every other same-tier tenant's user_limit. Not safe
+-- to leave running in any form.
+--
+-- The sibling trigger, trg_sync_tenant_from_ungani_subscription (AFTER
+-- INSERT OR UPDATE, syncs ungani_subscriptions -> tenants), is unrelated,
+-- confirmed correct, and untouched by this migration.
+--
+-- Leaves the underlying function (sync_ungani_subscription_from_package)
+-- in place, unused - only detaches the trigger. Minimal, reversible: if a
+-- correctly-written per-row sync is wanted later (setting NEW.user_limit
+-- directly from ungani_packages, not a separate table-wide UPDATE), it
+-- can be built and reattached without needing to touch anything else.
+
+drop trigger if exists trg_sync_ungani_subscription_from_package on public.ungani_subscriptions;
