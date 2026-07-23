@@ -2967,28 +2967,75 @@
       `;
     }
 
+    if (isRealEstateTenant()) {
+      return `
+        <label for="unganiQuickTitle">Property / Item Name</label>
+        <input id="unganiQuickTitle" required placeholder="Clove Garden A12" />
+
+        <label for="unganiQuickAmount">Price / Value</label>
+        <input id="unganiQuickAmount" type="number" min="0" step="1" placeholder="Amount in Ksh" />
+
+        <label for="unganiQuickRelated">Location / Project</label>
+        <input id="unganiQuickRelated" placeholder="Nyali, Mombasa / Clove Garden" />
+
+        <label for="unganiQuickStatus">Status</label>
+        <select id="unganiQuickStatus">
+          <option value="available">Available</option>
+          <option value="reserved">Reserved</option>
+          <option value="under negotiation">Under Negotiation</option>
+          <option value="sold">Sold</option>
+          <option value="rented">Rented</option>
+        </select>
+
+        <label for="unganiQuickDescription">Notes</label>
+        <textarea id="unganiQuickDescription" placeholder="Short property/item note..."></textarea>
+      `;
+    }
+
+    // Non-real-estate tenants (everyone else - Wholesale, Retail, Logistics,
+    // etc.) - was previously always shown the real-estate-labeled fields
+    // above regardless of actual business type, and saveQuickAdd() wrote
+    // property_type/listing_type/property_location values for them too.
+    // Generic wording + GENERIC_ITEM_FIELD_SET's own status options
+    // (ungani-business-config.js), matching what every other item form in
+    // the app already uses for non-real-estate tenants.
     return `
-      <label for="unganiQuickTitle">Property / Item Name</label>
-      <input id="unganiQuickTitle" required placeholder="Clove Garden A12" />
+      <label for="unganiQuickTitle">Item Name</label>
+      <input id="unganiQuickTitle" required placeholder="Bag of Rice 5kg" />
 
       <label for="unganiQuickAmount">Price / Value</label>
       <input id="unganiQuickAmount" type="number" min="0" step="1" placeholder="Amount in Ksh" />
 
-      <label for="unganiQuickRelated">Location / Project</label>
-      <input id="unganiQuickRelated" placeholder="Nyali, Mombasa / Clove Garden" />
+      <label for="unganiQuickRelated">Supplier / Source</label>
+      <input id="unganiQuickRelated" placeholder="Optional supplier or source" />
 
       <label for="unganiQuickStatus">Status</label>
       <select id="unganiQuickStatus">
         <option value="available">Available</option>
-        <option value="reserved">Reserved</option>
-        <option value="under negotiation">Under Negotiation</option>
-        <option value="sold">Sold</option>
-        <option value="rented">Rented</option>
+        <option value="in use">In Use</option>
+        <option value="maintenance">Maintenance</option>
+        <option value="inactive">Inactive</option>
       </select>
 
       <label for="unganiQuickDescription">Notes</label>
-      <textarea id="unganiQuickDescription" placeholder="Short property/item note..."></textarea>
+      <textarea id="unganiQuickDescription" placeholder="Short item note..."></textarea>
     `;
+  }
+
+  // Same detection pattern used by every other item form in the app
+  // (e.g. my-items.html's detectRealEstate()) - kept as its own small
+  // helper here since client-shared.js's Quick Add panel is the one place
+  // that previously skipped this check entirely.
+  function isRealEstateTenant() {
+    if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+      const matched = UnganiBusinessConfig.resolve(state.tenant);
+      if (matched) return matched.key === "real_estate";
+    }
+
+    const businessType = String(getValue(state.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+    const businessTypeKey = String(getValue(state.tenant, ["business_type_key"], "")).toLowerCase();
+
+    return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
   }
 
   async function saveQuickAdd(event) {
@@ -3045,7 +3092,7 @@
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
-    } else {
+    } else if (isRealEstateTenant()) {
       response = await state.supabaseClient
         .from("business_items")
         .insert({
@@ -3068,6 +3115,36 @@
           status: value("unganiQuickStatus") || "available",
           property_status: value("unganiQuickStatus") || "available",
           notes: description || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+    } else {
+      // Was previously ALWAYS the real-estate payload above, regardless of
+      // the tenant's actual business type - a Wholesale/Retail/any other
+      // tenant using Quick Add to add an item got mislabeled
+      // property/sale-shaped data. "supplier" in custom_fields matches
+      // GENERIC_ITEM_FIELD_SET's own field id (ungani-business-config.js),
+      // so a value entered here shows up correctly if the item is later
+      // opened via the full Items page edit form too.
+      response = await state.supabaseClient
+        .from("business_items")
+        .insert({
+          tenant_id: state.tenantId,
+          business_type_key: getValue(state.tenant, ["business_type_key"], null),
+          section_key: "items_assets_stock",
+          item_name: title,
+          name: title,
+          title: title,
+          item_type: "Item",
+          type: "Item",
+          item_category: "Item",
+          category: "Item",
+          property_price: amount || null,
+          item_status: value("unganiQuickStatus") || "available",
+          status: value("unganiQuickStatus") || "available",
+          property_status: value("unganiQuickStatus") || "available",
+          notes: description || null,
+          custom_fields: { supplier: related || null },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
