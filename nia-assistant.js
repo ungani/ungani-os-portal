@@ -2318,11 +2318,54 @@
 
     const weekLine = `This week so far: ${formatNiaKES(money.income)} in, ${formatNiaKES(money.expenses)} out.`;
 
+    if (lines.length > 0) {
+      persistDailyBriefingNotification(tasks, assetEntries);
+    }
+
     return (
       hi + " Here's your update for today:" +
       `<div style="margin-top:8px;">${lines.length ? lines.join("<br>") : "Nothing urgent — all clear!"}</div>` +
       `<div style="margin-top:8px;opacity:0.85;">${safe(weekLine)}</div>`
     );
+  }
+
+  // Persists a real, clearable notification (via the safe
+  // create_my_ungani_notification wrapper - never the raw
+  // create_ungani_notification function, which has no tenant-ownership
+  // check of its own) so the same day's briefing content is visible in
+  // the notification bell too, not just in the chat transcript - a
+  // client who never opens Nia that day still sees it. Fire-and-forget:
+  // failure here shouldn't block or delay the chat briefing itself,
+  // which has already been shown by the time this runs.
+  async function persistDailyBriefingNotification(tasks, assetEntries) {
+    if (!state.supabaseClient) return;
+
+    const parts = [];
+    if (tasks.dueToday > 0) parts.push(tasks.dueToday + " task" + (tasks.dueToday === 1 ? "" : "s") + " due today");
+    if (tasks.overdue > 0) parts.push(tasks.overdue + " task" + (tasks.overdue === 1 ? "" : "s") + " overdue");
+    if (assetEntries.length > 0) parts.push(assetEntries.length + " item" + (assetEntries.length === 1 ? "" : "s") + " needing attention");
+
+    if (!parts.length) return;
+
+    const message = parts.join(", ") + ".";
+    const isUrgent = tasks.overdue > 0 || assetEntries.length > 0;
+
+    try {
+      const response = await state.supabaseClient.rpc("create_my_ungani_notification", {
+        p_title: "Your daily business update",
+        p_message: message,
+        p_notification_type: "nia",
+        p_link_url: "client.html",
+        p_priority: isUrgent ? "high" : "normal",
+        p_email_enabled: false
+      });
+
+      if (response.error) {
+        console.warn("Nia daily briefing notification skipped:", response.error.message);
+      }
+    } catch (error) {
+      console.warn("Nia daily briefing notification skipped:", error.message);
+    }
   }
 
   function showFallback() {
