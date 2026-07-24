@@ -3719,14 +3719,21 @@
       try {
         const noticeResponse = await state.supabaseClient.rpc("get_my_ungani_read_only_notice");
 
+        // get_my_ungani_read_only_notice is a thin wrapper around
+        // get_my_ungani_subscription_access - it always returns an
+        // explicit, reliable read_only boolean (true or false, never
+        // absent), so it's authoritative here. Previously this only ever
+        // set isReadOnly to true and never reset it back to false, so
+        // once any earlier check (or a prior page load) had flagged
+        // read-only, nothing - including an admin genuinely reactivating
+        // the account - could ever clear the banner again.
         if (!noticeResponse.error && noticeResponse.data) {
           if (noticeResponse.data.message) {
             readOnlyState.message = noticeResponse.data.message;
           }
 
-          if (noticeResponse.data.read_only === true || noticeResponse.data.read_only === "true") {
-            readOnlyState.isReadOnly = true;
-          }
+          readOnlyState.isReadOnly =
+            noticeResponse.data.read_only === true || noticeResponse.data.read_only === "true";
         }
       } catch (error) {
         console.warn("UNGANI read-only notice check skipped:", error.message);
