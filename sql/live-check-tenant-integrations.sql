@@ -29,60 +29,67 @@ limit 5;
 -- Step 1's result (same tenant_id used for both occurrences), then run
 -- this whole block together.
 --
--- Uses a DO block with RAISE NOTICE for each step's outcome rather than
--- three separate result grids, for two reasons: (1) Supabase's SQL
--- editor typically only displays the LAST statement's result grid, so
--- three separate top-level statements make the first two invisible -
--- RAISE NOTICE output all shows up together in the Messages panel
--- regardless. (2) plain sequential PL/pgSQL statements guarantee the
--- UPDATE actually sees the INSERT's row within the same transaction -
--- three separate writable CTEs would NOT be guaranteed to (CTEs in one
--- WITH clause share a single snapshot, they don't see each other's
--- effects unless explicitly chained).
+-- All three steps run as ONE statement (a WITH chain), so their combined
+-- output is one query result with visible rows - no reliance on a
+-- Messages/Logs panel. The `disconnected` CTE below matches on
+-- `id = (select id from upserted)` rather than re-querying
+-- tenant_id/integration_type - that's a genuine data dependency, which
+-- forces Postgres to evaluate `upserted` first and hand its actual
+-- returned row to `disconnected`, sidestepping the usual caveat that
+-- writable CTEs in one WITH clause don't reliably see each other's
+-- effects (they only don't when there's no such dependency).
+--
+-- ROLLBACK still comes after, as its own statement, so nothing persists
+-- either way - if your editor happens to only display the very last
+-- statement's result and this still shows "no rows", tell me and I'll
+-- restructure again (e.g. two separate runs: one that does the test and
+-- shows results, a second you run immediately after to manually restore
+-- via the row this query's output gives you).
 
 begin;
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub": "<USER_ID>", "role": "authenticated"}';
 
-do $$
-declare
-  v_select_count int;
-  v_insert_row record;
-  v_update_row record;
-begin
-  -- exactly what loadIntegrations() runs on page load
-  select count(*) into v_select_count
-  from tenant_integrations
-  where tenant_id = '<TENANT_ID>';
-
-  raise notice 'SELECT: % existing row(s) for this tenant', v_select_count;
-
-  -- exactly what the connect wizard's wizardConfirm() runs
-  insert into tenant_integrations (tenant_id, integration_type, provider_name, status, config)
-  values ('<TENANT_ID>', 'gps', 'SQL Live-Check Test Provider', 'connected', '{}'::jsonb)
-  on conflict (tenant_id, integration_type) do update set provider_name = excluded.provider_name
-  returning * into v_insert_row;
-
-  raise notice 'INSERT/UPSERT: id=%, provider_name=%, status=%', v_insert_row.id, v_insert_row.provider_name, v_insert_row.status;
-
-  -- exactly what disconnectIntegration() runs
-  update tenant_integrations
-  set status = 'disconnected', disconnected_at = now()
-  where tenant_id = '<TENANT_ID>' and integration_type = 'gps'
-  returning * into v_update_row;
-
-  if v_update_row is null then
-    raise notice 'UPDATE: no row matched - this would be a real bug (the INSERT above should have made this row visible to the UPDATE)';
-  else
-    raise notice 'UPDATE: id=%, provider_name=%, status=%, disconnected_at=%', v_update_row.id, v_update_row.provider_name, v_update_row.status, v_update_row.disconnected_at;
-  end if;
-end $$;
+with
+  pre_check as (
+    -- exactly what loadIntegrations() runs on page load
+    select count(*) as existing_row_count
+    from tenant_integrations
+    where tenant_id = '<TENANT_ID>'
+  ),
+  upserted as (
+    -- exactly what the connect wizard's wizardConfirm() runs
+    insert into tenant_integrations (tenant_id, integration_type, provider_name, status, config)
+    values ('<TENANT_ID>', 'gps', 'SQL Live-Check Test Provider', 'connected', '{}'::jsonb)
+    on conflict (tenant_id, integration_type) do update set provider_name = excluded.provider_name
+    returning id, provider_name, status
+  ),
+  disconnected as (
+    -- exactly what disconnectIntegration() runs, matched directly
+    -- against upserted's own returned id (the data dependency that
+    -- forces correct sequencing)
+    update tenant_integrations
+    set status = 'disconnected', disconnected_at = now()
+    where id = (select id from upserted)
+    returning id, provider_name, status, disconnected_at
+  )
+select '1_pre_check' as step, existing_row_count::text as provider_name, null::text as status, null::text as disconnected_at
+from pre_check
+union all
+select '2_insert_upsert' as step, provider_name, status, null::text as disconnected_at
+from upserted
+union all
+select '3_disconnect_update' as step, provider_name, status, disconnected_at::text
+from disconnected
+order by step;
 
 rollback; -- undoes the insert/update above - this was a read/write test only.
 
--- Expected: three NOTICE lines in the Messages panel - SELECT (any
--- count, zero is fine), INSERT/UPSERT with status=connected, UPDATE
--- with status=disconnected and a non-null disconnected_at. No
--- permission-denied errors anywhere. If any step errors or the UPDATE
--- notice says "no row matched", that's the real bug to report back.
+-- Expected: 3 rows. Row 1 (1_pre_check) shows the existing count before
+-- the test (any number, including 0, is fine). Row 2
+-- (2_insert_upsert) shows status=connected. Row 3
+-- (3_disconnect_update) shows status=disconnected with a non-null
+-- disconnected_at. If row 3 is missing entirely, that means the UPDATE
+-- matched zero rows - a real bug. If any row is missing due to a
+-- permission error instead, that error message itself is the finding.
