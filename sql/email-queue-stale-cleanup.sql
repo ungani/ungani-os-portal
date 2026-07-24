@@ -17,9 +17,12 @@
 --   1. Orphaned tenant - tenant_id no longer exists in tenants at all
 --      (deleted since the row was queued). Nothing left to say -
 --      correct regardless of email_type.
---   2. Known test/demo recipient - matches the same emails already
---      identified for Auth cleanup (sql/check-orphaned-auth-users.sql).
---      These should never have reached a real send in the first place.
+--   2. Known test/demo recipient - explicit list of every test/demo
+--      email address identified across this session (Auth cleanup,
+--      duplicate-tenant cleanup, Ice Cold Logistics investigation, RLS
+--      verification), plus broader ILIKE patterns as a safety net for
+--      anything not explicitly listed. These should never have reached
+--      a real send in the first place.
 --   3. trial_warning rows older than 5 days (WARNING_DEDUP_DAYS in
 --      api/check-trial-warnings.js) - the email_body has a specific
 --      "ends in X days" count BAKED IN AT INSERT TIME, not computed at
@@ -75,9 +78,13 @@ with reasons as (
     case
       when q.tenant_id is not null and t.id is null then 'orphaned_tenant'
       when lower(q.recipient_email) in (
-        'testclient1@ungani.com', 'restaurantdemo@ungani.com', 'test@ungani.com'
+        'testclient1@ungani.com', 'restaurantdemo@ungani.com', 'test@ungani.com',
+        'unganisystem@gmail.com', 'billychris617@gmail.com', 'superchris643@gmail.com',
+        'ungani123@gmail.com', 'testhotel@gmail.com', 'rls-verify-test@example.com'
       ) or lower(q.recipient_email) like 'test%@ungani.com'
-        or lower(q.recipient_email) like '%demo%@ungani.com' then 'known_test_account'
+        or lower(q.recipient_email) like '%demo%@ungani.com'
+        or lower(q.recipient_email) like 'diag-%@example.com'
+        or lower(q.recipient_email) like 'e2e-sections-test%' then 'known_test_account'
       when q.email_type = 'trial_warning' and q.created_at < now() - interval '5 days' then 'stale_trial_warning'
       when q.email_type = 'trial_ended' and s.subscription_status is distinct from 'trial' then 'trial_no_longer_active'
       else null
@@ -106,9 +113,15 @@ with target_rows as (
   where q.send_status in ('pending', 'queued', 'retry')
     and (
       (q.tenant_id is not null and t.id is null)
-      or lower(q.recipient_email) in ('testclient1@ungani.com', 'restaurantdemo@ungani.com', 'test@ungani.com')
+      or lower(q.recipient_email) in (
+        'testclient1@ungani.com', 'restaurantdemo@ungani.com', 'test@ungani.com',
+        'unganisystem@gmail.com', 'billychris617@gmail.com', 'superchris643@gmail.com',
+        'ungani123@gmail.com', 'testhotel@gmail.com', 'rls-verify-test@example.com'
+      )
       or lower(q.recipient_email) like 'test%@ungani.com'
       or lower(q.recipient_email) like '%demo%@ungani.com'
+      or lower(q.recipient_email) like 'diag-%@example.com'
+      or lower(q.recipient_email) like 'e2e-sections-test%'
       or (q.email_type = 'trial_warning' and q.created_at < now() - interval '5 days')
       or (q.email_type = 'trial_ended' and s.subscription_status is distinct from 'trial')
     )
