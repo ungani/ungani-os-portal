@@ -3673,6 +3673,39 @@
     message: "This account is currently in read-only mode. Please contact UNGANI or update payment to continue editing."
   };
 
+  // Separate from readOnlyState - a trial can be "ending soon" (days > 0)
+  // right up until the moment it ends, at which point readOnlyState takes
+  // over instead. The two are mutually exclusive by construction (a
+  // subscription_status of "trial" with a future trial_end_at vs. an
+  // already-past one), so only one banner ever renders at a time.
+  let trialWarningState = {
+    daysLeft: null,
+    dismissed: false
+  };
+
+  const TRIAL_WARNING_WINDOW_DAYS = 3;
+  const TRIAL_WARNING_DISMISS_KEY = "ungani_trial_warning_dismissed_date";
+
+  function todayDateKeyForTrialWarning() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function isTrialWarningDismissedToday() {
+    try {
+      return localStorage.getItem(TRIAL_WARNING_DISMISS_KEY) === todayDateKeyForTrialWarning();
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function dismissTrialWarningForToday() {
+    try {
+      localStorage.setItem(TRIAL_WARNING_DISMISS_KEY, todayDateKeyForTrialWarning());
+    } catch (error) {
+      // Ignore storage failures (private browsing, quota, etc.)
+    }
+  }
+
   function waitForSharedState(callback) {
     let tries = 0;
 
@@ -3694,6 +3727,59 @@
     }, 250);
   }
 
+  // Composes warm, client-authored copy from the structured fields
+  // (subscription_status/payment_status/trial_end_at) rather than
+  // displaying the server's raw `reason` text verbatim - gives full
+  // control over exact wording while still being driven by real data,
+  // not a guess. Falls back to the server's own reason text for any
+  // read-only cause this doesn't specifically recognize, so a future
+  // new reason on the server side still shows something sensible.
+  function composeReadOnlyMessage(access, serverReason) {
+    const subscriptionStatus = String(access.subscription_status || "").toLowerCase();
+    const paymentStatus = String(access.payment_status || "").toLowerCase();
+
+    if (subscriptionStatus === "trial") {
+      return "Your trial has ended. Choose a plan to continue adding new records - your existing data is safe and visible.";
+    }
+
+    if (["cancelled", "canceled", "suspended", "expired", "inactive", "blocked"].indexOf(subscriptionStatus) !== -1) {
+      return "Your account is currently suspended. Please contact UNGANI to reactivate, or choose a plan to continue.";
+    }
+
+    if (["overdue", "unpaid", "failed", "past_due", "payment_failed", "blocked"].indexOf(paymentStatus) !== -1) {
+      return "Payment is overdue. Please update your billing to continue adding new records - your existing data is safe and visible.";
+    }
+
+    return serverReason || readOnlyState.message;
+  }
+
+  function updateTrialWarningState(access) {
+    const subscriptionStatus = String(access.subscription_status || "").toLowerCase();
+
+    if (subscriptionStatus !== "trial" || !access.trial_end_at) {
+      trialWarningState.daysLeft = null;
+      return;
+    }
+
+    const trialEnd = new Date(access.trial_end_at);
+    if (isNaN(trialEnd.getTime())) {
+      trialWarningState.daysLeft = null;
+      return;
+    }
+
+    const remainingMs = trialEnd.getTime() - Date.now();
+    const remainingDays = remainingMs / 86400000;
+
+    // Only "ending soon", not already ended - once trial_end_at is in the
+    // past, get_my_ungani_subscription_access's can_write already flips
+    // to false and the read-only banner takes over instead. The two are
+    // mutually exclusive by this condition alone.
+    trialWarningState.daysLeft =
+      remainingDays > 0 && remainingDays <= TRIAL_WARNING_WINDOW_DAYS
+        ? Math.max(1, Math.ceil(remainingDays))
+        : null;
+  }
+
   async function loadReadOnlyAccess() {
     waitForSharedState(async function (state) {
       if (!state || !state.supabaseClient || !state.tenantId) {
@@ -3701,16 +3787,17 @@
         return;
       }
 
+      let latestAccess = null;
+
       try {
         const accessResponse = await state.supabaseClient.rpc("get_my_ungani_subscription_access");
 
         if (!accessResponse.error && accessResponse.data) {
           const access = accessResponse.data;
+          latestAccess = access;
           readOnlyState.isReadOnly = access.can_write === false || access.can_write === "false";
-
-          if (access.reason) {
-            readOnlyState.message = access.reason;
-          }
+          readOnlyState.message = composeReadOnlyMessage(access, access.reason);
+          updateTrialWarningState(access);
         }
       } catch (error) {
         console.warn("UNGANI read-only access check skipped:", error.message);
@@ -3728,12 +3815,12 @@
         // read-only, nothing - including an admin genuinely reactivating
         // the account - could ever clear the banner again.
         if (!noticeResponse.error && noticeResponse.data) {
-          if (noticeResponse.data.message) {
-            readOnlyState.message = noticeResponse.data.message;
-          }
+          const notice = noticeResponse.data;
+          latestAccess = latestAccess || notice;
 
-          readOnlyState.isReadOnly =
-            noticeResponse.data.read_only === true || noticeResponse.data.read_only === "true";
+          readOnlyState.message = composeReadOnlyMessage(notice, notice.message);
+          readOnlyState.isReadOnly = notice.read_only === true || notice.read_only === "true";
+          updateTrialWarningState(notice);
         }
       } catch (error) {
         console.warn("UNGANI read-only notice check skipped:", error.message);
@@ -3742,6 +3829,7 @@
       readOnlyState.loaded = true;
 
       renderReadOnlyBanner();
+      renderTrialWarningBanner();
       installReadOnlyGuard();
       exposeReadOnlyHelpers();
     });
@@ -3773,10 +3861,63 @@
         <strong>Read-only mode active</strong>
         <p>${safe(readOnlyState.message)}</p>
       </div>
-      <a class="ungani-btn gold" href="my-billing.html">Open Billing</a>
+      <a class="ungani-btn gold" href="my-package.html#requestedPackage">Choose a Plan</a>
     `;
 
     topbar.insertAdjacentElement("afterend", banner);
+  }
+
+  // Dismissible, non-blocking heads-up shown 1-3 days before a trial ends -
+  // never shown once the trial has actually ended (renderReadOnlyBanner
+  // takes over at that point instead, and the two conditions are mutually
+  // exclusive by construction in updateTrialWarningState).
+  function renderTrialWarningBanner() {
+    const existing = document.getElementById("unganiTrialWarningBanner");
+
+    if (!trialWarningState.daysLeft || readOnlyState.isReadOnly || isTrialWarningDismissedToday()) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    if (existing) {
+      return;
+    }
+
+    const topbar = document.querySelector(".ungani-topbar");
+
+    if (!topbar) {
+      setTimeout(renderTrialWarningBanner, 800);
+      return;
+    }
+
+    injectReadOnlyStyles();
+
+    const days = trialWarningState.daysLeft;
+    const dayWord = days === 1 ? "day" : "days";
+
+    const banner = document.createElement("div");
+    banner.id = "unganiTrialWarningBanner";
+    banner.className = "ungani-readonly-banner ungani-trial-warning-banner";
+    banner.innerHTML = `
+      <div>
+        <strong>Your free trial ends in ${safe(String(days))} ${safe(dayWord)}</strong>
+        <p>Choose a plan now to keep full access. Nothing is blocked yet - this is just a heads-up.</p>
+      </div>
+      <div class="ungani-trial-warning-actions">
+        <a class="ungani-btn gold" href="my-package.html#requestedPackage">Choose a Plan</a>
+        <button class="ungani-icon-button ungani-trial-warning-dismiss" type="button" title="Dismiss for today" aria-label="Dismiss">✕</button>
+      </div>
+    `;
+
+    topbar.insertAdjacentElement("afterend", banner);
+
+    const dismissBtn = banner.querySelector(".ungani-trial-warning-dismiss");
+    if (dismissBtn) {
+      dismissBtn.addEventListener("click", function () {
+        dismissTrialWarningForToday();
+        banner.remove();
+      });
+    }
   }
 
   function injectReadOnlyStyles() {
@@ -3820,6 +3961,42 @@
         .ungani-readonly-banner {
           flex-direction: column;
           align-items: flex-start;
+        }
+      }
+
+      .ungani-trial-warning-banner {
+        border-color: rgba(43,108,176,0.35);
+        background:
+          radial-gradient(circle at top right, rgba(43,108,176,0.16), transparent 30%),
+          rgba(43,108,176,0.08);
+      }
+
+      .ungani-trial-warning-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+
+      .ungani-trial-warning-dismiss {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        background: transparent;
+        box-shadow: none;
+        font-size: 13px;
+        line-height: 1;
+      }
+
+      .ungani-trial-warning-dismiss:hover {
+        background: var(--ungani-card);
+        box-shadow: 0 6px 16px rgba(6,28,61,0.1);
+      }
+
+      @media (max-width: 720px) {
+        .ungani-trial-warning-actions {
+          width: 100%;
+          justify-content: space-between;
         }
       }
     `;

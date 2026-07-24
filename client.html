@@ -3651,11 +3651,280 @@
 
       await Promise.all([
         loadDashboardData(),
-        loadNotifications()
+        loadNotifications(),
+        loadClientReadOnlyAccess()
       ]);
 
       startChatPolling();
       setInterval(updateLastUpdatedIndicator, 30000);
+    }
+
+    // Trial-warning and read-only banners. client.html doesn't load
+    // client-shared.js (it has its own bespoke auth/data-loading), so this
+    // mirrors client-shared.js's read-only-mode IIFE rather than sharing
+    // code with it - same RPCs, same composed messages, same day-keyed
+    // dismiss key (shared localStorage key across pages so dismissing on
+    // one page holds for the rest of that day everywhere).
+    let clientReadOnlyState = {
+      loaded: false,
+      isReadOnly: false,
+      message: "This account is currently in read-only mode. Please contact UNGANI or update payment to continue editing."
+    };
+
+    let clientTrialWarningState = { daysLeft: null };
+
+    const CLIENT_TRIAL_WARNING_WINDOW_DAYS = 3;
+    const CLIENT_TRIAL_WARNING_DISMISS_KEY = "ungani_trial_warning_dismissed_date";
+
+    function clientTodayDateKey() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function isClientTrialWarningDismissedToday() {
+      try {
+        return localStorage.getItem(CLIENT_TRIAL_WARNING_DISMISS_KEY) === clientTodayDateKey();
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function dismissClientTrialWarningForToday() {
+      try {
+        localStorage.setItem(CLIENT_TRIAL_WARNING_DISMISS_KEY, clientTodayDateKey());
+      } catch (error) {
+        // Ignore storage failures (private browsing, quota, etc.)
+      }
+    }
+
+    function composeClientReadOnlyMessage(access, serverReason) {
+      const subscriptionStatus = String(access.subscription_status || "").toLowerCase();
+      const paymentStatus = String(access.payment_status || "").toLowerCase();
+
+      if (subscriptionStatus === "trial") {
+        return "Your trial has ended. Choose a plan to continue adding new records - your existing data is safe and visible.";
+      }
+
+      if (["cancelled", "canceled", "suspended", "expired", "inactive", "blocked"].indexOf(subscriptionStatus) !== -1) {
+        return "Your account is currently suspended. Please contact UNGANI to reactivate, or choose a plan to continue.";
+      }
+
+      if (["overdue", "unpaid", "failed", "past_due", "payment_failed", "blocked"].indexOf(paymentStatus) !== -1) {
+        return "Payment is overdue. Please update your billing to continue adding new records - your existing data is safe and visible.";
+      }
+
+      return serverReason || clientReadOnlyState.message;
+    }
+
+    function updateClientTrialWarningState(access) {
+      const subscriptionStatus = String(access.subscription_status || "").toLowerCase();
+
+      if (subscriptionStatus !== "trial" || !access.trial_end_at) {
+        clientTrialWarningState.daysLeft = null;
+        return;
+      }
+
+      const trialEnd = new Date(access.trial_end_at);
+      if (isNaN(trialEnd.getTime())) {
+        clientTrialWarningState.daysLeft = null;
+        return;
+      }
+
+      const remainingDays = (trialEnd.getTime() - Date.now()) / 86400000;
+
+      clientTrialWarningState.daysLeft =
+        remainingDays > 0 && remainingDays <= CLIENT_TRIAL_WARNING_WINDOW_DAYS
+          ? Math.max(1, Math.ceil(remainingDays))
+          : null;
+    }
+
+    async function loadClientReadOnlyAccess() {
+      if (!currentTenantId) return;
+
+      try {
+        const accessResponse = await supabaseClient.rpc("get_my_ungani_subscription_access");
+
+        if (!accessResponse.error && accessResponse.data) {
+          const access = accessResponse.data;
+          clientReadOnlyState.isReadOnly = access.can_write === false || access.can_write === "false";
+          clientReadOnlyState.message = composeClientReadOnlyMessage(access, access.reason);
+          updateClientTrialWarningState(access);
+        }
+      } catch (error) {
+        console.warn("UNGANI read-only access check skipped:", error.message);
+      }
+
+      try {
+        const noticeResponse = await supabaseClient.rpc("get_my_ungani_read_only_notice");
+
+        if (!noticeResponse.error && noticeResponse.data) {
+          const notice = noticeResponse.data;
+          clientReadOnlyState.message = composeClientReadOnlyMessage(notice, notice.message);
+          clientReadOnlyState.isReadOnly = notice.read_only === true || notice.read_only === "true";
+          updateClientTrialWarningState(notice);
+        }
+      } catch (error) {
+        console.warn("UNGANI read-only notice check skipped:", error.message);
+      }
+
+      clientReadOnlyState.loaded = true;
+
+      injectClientReadOnlyStyles();
+      renderClientReadOnlyBanner();
+      renderClientTrialWarningBanner();
+    }
+
+    function injectClientReadOnlyStyles() {
+      if (document.getElementById("ungani-client-readonly-style")) return;
+
+      const style = document.createElement("style");
+      style.id = "ungani-client-readonly-style";
+      style.textContent = `
+        .client-readonly-banner {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin: 16px 24px 0;
+          padding: 15px 16px;
+          border-radius: 20px;
+          border: 1px solid rgba(212,166,58,0.45);
+          background:
+            radial-gradient(circle at top right, rgba(212,166,58,0.22), transparent 30%),
+            rgba(212,166,58,0.12);
+          color: var(--text);
+          box-shadow: var(--shadow-soft);
+        }
+
+        .client-readonly-banner strong {
+          display: block;
+          margin-bottom: 4px;
+          color: var(--text);
+        }
+
+        .client-readonly-banner p {
+          margin: 0;
+          color: var(--text-soft);
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .client-trial-warning-banner {
+          border-color: rgba(37,99,235,0.35);
+          background:
+            radial-gradient(circle at top right, rgba(37,99,235,0.16), transparent 30%),
+            rgba(37,99,235,0.08);
+        }
+
+        .client-trial-warning-actions {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-shrink: 0;
+        }
+
+        .client-trial-warning-dismiss {
+          width: 32px;
+          height: 32px;
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          background: transparent;
+          color: var(--text);
+          cursor: pointer;
+          font-size: 13px;
+          line-height: 1;
+        }
+
+        .client-trial-warning-dismiss:hover {
+          background: var(--soft);
+        }
+
+        @media (max-width: 720px) {
+          .client-readonly-banner {
+            flex-direction: column;
+            align-items: flex-start;
+            margin: 12px 16px 0;
+          }
+
+          .client-trial-warning-actions {
+            width: 100%;
+            justify-content: space-between;
+          }
+        }
+      `;
+
+      document.head.appendChild(style);
+    }
+
+    function renderClientReadOnlyBanner() {
+      const existing = document.getElementById("clientReadOnlyBanner");
+
+      if (!clientReadOnlyState.isReadOnly) {
+        if (existing) existing.remove();
+        return;
+      }
+
+      if (existing) return;
+
+      const topbar = document.querySelector(".topbar");
+      if (!topbar) return;
+
+      const banner = document.createElement("div");
+      banner.id = "clientReadOnlyBanner";
+      banner.className = "client-readonly-banner";
+      banner.innerHTML = `
+        <div>
+          <strong>Read-only mode active</strong>
+          <p>${safe(clientReadOnlyState.message)}</p>
+        </div>
+        <a class="btn gold" href="my-package.html#requestedPackage">Choose a Plan</a>
+      `;
+
+      topbar.insertAdjacentElement("afterend", banner);
+    }
+
+    // Dismissible, non-blocking heads-up shown 1-3 days before a trial ends -
+    // never shown once the trial has actually ended (renderClientReadOnlyBanner
+    // takes over at that point instead; mutually exclusive by construction
+    // in updateClientTrialWarningState).
+    function renderClientTrialWarningBanner() {
+      const existing = document.getElementById("clientTrialWarningBanner");
+
+      if (!clientTrialWarningState.daysLeft || clientReadOnlyState.isReadOnly || isClientTrialWarningDismissedToday()) {
+        if (existing) existing.remove();
+        return;
+      }
+
+      if (existing) return;
+
+      const topbar = document.querySelector(".topbar");
+      if (!topbar) return;
+
+      const days = clientTrialWarningState.daysLeft;
+      const dayWord = days === 1 ? "day" : "days";
+
+      const banner = document.createElement("div");
+      banner.id = "clientTrialWarningBanner";
+      banner.className = "client-readonly-banner client-trial-warning-banner";
+      banner.innerHTML = `
+        <div>
+          <strong>Your free trial ends in ${safe(String(days))} ${safe(dayWord)}</strong>
+          <p>Choose a plan now to keep full access. Nothing is blocked yet - this is just a heads-up.</p>
+        </div>
+        <div class="client-trial-warning-actions">
+          <a class="btn gold" href="my-package.html#requestedPackage">Choose a Plan</a>
+          <button class="client-trial-warning-dismiss" type="button" title="Dismiss for today" aria-label="Dismiss">✕</button>
+        </div>
+      `;
+
+      topbar.insertAdjacentElement("afterend", banner);
+
+      const dismissBtn = banner.querySelector(".client-trial-warning-dismiss");
+      if (dismissBtn) {
+        dismissBtn.addEventListener("click", function () {
+          dismissClientTrialWarningForToday();
+          banner.remove();
+        });
+      }
     }
 
     async function resolveTenant() {
