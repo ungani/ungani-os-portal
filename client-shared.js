@@ -1854,6 +1854,17 @@
     return { title: "Sections", items: items };
   }
 
+  const INTEGRATIONS_ELIGIBLE_BUSINESS_TYPE_KEYS = ["logistics", "real_estate", "warehouse"];
+
+  function isIntegrationsEligible() {
+    if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") {
+      return false;
+    }
+
+    const resolved = UnganiBusinessConfig.resolve(state.tenant);
+    return !!(resolved && INTEGRATIONS_ELIGIBLE_BUSINESS_TYPE_KEYS.indexOf(resolved.key) !== -1);
+  }
+
   function renderSidebarNav() {
     const groups = [
       {
@@ -1870,18 +1881,30 @@
     const sectionGroup = buildSectionNavGroup();
     if (sectionGroup) groups.push(sectionGroup);
 
+    const operationsItems = [
+      ["money", "my-money.html", "💰", "Money Records"],
+      ["records", "my-records.html", "🗂️", "Business Records"],
+      ["items", "my-items.html", "🏷️", "Items / Assets / Stock"],
+      ["people", "my-people.html", "👥", "People"],
+      ["tasks", "my-tasks.html", "✅", "Tasks / Follow-ups"],
+      ["calendar", "my-calendar.html", "📅", "Calendar"],
+      ["documents", "my-documents.html", "📄", "Documents"]
+    ];
+
+    // GPS/CCTV Integrations, Phase 1 - gated to the business types the
+    // feature was built for (fleet GPS, premises/unit CCTV). UI-only
+    // gate, same idea as buildSectionNavGroup() above; the my-integrations
+    // page itself re-checks this (tenant_integrations RLS is tenant-scoped
+    // regardless, not business-type-scoped, so this is a visibility
+    // convenience, not a security boundary).
+    if (isIntegrationsEligible()) {
+      operationsItems.push(["integrations", "my-integrations.html", "🛰️", "Integrations"]);
+    }
+
     groups.push(
       {
         title: "Operations",
-        items: [
-          ["money", "my-money.html", "💰", "Money Records"],
-          ["records", "my-records.html", "🗂️", "Business Records"],
-          ["items", "my-items.html", "🏷️", "Items / Assets / Stock"],
-          ["people", "my-people.html", "👥", "People"],
-          ["tasks", "my-tasks.html", "✅", "Tasks / Follow-ups"],
-          ["calendar", "my-calendar.html", "📅", "Calendar"],
-          ["documents", "my-documents.html", "📄", "Documents"]
-        ]
+        items: operationsItems
       },
       {
         title: "Support",

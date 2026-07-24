@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Integrations</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+
+  <style>
+    .ungani-integration-grid {
+      margin-top: 4px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    @media (max-width: 780px) {
+      .ungani-integration-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .ungani-integration-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .ungani-integration-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .ungani-integration-icon {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      background: rgba(212,166,58,0.14);
+      border: 1px solid rgba(212,166,58,0.28);
+      flex-shrink: 0;
+    }
+
+    .ungani-integration-detail {
+      margin: 0;
+      font-size: 13px;
+      color: var(--ungani-muted);
+      line-height: 1.5;
+    }
+
+    .ungani-integration-meta {
+      font-size: 12.5px;
+      color: var(--ungani-muted);
+    }
+
+    .ungani-wizard-step {
+      display: none;
+    }
+
+    .ungani-wizard-step.active {
+      display: block;
+    }
+
+    .ungani-wizard-progress {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .ungani-wizard-progress span {
+      flex: 1;
+      height: 4px;
+      border-radius: 4px;
+      background: rgba(6,28,61,0.10);
+    }
+
+    .ungani-wizard-progress span.done {
+      background: var(--ungani-gold);
+    }
+
+    .ungani-wizard-summary {
+      background: var(--ungani-soft);
+      border: 1px solid var(--ungani-border);
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 13.5px;
+      line-height: 1.7;
+    }
+
+    .ungani-wizard-summary strong {
+      display: inline-block;
+      min-width: 130px;
+      color: var(--ungani-text);
+    }
+  </style>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let integrationRows = { gps: null, cctv: null };
+    let eligibleForIntegrations = false;
+    let businessTypeLabel = "";
+
+    // Phase 1 eligibility, per the GPS/CCTV Integrations spec: Logistics,
+    // Property/Real Estate, and Warehouse are the primary business types
+    // this feature was designed for (fleet GPS, premises/unit CCTV).
+    // Hospitality/Construction/Security/Cleaning/Healthcare are explicitly
+    // "optional or later" in the spec, so they're left out of Phase 1
+    // rather than half-supported. This is a UI-only gate (same as the
+    // existing per-business-type "Sections" nav group) - RLS below still
+    // scopes every read/write to the caller's own tenant regardless.
+    const ELIGIBLE_BUSINESS_TYPE_KEYS = ["logistics", "real_estate", "warehouse"];
+
+    const INTEGRATION_DEFS = {
+      gps: {
+        label: "GPS Tracking",
+        icon: "🛰️",
+        description: "Connect the GPS/fleet-tracking provider you already use to keep vehicle and trip data visible from one place."
+      },
+      cctv: {
+        label: "CCTV Monitoring",
+        icon: "📹",
+        description: "Connect the CCTV/security camera provider you already use for premises or site monitoring."
+      }
+    };
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "integrations",
+        pageTitle: "Integrations",
+        pageSubtitle: "Connect the GPS and CCTV providers you already use.",
+        onReady: startIntegrationsPage
+      });
+    });
+
+    async function startIntegrationsPage(context) {
+      currentContext = context;
+
+      const resolvedType = window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function"
+        ? UnganiBusinessConfig.resolve(context.tenant)
+        : null;
+
+      businessTypeLabel = resolvedType ? resolvedType.name : "";
+      eligibleForIntegrations = !!(resolvedType && ELIGIBLE_BUSINESS_TYPE_KEYS.indexOf(resolvedType.key) !== -1);
+
+      if (!eligibleForIntegrations) {
+        renderNotEligible();
+        return;
+      }
+
+      await loadIntegrations();
+    }
+
+    function renderNotEligible() {
+      UnganiClientShared.setContent(`
+        <section class="ungani-card ungani-hero">
+          <h2>Integrations</h2>
+          <p>
+            GPS and CCTV integrations are being rolled out first for Logistics, Property Management, and
+            Warehouse businesses, since that's where fleet tracking and premises monitoring matter most day to day.
+          </p>
+        </section>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Not available for your business type yet</h3>
+              <p class="ungani-small">
+                ${businessTypeLabel ? `Your business is set up as <strong>${UnganiClientShared.safe(businessTypeLabel)}</strong>. ` : ""}
+                This feature isn't open to your business type yet, but it's on our roadmap to expand. If you'd like early access, please
+                <a href="my-support.html">contact UNGANI Support</a>.
+              </p>
+            </div>
+          </div>
+        </section>
+      `);
+    }
+
+    async function loadIntegrations() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading your integrations...");
+
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("tenant_integrations")
+          .select("*")
+          .eq("tenant_id", currentContext.tenantId);
+      } catch (error) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load integrations", error.message || "Network error. Please check your connection.");
+        return;
+      }
+
+      if (response.error) {
+        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load integrations", response.error.message);
+        return;
+      }
+
+      integrationRows = { gps: null, cctv: null };
+
+      (response.data || []).forEach(function (row) {
+        if (row.integration_type === "gps" || row.integration_type === "cctv") {
+          integrationRows[row.integration_type] = row;
+        }
+      });
+
+      renderIntegrationsPage();
+    }
+
+    function isConnected(row) {
+      return !!(row && row.status === "connected");
+    }
+
+    function renderIntegrationCard(type) {
+      const def = INTEGRATION_DEFS[type];
+      const row = integrationRows[type];
+      const connected = isConnected(row);
+
+      const statusBadge = connected
+        ? `<span class="ungani-badge green">Connected</span>`
+        : `<span class="ungani-badge">Not Connected</span>`;
+
+      const detail = connected
+        ? `<p class="ungani-integration-detail"><strong>${UnganiClientShared.safe(row.provider_name)}</strong></p>
+           <p class="ungani-integration-meta">Connected ${UnganiClientShared.formatDate(row.connected_at)}</p>`
+        : `<p class="ungani-integration-detail">${UnganiClientShared.safe(def.description)}</p>`;
+
+      const actionButton = connected
+        ? `<button class="ungani-btn dark" type="button" onclick="openManageIntegration('${type}')">Manage</button>`
+        : `<button class="ungani-btn gold" type="button" onclick="openConnectWizard('${type}')">Connect</button>`;
+
+      return `
+        <div class="ungani-card ungani-integration-card">
+          <div class="ungani-integration-card-head">
+            <div class="ungani-integration-icon">${def.icon}</div>
+            ${statusBadge}
+          </div>
+          <div>
+            <h3 style="margin:0 0 6px;">${UnganiClientShared.safe(def.label)}</h3>
+            ${detail}
+          </div>
+          ${actionButton}
+        </div>
+      `;
+    }
+
+    function renderIntegrationsPage() {
+      UnganiClientShared.setContent(`
+        <section class="ungani-card ungani-hero">
+          <h2>Integrations</h2>
+          <p>
+            Connect the GPS and CCTV providers you already use. UNGANI OS doesn't sell or provide tracking
+            hardware - this links your existing accounts so their status shows up alongside the rest of your
+            business data.
+          </p>
+        </section>
+
+        <section class="ungani-integration-grid">
+          ${renderIntegrationCard("gps")}
+          ${renderIntegrationCard("cctv")}
+        </section>
+      `);
+    }
+
+    // ---- Connect wizard ----
+
+    let wizardState = { type: null, step: 1, providerName: "", accountReference: "", contactPerson: "", notes: "" };
+
+    function openConnectWizard(type) {
+      wizardState = { type: type, step: 1, providerName: "", accountReference: "", contactPerson: "", notes: "" };
+
+      UnganiClientShared.openModal({
+        title: "Connect " + INTEGRATION_DEFS[type].label,
+        bodyHtml: buildWizardHtml(type)
+      });
+
+      goToWizardStep(1);
+    }
+
+    function buildWizardHtml(type) {
+      const def = INTEGRATION_DEFS[type];
+
+      return `
+        <div class="ungani-wizard-progress">
+          <span id="wizardProgress1"></span>
+          <span id="wizardProgress2"></span>
+          <span id="wizardProgress3"></span>
+        </div>
+
+        <div id="wizardStep1" class="ungani-wizard-step">
+          <p class="ungani-small">Step 1 of 3 - Which ${UnganiClientShared.safe(def.label)} provider do you use?</p>
+          <div class="ungani-form-grid">
+            <div style="grid-column: 1 / -1;">
+              <label for="wizardProviderName">Provider Name</label>
+              <input id="wizardProviderName" placeholder="Example: Your GPS or CCTV provider's name" />
+            </div>
+          </div>
+          <div class="ungani-button-row" style="margin-top:16px;">
+            <button class="ungani-btn gold" type="button" onclick="wizardNext()">Continue</button>
+            <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
+          </div>
+        </div>
+
+        <div id="wizardStep2" class="ungani-wizard-step">
+          <p class="ungani-small">Step 2 of 3 - Connection details (optional, helps UNGANI support you faster)</p>
+          <div class="ungani-form-grid">
+            <div>
+              <label for="wizardAccountReference">Account / Device Reference</label>
+              <input id="wizardAccountReference" placeholder="Example: fleet account number, camera site name" />
+            </div>
+            <div>
+              <label for="wizardContactPerson">Provider Contact (optional)</label>
+              <input id="wizardContactPerson" placeholder="Example: your rep's name or phone number" />
+            </div>
+            <div style="grid-column: 1 / -1;">
+              <label for="wizardNotes">Notes (optional)</label>
+              <textarea id="wizardNotes" rows="3" placeholder="Anything else worth noting about this connection"></textarea>
+            </div>
+          </div>
+          <div class="ungani-button-row" style="margin-top:16px;">
+            <button class="ungani-btn gold" type="button" onclick="wizardNext()">Continue</button>
+            <button class="ungani-btn dark" type="button" onclick="wizardBack()">Back</button>
+          </div>
+        </div>
+
+        <div id="wizardStep3" class="ungani-wizard-step">
+          <p class="ungani-small">Step 3 of 3 - Confirm</p>
+          <div id="wizardSummary" class="ungani-wizard-summary"></div>
+          <div class="ungani-button-row" style="margin-top:16px;">
+            <button class="ungani-btn gold" type="button" id="wizardConfirmBtn" onclick="wizardConfirm()">Confirm &amp; Connect</button>
+            <button class="ungani-btn dark" type="button" onclick="wizardBack()">Back</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function goToWizardStep(step) {
+      wizardState.step = step;
+
+      [1, 2, 3].forEach(function (n) {
+        const el = document.getElementById("wizardStep" + n);
+        if (el) el.classList.toggle("active", n === step);
+
+        const dot = document.getElementById("wizardProgress" + n);
+        if (dot) dot.classList.toggle("done", n <= step);
+      });
+
+      if (step === 1) {
+        document.getElementById("wizardProviderName").value = wizardState.providerName;
+      }
+
+      if (step === 2) {
+        document.getElementById("wizardAccountReference").value = wizardState.accountReference;
+        document.getElementById("wizardContactPerson").value = wizardState.contactPerson;
+        document.getElementById("wizardNotes").value = wizardState.notes;
+      }
+
+      if (step === 3) {
+        renderWizardSummary();
+      }
+    }
+
+    function renderWizardSummary() {
+      const def = INTEGRATION_DEFS[wizardState.type];
+
+      document.getElementById("wizardSummary").innerHTML = `
+        <div><strong>Integration:</strong> ${UnganiClientShared.safe(def.label)}</div>
+        <div><strong>Provider:</strong> ${UnganiClientShared.safe(wizardState.providerName)}</div>
+        ${wizardState.accountReference ? `<div><strong>Reference:</strong> ${UnganiClientShared.safe(wizardState.accountReference)}</div>` : ""}
+        ${wizardState.contactPerson ? `<div><strong>Contact:</strong> ${UnganiClientShared.safe(wizardState.contactPerson)}</div>` : ""}
+        ${wizardState.notes ? `<div><strong>Notes:</strong> ${UnganiClientShared.safe(wizardState.notes)}</div>` : ""}
+      `;
+    }
+
+    function wizardNext() {
+      if (wizardState.step === 1) {
+        const providerName = document.getElementById("wizardProviderName").value.trim();
+
+        if (!providerName) {
+          alert("Please enter the provider name to continue.");
+          return;
+        }
+
+        wizardState.providerName = providerName;
+        goToWizardStep(2);
+        return;
+      }
+
+      if (wizardState.step === 2) {
+        wizardState.accountReference = document.getElementById("wizardAccountReference").value.trim();
+        wizardState.contactPerson = document.getElementById("wizardContactPerson").value.trim();
+        wizardState.notes = document.getElementById("wizardNotes").value.trim();
+        goToWizardStep(3);
+        return;
+      }
+    }
+
+    function wizardBack() {
+      if (wizardState.step > 1) {
+        goToWizardStep(wizardState.step - 1);
+      }
+    }
+
+    async function wizardConfirm() {
+      const btn = document.getElementById("wizardConfirmBtn");
+
+      await UnganiClientShared.withButtonLoading(btn, async function () {
+        const payload = {
+          tenant_id: currentContext.tenantId,
+          integration_type: wizardState.type,
+          provider_name: wizardState.providerName,
+          status: "connected",
+          config: {
+            account_reference: wizardState.accountReference || null,
+            contact_person: wizardState.contactPerson || null,
+            notes: wizardState.notes || null
+          },
+          connected_by_user_id: currentContext.authUser ? currentContext.authUser.id : null,
+          connected_at: new Date().toISOString(),
+          disconnected_at: null,
+          updated_at: new Date().toISOString()
+        };
+
+        const response = await currentContext.supabaseClient
+          .from("tenant_integrations")
+          .upsert(payload, { onConflict: "tenant_id,integration_type" });
+
+        if (response.error) {
+          alert("Could not save this connection: " + response.error.message);
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        await loadIntegrations();
+      });
+    }
+
+    // ---- Manage / disconnect ----
+
+    function openManageIntegration(type) {
+      const def = INTEGRATION_DEFS[type];
+      const row = integrationRows[type];
+
+      if (!row) return;
+
+      const config = row.config || {};
+
+      UnganiClientShared.openModal({
+        title: "Manage " + def.label,
+        bodyHtml: `
+          <div class="ungani-wizard-summary">
+            <div><strong>Provider:</strong> ${UnganiClientShared.safe(row.provider_name)}</div>
+            ${config.account_reference ? `<div><strong>Reference:</strong> ${UnganiClientShared.safe(config.account_reference)}</div>` : ""}
+            ${config.contact_person ? `<div><strong>Contact:</strong> ${UnganiClientShared.safe(config.contact_person)}</div>` : ""}
+            ${config.notes ? `<div><strong>Notes:</strong> ${UnganiClientShared.safe(config.notes)}</div>` : ""}
+            <div><strong>Connected:</strong> ${UnganiClientShared.formatDate(row.connected_at)}</div>
+          </div>
+          <div class="ungani-button-row" style="margin-top:16px;">
+            <button class="ungani-btn gold" type="button" onclick="UnganiClientShared.closeModal(); openConnectWizard('${type}');">Reconnect with a Different Provider</button>
+            <button class="ungani-btn red" type="button" id="disconnectBtn" onclick="disconnectIntegration('${type}')">Disconnect</button>
+          </div>
+        `
+      });
+    }
+
+    async function disconnectIntegration(type) {
+      const confirmed = confirm("Disconnect this integration? You can reconnect at any time.");
+      if (!confirmed) return;
+
+      const btn = document.getElementById("disconnectBtn");
+
+      await UnganiClientShared.withButtonLoading(btn, async function () {
+        const response = await currentContext.supabaseClient
+          .from("tenant_integrations")
+          .update({
+            status: "disconnected",
+            disconnected_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("tenant_id", currentContext.tenantId)
+          .eq("integration_type", type);
+
+        if (response.error) {
+          alert("Could not disconnect: " + response.error.message);
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        await loadIntegrations();
+      });
+    }
+  </script>
+</body>
+</html>
