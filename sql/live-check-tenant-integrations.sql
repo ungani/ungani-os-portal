@@ -29,67 +29,81 @@ limit 5;
 -- Step 1's result (same tenant_id used for both occurrences), then run
 -- this whole block together.
 --
--- All three steps run as ONE statement (a WITH chain), so their combined
--- output is one query result with visible rows - no reliance on a
--- Messages/Logs panel. The `disconnected` CTE below matches on
--- `id = (select id from upserted)` rather than re-querying
--- tenant_id/integration_type - that's a genuine data dependency, which
--- forces Postgres to evaluate `upserted` first and hand its actual
--- returned row to `disconnected`, sidestepping the usual caveat that
--- writable CTEs in one WITH clause don't reliably see each other's
--- effects (they only don't when there's no such dependency).
+-- A prior version of this file chained pre_check/upserted/disconnected
+-- as three CTEs in one WITH clause, matching the UPDATE on
+-- `id = (select id from upserted)` to try to force correct sequencing.
+-- That doesn't actually work - confirmed live (the UPDATE matched zero
+-- rows). Per Postgres's documented behavior, ALL writable CTEs in one
+-- WITH clause share the single snapshot taken at the start of the
+-- query - RETURNING is the only channel between them, so `disconnected`
+-- had the right id value to look for, but its own UPDATE still scanned
+-- the table as it looked BEFORE `upserted`'s insert, where that row
+-- didn't exist yet. There's no way to fix this within one statement.
 --
--- ROLLBACK still comes after, as its own statement, so nothing persists
--- either way - if your editor happens to only display the very last
--- statement's result and this still shows "no rows", tell me and I'll
--- restructure again (e.g. two separate runs: one that does the test and
--- shows results, a second you run immediately after to manually restore
--- via the row this query's output gives you).
+-- This version uses a DO block instead, where each statement is
+-- genuinely sequential (not snapshot-shared) and correctly sees the
+-- prior statement's write. Results are captured into a temp table and
+-- surfaced via a plain SELECT as visible rows - confirmed live that a
+-- row-returning SELECT followed by ROLLBACK still displays correctly in
+-- your editor (the previous run showed rows 1 and 2 this same way).
 
 begin;
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub": "<USER_ID>", "role": "authenticated"}';
 
-with
-  pre_check as (
-    -- exactly what loadIntegrations() runs on page load
-    select count(*) as existing_row_count
-    from tenant_integrations
-    where tenant_id = '<TENANT_ID>'
-  ),
-  upserted as (
-    -- exactly what the connect wizard's wizardConfirm() runs
-    insert into tenant_integrations (tenant_id, integration_type, provider_name, status, config)
-    values ('<TENANT_ID>', 'gps', 'SQL Live-Check Test Provider', 'connected', '{}'::jsonb)
-    on conflict (tenant_id, integration_type) do update set provider_name = excluded.provider_name
-    returning id, provider_name, status
-  ),
-  disconnected as (
-    -- exactly what disconnectIntegration() runs, matched directly
-    -- against upserted's own returned id (the data dependency that
-    -- forces correct sequencing)
-    update tenant_integrations
-    set status = 'disconnected', disconnected_at = now()
-    where id = (select id from upserted)
-    returning id, provider_name, status, disconnected_at
-  )
-select '1_pre_check' as step, existing_row_count::text as provider_name, null::text as status, null::text as disconnected_at
-from pre_check
-union all
-select '2_insert_upsert' as step, provider_name, status, null::text as disconnected_at
-from upserted
-union all
-select '3_disconnect_update' as step, provider_name, status, disconnected_at::text
-from disconnected
-order by step;
+create temporary table _live_check_results (
+  step text,
+  provider_name text,
+  status text,
+  disconnected_at text
+) on commit drop;
 
-rollback; -- undoes the insert/update above - this was a read/write test only.
+do $$
+declare
+  v_existing_count int;
+  v_insert_row record;
+  v_update_row record;
+begin
+  -- 1. exactly what loadIntegrations() runs on page load
+  select count(*) into v_existing_count
+  from tenant_integrations
+  where tenant_id = '<TENANT_ID>';
+
+  insert into _live_check_results values ('1_pre_check', v_existing_count::text, null, null);
+
+  -- 2. exactly what the connect wizard's wizardConfirm() runs
+  insert into tenant_integrations (tenant_id, integration_type, provider_name, status, config)
+  values ('<TENANT_ID>', 'gps', 'SQL Live-Check Test Provider', 'connected', '{}'::jsonb)
+  on conflict (tenant_id, integration_type) do update set provider_name = excluded.provider_name
+  returning id, provider_name, status into v_insert_row;
+
+  insert into _live_check_results values ('2_insert_upsert', v_insert_row.provider_name, v_insert_row.status, null);
+
+  -- 3. exactly what disconnectIntegration() runs - a genuinely separate
+  --    sequential statement, so it correctly sees step 2's write (this
+  --    is the part the CTE version couldn't do).
+  update tenant_integrations
+  set status = 'disconnected', disconnected_at = now()
+  where id = v_insert_row.id
+  returning id, provider_name, status, disconnected_at::text into v_update_row;
+
+  if v_update_row is null then
+    insert into _live_check_results values ('3_disconnect_update', 'NO ROW MATCHED', 'ERROR', null);
+  else
+    insert into _live_check_results values ('3_disconnect_update', v_update_row.provider_name, v_update_row.status, v_update_row.disconnected_at);
+  end if;
+end $$;
+
+select * from _live_check_results order by step;
+
+rollback; -- undoes the insert/update (and the temp table) above - this was a read/write test only.
 
 -- Expected: 3 rows. Row 1 (1_pre_check) shows the existing count before
 -- the test (any number, including 0, is fine). Row 2
 -- (2_insert_upsert) shows status=connected. Row 3
 -- (3_disconnect_update) shows status=disconnected with a non-null
--- disconnected_at. If row 3 is missing entirely, that means the UPDATE
--- matched zero rows - a real bug. If any row is missing due to a
+-- disconnected_at. If row 3 says "NO ROW MATCHED", that's now a real
+-- bug worth reporting (this version removes the snapshot issue that
+-- caused the previous false negative). If any row is missing due to a
 -- permission error instead, that error message itself is the finding.
