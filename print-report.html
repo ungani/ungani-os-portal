@@ -47,6 +47,7 @@
   <script>
     let currentContext = null;
     let businessPreset = null;
+    let currentRange = "all";
 
     let printData = {
       transactions: [],
@@ -58,6 +59,24 @@
       events: [],
       support: []
     };
+
+    const RANGE_LABELS = {
+      day: "Today",
+      week: "This Week",
+      month: "This Month",
+      all: "All Time"
+    };
+
+    function getRangeCutoffISO(range) {
+      if (range === "all") return null;
+
+      const from = new Date();
+      if (range === "month") from.setDate(from.getDate() - 30);
+      else if (range === "week") from.setDate(from.getDate() - 7);
+      else from.setHours(0, 0, 0, 0);
+
+      return from.toISOString();
+    }
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -72,6 +91,10 @@
       currentContext = context;
       businessPreset = UnganiPresets.getPreset(context.tenant);
 
+      const params = new URLSearchParams(window.location.search || "");
+      const requestedRange = String(params.get("range") || "all").toLowerCase();
+      currentRange = RANGE_LABELS[requestedRange] ? requestedRange : "all";
+
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
 
@@ -79,20 +102,42 @@
       if (subEl) subEl.innerText = "Print-ready business summary for money, tasks, records, people, documents, calendar, and support.";
 
       await loadPrintData();
+
+      if (params.get("autoprint") === "1") {
+        setTimeout(function () { window.print(); }, 500);
+      }
+    }
+
+    function setRange(range) {
+      currentRange = RANGE_LABELS[range] ? range : "all";
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("range", currentRange);
+      url.searchParams.delete("autoprint");
+      window.history.replaceState(null, "", url.toString());
+
+      loadPrintData();
     }
 
     async function loadPrintData() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading printable report...");
 
+      // Transactions are scoped by transaction_date (when the money moved,
+      // not when the row was created - matters for backdated entries).
+      // Tasks are left unfiltered regardless of range: an overdue task from
+      // last month is still relevant to a "this week" report, and hiding
+      // it would be actively misleading. Every other table uses created_at.
+      const cutoffISO = getRangeCutoffISO(currentRange);
+
       const responses = await Promise.all([
-        safeSelect("transactions"),
-        safeSelect("business_items"),
-        safeSelect("client_people"),
-        safeSelect("business_records"),
-        safeSelect("tasks"),
-        safeSelect("documents"),
-        safeSelect("business_events"),
-        safeSelect("support_issues")
+        safeSelect("transactions", "transaction_date", cutoffISO),
+        safeSelect("business_items", "created_at", cutoffISO),
+        safeSelect("client_people", "created_at", cutoffISO),
+        safeSelect("business_records", "created_at", cutoffISO),
+        safeSelect("tasks", null, null),
+        safeSelect("documents", "created_at", cutoffISO),
+        safeSelect("business_events", "created_at", cutoffISO),
+        safeSelect("support_issues", "created_at", cutoffISO)
       ]);
 
       printData.transactions = responses[0];
@@ -107,13 +152,18 @@
       renderPrintReport();
     }
 
-    async function safeSelect(tableName) {
+    async function safeSelect(tableName, dateColumn, cutoffISO) {
       try {
-        const response = await currentContext.supabaseClient
+        let query = currentContext.supabaseClient
           .from(tableName)
           .select("*")
-          .eq("tenant_id", currentContext.tenantId)
-          .order("created_at", { ascending: false });
+          .eq("tenant_id", currentContext.tenantId);
+
+        if (dateColumn && cutoffISO) {
+          query = query.gte(dateColumn, cutoffISO.slice(0, 10));
+        }
+
+        const response = await query.order("created_at", { ascending: false });
 
         if (response.error) {
           console.warn(tableName, response.error.message);
@@ -528,6 +578,12 @@
           </div>
         </div>
 
+        <div class="ungani-button-row no-print" style="margin-bottom:18px;">
+          ${["day", "week", "month", "all"].map(function (rangeKey) {
+            return `<button class="ungani-btn ${rangeKey === currentRange ? "gold" : "light"}" onclick="setRange('${rangeKey}')">${UnganiClientShared.safe(RANGE_LABELS[rangeKey])}</button>`;
+          }).join("")}
+        </div>
+
         <article class="print-report">
           <header class="print-cover">
             <div>
@@ -547,6 +603,7 @@
           <section class="print-meta-grid">
             ${metaCard("Business", tenantName)}
             ${metaCard("Business Type", businessPreset.name)}
+            ${metaCard("Report Period", RANGE_LABELS[currentRange])}
             ${metaCard("Generated", generatedDate)}
             ${metaCard("Prepared By", "UNGANI OS")}
           </section>

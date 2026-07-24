@@ -1015,7 +1015,7 @@
     }
   }
 
-  function openNia() {
+  async function openNia() {
     const panel = document.getElementById("niaPanel");
     if (!panel) return;
 
@@ -1035,11 +1035,25 @@
       if (!hasSeenNia()) {
         addNiaMessage(buildFirstTimeGreeting());
         markSeenNia();
+        showQuickActions();
+      } else if (state.surface !== "admin" && state.supabaseClient && state.tenantId && !hasSeenTodayBriefing()) {
+        showTypingIndicator();
+
+        try {
+          const briefingHtml = await buildMorningBriefingHtml();
+          removeTypingIndicator();
+          addNiaMessage(briefingHtml);
+        } catch (error) {
+          removeTypingIndicator();
+          addNiaMessage(personalizeGreeting(getPageConfig().greeting));
+        }
+
+        markSeenTodayBriefing();
+        showQuickActions();
       } else {
         addNiaMessage(personalizeGreeting(getPageConfig().greeting));
+        showQuickActions();
       }
-
-      showQuickActions();
     }
 
     const input = document.getElementById("niaTextInput");
@@ -1606,6 +1620,18 @@
         return runAssetCountIntent(text);
       }
 
+      // "print this for me" / "give me a report" - checked ahead of the
+      // generic summary phrase below, since a print request should always
+      // win over a conversational one even if both phrase lists could
+      // technically match the same text (e.g. "give me a report").
+      if (isPrintRequestPhrase(text)) {
+        return runPrintReportIntent(text);
+      }
+
+      if (isSummaryRequestPhrase(text)) {
+        return runSummaryIntent(text);
+      }
+
       const sectionHowTo = findSectionHowToIntent(text);
       if (sectionHowTo) {
         return answerSectionQuickAddHowTo(sectionHowTo.vocabKey);
@@ -2005,6 +2031,298 @@
 
     addNiaMessage("You have " + total + " item" + (total === 1 ? "" : "s") + " on record.");
     return { spoken: "You have " + total + " items on record." };
+  }
+
+  // ---- Summaries, print-report handoff, and the morning briefing ----
+  // Scoped deliberately to money + tasks + the existing asset-attention
+  // check: those are the two metrics every business type tracks the same
+  // way (transaction_type/type + amount; status + due_date), so this stays
+  // reliable across all 19 business types without per-type branching. The
+  // full, everything-included report (items/records/documents/etc.) is
+  // print-report.html's job, not a chat bubble's.
+
+  function niaDateRangeMeta(rangeKey) {
+    const now = new Date();
+    const to = new Date(now);
+    const from = new Date(now);
+
+    if (rangeKey === "month") {
+      from.setDate(from.getDate() - 30);
+    } else if (rangeKey === "week") {
+      from.setDate(from.getDate() - 7);
+    } else {
+      from.setHours(0, 0, 0, 0);
+    }
+
+    const fmt = function (d) {
+      return d.toLocaleDateString("en-KE", { month: "short", day: "numeric" });
+    };
+
+    return {
+      cutoffISO: from.toISOString(),
+      label: rangeKey === "month" ? "This Month" : rangeKey === "week" ? "This Week" : "Today",
+      rangeText: rangeKey === "day" ? fmt(to) : fmt(from) + " – " + fmt(to)
+    };
+  }
+
+  function detectSummaryRangeFromText(text) {
+    const lower = text.toLowerCase();
+    if (lower.indexOf("month") !== -1) return "month";
+    if (lower.indexOf("today") !== -1 || lower.indexOf("day") !== -1) return "day";
+    return "week";
+  }
+
+  function isSummaryRequestPhrase(text) {
+    const lower = text.toLowerCase();
+    return [
+      "summary", "how's business", "hows business", "how is business",
+      "how did this week go", "how did this month go", "how did today go",
+      "recap", "business update", "give me an update", "weekly report",
+      "monthly report", "daily report", "how are we doing", "give me a summary"
+    ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  // Word-presence rather than exact-phrase matching, deliberately - checked
+  // ahead of isSummaryRequestPhrase in the intent chain, and an exact-phrase
+  // list would miss real phrasing like "print my WEEKLY report" (the
+  // inserted word breaks a literal "print my report" substring match, and
+  // would otherwise wrongly fall through to the summary intent instead
+  // since "weekly report" is one of that intent's own phrases).
+  function isPrintRequestPhrase(text) {
+    const lower = text.toLowerCase();
+    if (["print", "pdf", "printout"].some(function (w) { return lower.indexOf(w) !== -1; })) {
+      return true;
+    }
+    const hasReportNoun = lower.indexOf("report") !== -1;
+    return hasReportNoun && (lower.indexOf("download") !== -1 || lower.indexOf("export") !== -1);
+  }
+
+  async function fetchNiaMoneyRows(cutoffISO) {
+    const response = await state.supabaseClient
+      .from("transactions")
+      .select("id, amount, transaction_type, type, transaction_date, created_at, status")
+      .eq("tenant_id", state.tenantId)
+      .gte("transaction_date", cutoffISO.slice(0, 10))
+      .order("transaction_date", { ascending: false })
+      .limit(1000);
+
+    if (response.error) throw new Error(response.error.message);
+    return response.data || [];
+  }
+
+  async function fetchNiaTaskRows() {
+    const response = await state.supabaseClient
+      .from("tasks")
+      .select("id, title, name, status, due_date, created_at")
+      .eq("tenant_id", state.tenantId)
+      .order("due_date", { ascending: true })
+      .limit(1000);
+
+    if (response.error) throw new Error(response.error.message);
+    return response.data || [];
+  }
+
+  // Mirrors my-money.html's getRowType/isIncomeRow/isExpenseRow exactly,
+  // so Nia's numbers always agree with the Money page's own summary. Kept
+  // as a separate copy (no module system in this repo to share it from).
+  function niaGetMoneyRowType(row) {
+    return String(pickField(row, ["transaction_type", "type"], "income")).toLowerCase();
+  }
+
+  function niaIsIncomeRow(row) {
+    const type = niaGetMoneyRowType(row);
+    return type.indexOf("income") !== -1 || type.indexOf("sale") !== -1 || type.indexOf("rental") !== -1 ||
+      type.indexOf("revenue") !== -1 || type.indexOf("deposit") !== -1 || type.indexOf("payment") !== -1 || type.indexOf("fee") !== -1;
+  }
+
+  function niaIsExpenseRow(row) {
+    const type = niaGetMoneyRowType(row);
+    return type.indexOf("expense") !== -1 || type.indexOf("petty") !== -1 || type.indexOf("cost") !== -1 ||
+      type.indexOf("commission") !== -1 || type.indexOf("maintenance") !== -1;
+  }
+
+  function computeNiaMoneySummary(rows) {
+    let income = 0;
+    let expenses = 0;
+
+    rows.forEach(function (row) {
+      const amount = Number(pickField(row, ["amount"], 0)) || 0;
+      if (niaIsIncomeRow(row)) income += amount;
+      else if (niaIsExpenseRow(row)) expenses += amount;
+    });
+
+    return { income: income, expenses: expenses, net: income - expenses };
+  }
+
+  function summarizeNiaTasks(rows, cutoffISO) {
+    const today = new Date().toISOString().slice(0, 10);
+    const cutoffDate = cutoffISO.slice(0, 10);
+    let completedInRange = 0;
+    let overdue = 0;
+    let dueToday = 0;
+
+    rows.forEach(function (row) {
+      const status = String(pickField(row, ["status"], "")).toLowerCase();
+      const due = row.due_date ? String(row.due_date).slice(0, 10) : null;
+      const isDone = status.indexOf("completed") !== -1;
+      const isCancelled = status.indexOf("cancelled") !== -1;
+
+      if (isDone && row.created_at && String(row.created_at).slice(0, 10) >= cutoffDate) {
+        completedInRange++;
+      }
+
+      if (due && due === today && !isDone && !isCancelled) {
+        dueToday++;
+      }
+
+      if (due && due < today && !isDone && !isCancelled) {
+        overdue++;
+      }
+    });
+
+    return { completedInRange: completedInRange, overdue: overdue, dueToday: dueToday };
+  }
+
+  function formatNiaKES(amount) {
+    return "KSh " + Math.round(amount).toLocaleString("en-KE");
+  }
+
+  async function runSummaryIntent(text) {
+    if (state.surface === "admin") {
+      addNiaMessage("Business summaries aren't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    const rangeKey = detectSummaryRangeFromText(text);
+    const meta = niaDateRangeMeta(rangeKey);
+
+    addNiaMessage("Pulling together your " + meta.label.toLowerCase() + " summary...");
+
+    let moneyRows, taskRows;
+    try {
+      [moneyRows, taskRows] = await Promise.all([
+        fetchNiaMoneyRows(meta.cutoffISO),
+        fetchNiaTaskRows()
+      ]);
+    } catch (error) {
+      addNiaMessage("I couldn't pull that together right now — please try again in a moment.");
+      return { spoken: "I couldn't pull that together right now." };
+    }
+
+    const money = computeNiaMoneySummary(moneyRows);
+    const tasks = summarizeNiaTasks(taskRows, meta.cutoffISO);
+
+    const html =
+      `<strong>${safe(meta.label)}</strong> <span style="opacity:0.7;">(${safe(meta.rangeText)})</span>` +
+      `<div style="margin-top:8px;">💰 Income: ${safe(formatNiaKES(money.income))} · Expenses: ${safe(formatNiaKES(money.expenses))} · Net: ${safe(formatNiaKES(money.net))}</div>` +
+      `<div style="margin-top:4px;">✅ ${tasks.completedInRange} task${tasks.completedInRange === 1 ? "" : "s"} completed · ${tasks.overdue} overdue · ${tasks.dueToday} due today</div>` +
+      `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">` +
+      `<a class="nia-link-btn" style="margin-top:0;" href="print-report.html?range=${attr(rangeKey)}">See full printable report →</a>` +
+      `</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: meta.label + ": income " + formatNiaKES(money.income) + ", expenses " + formatNiaKES(money.expenses) +
+        ", " + tasks.completedInRange + " tasks completed, " + tasks.overdue + " overdue."
+    };
+  }
+
+  async function runPrintReportIntent(text) {
+    if (state.surface === "admin") {
+      addNiaMessage("Printable reports aren't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    const rangeKey = detectSummaryRangeFromText(text);
+    const meta = niaDateRangeMeta(rangeKey);
+
+    addNiaMessage("Opening your " + meta.label.toLowerCase() + " report — it'll open the print dialog once it's loaded.");
+
+    setTimeout(function () {
+      window.location.href = "print-report.html?range=" + encodeURIComponent(rangeKey) + "&autoprint=1";
+    }, 700);
+
+    return { spoken: "Opening your " + meta.label.toLowerCase() + " report." };
+  }
+
+  // ---- Morning briefing: shown once per calendar day, on the first Nia
+  // open that day, instead of the plain personalized greeting. Extends
+  // the exact hasSeenNia/markSeenNia localStorage pattern above (day-keyed
+  // instead of ever-keyed) - first-time users still get buildFirstTimeGreeting()
+  // unchanged, since a returning-user daily briefing doesn't make sense
+  // for someone who has never used Nia before.
+  const BRIEFING_SEEN_KEY = "ungani_nia_last_briefing_date";
+
+  function todayDateKey() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function hasSeenTodayBriefing() {
+    try {
+      return localStorage.getItem(BRIEFING_SEEN_KEY) === todayDateKey();
+    } catch (error) {
+      return true; // fail closed to the plain greeting, not a broken briefing
+    }
+  }
+
+  function markSeenTodayBriefing() {
+    try {
+      localStorage.setItem(BRIEFING_SEEN_KEY, todayDateKey());
+    } catch (error) {
+      // Ignore storage failures (private browsing, quota, etc.)
+    }
+  }
+
+  async function buildMorningBriefingHtml() {
+    const meta = niaDateRangeMeta("week");
+    const name = getPersonName();
+    const hi = name ? "Good to see you, " + safe(name) + "!" : "Good to see you!";
+
+    let moneyRows = [];
+    let taskRows = [];
+    let assetEntries = [];
+
+    try {
+      const results = await Promise.all([
+        fetchNiaMoneyRows(meta.cutoffISO),
+        fetchNiaTaskRows(),
+        fetchAssetRowsForTenant()
+      ]);
+      moneyRows = results[0];
+      taskRows = results[1];
+      assetEntries = computeAssetAttentionEntries(results[2]);
+    } catch (error) {
+      // If any of these fail, still show the greeting - a briefing with
+      // partial or no data is better than blocking the panel from opening.
+    }
+
+    const money = computeNiaMoneySummary(moneyRows);
+    const tasks = summarizeNiaTasks(taskRows, meta.cutoffISO);
+
+    const lines = [];
+    if (tasks.dueToday > 0) {
+      lines.push(`📋 ${tasks.dueToday} task${tasks.dueToday === 1 ? "" : "s"} due today`);
+    }
+    if (tasks.overdue > 0) {
+      lines.push(`⏰ ${tasks.overdue} task${tasks.overdue === 1 ? "" : "s"} overdue`);
+    }
+    if (assetEntries.length > 0) {
+      lines.push(`🔴 ${assetEntries.length} item${assetEntries.length === 1 ? "" : "s"} need${assetEntries.length === 1 ? "s" : ""} attention`);
+    }
+
+    const weekLine = `This week so far: ${formatNiaKES(money.income)} in, ${formatNiaKES(money.expenses)} out.`;
+
+    return (
+      hi + " Here's your update for today:" +
+      `<div style="margin-top:8px;">${lines.length ? lines.join("<br>") : "Nothing urgent — all clear!"}</div>` +
+      `<div style="margin-top:8px;opacity:0.85;">${safe(weekLine)}</div>`
+    );
   }
 
   function showFallback() {
