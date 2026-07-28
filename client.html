@@ -1406,6 +1406,27 @@
       box-shadow: 0 16px 38px rgba(0,0,0,0.14);
     }
 
+    .property-attention-more {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 13px;
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      color: var(--text-soft);
+      font-weight: 800;
+      font-size: 13px;
+      text-decoration: none;
+      transition: 0.2s ease;
+    }
+
+    .property-attention-more:hover {
+      border-color: rgba(212,166,58,0.55);
+      color: var(--text);
+      background: var(--card-solid);
+    }
+
     @keyframes unganiUrgentPulse {
       0%, 100% {
         box-shadow: 0 0 0 0 rgba(220,38,38,0.42);
@@ -5644,13 +5665,7 @@
         });
       }
 
-      if (groups.length === 0) {
-        return `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No deliveries, trips, or maintenance need attention right now.</p></div>`;
-      }
-
-      return groups.map(function (g) {
-        return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-      }).join("");
+      return renderAttentionGroups(groups, "#16A34A", "All caught up ✓", "No deliveries, trips, or maintenance need attention right now.");
     }
 
     function buildLogisticsCalendarPreview(today, scopedData) {
@@ -8945,46 +8960,27 @@
         });
       }
 
-      if (groups.length === 0) {
-        return `
-          <div class="empty card-accent" style="--accent:#16A34A;">
-            <h3>All caught up ✓</h3>
-            <p>No overdue rent, viewings, maintenance, or expiring leases need attention right now.</p>
-          </div>
-        `;
-      }
-
-      return groups.map(function (group) {
-        return `
-          <div class="property-attention-group-title">${safe(group.title)}</div>
-          <div class="property-attention-list">
-            ${group.rows.join("")}
-          </div>
-        `;
-      }).join("");
+      return renderAttentionGroups(groups, "#16A34A", "All caught up ✓", "No overdue rent, viewings, maintenance, or expiring leases need attention right now.");
     }
 
     function renderEventsNeedingOutcomeCard(events) {
-      return `
-        <div class="property-attention-group-title">Needs Outcome</div>
-        <div class="property-attention-list">
-          ${events.map(function (row) {
-            const title = getValue(row, ["event_title", "title", "name"], "Calendar Activity");
-            const date = getValue(row, ["event_date", "date", "start_date"], "");
+      const rows = events.map(function (row) {
+        const title = getValue(row, ["event_title", "title", "name"], "Calendar Activity");
+        const date = getValue(row, ["event_date", "date", "start_date"], "");
 
-            return attentionRow(
-              "❓",
-              title,
-              "Was " + formatDate(date) + " — confirm what happened",
-              "Needs Outcome",
-              "red",
-              "my-calendar.html?highlight=" + row.id,
-              null,
-              "event:" + row.id
-            );
-          }).join("")}
-        </div>
-      `;
+        return attentionRow(
+          "❓",
+          title,
+          "Was " + formatDate(date) + " — confirm what happened",
+          "Needs Outcome",
+          "red",
+          "my-calendar.html?highlight=" + row.id,
+          null,
+          "event:" + row.id
+        );
+      });
+
+      return renderAttentionGroups([{ title: "Needs Outcome", rows: rows }], "#16A34A", "All caught up ✓", "Nothing needs an outcome confirmed right now.");
     }
 
     function renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts, taggedMode) {
@@ -9101,23 +9097,7 @@
         });
       }
 
-      if (groups.length === 0) {
-        return `
-          <div class="empty card-accent" style="--accent:#16A34A;">
-            <h3>All caught up ✓</h3>
-            <p>No overdue checkouts, today's check-ins, unresolved bookings, or open housekeeping/maintenance right now.</p>
-          </div>
-        `;
-      }
-
-      return groups.map(function (group) {
-        return `
-          <div class="property-attention-group-title">${safe(group.title)}</div>
-          <div class="property-attention-list">
-            ${group.rows.join("")}
-          </div>
-        `;
-      }).join("");
+      return renderAttentionGroups(groups, "#16A34A", "All caught up ✓", "No overdue checkouts, today's check-ins, unresolved bookings, or open housekeeping/maintenance right now.");
     }
 
     function renderRetailAttentionList(outOfStockItems, lowStockItems, overdueSupplierPayments, restockTasks, customerTasks, taggedMode) {
@@ -9236,23 +9216,7 @@
         });
       }
 
-      if (groups.length === 0) {
-        return `
-          <div class="empty card-accent" style="--accent:#16A34A;">
-            <h3>All caught up ✓</h3>
-            <p>No out-of-stock or low-stock items, overdue supplier payments, or open restock/customer tasks right now.</p>
-          </div>
-        `;
-      }
-
-      return groups.map(function (group) {
-        return `
-          <div class="property-attention-group-title">${safe(group.title)}</div>
-          <div class="property-attention-list">
-            ${group.rows.join("")}
-          </div>
-        `;
-      }).join("");
+      return renderAttentionGroups(groups, "#16A34A", "All caught up ✓", "No out-of-stock or low-stock items, overdue supplier payments, or open restock/customer tasks right now.");
     }
 
     function attentionRow(icon, title, subtitle, badgeText, badgeColor, href, sectionTag, ackKey) {
@@ -9714,13 +9678,38 @@
       return String(value || "").toLowerCase().includes("inactive");
     }
 
+    // Caps each group's rows at ATTENTION_GROUP_ROW_CAP so a client with, say,
+    // 40 low-stock SKUs or 30 overdue-rent tenants doesn't turn the dashboard
+    // into an unbounded scroll of full-width cards - the dashboard is a
+    // summary (per UI-UX-MASTER-SPEC.md), full detail belongs on the
+    // dedicated page. The "view all" link's href is derived from the first
+    // hidden row's own href (stripped of its ?highlight=id query string)
+    // rather than threaded through every one of the ~20 call sites -
+    // attentionRow() always builds `href="page.html?highlight=id"`, so this
+    // is a safe, zero-call-site-change way to link to the right page.
+    const ATTENTION_GROUP_ROW_CAP = 5;
+
     function renderAttentionGroups(groups, emptyAccent, emptyTitle, emptyMessage) {
       if (!groups || groups.length === 0) {
         return `<div class="empty card-accent" style="--accent:${attr(emptyAccent || "#16A34A")};"><h3>${safe(emptyTitle || "All caught up ✓")}</h3><p>${safe(emptyMessage || "Nothing needs attention right now.")}</p></div>`;
       }
 
       return groups.map(function (g) {
-        return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+        const total = g.rows.length;
+        const shownRows = g.rows.slice(0, ATTENTION_GROUP_ROW_CAP);
+        const hiddenCount = total - shownRows.length;
+        let moreHtml = "";
+
+        if (hiddenCount > 0) {
+          const hrefMatch = /href="([^"]+)"/.exec(g.rows[0] || "");
+          const basePage = hrefMatch ? hrefMatch[1].split("?")[0] : null;
+
+          moreHtml = basePage
+            ? `<a class="property-attention-more" href="${attr(basePage)}">+${hiddenCount} more — View all →</a>`
+            : `<div class="property-attention-more">+${hiddenCount} more</div>`;
+        }
+
+        return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${shownRows.join("")}${moreHtml}</div>`;
       }).join("");
     }
 
