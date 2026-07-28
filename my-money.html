@@ -1804,8 +1804,8 @@
             </div>
 
             <div>
-              <label for="moneyAmount">Amount</label>
-              <input id="moneyAmount" type="number" step="0.01" min="0" placeholder="Example: 50000" required value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["amount"], "")) : ""}" />
+              <label for="moneyAmount" id="moneyAmountLabel">Amount</label>
+              <input id="moneyAmount" type="number" step="0.01" min="0" placeholder="Example: 50000" required value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["amount"], "")) : ""}" oninput="recalculateVatAmount()" />
             </div>
 
             <div>
@@ -1874,13 +1874,26 @@
 
               <div id="moneyVatFields" class="money-tax-fields">
                 <div>
+                  <label for="moneyVatPricingMode">Pricing</label>
+                  <select id="moneyVatPricingMode" onchange="recalculateVatAmount()">
+                    <option value="inclusive">Amount above includes VAT</option>
+                    <option value="exclusive">VAT added on top of amount above</option>
+                  </select>
+                </div>
+
+                <div>
                   <label for="moneyVatRate">VAT rate (%)</label>
                   <input id="moneyVatRate" type="number" step="0.01" min="0" max="100" oninput="recalculateVatAmount()" />
                 </div>
 
                 <div>
-                  <label>VAT amount (included in the amount above)</label>
+                  <label id="moneyVatAmountLabel">VAT amount (included in the amount above)</label>
                   <div id="moneyVatAmountDisplay" class="money-tax-computed">Ksh 0</div>
+                </div>
+
+                <div id="moneyVatTotalGroup" style="display:none;">
+                  <label>Total to record (amount + VAT)</label>
+                  <div id="moneyVatTotalDisplay" class="money-tax-computed">Ksh 0</div>
                 </div>
               </div>
             </div>
@@ -1947,9 +1960,24 @@
           if (vatApplicableEl) {
             const vatApplicable = row ? !!UnganiClientShared.getValue(row, ["vat_applicable"], false) : false;
             const defaultVatRate = currentContext.tenant && currentContext.tenant.default_vat_rate != null ? currentContext.tenant.default_vat_rate : 16.00;
+            const defaultPricingMode = currentContext.tenant && currentContext.tenant.default_vat_pricing_mode === "exclusive" ? "exclusive" : "inclusive";
+            const rowPricingMode = row && row.vat_pricing_mode === "exclusive" ? "exclusive" : "inclusive";
 
             vatApplicableEl.checked = vatApplicable;
             document.getElementById("moneyVatRate").value = row && row.vat_rate != null ? row.vat_rate : defaultVatRate;
+            document.getElementById("moneyVatPricingMode").value = row ? rowPricingMode : defaultPricingMode;
+
+            // Editing an exclusive-mode record: the stored amount is the
+            // GROSS total (per the amount-always-means-gross-cash-moved
+            // rule), but the bookkeeper originally typed the base/pre-VAT
+            // price - redisplay that, not the gross, so the Amount field
+            // shows what they actually typed rather than a number they
+            // never entered.
+            if (row && vatApplicable && rowPricingMode === "exclusive") {
+              const grossAmount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+              const storedVatAmount = Number(UnganiClientShared.getValue(row, ["vat_amount"], 0) || 0);
+              document.getElementById("moneyAmount").value = Math.round((grossAmount - storedVatAmount) * 100) / 100;
+            }
           }
 
           const whtApplicable = row ? !!UnganiClientShared.getValue(row, ["withholding_applicable"], false) : false;
@@ -1986,20 +2014,69 @@
     // extracted via amount * rate / (100 + rate), matching how most small
     // Kenyan businesses record cash movements. This mirrors the backend
     // convention documented in sql/tax-vat-withholding-tracking.sql.
+    // transactions.amount ALWAYS represents the actual gross cash that
+    // moved, regardless of which pricing convention was used to arrive at
+    // it - every Income/Expense/Balance total and report reads amount
+    // directly, and letting it mean "net" for some rows and "gross" for
+    // others would silently corrupt those totals. So:
+    //   - Inclusive: the typed amount IS the gross total. VAT is EXTRACTED
+    //     via amount * rate / (100 + rate).
+    //   - Exclusive: the typed amount is the pre-VAT BASE price. VAT is
+    //     amount * rate / 100, and the figure that actually gets recorded
+    //     as this transaction's amount is the grossed-up total
+    //     (base * (1 + rate/100)) - shown explicitly in the "Total to
+    //     record" row so this is never a silent surprise at save time.
     function recalculateVatAmount() {
       const display = document.getElementById("moneyVatAmountDisplay");
       if (!display) return;
 
       const applicableEl = document.getElementById("moneyVatApplicable");
       const rateEl = document.getElementById("moneyVatRate");
+      const modeEl = document.getElementById("moneyVatPricingMode");
+      const amountLabel = document.getElementById("moneyAmountLabel");
+      const vatAmountLabel = document.getElementById("moneyVatAmountLabel");
+      const totalGroup = document.getElementById("moneyVatTotalGroup");
+      const totalDisplay = document.getElementById("moneyVatTotalDisplay");
+
+      const applicable = !!(applicableEl && applicableEl.checked);
+      const mode = modeEl && modeEl.value === "exclusive" ? "exclusive" : "inclusive";
       const amount = Number(UnganiClientShared.value("moneyAmount") || 0);
       const rate = Number(rateEl ? rateEl.value : 0) || 0;
 
-      const vatAmount = applicableEl && applicableEl.checked && amount > 0 && rate > 0
-        ? amount * rate / (100 + rate)
-        : 0;
+      let vatAmount = 0;
+      let total = amount;
+
+      if (applicable && amount > 0 && rate > 0) {
+        if (mode === "exclusive") {
+          vatAmount = amount * rate / 100;
+          total = amount + vatAmount;
+        } else {
+          vatAmount = amount * rate / (100 + rate);
+          total = amount;
+        }
+      }
 
       display.textContent = UnganiAnalytics.moneyFormat(vatAmount);
+
+      if (amountLabel) {
+        amountLabel.textContent = applicable
+          ? (mode === "exclusive" ? "Amount (before VAT)" : "Amount (includes VAT)")
+          : "Amount";
+      }
+
+      if (vatAmountLabel) {
+        vatAmountLabel.textContent = mode === "exclusive"
+          ? "VAT amount (added on top)"
+          : "VAT amount (included in the amount above)";
+      }
+
+      if (totalGroup) {
+        totalGroup.style.display = applicable && mode === "exclusive" ? "" : "none";
+      }
+
+      if (totalDisplay) {
+        totalDisplay.textContent = UnganiAnalytics.moneyFormat(total);
+      }
     }
 
     // Withholding amount is auto-suggested from the rate but left
@@ -2058,13 +2135,38 @@
         return;
       }
 
-      const duplicateOk = await confirmDuplicateIfNeeded(amount, category, transactionDate);
+      // amount ALWAYS ends up representing the actual gross cash that
+      // moved - in exclusive mode, the figure the user typed is the
+      // pre-VAT base price, so it's grossed up here BEFORE duplicate/
+      // unusual-amount detection and before it's used as payload.amount,
+      // since both of those compare against other rows' amount values,
+      // which are always gross.
+      const vatApplicableEl = document.getElementById("moneyVatApplicable");
+      const vatApplicable = !!(vatApplicableEl && vatApplicableEl.checked);
+      const vatPricingModeEl = document.getElementById("moneyVatPricingMode");
+      const vatPricingMode = vatPricingModeEl && vatPricingModeEl.value === "exclusive" ? "exclusive" : "inclusive";
+      const vatRate = vatApplicable ? Number(UnganiClientShared.value("moneyVatRate") || 0) : 0;
+
+      let recordAmount = amount;
+      let vatAmount = 0;
+
+      if (vatApplicable && vatRate > 0) {
+        if (vatPricingMode === "exclusive") {
+          vatAmount = Math.round((amount * vatRate / 100) * 100) / 100;
+          recordAmount = Math.round((amount + vatAmount) * 100) / 100;
+        } else {
+          vatAmount = Math.round((amount * vatRate / (100 + vatRate)) * 100) / 100;
+          recordAmount = amount;
+        }
+      }
+
+      const duplicateOk = await confirmDuplicateIfNeeded(recordAmount, category, transactionDate);
 
       if (!duplicateOk) {
         return;
       }
 
-      const unusualOk = await confirmUnusualAmountIfNeeded(amount, transactionType, category);
+      const unusualOk = await confirmUnusualAmountIfNeeded(recordAmount, transactionType, category);
 
       if (!unusualOk) {
         return;
@@ -2077,7 +2179,7 @@ const payload = {
   type: broadType,
   transaction_type: transactionType,
   category: category,
-  amount: amount,
+  amount: recordAmount,
   transaction_date: transactionDate,
   payment_method: UnganiClientShared.value("moneyMethod") || null,
   status: UnganiClientShared.value("moneyStatus") || "completed",
@@ -2093,16 +2195,16 @@ const payload = {
         payload.section_label = UnganiClientShared.value("moneySection") || null;
       }
 
-      const vatApplicableEl = document.getElementById("moneyVatApplicable");
-      payload.vat_applicable = !!(vatApplicableEl && vatApplicableEl.checked);
+      payload.vat_applicable = vatApplicable;
 
-      if (payload.vat_applicable) {
-        const vatRate = Number(UnganiClientShared.value("moneyVatRate") || 0);
+      if (vatApplicable) {
         payload.vat_rate = vatRate;
-        payload.vat_amount = Math.round((amount * vatRate / (100 + vatRate)) * 100) / 100;
+        payload.vat_amount = vatAmount;
+        payload.vat_pricing_mode = vatPricingMode;
       } else {
         payload.vat_rate = null;
         payload.vat_amount = null;
+        payload.vat_pricing_mode = "inclusive";
       }
 
       const whtApplicable = document.getElementById("moneyWhtApplicable").checked;

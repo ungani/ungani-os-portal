@@ -884,6 +884,14 @@
               <label for="taxDefaultRate" data-i18n="tax_default_rate">Default VAT rate (%)</label>
               <input type="number" id="taxDefaultRate" class="form-control" min="0" max="100" step="0.01" value="16.00" />
             </div>
+
+            <div class="form-group" id="taxDefaultPricingModeGroup">
+              <label for="taxDefaultPricingMode" data-i18n="tax_default_pricing_mode">Default VAT pricing</label>
+              <select id="taxDefaultPricingMode" class="form-control">
+                <option value="inclusive" data-i18n="tax_pricing_inclusive_option">Amount includes VAT</option>
+                <option value="exclusive" data-i18n="tax_pricing_exclusive_option">VAT added on top of amount</option>
+              </select>
+            </div>
           </div>
 
           <div class="form-actions">
@@ -1163,6 +1171,9 @@
         tax_settings: "Tax Settings",
         tax_vat_registered: "This business is VAT-registered",
         tax_default_rate: "Default VAT rate (%)",
+        tax_default_pricing_mode: "Default VAT pricing",
+        tax_pricing_inclusive_option: "Amount includes VAT",
+        tax_pricing_exclusive_option: "VAT added on top of amount",
         save_tax_settings_btn: "Save Tax Settings",
         user_prefs: "User Preferences",
         field_lang: "Language",
@@ -1225,6 +1236,9 @@
         tax_settings: "Mipangilio ya Kodi",
         tax_vat_registered: "Biashara hii imesajiliwa kwa VAT",
         tax_default_rate: "Kiwango chaguo-msingi cha VAT (%)",
+        tax_default_pricing_mode: "Ubadilishaji wa VAT chaguo-msingi",
+        tax_pricing_inclusive_option: "Kiasi kinajumuisha VAT",
+        tax_pricing_exclusive_option: "VAT inaongezwa juu ya kiasi",
         save_tax_settings_btn: "Hifadhi Mipangilio ya Kodi",
         user_prefs: "Mapendeleo ya Mtumiaji",
         field_lang: "Lugha",
@@ -1520,7 +1534,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -1611,16 +1625,21 @@
 
     function toggleTaxRateFieldVisibility() {
       const checked = document.getElementById("taxVatRegistered").checked;
-      const group = document.getElementById("taxDefaultRateGroup");
-      if (group) group.style.display = checked ? "" : "none";
+      const rateGroup = document.getElementById("taxDefaultRateGroup");
+      if (rateGroup) rateGroup.style.display = checked ? "" : "none";
+
+      const modeGroup = document.getElementById("taxDefaultPricingModeGroup");
+      if (modeGroup) modeGroup.style.display = checked ? "" : "none";
     }
 
     function renderTaxSettingsPanel(tenantRow) {
       const vatRegistered = !!(tenantRow && tenantRow.vat_registered);
       const defaultRate = tenantRow && tenantRow.default_vat_rate != null ? tenantRow.default_vat_rate : 16.00;
+      const defaultPricingMode = tenantRow && tenantRow.default_vat_pricing_mode ? tenantRow.default_vat_pricing_mode : "inclusive";
 
       document.getElementById("taxVatRegistered").checked = vatRegistered;
       document.getElementById("taxDefaultRate").value = defaultRate;
+      document.getElementById("taxDefaultPricingMode").value = defaultPricingMode;
       toggleTaxRateFieldVisibility();
     }
 
@@ -1640,12 +1659,13 @@
       const vatRegistered = document.getElementById("taxVatRegistered").checked;
       const rateInput = Number(document.getElementById("taxDefaultRate").value);
       const defaultRate = isNaN(rateInput) ? 16.00 : Math.min(100, Math.max(0, rateInput));
+      const defaultPricingMode = document.getElementById("taxDefaultPricingMode").value === "exclusive" ? "exclusive" : "inclusive";
 
       await withButtonLoading(btn, async () => {
         try {
           const { error } = await supabaseClient
             .from("tenants")
-            .update({ vat_registered: vatRegistered, default_vat_rate: defaultRate })
+            .update({ vat_registered: vatRegistered, default_vat_rate: defaultRate, default_vat_pricing_mode: defaultPricingMode })
             .eq("id", currentTenantId);
 
           if (error) throw error;
