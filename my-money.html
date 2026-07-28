@@ -123,7 +123,7 @@
     // Same bug class as documents.type, introduced by the same commit
     // (ae27767) across all six list pages - this one hadn't been hit live
     // yet, found via a full repo sweep.
-    const MONEY_SUMMARY_COLUMNS = "id, amount, transaction_type, type, category_name, category, status, transaction_date, created_at";
+    const MONEY_SUMMARY_COLUMNS = "id, amount, transaction_type, type, category_name, category, status, transaction_date, created_at, vat_applicable, vat_amount, withholding_applicable, withholding_amount";
 
     // Applies the filters that scope BOTH the summary fetch and the page
     // fetch: tenant, section, status dropdown, and free-text search. Search
@@ -410,6 +410,12 @@
       const expenseBreakdown = calculateExpenseBreakdown(summaryScopeRows);
       const trend = calculateIncomeExpenseTrend(summaryScopeRows);
 
+      // Tax KPIs are computed from the full tenant/section-scoped set
+      // (moneySummaryRows), not summaryScopeRows - "VAT payable this
+      // month" should reflect the whole business regardless of which
+      // category tile (All/Income/Expense/Petty) happens to be selected.
+      const taxSummary = calculateTaxSummary(moneySummaryRows);
+
       lastTrend = trend;
       lastExpenseBreakdown = expenseBreakdown;
 
@@ -622,6 +628,55 @@
             line-height: 1.5;
           }
 
+          .money-tax-section {
+            margin-top: 16px;
+            padding: 14px 15px;
+            border-radius: 18px;
+            border: 1px solid var(--ungani-border);
+            background: var(--ungani-soft);
+          }
+
+          .money-tax-section + .money-tax-section {
+            margin-top: 12px;
+          }
+
+          .money-tax-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 800;
+            font-size: 14px;
+            color: var(--ungani-text);
+            cursor: pointer;
+          }
+
+          .money-tax-toggle input {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--ungani-gold);
+            cursor: pointer;
+          }
+
+          .money-tax-fields {
+            display: none;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+          }
+
+          .money-tax-fields.show {
+            display: grid;
+          }
+
+          .money-tax-computed {
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            font-weight: 800;
+            color: var(--ungani-text);
+          }
+
           .category-tiles {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -781,6 +836,18 @@
           ${moneyKpi("Expenses", UnganiAnalytics.compactMoney(summary.expenses), summaryScopeRows.filter(isExpenseRow).length + " expense record(s)", "#D4A63A")}
           ${moneyKpi("Balance", UnganiAnalytics.compactMoney(summary.balance), "Income minus expenses", summary.balance >= 0 ? "#16A34A" : "#DC2626")}
           ${moneyKpi("Pending", UnganiAnalytics.compactMoney(summary.pending), "Pending money records", "#DC2626")}
+          ${currentContext.tenant && currentContext.tenant.vat_registered ? moneyKpi(
+            "VAT Payable This Month",
+            UnganiAnalytics.compactMoney(taxSummary.vatPayable),
+            "Output VAT minus input VAT, " + taxSummary.vatRecordCount + " tax-tagged record(s)",
+            taxSummary.vatPayable >= 0 ? "#2563EB" : "#16A34A"
+          ) : ""}
+          ${moneyKpi(
+            "Withholding Tax Deducted This Month",
+            UnganiAnalytics.compactMoney(taxSummary.withholdingDeducted),
+            "Tax withheld by payers on your income, " + taxSummary.withholdingRecordCount + " record(s)",
+            "#7C3AED"
+          )}
         </section>
 
         <section class="ungani-card">
@@ -1487,7 +1554,11 @@
                       <strong>${UnganiClientShared.safe(category)}</strong>
                       ${sectionLabel ? `<div><span class="ungani-badge blue" style="margin-top:4px;">${UnganiClientShared.safe(sectionLabel)}</span></div>` : ""}
                     </td>
-                    <td class="money-amount">${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(amount))}</td>
+                    <td class="money-amount">
+                      ${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(amount))}
+                      ${row.vat_applicable ? `<div><span class="ungani-badge blue" style="margin-top:4px;" title="VAT ${UnganiClientShared.safe(row.vat_rate)}% included (${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(row.vat_amount || 0))})">VAT</span></div>` : ""}
+                      ${row.withholding_applicable ? `<div><span class="ungani-badge gold" style="margin-top:4px;" title="Withholding tax deducted (${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(row.withholding_amount || 0))})">WHT</span></div>` : ""}
+                    </td>
                     <td>${UnganiClientShared.safe(method || "—")}</td>
                     <td>${statusBadge(status)}</td>
                     <td>${UnganiClientShared.safe(notes || (relatedPersonLabel ? "Tenant: " + relatedPersonLabel : "—"))}</td>
@@ -1535,6 +1606,51 @@
         expenses,
         pending,
         balance: income - expenses
+      };
+    }
+
+    // "This month" = the calendar month containing today's date, scoped to
+    // the whole tenant/section (not the currently-selected category tile) -
+    // see the call site in renderMoneyPage() for why. vatPayable is output
+    // VAT (from income) minus input VAT (from expenses) on vat_applicable
+    // rows only, matching what a VAT-registered business would actually
+    // owe/be refunded by KRA. withholdingDeducted only counts INCOME rows -
+    // WHT deducted from payments this business made to its own suppliers
+    // (acting as a withholding agent) is a separate liability, not covered
+    // here (documented as out of scope in sql/tax-vat-withholding-tracking.sql).
+    function calculateTaxSummary(rows) {
+      const now = new Date();
+      const monthKey = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+
+      let outputVat = 0;
+      let inputVat = 0;
+      let withholdingDeducted = 0;
+      let vatRecordCount = 0;
+      let withholdingRecordCount = 0;
+
+      rows.forEach(function (row) {
+        const rowDate = String(UnganiClientShared.getValue(row, ["transaction_date", "created_at"], ""));
+        if (!rowDate.startsWith(monthKey)) return;
+
+        const vatAmount = Number(UnganiClientShared.getValue(row, ["vat_amount"], 0) || 0);
+        if (row.vat_applicable && vatAmount > 0) {
+          vatRecordCount += 1;
+          if (isIncomeRow(row)) outputVat += vatAmount;
+          else if (isExpenseRow(row)) inputVat += vatAmount;
+        }
+
+        const withholdingAmount = Number(UnganiClientShared.getValue(row, ["withholding_amount"], 0) || 0);
+        if (row.withholding_applicable && withholdingAmount > 0 && isIncomeRow(row)) {
+          withholdingRecordCount += 1;
+          withholdingDeducted += withholdingAmount;
+        }
+      });
+
+      return {
+        vatPayable: outputVat - inputVat,
+        withholdingDeducted: withholdingDeducted,
+        vatRecordCount: vatRecordCount,
+        withholdingRecordCount: withholdingRecordCount
       };
     }
 
@@ -1749,6 +1865,46 @@
             </div>
           </div>
 
+          ${currentContext.tenant && currentContext.tenant.vat_registered ? `
+            <div class="money-tax-section">
+              <label class="money-tax-toggle">
+                <input type="checkbox" id="moneyVatApplicable" onchange="updateTaxFieldVisibility(); recalculateVatAmount();" />
+                <span>VAT applies to this transaction</span>
+              </label>
+
+              <div id="moneyVatFields" class="money-tax-fields">
+                <div>
+                  <label for="moneyVatRate">VAT rate (%)</label>
+                  <input id="moneyVatRate" type="number" step="0.01" min="0" max="100" oninput="recalculateVatAmount()" />
+                </div>
+
+                <div>
+                  <label>VAT amount (included in the amount above)</label>
+                  <div id="moneyVatAmountDisplay" class="money-tax-computed">Ksh 0</div>
+                </div>
+              </div>
+            </div>
+          ` : ""}
+
+          <div class="money-tax-section">
+            <label class="money-tax-toggle">
+              <input type="checkbox" id="moneyWhtApplicable" onchange="updateTaxFieldVisibility(); recalculateWithholdingAmount();" />
+              <span>Withholding tax was deducted on this transaction</span>
+            </label>
+
+            <div id="moneyWhtFields" class="money-tax-fields">
+              <div>
+                <label for="moneyWhtRate">Withholding rate (%)</label>
+                <input id="moneyWhtRate" type="number" step="0.01" min="0" max="100" oninput="recalculateWithholdingAmount()" />
+              </div>
+
+              <div>
+                <label for="moneyWhtAmount">Withholding amount</label>
+                <input id="moneyWhtAmount" type="number" step="0.01" min="0" />
+              </div>
+            </div>
+          </div>
+
           <div id="moneyWarningBox" class="money-warning-box">
             <strong>Money record warning</strong>
             <p id="moneyWarningText"></p>
@@ -1786,9 +1942,84 @@
               : (currentSectionFilter || sectionOptions[0] || "");
           }
 
+          const vatApplicableEl = document.getElementById("moneyVatApplicable");
+
+          if (vatApplicableEl) {
+            const vatApplicable = row ? !!UnganiClientShared.getValue(row, ["vat_applicable"], false) : false;
+            const defaultVatRate = currentContext.tenant && currentContext.tenant.default_vat_rate != null ? currentContext.tenant.default_vat_rate : 16.00;
+
+            vatApplicableEl.checked = vatApplicable;
+            document.getElementById("moneyVatRate").value = row && row.vat_rate != null ? row.vat_rate : defaultVatRate;
+          }
+
+          const whtApplicable = row ? !!UnganiClientShared.getValue(row, ["withholding_applicable"], false) : false;
+          document.getElementById("moneyWhtApplicable").checked = whtApplicable;
+          document.getElementById("moneyWhtRate").value = row && row.withholding_rate != null ? row.withholding_rate : "";
+          document.getElementById("moneyWhtAmount").value = row && row.withholding_amount != null ? row.withholding_amount : "";
+
+          updateTaxFieldVisibility();
+          recalculateVatAmount();
+
+          document.getElementById("moneyAmount").addEventListener("input", recalculateVatAmount);
+
           hideMoneyWarning();
         }
       });
+    }
+
+    function updateTaxFieldVisibility() {
+      const vatFields = document.getElementById("moneyVatFields");
+      const vatApplicableEl = document.getElementById("moneyVatApplicable");
+      if (vatFields && vatApplicableEl) {
+        vatFields.classList.toggle("show", vatApplicableEl.checked);
+      }
+
+      const whtFields = document.getElementById("moneyWhtFields");
+      const whtApplicableEl = document.getElementById("moneyWhtApplicable");
+      if (whtFields && whtApplicableEl) {
+        whtFields.classList.toggle("show", whtApplicableEl.checked);
+      }
+    }
+
+    // VAT is treated as INCLUSIVE of the amount entered above (the figure
+    // that actually moved), not added on top - so the VAT portion is
+    // extracted via amount * rate / (100 + rate), matching how most small
+    // Kenyan businesses record cash movements. This mirrors the backend
+    // convention documented in sql/tax-vat-withholding-tracking.sql.
+    function recalculateVatAmount() {
+      const display = document.getElementById("moneyVatAmountDisplay");
+      if (!display) return;
+
+      const applicableEl = document.getElementById("moneyVatApplicable");
+      const rateEl = document.getElementById("moneyVatRate");
+      const amount = Number(UnganiClientShared.value("moneyAmount") || 0);
+      const rate = Number(rateEl ? rateEl.value : 0) || 0;
+
+      const vatAmount = applicableEl && applicableEl.checked && amount > 0 && rate > 0
+        ? amount * rate / (100 + rate)
+        : 0;
+
+      display.textContent = UnganiAnalytics.moneyFormat(vatAmount);
+    }
+
+    // Withholding amount is auto-suggested from the rate but left
+    // user-editable - WHT conventions vary (the recorded amount may
+    // already be net of WHT or may not be), so a bookkeeper's actual WHT
+    // certificate figure should win over a formula guess.
+    function recalculateWithholdingAmount() {
+      const amountEl = document.getElementById("moneyWhtAmount");
+      const applicableEl = document.getElementById("moneyWhtApplicable");
+      const rateEl = document.getElementById("moneyWhtRate");
+      if (!amountEl || !applicableEl || !rateEl) return;
+
+      if (!applicableEl.checked) return;
+
+      const amount = Number(UnganiClientShared.value("moneyAmount") || 0);
+      const rate = Number(rateEl.value || 0);
+
+      if (amount > 0 && rate > 0) {
+        amountEl.value = (amount * rate / 100).toFixed(2);
+      }
     }
 
     async function saveMoneyRecord(event) {
@@ -1860,6 +2091,31 @@ const payload = {
 
       if (sectionOptions.length > 1) {
         payload.section_label = UnganiClientShared.value("moneySection") || null;
+      }
+
+      const vatApplicableEl = document.getElementById("moneyVatApplicable");
+      payload.vat_applicable = !!(vatApplicableEl && vatApplicableEl.checked);
+
+      if (payload.vat_applicable) {
+        const vatRate = Number(UnganiClientShared.value("moneyVatRate") || 0);
+        payload.vat_rate = vatRate;
+        payload.vat_amount = Math.round((amount * vatRate / (100 + vatRate)) * 100) / 100;
+      } else {
+        payload.vat_rate = null;
+        payload.vat_amount = null;
+      }
+
+      const whtApplicable = document.getElementById("moneyWhtApplicable").checked;
+      payload.withholding_applicable = whtApplicable;
+
+      if (whtApplicable) {
+        const whtRateValue = UnganiClientShared.value("moneyWhtRate");
+        const whtAmountValue = UnganiClientShared.value("moneyWhtAmount");
+        payload.withholding_rate = whtRateValue ? Number(whtRateValue) : null;
+        payload.withholding_amount = whtAmountValue ? Number(whtAmountValue) : null;
+      } else {
+        payload.withholding_rate = null;
+        payload.withholding_amount = null;
       }
 
       let response;
