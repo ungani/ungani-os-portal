@@ -31,11 +31,23 @@
     { key: "charts", href: "my-charts.html", icon: "📊", label: "Charts", aliases: ["charts", "chart", "analytics", "graphs"] },
     { key: "overview", href: "my-overview.html", icon: "📌", label: "Overview", aliases: ["overview"] },
     { key: "activity", href: "my-activity.html", icon: "🕒", label: "Activity Feed", aliases: ["activity", "activity feed", "history"] },
-    { key: "notices", href: "my-notices.html", icon: "🔔", label: "Notices", aliases: ["notices", "notifications", "notice"] },
+    { key: "notifications", href: "client-notifications.html", icon: "🔔", label: "Notifications", aliases: ["notifications", "notification center", "my notifications", "unread"] },
+    { key: "notices", href: "my-notices.html", icon: "📢", label: "Notices", aliases: ["notices", "notice", "announcements"] },
     { key: "team-chat", href: "my-team-chat.html", icon: "👨‍👩‍👧‍👦", label: "Team Chat", aliases: ["team chat", "chat with my team"] },
     { key: "profile", href: "my-profile.html", icon: "🏢", label: "Business Profile", aliases: ["business profile", "company profile"] },
-    { key: "account", href: "account.html", icon: "⚙️", label: "Settings", aliases: ["settings", "account", "account settings", "preferences"] },
-    { key: "support", href: "my-support.html", icon: "🛟", label: "Contact Support", aliases: ["support", "contact support", "help desk", "get help"] }
+    { key: "account", href: "account.html", icon: "⚙️", label: "Settings", aliases: ["settings", "account", "account settings", "preferences", "theme", "language"] },
+    { key: "my-settings", href: "my-settings.html", icon: "🔧", label: "My Settings", aliases: ["business sections", "manage sections", "business settings", "quick settings"] },
+    { key: "support", href: "my-support.html", icon: "🛟", label: "Contact Support", aliases: ["support", "contact support", "help desk", "get help"] },
+    { key: "print-report", href: "print-report.html", icon: "🖨️", label: "Print Report", aliases: ["print report", "printable report"] },
+    { key: "security", href: "my-security.html", icon: "🔐", label: "Security & Data", aliases: ["security", "data security", "2fa", "two-factor", "two factor"] },
+    { key: "team-access", href: "my-team-access.html", icon: "🧑‍🤝‍🧑", label: "Team Access", aliases: ["team access", "staff access", "invite staff", "add staff", "manage staff"] },
+    { key: "recently-deleted", href: "my-recently-deleted.html", icon: "🗑️", label: "Recently Deleted", aliases: ["recently deleted", "deleted", "recover", "recycle bin", "restore"] },
+    { key: "package", href: "my-package.html", icon: "💼", label: "Package", aliases: ["package", "my package", "upgrade request", "upgrade requests"] },
+    { key: "billing", href: "my-billing.html", icon: "🧾", label: "Billing", aliases: ["billing", "invoice", "invoices", "payment proof", "upload payment"] },
+    { key: "account-status", href: "my-account-status.html", icon: "🔎", label: "Account Status", aliases: ["account status", "access status"] },
+    { key: "onboarding", href: "my-onboarding.html", icon: "🚀", label: "Onboarding", aliases: ["onboarding", "setup checklist", "getting started"] },
+    { key: "my-tools", href: "my-tools.html", icon: "🧰", label: "My Tools", aliases: ["my tools", "tools"] },
+    { key: "integrations", href: "my-integrations.html", icon: "🛰️", label: "Integrations", aliases: ["integrations", "gps", "cctv", "tracking", "cameras"] }
   ];
 
   const NAV_BY_KEY = {};
@@ -115,9 +127,9 @@
       key: "subscription",
       match: ["subscription", "billing", "plan", "upgrade", "change my plan"],
       question: "How do I change my subscription?",
-      answer: "Open Account Settings and look for the Subscription section, where you can review your current plan and request a change.",
-      href: "my-settings.html",
-      linkLabel: "Open Settings"
+      answer: "Open Package to review your current plan and submit an upgrade request, or open Billing to see invoices and upload payment proof.",
+      href: "my-package.html",
+      linkLabel: "Open Package"
     },
     {
       key: "export",

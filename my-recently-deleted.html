@@ -11,6 +11,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-nav-config.js"></script>
 
   <style>
     :root {
@@ -143,6 +145,32 @@
       background: rgba(255,255,255,0.08);
       border: 1px solid rgba(212,166,58,0.22);
       font-size: 14px;
+    }
+
+    .section-title-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      color: inherit;
+      font: inherit;
+      text-transform: inherit;
+      letter-spacing: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    .section-toggle-icon {
+      font-size: 10px;
+      margin-left: 6px;
+      flex: none;
+    }
+
+    .nav-group.collapsible.collapsed .nav-group-items {
+      display: none;
     }
 
     .main {
@@ -549,59 +577,13 @@
         </div>
       </div>
 
-      <div class="section-title">Workspace</div>
-      <a class="nav-link" href="client.html?v=portal14s">
-        <span class="nav-icon">🏠</span>
-        <span>Dashboard</span>
-      </a>
-      <a class="nav-link" href="my-money.html?v=portal14s">
-        <span class="nav-icon">💰</span>
-        <span>Money</span>
-      </a>
-      <a class="nav-link" href="my-items.html?v=portal14s">
-        <span class="nav-icon">📦</span>
-        <span>Items / Assets</span>
-      </a>
-      <a class="nav-link" href="my-tasks.html?v=portal14s">
-        <span class="nav-icon">✅</span>
-        <span>Tasks</span>
-      </a>
-      <a class="nav-link" href="my-records.html?v=portal14s">
-        <span class="nav-icon">🗂️</span>
-        <span>Records</span>
-      </a>
-
-      <div class="section-title">Support</div>
-      <a class="nav-link" href="my-documents.html?v=portal14s">
-        <span class="nav-icon">📄</span>
-        <span>Documents</span>
-      </a>
-      <a class="nav-link" href="my-support.html?v=portal14s">
-        <span class="nav-icon">💬</span>
-        <span>Support</span>
-      </a>
-      <a class="nav-link" href="my-calendar.html?v=portal14s">
-        <span class="nav-icon">📅</span>
-        <span>Calendar</span>
-      </a>
-      <a class="nav-link" href="my-people.html?v=portal14s">
-        <span class="nav-icon">👤</span>
-        <span>People</span>
-      </a>
+      <div id="deletedNavGroups"></div>
 
       <div class="section-title">Account</div>
-      <a class="nav-link active" href="my-recently-deleted.html?v=portal14aa">
-        <span class="nav-icon">♻️</span>
-        <span>Recently Deleted</span>
-      </a>
-      <a class="nav-link" href="my-package.html?v=portal14s">
-        <span class="nav-icon">📦</span>
-        <span>Package</span>
-      </a>
-      <a class="nav-link" href="login.html?v=portal14s">
+      <button class="nav-link" type="button" onclick="logoutClient()">
         <span class="nav-icon">🚪</span>
-        <span>Login</span>
-      </a>
+        <span>Logout</span>
+      </button>
     </aside>
 
     <main class="main">
@@ -708,6 +690,119 @@
 
     let deletedItems = [];
     let activeFilter = "all";
+    let currentTenantId = null;
+    let currentTenant = null;
+
+    async function logoutClient() {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (token) {
+          fetch("/api/log-audit-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify({ action: "logout", entityType: "session" }),
+            keepalive: true
+          }).catch(function () {});
+        }
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
+
+      await supabaseClient.auth.signOut();
+      window.location.href = "login.html?mode=client";
+    }
+
+    const DELETED_SIDEBAR_COLLAPSE_KEY = "ungani_sidebar_collapsed_groups";
+
+    function getDeletedSidebarCollapsedState() {
+      try {
+        return JSON.parse(localStorage.getItem(DELETED_SIDEBAR_COLLAPSE_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function setDeletedSidebarGroupCollapsed(groupKey, collapsed) {
+      const state = getDeletedSidebarCollapsedState();
+      state[groupKey] = collapsed;
+      localStorage.setItem(DELETED_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
+    }
+
+    function toggleDeletedSidebarGroup(groupKey) {
+      const el = document.getElementById("deletedNavGroup-" + groupKey);
+      if (!el) return;
+
+      const nowCollapsed = !el.classList.contains("collapsed");
+      el.classList.toggle("collapsed", nowCollapsed);
+      setDeletedSidebarGroupCollapsed(groupKey, nowCollapsed);
+    }
+
+    function renderDeletedNavGroup(group, collapsedState) {
+      const itemsHtml = group.items.map(function (item) {
+        const active = item[1] === "my-recently-deleted.html" ? " active" : "";
+        return `<a class="nav-link${active}" href="${item[1]}"><span class="nav-icon">${item[2]}</span><span>${item[3]}</span></a>`;
+      }).join("");
+
+      if (!group.collapsible) {
+        return `<div class="section-title">${group.title}</div>${itemsHtml}`;
+      }
+
+      const containsActive = group.items.some(function (item) { return item[1] === "my-recently-deleted.html"; });
+      const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
+      const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
+
+      return `
+        <div class="nav-group collapsible${collapsed ? " collapsed" : ""}" id="deletedNavGroup-${group.key}">
+          <button type="button" class="section-title section-title-toggle" onclick="toggleDeletedSidebarGroup('${group.key}')">
+            <span>${group.title}</span>
+            <span class="section-toggle-icon">${collapsed ? "▸" : "▾"}</span>
+          </button>
+          <div class="nav-group-items">${itemsHtml}</div>
+        </div>
+      `;
+    }
+
+    function renderDeletedSidebarGroups() {
+      const container = document.getElementById("deletedNavGroups");
+      if (!container || !window.UnganiNavConfig) return;
+
+      const groups = UnganiNavConfig.getSidebarGroups(currentTenant);
+      const collapsedState = getDeletedSidebarCollapsedState();
+
+      container.innerHTML = groups.map(function (group) {
+        return renderDeletedNavGroup(group, collapsedState);
+      }).join("");
+    }
+
+    async function loadTenantForSidebar() {
+      try {
+        const rpcResponse = await supabaseClient.rpc("get_my_ungani_tenant_id");
+        if (!rpcResponse.error && rpcResponse.data) {
+          currentTenantId = rpcResponse.data;
+        }
+      } catch (error) {
+        console.warn(error.message);
+      }
+
+      if (!currentTenantId) return;
+
+      try {
+        const response = await supabaseClient
+          .from("tenants")
+          .select("id, business_type_key, business_type, business_name, company_name, name")
+          .eq("id", currentTenantId)
+          .maybeSingle();
+
+        if (!response.error && response.data) {
+          currentTenant = response.data;
+        }
+      } catch (error) {
+        console.warn(error.message);
+      }
+
+      renderDeletedSidebarGroups();
+    }
 
     function byId(id) {
       return document.getElementById(id);
@@ -928,7 +1023,12 @@
       });
     }
 
-    document.addEventListener("DOMContentLoaded", loadDeletedRecords);
+    renderDeletedSidebarGroups();
+
+    document.addEventListener("DOMContentLoaded", function () {
+      loadDeletedRecords();
+      loadTenantForSidebar();
+    });
   </script>
 </body>
 </html>

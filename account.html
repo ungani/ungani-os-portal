@@ -11,6 +11,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-nav-config.js"></script>
 
   <style>
     :root {
@@ -235,6 +237,36 @@
       background: rgba(212,166,58,0.18);
       color: var(--gold);
       transform: translateX(3px);
+    }
+
+    .sidebar-section-title-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      color: inherit;
+      font: inherit;
+      text-transform: inherit;
+      letter-spacing: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    .sidebar-section-title-toggle:hover {
+      opacity: 1;
+    }
+
+    .sidebar-toggle-icon {
+      font-size: 10px;
+      margin-left: 6px;
+      flex: none;
+    }
+
+    .side-group.collapsible.collapsed .side-group-items {
+      display: none;
     }
 
     .sidebar-footer {
@@ -599,31 +631,7 @@
         <p id="sidebarBusiness">Client Workspace</p>
       </div>
 
-      <div class="sidebar-section-title" data-i18n="main">Main</div>
-      <a class="side-link" href="client.html">🏠 <span data-i18n="dashboard">Dashboard</span></a>
-      <a class="side-link" href="my-overview.html">📊 <span data-i18n="overview">Overview</span></a>
-      <a class="side-link" href="my-activity.html">🔔 <span data-i18n="activityFeed">Activity Feed</span></a>
-      <a class="side-link" href="my-charts.html">📈 <span data-i18n="liveCharts">Live Charts</span></a>
-
-      <div class="sidebar-section-title" data-i18n="operations">Operations</div>
-      <a class="side-link" href="my-money.html">💰 <span data-i18n="money">Money</span></a>
-      <a class="side-link" href="my-records.html">📋 <span data-i18n="records">Records</span></a>
-      <a class="side-link" href="my-documents.html">📁 <span data-i18n="documents">Documents</span></a>
-      <a class="side-link" href="my-tasks.html">✅ <span data-i18n="tasks">Tasks</span></a>
-      <a class="side-link" href="my-items.html">📦 <span data-i18n="itemsAssets">Items / Assets</span></a>
-      <a class="side-link" href="my-people.html">👥 <span data-i18n="people">People</span></a>
-      <a class="side-link" href="my-calendar.html">📅 <span data-i18n="calendar">Calendar</span></a>
-
-      <div class="sidebar-section-title" data-i18n="communication">Communication</div>
-      <a class="side-link" href="my-team-chat.html">👥 <span data-i18n="teamChat">Team Chat</span></a>
-      <a class="side-link" href="my-chat.html">💬 <span data-i18n="unganiChat">UNGANI Chat</span></a>
-      <a class="side-link" href="my-support.html">🛟 <span data-i18n="support">Support</span></a>
-      <a class="side-link" href="my-notices.html">📢 <span data-i18n="notices">Notices</span></a>
-
-      <div class="sidebar-section-title" data-i18n="reports">Reports</div>
-      <a class="side-link" href="reports.html">📄 <span data-i18n="reports">Reports</span></a>
-      <a class="side-link" href="print-report.html">🖨️ <span data-i18n="printReport">Print Report</span></a>
-      <a class="side-link active" href="account.html">⚙️ <span data-i18n="account">Account</span></a>
+      <div id="accountNavGroups"></div>
 
       <div class="sidebar-footer">
         <strong data-i18n="accountSettings">Account Settings</strong><br />
@@ -889,6 +897,71 @@
       document.getElementById("sidebar").classList.toggle("open");
     }
 
+    const ACCOUNT_SIDEBAR_COLLAPSE_KEY = "ungani_sidebar_collapsed_groups";
+
+    function getAccountSidebarCollapsedState() {
+      try {
+        return JSON.parse(localStorage.getItem(ACCOUNT_SIDEBAR_COLLAPSE_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function setAccountSidebarGroupCollapsed(groupKey, collapsed) {
+      const state = getAccountSidebarCollapsedState();
+      state[groupKey] = collapsed;
+      localStorage.setItem(ACCOUNT_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
+    }
+
+    function toggleAccountSidebarGroup(groupKey) {
+      const el = document.getElementById("accountNavGroup-" + groupKey);
+      if (!el) return;
+
+      const nowCollapsed = !el.classList.contains("collapsed");
+      el.classList.toggle("collapsed", nowCollapsed);
+      setAccountSidebarGroupCollapsed(groupKey, nowCollapsed);
+    }
+
+    function renderAccountNavGroup(group, collapsedState) {
+      const itemsHtml = group.items.map(function (item) {
+        const active = item[1] === "account.html" ? " active" : "";
+        return `<a class="side-link${active}" href="${item[1]}">${item[2]} <span>${item[3]}</span></a>`;
+      }).join("");
+
+      if (!group.collapsible) {
+        return `<div class="sidebar-section-title">${group.title}</div>${itemsHtml}`;
+      }
+
+      const containsActive = group.items.some(function (item) { return item[1] === "account.html"; });
+      const collapsed = containsActive ? false : (groupKeyIn(collapsedState, group.key) ? collapsedState[group.key] : !group.defaultExpanded);
+
+      return `
+        <div class="side-group collapsible${collapsed ? " collapsed" : ""}" id="accountNavGroup-${group.key}">
+          <button type="button" class="sidebar-section-title sidebar-section-title-toggle" onclick="toggleAccountSidebarGroup('${group.key}')">
+            <span>${group.title}</span>
+            <span class="sidebar-toggle-icon">${collapsed ? "▸" : "▾"}</span>
+          </button>
+          <div class="side-group-items">${itemsHtml}</div>
+        </div>
+      `;
+    }
+
+    function groupKeyIn(state, key) {
+      return Object.prototype.hasOwnProperty.call(state, key);
+    }
+
+    function renderAccountSidebarGroups() {
+      const container = document.getElementById("accountNavGroups");
+      if (!container || !window.UnganiNavConfig) return;
+
+      const groups = UnganiNavConfig.getSidebarGroups(tenantInfo);
+      const collapsedState = getAccountSidebarCollapsedState();
+
+      container.innerHTML = groups.map(function (group) {
+        return renderAccountNavGroup(group, collapsedState);
+      }).join("");
+    }
+
     function showBlocked(reason) {
       document.getElementById("loginShell").classList.add("hidden");
       document.getElementById("appShell").classList.add("hidden");
@@ -1014,6 +1087,7 @@
       }
 
       tenantInfo = tenantData;
+      renderAccountSidebarGroups();
 
       const businessName = tenantData.company_name || tenantData.business_name || tenantData.name || "Client Workspace";
 

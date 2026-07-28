@@ -16,6 +16,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-nav-config.js"></script>
 
   <style>
     :root {
@@ -158,6 +160,32 @@
       justify-content: center;
       font-size: 11px;
       font-weight: 950;
+    }
+
+    .nav-section-title-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      color: inherit;
+      font: inherit;
+      text-transform: inherit;
+      letter-spacing: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    .nav-toggle-icon {
+      font-size: 10px;
+      margin-left: 6px;
+      flex: none;
+    }
+
+    .nav-group.collapsible.collapsed .nav-group-items {
+      display: none;
     }
 
     .main {
@@ -632,29 +660,7 @@
         </div>
       </div>
 
-      <div class="nav-section-title">Main</div>
-      <a class="nav-link" href="client.html">Dashboard</a>
-      <a class="nav-link active" href="client-notifications.html">
-        Notifications <span class="nav-badge" id="sidebarUnreadCount">0</span>
-      </a>
-      <a class="nav-link" href="my-money.html">Money</a>
-      <a class="nav-link" href="my-tasks.html">Tasks</a>
-      <a class="nav-link" href="my-records.html">Records</a>
-      <a class="nav-link" href="my-items.html">Items / Assets</a>
-
-      <div class="nav-section-title">Workspace</div>
-      <a class="nav-link" href="my-people.html">People</a>
-      <a class="nav-link" href="my-documents.html">Documents</a>
-      <a class="nav-link" href="my-calendar.html">Calendar</a>
-      <a class="nav-link" href="my-support.html">Support</a>
-      <a class="nav-link" href="my-chat.html">Admin Chat</a>
-      <a class="nav-link" href="my-team-chat.html">Team Chat</a>
-      <a class="nav-link" href="my-notices.html">Notices</a>
-
-      <div class="nav-section-title">Reports</div>
-      <a class="nav-link" href="my-charts.html">Charts</a>
-      <a class="nav-link" href="reports.html">Reports</a>
-      <a class="nav-link" href="my-profile.html">Profile</a>
+      <div id="notificationsNavGroups"></div>
 
       <div class="nav-section-title">Account</div>
       <button class="nav-link" type="button" onclick="toggleTheme()" id="themeToggleLink">Dark Mode</button>
@@ -766,6 +772,7 @@
 
     let currentUser = null;
     let currentTenantId = null;
+    let currentTenant = null;
     let notifications = [];
     let activeFilter = "all";
 
@@ -785,8 +792,85 @@
       "my-notices.html",
       "my-charts.html",
       "reports.html",
-      "my-profile.html"
+      "print-report.html",
+      "my-profile.html",
+      "my-overview.html",
+      "my-activity.html",
+      "account.html",
+      "my-settings.html",
+      "my-security.html",
+      "my-team-access.html",
+      "my-recently-deleted.html",
+      "my-package.html",
+      "my-billing.html",
+      "my-account-status.html",
+      "my-onboarding.html",
+      "my-tools.html",
+      "my-integrations.html"
     ]);
+
+    const NOTIF_SIDEBAR_COLLAPSE_KEY = "ungani_sidebar_collapsed_groups";
+
+    function getNotifSidebarCollapsedState() {
+      try {
+        return JSON.parse(localStorage.getItem(NOTIF_SIDEBAR_COLLAPSE_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function setNotifSidebarGroupCollapsed(groupKey, collapsed) {
+      const state = getNotifSidebarCollapsedState();
+      state[groupKey] = collapsed;
+      localStorage.setItem(NOTIF_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
+    }
+
+    function toggleNotifSidebarGroup(groupKey) {
+      const el = document.getElementById("notifNavGroup-" + groupKey);
+      if (!el) return;
+
+      const nowCollapsed = !el.classList.contains("collapsed");
+      el.classList.toggle("collapsed", nowCollapsed);
+      setNotifSidebarGroupCollapsed(groupKey, nowCollapsed);
+    }
+
+    function renderNotifNavGroup(group, collapsedState) {
+      const itemsHtml = group.items.map(function (item) {
+        const active = item[1] === "client-notifications.html" ? " active" : "";
+        const badge = item[0] === "notifications" ? ` <span class="nav-badge" id="sidebarUnreadCount">0</span>` : "";
+        return `<a class="nav-link${active}" href="${item[1]}"><span>${item[2]} ${item[3]}</span>${badge}</a>`;
+      }).join("");
+
+      if (!group.collapsible) {
+        return `<div class="nav-section-title">${group.title}</div>${itemsHtml}`;
+      }
+
+      const containsActive = group.items.some(function (item) { return item[1] === "client-notifications.html"; });
+      const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
+      const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
+
+      return `
+        <div class="nav-group collapsible${collapsed ? " collapsed" : ""}" id="notifNavGroup-${group.key}">
+          <button type="button" class="nav-section-title nav-section-title-toggle" onclick="toggleNotifSidebarGroup('${group.key}')">
+            <span>${group.title}</span>
+            <span class="nav-toggle-icon">${collapsed ? "▸" : "▾"}</span>
+          </button>
+          <div class="nav-group-items">${itemsHtml}</div>
+        </div>
+      `;
+    }
+
+    function renderNotifSidebarGroups() {
+      const container = document.getElementById("notificationsNavGroups");
+      if (!container || !window.UnganiNavConfig) return;
+
+      const groups = UnganiNavConfig.getSidebarGroups(currentTenant);
+      const collapsedState = getNotifSidebarCollapsedState();
+
+      container.innerHTML = groups.map(function (group) {
+        return renderNotifNavGroup(group, collapsedState);
+      }).join("");
+    }
 
     function openMobileMenu() {
       document.getElementById("sidebar").classList.add("open");
@@ -927,6 +1011,9 @@
         return false;
       }
 
+      await loadTenant();
+      renderNotifSidebarGroups();
+
       return true;
     }
 
@@ -951,6 +1038,22 @@
 
         if (!response.error && response.data && response.data[0]) {
           currentTenantId = response.data[0].tenant_id || null;
+        }
+      } catch (error) {
+        console.warn(error.message);
+      }
+    }
+
+    async function loadTenant() {
+      try {
+        const response = await supabaseClient
+          .from("tenants")
+          .select("id, business_type_key, business_type, business_name, company_name, name")
+          .eq("id", currentTenantId)
+          .maybeSingle();
+
+        if (!response.error && response.data) {
+          currentTenant = response.data;
         }
       } catch (error) {
         console.warn(error.message);
@@ -1006,7 +1109,8 @@
 
       document.getElementById("totalCount").textContent = total;
       document.getElementById("unreadCount").textContent = unread;
-      document.getElementById("sidebarUnreadCount").textContent = unread;
+      const sidebarBadge = document.getElementById("sidebarUnreadCount");
+      if (sidebarBadge) sidebarBadge.textContent = unread;
       document.getElementById("highCount").textContent = high;
       document.getElementById("todayCount").textContent = today;
     }
@@ -1284,6 +1388,7 @@
       await loadNotifications();
     }
 
+    renderNotifSidebarGroups();
     init();
   </script>
 </body>

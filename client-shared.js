@@ -339,6 +339,30 @@
         text-transform: uppercase;
       }
 
+      .ungani-nav-title-toggle {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+      }
+
+      .ungani-nav-title-toggle:hover span:first-child {
+        color: rgba(255,255,255,0.78);
+      }
+
+      .ungani-nav-toggle-icon {
+        color: rgba(255,255,255,0.4);
+        font-size: 10px;
+      }
+
+      .ungani-nav-group.collapsible.collapsed .ungani-nav-group-items {
+        display: none;
+      }
+
       .ungani-nav-link {
         position: relative;
         display: flex;
@@ -1854,93 +1878,99 @@
     return { title: "Sections", items: items };
   }
 
-  const INTEGRATIONS_ELIGIBLE_BUSINESS_TYPE_KEYS = ["logistics", "real_estate", "warehouse"];
-
+  // Group data now lives in ungani-nav-config.js (shared, side-effect-free)
+  // so client.html - which deliberately does NOT load this file - can
+  // render the identical group/item list in its own bespoke shell without
+  // the two ever drifting apart again. isIntegrationsEligible() moved
+  // there too; kept as a thin re-export here in case anything in this
+  // file still calls it directly.
   function isIntegrationsEligible() {
-    if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") {
-      return false;
-    }
+    return !!(window.UnganiNavConfig && UnganiNavConfig.isIntegrationsEligible(state.tenant));
+  }
 
-    const resolved = UnganiBusinessConfig.resolve(state.tenant);
-    return !!(resolved && INTEGRATIONS_ELIGIBLE_BUSINESS_TYPE_KEYS.indexOf(resolved.key) !== -1);
+  const SIDEBAR_COLLAPSE_STORAGE_KEY = "ungani_sidebar_collapsed_groups";
+
+  function getCollapsedGroupsState() {
+    try {
+      return JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSE_STORAGE_KEY) || "{}");
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function setGroupCollapsed(groupKey, collapsed) {
+    try {
+      const collapsedState = getCollapsedGroupsState();
+      collapsedState[groupKey] = collapsed;
+      localStorage.setItem(SIDEBAR_COLLAPSE_STORAGE_KEY, JSON.stringify(collapsedState));
+    } catch (error) {
+      // Ignore storage failures (private browsing, quota, etc.)
+    }
+  }
+
+  function toggleSidebarGroup(groupKey) {
+    const groupEl = document.getElementById("unganiNavGroup-" + groupKey);
+    if (!groupEl) return;
+
+    const isCollapsed = groupEl.classList.toggle("collapsed");
+    const icon = groupEl.querySelector(".ungani-nav-toggle-icon");
+    if (icon) icon.textContent = isCollapsed ? "▸" : "▾";
+
+    setGroupCollapsed(groupKey, isCollapsed);
   }
 
   function renderSidebarNav() {
-    const groups = [
-      {
-        title: "Main",
-        items: [
-          ["dashboard", "client.html", "🏠", "Dashboard"],
-          ["overview", "my-overview.html", "📌", "Overview"],
-          ["activity", "my-activity.html", "🕒", "Activity Feed"],
-          ["charts", "my-charts.html", "📊", "Charts"]
-        ]
-      }
-    ];
+    const navGroups = (window.UnganiNavConfig && typeof UnganiNavConfig.getSidebarGroups === "function")
+      ? UnganiNavConfig.getSidebarGroups(state.tenant)
+      : [];
+
+    const groups = [];
+    const mainGroup = navGroups.find(function (g) { return g.key === "main"; });
+    if (mainGroup) groups.push(mainGroup);
 
     const sectionGroup = buildSectionNavGroup();
     if (sectionGroup) groups.push(sectionGroup);
 
-    const operationsItems = [
-      ["money", "my-money.html", "💰", "Money Records"],
-      ["records", "my-records.html", "🗂️", "Business Records"],
-      ["items", "my-items.html", "🏷️", "Items / Assets / Stock"],
-      ["people", "my-people.html", "👥", "People"],
-      ["tasks", "my-tasks.html", "✅", "Tasks / Follow-ups"],
-      ["calendar", "my-calendar.html", "📅", "Calendar"],
-      ["documents", "my-documents.html", "📄", "Documents"]
-    ];
+    navGroups.forEach(function (g) {
+      if (g.key !== "main") groups.push(g);
+    });
 
-    // GPS/CCTV Integrations, Phase 1 - gated to the business types the
-    // feature was built for (fleet GPS, premises/unit CCTV). UI-only
-    // gate, same idea as buildSectionNavGroup() above; the my-integrations
-    // page itself re-checks this (tenant_integrations RLS is tenant-scoped
-    // regardless, not business-type-scoped, so this is a visibility
-    // convenience, not a security boundary).
-    if (isIntegrationsEligible()) {
-      operationsItems.push(["integrations", "my-integrations.html", "🛰️", "Integrations"]);
-    }
-
-    groups.push(
-      {
-        title: "Operations",
-        items: operationsItems
-      },
-      {
-        title: "Support",
-        items: [
-          ["support", "my-support.html", "🛟", "Support Issues"],
-          ["notices", "my-notices.html", "🔔", "Notices"],
-          ["chat", "my-chat.html", "💬", "Chat with UNGANI"],
-          ["team-chat", "my-team-chat.html", "👨‍👩‍👧‍👦", "Team Chat"]
-        ]
-      },
-      {
-        title: "Reports & Account",
-        items: [
-          ["reports", "reports.html", "📑", "Reports"],
-          ["print-report", "print-report.html", "🖨️", "Print Report"],
-          ["profile", "my-profile.html", "🏢", "Business Profile"],
-          ["account", "account.html", "⚙️", "Account Settings"],
-          ["security", "my-security.html", "🔐", "Security & Data"]
-        ]
-      }
-    );
+    const collapsedState = getCollapsedGroupsState();
 
     return groups.map(function (group) {
-      return `
-        <div class="ungani-nav-group">
-          <div class="ungani-nav-title">${safe(group.title)}</div>
-          ${group.items.map(function (item) {
-            const active = item[0] === state.currentPageKey ? "active" : "";
+      const groupKey = group.key || String(group.title).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const isCollapsible = !!group.collapsible;
+      const containsActivePage = group.items.some(function (item) { return item[0] === state.currentPageKey; });
 
-            return `
-              <a class="ungani-nav-link ${active}" href="${attr(item[1])}">
-                <span class="ungani-nav-icon">${safe(item[2])}</span>
-                <span>${safe(item[3])}</span>
-              </a>
-            `;
-          }).join("")}
+      let isCollapsed = false;
+      if (isCollapsible && !containsActivePage) {
+        isCollapsed = Object.prototype.hasOwnProperty.call(collapsedState, groupKey)
+          ? collapsedState[groupKey]
+          : !group.defaultExpanded;
+      }
+
+      const headerHtml = isCollapsible
+        ? `<button type="button" class="ungani-nav-title ungani-nav-title-toggle" onclick="UnganiClientShared.toggleSidebarGroup('${groupKey}')">
+             <span>${safe(group.title)}</span>
+             <span class="ungani-nav-toggle-icon">${isCollapsed ? "▸" : "▾"}</span>
+           </button>`
+        : `<div class="ungani-nav-title">${safe(group.title)}</div>`;
+
+      return `
+        <div class="ungani-nav-group${isCollapsible ? " collapsible" : ""}${isCollapsed ? " collapsed" : ""}" id="unganiNavGroup-${groupKey}">
+          ${headerHtml}
+          <div class="ungani-nav-group-items">
+            ${group.items.map(function (item) {
+              const active = item[0] === state.currentPageKey ? "active" : "";
+
+              return `
+                <a class="ungani-nav-link ${active}" href="${attr(item[1])}">
+                  <span class="ungani-nav-icon">${safe(item[2])}</span>
+                  <span>${safe(item[3])}</span>
+                </a>
+              `;
+            }).join("")}
+          </div>
         </div>
       `;
     }).join("");
@@ -3677,6 +3707,7 @@
       saveQuickAdd,
       openModal,
       closeModal,
+      toggleSidebarGroup,
       getCurrentUserId: function () {
         return state.authUser ? state.authUser.id : null;
       },
