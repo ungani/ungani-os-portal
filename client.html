@@ -4337,7 +4337,7 @@
           return;
         }
 
-        renderPropertyDashboard();
+        renderPropertyDashboard(sections.length === 1 ? buildSectionScopedData(sections[0]) : undefined);
         return;
       }
 
@@ -4353,7 +4353,7 @@
           return;
         }
 
-        renderHospitalityDashboard();
+        renderHospitalityDashboard(sections.length === 1 ? buildSectionScopedData(sections[0]) : undefined);
         return;
       }
 
@@ -4369,7 +4369,7 @@
           return;
         }
 
-        renderRetailDashboard();
+        renderRetailDashboard(sections.length === 1 ? buildSectionScopedData(sections[0]) : undefined);
         return;
       }
 
@@ -4385,7 +4385,7 @@
           return;
         }
 
-        renderLogisticsDashboard();
+        renderLogisticsDashboard(sections.length === 1 ? buildSectionScopedData(sections[0]) : undefined);
         return;
       }
 
@@ -4406,7 +4406,7 @@
           return;
         }
 
-        renderAutomotiveDashboard();
+        renderAutomotiveDashboard(sections.length === 1 ? buildSectionScopedData(sections[0]) : undefined);
         return;
       }
 
@@ -4422,7 +4422,7 @@
           return;
         }
 
-        renderHealthcareDashboard();
+        renderHealthcareDashboard(sections.length === 1 ? buildSectionScopedData(sections[0]) : undefined);
         return;
       }
 
@@ -4438,7 +4438,7 @@
           return;
         }
 
-        renderSalonDashboard();
+        renderSalonDashboard(sections.length === 1 ? buildSectionScopedData(sections[0]) : undefined);
         return;
       }
 
@@ -4454,7 +4454,7 @@
           return;
         }
 
-        renderEventsDashboard();
+        renderEventsDashboard(sections.length === 1 ? buildSectionScopedData(sections[0]) : undefined);
         return;
       }
 
@@ -4732,6 +4732,18 @@
       updateNotificationCounts();
       startGreetingRotation(greetingMessages.length || 1);
       animateHealthGauges();
+    }
+
+    // A tenant with exactly one selected section should always see that
+    // section's real vocabulary - not a hardcoded per-type default like
+    // "Hotel" or "Transport". Deliberately separate from `isScoped`
+    // (which controls the "Viewing: X - Back to Overview" banner and
+    // whether the health score is computed): a sole-section tenant has
+    // nothing to "go back" to, so isScoped must stay false for them,
+    // but the vocabulary lookup still needs their real section.
+    function getSoleSelectedSection() {
+      const sections = businessPreset.selectedSectionLabels || [];
+      return sections.length === 1 ? sections[0] : null;
     }
 
     function buildSectionScopedData(sectionLabel) {
@@ -5034,7 +5046,7 @@
         peopleHref: "my-people.html" + sectionParam
       };
 
-      const content = getPropertySectionContent(isScoped ? scopeLabel : "Rentals", data, ctx);
+      const content = getPropertySectionContent(isScoped ? scopeLabel : (getSoleSelectedSection() || "Rentals"), data, ctx);
       const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
       const calendarPreview = buildPropertyCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
@@ -6147,8 +6159,36 @@
         peopleHref: "my-people.html" + sectionParam
       };
 
-      const content = getLogisticsSectionContent(isScoped ? scopeLabel : "Transport", data, ctx);
+      const content = getLogisticsSectionContent(isScoped ? scopeLabel : (getSoleSelectedSection() || "Transport"), data, ctx);
       const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+
+      // The hero's top-action buttons (below) were hardcoded to Transport
+      // vocabulary regardless of section - unlike the KPI/quick-actions/
+      // attention sections, which already correctly come from `content`.
+      // This predates the sole-section dispatcher fix (it's hit by ANY
+      // unscoped render, which every sole-section tenant already reached
+      // before that fix too) - same class of bug, just missed by the
+      // original audit since it only traced the getXSectionContent(...)
+      // call pattern. Sourced from the same real per-section vocabulary
+      // buildColdChainSectionContent/buildClearingForwardingSectionContent
+      // already use in their own quick-actions.
+      const heroSoleSection = isScoped ? null : getSoleSelectedSection();
+      const heroTopActionsHtml = heroSoleSection === "Cold Chain" ? `
+          <a class="btn gold" href="${attr(ctx.itemsHref)}">Add Cold Chain Asset</a>
+          <a class="btn green" href="${attr(ctx.moneyHref)}">Log Maintenance Cost</a>
+          <a class="btn light" href="${attr(ctx.calendarHref)}">Schedule Service</a>
+          <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+        ` : heroSoleSection === "Clearing & Forwarding" ? `
+          <a class="btn gold" href="${attr(ctx.itemsHref)}">New Shipment / Container</a>
+          <a class="btn green" href="${attr(ctx.moneyHref)}">Record Clearing Fee</a>
+          <a class="btn light" href="${attr(ctx.tasksHref)}">Client Update</a>
+          <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+        ` : `
+          <a class="btn gold" href="${attr(ctx.itemsHref)}">New Trip</a>
+          <a class="btn green" href="${attr(ctx.moneyHref)}">Log Fuel Entry</a>
+          <a class="btn light" href="${attr(ctx.peopleHref)}">Drivers</a>
+          <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+        `;
       const calendarPreview = buildLogisticsCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
       const mostRecentRecord = findMostRecentRecord(data);
@@ -6196,10 +6236,7 @@
                 </p>
 
                 <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
-                  <a class="btn gold" href="${attr(ctx.itemsHref)}">New Trip</a>
-                  <a class="btn green" href="${attr(ctx.moneyHref)}">Log Fuel Entry</a>
-                  <a class="btn light" href="${attr(ctx.peopleHref)}">Drivers</a>
-                  <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+                  ${heroTopActionsHtml}
                 </div>
               </div>
 
@@ -7196,7 +7233,7 @@
         peopleHref: "my-people.html" + sectionParam
       };
 
-      const content = getRetailSectionContent(isScoped ? scopeLabel : "General Retail", data, ctx);
+      const content = getRetailSectionContent(isScoped ? scopeLabel : (getSoleSelectedSection() || "General Retail"), data, ctx);
       const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
       const calendarPreview = buildRetailCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
@@ -7798,8 +7835,27 @@
         peopleHref: "my-people.html" + sectionParam
       };
 
-      const content = getHospitalitySectionContent(isScoped ? scopeLabel : "Hotel", data, ctx);
+      const content = getHospitalitySectionContent(isScoped ? scopeLabel : (getSoleSelectedSection() || "Hotel"), data, ctx);
       const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+
+      // Same class of hero-hardcoding bug fixed in renderHospitalityOverview
+      // and renderLogisticsDashboard: the hero top-actions below were
+      // hardcoded to Hotel/Room vocabulary regardless of section, hit by
+      // any unscoped render - including every F&B-only sole-section tenant.
+      const heroFnbSections = ["Restaurant", "Bar / Lounge", "Catering"];
+      const heroSoleSection = isScoped ? null : getSoleSelectedSection();
+      const heroIsFnb = heroSoleSection !== null && heroFnbSections.indexOf(heroSoleSection) !== -1;
+      const heroTopActionsHtml = heroIsFnb ? `
+          <a class="btn gold" href="${attr(ctx.moneyHref)}">Log Sale</a>
+          <a class="btn green" href="${attr(ctx.calendarHref)}">New Event Booking</a>
+          <a class="btn light" href="${attr(ctx.itemsHref)}">Menu Items</a>
+          <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+        ` : `
+          <a class="btn gold" href="${attr(ctx.moneyHref)}">Log Payment</a>
+          <a class="btn green" href="${attr(ctx.calendarHref)}">New Reservation</a>
+          <a class="btn light" href="${attr(ctx.itemsHref)}">Rooms / Tables</a>
+          <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+        `;
       const calendarPreview = buildHospitalityCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
       const mostRecentRecord = findMostRecentRecord(data);
@@ -7846,10 +7902,7 @@
                 </p>
 
                 <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
-                  <a class="btn gold" href="${attr(ctx.moneyHref)}">Log Payment</a>
-                  <a class="btn green" href="${attr(ctx.calendarHref)}">New Reservation</a>
-                  <a class="btn light" href="${attr(ctx.itemsHref)}">Rooms / Tables</a>
-                  <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+                  ${heroTopActionsHtml}
                 </div>
               </div>
 
@@ -7939,98 +7992,272 @@
       const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
       const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
 
-      const revenueThisMonth = sumHospitalityIncome(dashboardData.transactions, monthKey);
-      const revenueLastMonth = sumHospitalityIncome(dashboardData.transactions, lastMonthKey);
+      // A tenant with 2+ sections but NONE of them room-based (e.g. only
+      // Restaurant + Bar / Lounge) should never see Hotel/Room vocabulary
+      // on this combined overview - it was previously unconditional,
+      // which is the "hotel booking" leak reported for Restaurant/Bar
+      // tenants. Same room/F&B classification `getHospitalitySectionContent`
+      // already uses for the single-section scoped view (line ~7783).
+      const roomSections = ["Hotel", "Guest House", "Lodge", "Resort", "Hostel", "Airbnb / Vacation Rental"];
+      const fnbSections = ["Restaurant", "Bar / Lounge", "Catering"];
+      const hasRoomSection = sections.some(function (s) { return roomSections.indexOf(s) !== -1; });
+      const hasFnbSection = sections.some(function (s) { return fnbSections.indexOf(s) !== -1; });
+      const fnbOnly = hasFnbSection && !hasRoomSection;
+
+      const revenueThisMonth = fnbOnly
+        ? sumTransactionsByMatcher(dashboardData.transactions, monthKey, isFoodBeverageIncome)
+        : sumHospitalityIncome(dashboardData.transactions, monthKey);
+      const revenueLastMonth = fnbOnly
+        ? sumTransactionsByMatcher(dashboardData.transactions, lastMonthKey, isFoodBeverageIncome)
+        : sumHospitalityIncome(dashboardData.transactions, lastMonthKey);
       const revenueDelta = revenueThisMonth - revenueLastMonth;
-
-      const guestsLinked = (dashboardData.people || []).filter(function (person) {
-        return !!getValue(person, ["linked_item_id"], "");
-      });
-
-      const overdueCheckouts = [];
-
-      guestsLinked.forEach(function (person) {
-        const checkoutDate = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
-        if (!checkoutDate || checkoutDate >= todayStr) return;
-
-        const unit = (dashboardData.items || []).find(function (item) {
-          return String(item.id) === String(getValue(person, ["linked_item_id"], ""));
-        });
-
-        if (!unit) return;
-
-        const stillOccupied = isOccupiedItemStatus(getValue(unit, ["property_status", "item_status", "status"], ""));
-        if (!stillOccupied) return;
-
-        overdueCheckouts.push({ person: person, unit: unit });
-      });
-
-      const totalUnits = (dashboardData.items || []).length;
-      const occupiedUnits = (dashboardData.items || []).filter(function (item) {
-        return isOccupiedItemStatus(getValue(item, ["property_status", "item_status", "status"], ""));
-      }).length;
-
-      const maintenanceOpen = (dashboardData.tasks || []).filter(function (task) {
-        const type = getValue(task, ["task_type", "type"], "");
-        const status = statusText(task);
-        return isHousekeepingOrMaintenanceTask(type) && !status.includes("completed") && !status.includes("cancelled");
-      }).sort(function (a, b) {
-        const dueA = String(getValue(a, ["due_date", "created_at"], ""));
-        const dueB = String(getValue(b, ["due_date", "created_at"], ""));
-        return dueA.localeCompare(dueB);
-      });
-
-      const todaysCheckins = (dashboardData.events || []).filter(function (event) {
-        const type = getValue(event, ["event_type", "type"], "");
-        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
-        const status = statusText(event);
-        return isHospitalityBookingType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
-      });
-
-      const bookingsNeedingOutcome = (dashboardData.events || []).filter(function (event) {
-        const type = getValue(event, ["event_type", "type"], "");
-        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
-        const status = statusText(event);
-        return isHospitalityBookingType(type) && date && date < todayStr && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
-      }).sort(function (a, b) {
-        return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
-      });
-
-      const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
-
-      const upcomingCheckouts = guestsLinked.filter(function (person) {
-        const checkoutDate = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
-        return checkoutDate && checkoutDate >= todayStr && checkoutDate <= sevenDaysStr;
-      }).sort(function (a, b) {
-        return String(getValue(a, ["lease_end_date"], "")).localeCompare(String(getValue(b, ["lease_end_date"], "")));
-      });
+      const revenueTrendMonths = fnbOnly
+        ? calculateTransactionTrendByMatcher(dashboardData.transactions, isFoodBeverageIncome)
+        : calculateHospitalityRevenueTrend(dashboardData.transactions);
 
       const sectionSummaries = sections.map(function (label) {
         return calculateSectionSummary(label, monthKey, todayStr);
       });
 
-      const revenueTrendMonths = calculateHospitalityRevenueTrend(dashboardData.transactions);
-      const bookingsTrend = buildMonthlyTrend(dashboardData.events, ["event_date", "created_at"], function (row) {
-        return isHospitalityBookingType(getValue(row, ["event_type", "type"], ""));
-      });
-      const maintenanceTrend = buildMonthlyTrend(dashboardData.tasks, ["created_at"], function (task) {
-        return isHousekeepingOrMaintenanceTask(getValue(task, ["task_type", "type"], ""));
-      });
       const calendarPreview = buildHospitalityCalendarPreview(today);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
-
       const mostRecentRecord = findMostRecentRecord(dashboardData);
-      const greetingMessages = [];
 
-      if (overdueCheckouts.length > 0) {
-        greetingMessages.push({ text: overdueCheckouts.length === 1 ? "1 overdue checkout needs attention" : overdueCheckouts.length + " overdue checkouts need attention", href: "my-people.html" });
+      let heroTopActionsHtml;
+      let todayListHtml;
+      let kpiGridHtml;
+      let attentionSectionHtml;
+      let quickActionsHtml;
+      let greetingMessages = [];
+
+      if (fnbOnly) {
+        // Every record already belongs to one of this tenant's selected
+        // sections, and none of those sections are room-based here, so
+        // dashboardData unfiltered IS already the F&B-only slice - no
+        // per-section filtering needed, same as the single-section path.
+        const outOfStockItems = (dashboardData.items || []).filter(isOutOfStockHospitalityItem);
+        const lowStockItems = (dashboardData.items || []).filter(isLowStockHospitalityItem);
+        const needsRestockCount = outOfStockItems.length + lowStockItems.length;
+
+        const supplierRestocksDue = (dashboardData.tasks || []).filter(function (task) {
+          const type = getValue(task, ["task_type", "type"], "");
+          const status = statusText(task);
+          return isSupplierRestockTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+        }).sort(function (a, b) {
+          return String(getValue(a, ["due_date", "created_at"], "")).localeCompare(String(getValue(b, ["due_date", "created_at"], "")));
+        });
+
+        const guestRequestsOpen = (dashboardData.tasks || []).filter(function (task) {
+          const type = getValue(task, ["task_type", "type"], "");
+          const status = statusText(task);
+          return isGuestRequestTaskType(type) && !status.includes("completed") && !status.includes("cancelled");
+        }).sort(function (a, b) {
+          return String(getValue(a, ["due_date", "created_at"], "")).localeCompare(String(getValue(b, ["due_date", "created_at"], "")));
+        });
+
+        const restockTrend = buildMonthlyTrend(dashboardData.tasks, ["created_at"], function (task) {
+          return isSupplierRestockTaskType(getValue(task, ["task_type", "type"], ""));
+        });
+
+        if (needsRestockCount > 0) {
+          greetingMessages.push({ text: needsRestockCount === 1 ? "1 item needs restocking" : needsRestockCount + " items need restocking", href: "my-items.html" });
+        }
+        if (supplierRestocksDue.length > 0) {
+          greetingMessages.push({ text: supplierRestocksDue.length === 1 ? "1 supplier restock is due" : supplierRestocksDue.length + " supplier restocks are due", href: "my-tasks.html" });
+        }
+        if (guestRequestsOpen.length > 0) {
+          greetingMessages.push({ text: guestRequestsOpen.length === 1 ? "1 guest request is open" : guestRequestsOpen.length + " guest requests are open", href: "my-tasks.html" });
+        }
+
+        heroTopActionsHtml = `
+          <a class="btn gold" href="my-money.html">Log Sale</a>
+          <a class="btn green" href="my-calendar.html">New Event Booking</a>
+          <a class="btn light" href="my-items.html">Menu Items</a>
+          <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+        `;
+
+        todayListHtml = `
+          ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+          ${todayItem("📦", "Needs Restock", needsRestockCount, "item(s)", "my-items.html")}
+          ${todayItem("🚚", "Restocks Due", supplierRestocksDue.length, "task(s)", "my-tasks.html")}
+          ${todayItem("🙋", "Guest Requests", guestRequestsOpen.length, "open", "my-tasks.html")}
+        `;
+
+        kpiGridHtml = `
+          ${kpiCard("F&B Sales (This Month)", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "sales"), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626"), "💰")}
+          ${kpiCard("Needs Restock", needsRestockCount, outOfStockItems.length + " out of stock, " + lowStockItems.length + " low", needsRestockCount > 0 ? "#DC2626" : "#16A34A", "my-items.html", countSpan(needsRestockCount, "plain"), null, "📦")}
+          ${kpiCard("Supplier Restocks Due", supplierRestocksDue.length, "Restock tasks needing action", supplierRestocksDue.length > 0 ? "#C77700" : "#16A34A", "my-tasks.html", countSpan(supplierRestocksDue.length, "plain"), sparklineSvg(restockTrend, supplierRestocksDue.length > 0 ? "#C77700" : "#16A34A"), "🚚")}
+          ${kpiCard("Guest Requests Open", guestRequestsOpen.length, "Requests needing a response", guestRequestsOpen.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(guestRequestsOpen.length, "plain"), null, "🙋")}
+        `;
+
+        const attentionGroups = [];
+        if (outOfStockItems.length > 0) {
+          attentionGroups.push({ title: "Out of Stock", rows: outOfStockItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Menu Item");
+            return attentionRow("🚫", name, "Out of stock", "Urgent", "red", "my-items.html?highlight=" + item.id, null, "out-of-stock:" + item.id);
+          }) });
+        }
+        if (lowStockItems.length > 0) {
+          attentionGroups.push({ title: "Low Stock", rows: lowStockItems.map(function (item) {
+            const name = getValue(item, ["item_name", "name", "title"], "Menu Item");
+            return attentionRow("📉", name, "Running low", "Low Stock", "gold", "my-items.html?highlight=" + item.id, null, "low-stock:" + item.id);
+          }) });
+        }
+        if (supplierRestocksDue.length > 0) {
+          attentionGroups.push({ title: "Supplier Restocks Due", rows: supplierRestocksDue.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Supplier Restock");
+            const due = getValue(task, ["due_date"], "");
+            const overdue = due && String(due).slice(0, 10) < todayStr;
+            return attentionRow("🚚", title, due ? "Due " + formatDate(due) : "No due date set", overdue ? "Overdue" : "Due", overdue ? "red" : "gold", "my-tasks.html?highlight=" + task.id, null, overdue ? ("restock:" + task.id) : null);
+          }) });
+        }
+        if (guestRequestsOpen.length > 0) {
+          attentionGroups.push({ title: "Guest Requests Open", rows: guestRequestsOpen.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Guest Request");
+            const due = getValue(task, ["due_date"], "");
+            return attentionRow("🙋", title, due ? "Due " + formatDate(due) : "No due date set", "Open", "blue", "my-tasks.html?highlight=" + task.id, null, null);
+          }) });
+        }
+
+        attentionSectionHtml = `
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Out of stock / low stock items, supplier restocks due, and open guest requests — tagged by section.</p>
+            </div>
+          </div>
+          ${attentionGroups.length === 0
+            ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No stock issues, restocks, or guest requests need attention right now.</p></div>`
+            : attentionGroups.map(function (g) {
+                return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
+              }).join("")}
+        `;
+
+        quickActionsHtml = `
+          ${quickAction("🍽️", "Add Menu Item", "List a new menu item, beverage, or stock item", "my-items.html", "#D4A63A")}
+          ${quickAction("💵", "Log Sale", "Record a food or bar sale", "my-money.html", "#16A34A")}
+          ${quickAction("🚚", "Record Restock", "Log a supplier restock", "my-tasks.html", "#2563EB")}
+          ${quickAction("📅", "New Event Booking", "Book a function or catering event", "my-calendar.html", "#14B8A6")}
+        `;
+      } else {
+        const guestsLinked = (dashboardData.people || []).filter(function (person) {
+          return !!getValue(person, ["linked_item_id"], "");
+        });
+
+        const overdueCheckouts = [];
+
+        guestsLinked.forEach(function (person) {
+          const checkoutDate = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
+          if (!checkoutDate || checkoutDate >= todayStr) return;
+
+          const unit = (dashboardData.items || []).find(function (item) {
+            return String(item.id) === String(getValue(person, ["linked_item_id"], ""));
+          });
+
+          if (!unit) return;
+
+          const stillOccupied = isOccupiedItemStatus(getValue(unit, ["property_status", "item_status", "status"], ""));
+          if (!stillOccupied) return;
+
+          overdueCheckouts.push({ person: person, unit: unit });
+        });
+
+        const totalUnits = (dashboardData.items || []).length;
+        const occupiedUnits = (dashboardData.items || []).filter(function (item) {
+          return isOccupiedItemStatus(getValue(item, ["property_status", "item_status", "status"], ""));
+        }).length;
+
+        const maintenanceOpen = (dashboardData.tasks || []).filter(function (task) {
+          const type = getValue(task, ["task_type", "type"], "");
+          const status = statusText(task);
+          return isHousekeepingOrMaintenanceTask(type) && !status.includes("completed") && !status.includes("cancelled");
+        }).sort(function (a, b) {
+          const dueA = String(getValue(a, ["due_date", "created_at"], ""));
+          const dueB = String(getValue(b, ["due_date", "created_at"], ""));
+          return dueA.localeCompare(dueB);
+        });
+
+        const todaysCheckins = (dashboardData.events || []).filter(function (event) {
+          const type = getValue(event, ["event_type", "type"], "");
+          const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+          const status = statusText(event);
+          return isHospitalityBookingType(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+        });
+
+        const bookingsNeedingOutcome = (dashboardData.events || []).filter(function (event) {
+          const type = getValue(event, ["event_type", "type"], "");
+          const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+          const status = statusText(event);
+          return isHospitalityBookingType(type) && date && date < todayStr && !status.includes("cancelled") && !status.includes("completed") && !status.includes("no show");
+        }).sort(function (a, b) {
+          return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
+        });
+
+        const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+
+        const upcomingCheckouts = guestsLinked.filter(function (person) {
+          const checkoutDate = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
+          return checkoutDate && checkoutDate >= todayStr && checkoutDate <= sevenDaysStr;
+        }).sort(function (a, b) {
+          return String(getValue(a, ["lease_end_date"], "")).localeCompare(String(getValue(b, ["lease_end_date"], "")));
+        });
+
+        const bookingsTrend = buildMonthlyTrend(dashboardData.events, ["event_date", "created_at"], function (row) {
+          return isHospitalityBookingType(getValue(row, ["event_type", "type"], ""));
+        });
+        const maintenanceTrend = buildMonthlyTrend(dashboardData.tasks, ["created_at"], function (task) {
+          return isHousekeepingOrMaintenanceTask(getValue(task, ["task_type", "type"], ""));
+        });
+
+        if (overdueCheckouts.length > 0) {
+          greetingMessages.push({ text: overdueCheckouts.length === 1 ? "1 overdue checkout needs attention" : overdueCheckouts.length + " overdue checkouts need attention", href: "my-people.html" });
+        }
+        if (todaysCheckins.length > 0) {
+          greetingMessages.push({ text: todaysCheckins.length === 1 ? "1 check-in scheduled today" : todaysCheckins.length + " check-ins scheduled today", href: "my-calendar.html" });
+        }
+        if (upcomingCheckouts.length > 0) {
+          greetingMessages.push({ text: upcomingCheckouts.length === 1 ? "1 checkout within 7 days" : upcomingCheckouts.length + " checkouts within 7 days", href: "my-people.html" });
+        }
+
+        heroTopActionsHtml = `
+          <a class="btn gold" href="my-money.html">Log Payment</a>
+          <a class="btn green" href="my-calendar.html">New Reservation</a>
+          <a class="btn light" href="my-items.html">Rooms / Tables</a>
+          <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+        `;
+
+        todayListHtml = `
+          ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
+          ${todayItem("🚪", "Overdue Checkouts", overdueCheckouts.length, "still occupied", "my-people.html")}
+          ${todayItem("🛎️", "Today's Check-ins", todaysCheckins.length, "scheduled today", "my-calendar.html")}
+          ${todayItem("🧹", "Housekeeping / Maintenance", maintenanceOpen.length, "open request(s)", "my-tasks.html")}
+        `;
+
+        kpiGridHtml = `
+          ${kpiCard("Revenue (This Month)", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626"), "💰")}
+          ${kpiCard("Bookings Today", todaysCheckins.length, "Check-ins / reservations today", "#D4A63A", "my-calendar.html", countSpan(todaysCheckins.length, "plain"), sparklineSvg(bookingsTrend, "#D4A63A"), "🛎️")}
+          ${kpiCard("Occupancy", occupiedUnits + " / " + totalUnits, totalUnits > 0 ? "Rooms / tables currently occupied" : "No rooms or tables tracked yet", "#2563EB", "my-items.html", countSpan(occupiedUnits, "ratio", " / " + totalUnits), staticProportionBar(totalUnits > 0 ? occupiedUnits / totalUnits : 0, "#2563EB", totalUnits > 0 ? (Math.round((occupiedUnits / totalUnits) * 100) + "% occupied") : "No rooms/tables tracked yet"), "🏨")}
+          ${kpiCard("Housekeeping / Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(maintenanceOpen.length, "plain"), sparklineSvg(maintenanceTrend, maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A"), "🧹")}
+        `;
+
+        attentionSectionHtml = `
+          <div class="section-title">
+            <div>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue checkouts, today's check-ins, open housekeeping/maintenance, and upcoming departures — tagged by section.</p>
+            </div>
+          </div>
+          ${renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts, true)}
+        `;
+
+        quickActionsHtml = `
+          ${quickAction("🏨", "Add Room / Item", "List a new room, table, or menu item", "my-items.html", "#D4A63A")}
+          ${quickAction("💵", "Log Payment", "Record booking, food, or bar income", "my-money.html", "#16A34A")}
+          ${quickAction("📅", "New Reservation", "Book a room, table, or event", "my-calendar.html", "#2563EB")}
+          ${quickAction("🧑", "Add Guest", "Register a new guest", "my-people.html", "#14B8A6")}
+        `;
       }
-      if (todaysCheckins.length > 0) {
-        greetingMessages.push({ text: todaysCheckins.length === 1 ? "1 check-in scheduled today" : todaysCheckins.length + " check-ins scheduled today", href: "my-calendar.html" });
-      }
-      if (upcomingCheckouts.length > 0) {
-        greetingMessages.push({ text: upcomingCheckouts.length === 1 ? "1 checkout within 7 days" : upcomingCheckouts.length + " checkouts within 7 days", href: "my-people.html" });
-      }
+
       if (mostRecentRecord) {
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
@@ -8062,10 +8289,7 @@
               </p>
 
               <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
-                <a class="btn gold" href="my-money.html">Log Payment</a>
-                <a class="btn green" href="my-calendar.html">New Reservation</a>
-                <a class="btn light" href="my-items.html">Rooms / Tables</a>
-                <button class="btn light" type="button" onclick="toggleNotifications()">Notifications</button>
+                ${heroTopActionsHtml}
               </div>
             </div>
 
@@ -8074,38 +8298,22 @@
               <div class="hero-mini-divider"></div>
               <h4>Today / Attention</h4>
               <div class="today-list">
-                ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("🚪", "Overdue Checkouts", overdueCheckouts.length, "still occupied", "my-people.html")}
-                ${todayItem("🛎️", "Today's Check-ins", todaysCheckins.length, "scheduled today", "my-calendar.html")}
-                ${todayItem("🧹", "Housekeeping / Maintenance", maintenanceOpen.length, "open request(s)", "my-tasks.html")}
+                ${todayListHtml}
               </div>
             </div>
           </div>
         </section>
 
         <section class="kpi-grid">
-          ${kpiCard("Revenue (This Month)", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626", "my-money.html", countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626"), "💰")}
-          ${kpiCard("Bookings Today", todaysCheckins.length, "Check-ins / reservations today", "#D4A63A", "my-calendar.html", countSpan(todaysCheckins.length, "plain"), sparklineSvg(bookingsTrend, "#D4A63A"), "🛎️")}
-          ${kpiCard("Occupancy", occupiedUnits + " / " + totalUnits, totalUnits > 0 ? "Rooms / tables currently occupied" : "No rooms or tables tracked yet", "#2563EB", "my-items.html", countSpan(occupiedUnits, "ratio", " / " + totalUnits), staticProportionBar(totalUnits > 0 ? occupiedUnits / totalUnits : 0, "#2563EB", totalUnits > 0 ? (Math.round((occupiedUnits / totalUnits) * 100) + "% occupied") : "No rooms/tables tracked yet"), "🏨")}
-          ${kpiCard("Housekeeping / Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(maintenanceOpen.length, "plain"), sparklineSvg(maintenanceTrend, maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A"), "🧹")}
+          ${kpiGridHtml}
         </section>
 
         <section class="card">
-          <div class="section-title">
-            <div>
-              <h3>Needs Attention Today</h3>
-              <p>Overdue checkouts, today's check-ins, open housekeeping/maintenance, and upcoming departures — tagged by section.</p>
-            </div>
-          </div>
-
-          ${renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts, true)}
+          ${attentionSectionHtml}
         </section>
 
         <section class="quick-actions">
-          ${quickAction("🏨", "Add Room / Item", "List a new room, table, or menu item", "my-items.html", "#D4A63A")}
-          ${quickAction("💵", "Log Payment", "Record booking, food, or bar income", "my-money.html", "#16A34A")}
-          ${quickAction("📅", "New Reservation", "Book a room, table, or event", "my-calendar.html", "#2563EB")}
-          ${quickAction("🧑", "Add Guest", "Register a new guest", "my-people.html", "#14B8A6")}
+          ${quickActionsHtml}
         </section>
 
         <section class="card">
@@ -9887,7 +10095,7 @@
         peopleHref: "my-people.html" + sectionParam
       };
 
-      const content = getAutomotiveSectionContent(isScoped ? scopeLabel : "Car Wash / Detailing", data, ctx);
+      const content = getAutomotiveSectionContent(isScoped ? scopeLabel : (getSoleSelectedSection() || "Car Wash / Detailing"), data, ctx);
       const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
       const calendarPreview = buildAutomotiveCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
@@ -10569,7 +10777,7 @@
         peopleHref: "my-people.html" + sectionParam
       };
 
-      const content = getHealthcareSectionContent(isScoped ? scopeLabel : "Clinic", data, ctx);
+      const content = getHealthcareSectionContent(isScoped ? scopeLabel : (getSoleSelectedSection() || "Clinic"), data, ctx);
       const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
       const calendarPreview = buildHealthcareCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
@@ -11116,7 +11324,7 @@
         peopleHref: "my-people.html" + sectionParam
       };
 
-      const content = getSalonSectionContent(isScoped ? scopeLabel : "Salon", data, ctx);
+      const content = getSalonSectionContent(isScoped ? scopeLabel : (getSoleSelectedSection() || "Salon"), data, ctx);
       const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
       const calendarPreview = buildSalonCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
@@ -11662,7 +11870,7 @@
         peopleHref: "my-people.html" + sectionParam
       };
 
-      const content = getEventsSectionContent(isScoped ? scopeLabel : "Events / Functions", data, ctx);
+      const content = getEventsSectionContent(isScoped ? scopeLabel : (getSoleSelectedSection() || "Events / Functions"), data, ctx);
       const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
       const calendarPreview = buildEventsCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
