@@ -108,16 +108,70 @@ function pickField(record, names, fallback = "") {
   return fallback;
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Auto-builds a branded HTML part from the plain text when no explicit
+// email_html/html_body was provided - every email this system has ever
+// sent was plain-text-only (nothing writes to those columns), which is
+// itself a spam-scoring signal on top of everything else. A paragraph
+// that's exactly "Label: https://..." (the CTA pattern every current
+// email producer already uses, e.g. "Choose a plan: https://...")
+// renders as a styled button instead of a bare link.
+function buildHtmlFromText(text) {
+  const paragraphs = String(text || "")
+    .split(/\n\s*\n/)
+    .map(function (p) { return p.trim(); })
+    .filter(Boolean);
+
+  const bodyHtml = paragraphs.map(function (paragraph) {
+    const linkMatch = paragraph.match(/^(.*):\s*(https?:\/\/\S+)\s*$/);
+
+    if (linkMatch) {
+      return (
+        '<p style="margin:0 0 20px;text-align:center;">' +
+        '<a href="' + escapeHtml(linkMatch[2]) + '" style="display:inline-block;background:#D4A63A;color:#061C3D;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:10px;font-family:Arial,Helvetica,sans-serif;">' +
+        escapeHtml(linkMatch[1]) + '</a></p>'
+      );
+    }
+
+    return (
+      '<p style="margin:0 0 16px;color:#1F2937;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">' +
+      escapeHtml(paragraph).replace(/\n/g, "<br>") + '</p>'
+    );
+  }).join("");
+
+  return (
+    '<div style="background:#F5F5F3;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;">' +
+    '<div style="max-width:520px;margin:0 auto;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E5E7EB;">' +
+    '<div style="background:#061C3D;padding:20px 28px;">' +
+    '<span style="color:#F5F5F3;font-weight:800;font-size:16px;letter-spacing:0.3px;">UNGANI OS</span>' +
+    '</div>' +
+    '<div style="padding:28px;">' + bodyHtml + '</div>' +
+    '<div style="padding:18px 28px;background:#F8FAFC;border-top:1px solid #E5E7EB;">' +
+    '<p style="margin:0;color:#6B7280;font-size:12.5px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">' +
+    "You're receiving this because you have an account with UNGANI OS. " +
+    'Questions? Contact <a href="mailto:info@ungani.com" style="color:#061C3D;">info@ungani.com</a>.' +
+    '</p></div></div></div>'
+  );
+}
+
 function buildEmail(record) {
   const to = pickField(record, ["recipient_email", "to_email", "email_to", "email"]);
   const subject = pickField(record, ["email_subject", "subject"], "UNGANI OS Notification");
-  const html = pickField(record, ["email_html", "html_body"]);
+  const explicitHtml = pickField(record, ["email_html", "html_body"]);
   const text = pickField(record, ["email_body", "email_text", "text_body"], "You have a new UNGANI OS notification.");
 
   return {
     to,
     subject,
-    html: html || undefined,
+    html: explicitHtml || buildHtmlFromText(text),
     text
   };
 }
@@ -245,6 +299,7 @@ export default async function handler(req, res) {
 
         const sent = await transporter.sendMail({
           from: `"${sender.label}" <${sender.email}>`,
+          replyTo: sender.email,
           to: email.to,
           subject: email.subject,
           text: email.text,

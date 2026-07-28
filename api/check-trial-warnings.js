@@ -68,7 +68,7 @@ function buildWarningEmail(businessName, daysLeft) {
     email_subject: `Your UNGANI OS trial ends in ${daysLeft} ${dayWord}`,
     email_body:
       `Hi ${businessName},\n\n` +
-      `Your free trial of UNGANI OS ends in ${daysLeft} ${dayWord}. Choose a plan now to keep full access - nothing is blocked yet, this is just a heads-up.\n\n` +
+      `Your free trial of UNGANI OS ends in ${daysLeft} ${dayWord}. You can choose a plan to keep full access - nothing is blocked yet, this is just a heads-up.\n\n` +
       `Your existing data is always safe and visible, even after the trial ends.\n\n` +
       `Choose a plan: ${APP_URL}/my-package.html#requestedPackage\n\n` +
       `- UNGANI OS Team`
