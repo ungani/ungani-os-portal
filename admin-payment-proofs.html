@@ -11,6 +11,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
 
   <style>
     :root {
@@ -627,30 +629,22 @@
 </head>
 
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <img src="ungani-logo.png" alt="UNGANI Logo" />
-      <div class="brand-text">
-        <strong>UNGANI OS</strong>
-        <span>Payment Proof History</span>
-      </div>
-    </div>
+  <div id="adminRoot"></div>
 
-    <div class="top-actions">
-      <a class="top-btn" href="admin-billing.html">Admin Billing</a>
-      <a class="top-btn" href="admin-billing-reminders.html">Reminder History</a>
-      <a class="top-btn" href="admin-subscriptions.html">Subscriptions</a>
-      <a class="top-btn gold" href="admin-home.html">Back to Admin</a>
-    </div>
-  </header>
-
-  <main class="content">
+  <script>
+    var pageMainHtml = `
     <section class="hero">
       <h1>Payment Proof History</h1>
       <p>
         View all client payment proof uploads in one admin-only page. Open proof files securely, review proof status,
         and accept valid proofs to mark invoices as paid.
       </p>
+
+      <div class="top-actions" style="margin-top: 12px;">
+        <a class="top-btn" href="admin-billing.html">Admin Billing</a>
+        <a class="top-btn" href="admin-billing-reminders.html">Reminder History</a>
+        <a class="top-btn" href="admin-subscriptions.html">Subscriptions</a>
+      </div>
 
       <div class="summary-grid">
         <div class="summary-card">
@@ -733,7 +727,6 @@
     <div class="footer">
       UNGANI OS · ungani.com · info@ungani.com
     </div>
-  </main>
 
   <div id="proofReviewModalBackdrop" class="modal-backdrop">
     <div class="modal">
@@ -783,23 +776,53 @@
       </div>
     </div>
   </div>
+    `;
 
-  <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
-
-    const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
+    let supabaseClient = null;
+    let currentAdmin = null;
     let allProofs = [];
     let allClients = [];
     let clientNameMap = {};
     let selectedProofForReview = null;
 
-    document.addEventListener("DOMContentLoaded", async () => {
-      applyExistingThemeSetting();
-      await checkAdminAccess();
-      await loadClients();
-      await loadProofs();
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "admin-payment-proofs",
+        pageTitle: "Payment Proof History",
+        pageSubtitle: "View all client payment proof uploads in one admin-only page. Open proof files securely, review proof status, and accept valid proofs to mark invoices as paid.",
+        footerTitle: "Admin Payment Proofs",
+        footerVersion: "Admin Payment Proofs Version: Step 279",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "admin-payment-proofs",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Admin Payment Proofs",
+            footerVersion: "Admin Payment Proofs Version: Step 279"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadClients();
+          await loadProofs();
+        }
+      });
     });
 
     function applyExistingThemeSetting() {
@@ -1280,7 +1303,5 @@
         .replaceAll('"', '\\"');
     }
   </script>
-
-  <script src="admin-sidebar-polish.js?v=portal14w"></script>
 </body>
 </html>

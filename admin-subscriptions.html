@@ -16,6 +16,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
 
   <style>
     :root {
@@ -686,70 +688,10 @@
     })();
   </script>
 
-  <div class="mobile-topbar">
-    <div class="mobile-brand">
-      <img src="ungani-logo.png" alt="UNGANI Logo" />
-      <div>
-        <strong>UNGANI Admin</strong>
-        <span>Subscriptions</span>
-      </div>
-    </div>
-    <button class="mobile-menu-btn" onclick="openMobileMenu()">☰</button>
-  </div>
+  <div id="adminRoot"></div>
 
-  <div class="mobile-drawer-overlay" id="drawerOverlay" onclick="closeMobileMenu()"></div>
-
-  <div class="app-shell">
-    <aside class="sidebar" id="sidebar">
-      <div class="brand">
-        <img src="ungani-logo.png" alt="UNGANI Logo" />
-        <div>
-          <h1>UNGANI OS</h1>
-          <p>Admin Control</p>
-        </div>
-      </div>
-
-      <div class="nav-section-title">Main</div>
-      <a class="nav-link" href="admin-home.html">Dashboard</a>
-
-      <div class="nav-section-title">Operations</div>
-      <a class="nav-link" href="admin.html">Client Registrations</a>
-      <a class="nav-link" href="admin-profiles.html">Client Profiles</a>
-      <a class="nav-link" href="admin-onboarding.html">Client Onboarding</a>
-      <a class="nav-link" href="sections.html">Business Types & Sections</a>
-      <a class="nav-link" href="users.html">Users & Permissions</a>
-      <a class="nav-link" href="admin-tasks.html">Tasks</a>
-      <a class="nav-link" href="admin-calendar.html">Calendar</a>
-
-      <div class="nav-section-title">Business</div>
-      <a class="nav-link" href="admin-money.html">Money Records</a>
-      <a class="nav-link" href="admin-items.html">Assets</a>
-      <a class="nav-link" href="admin-people.html">People</a>
-      <a class="nav-link" href="admin-branches.html">Branches</a>
-      <a class="nav-link" href="admin-records.html">Business Records</a>
-      <a class="nav-link" href="admin-documents.html">Documents</a>
-      <a class="nav-link" href="admin-reports.html">Reports</a>
-      <a class="nav-link" href="admin-charts.html">System Analytics</a>
-
-      <div class="nav-section-title">Support</div>
-      <a class="nav-link" href="support.html">Support Desk</a>
-      <a class="nav-link" href="admin-chat.html">Client Chat</a>
-      <a class="nav-link" href="admin-notifications.html">Notifications</a>
-      <a class="nav-link" href="notices.html">Notices</a>
-
-      <div class="nav-section-title">Account</div>
-      <a class="nav-link" href="billing.html">Billing</a>
-      <a class="nav-link active" href="admin-subscriptions.html">Packages</a>
-      <a class="nav-link" href="admin-settings.html">Settings</a>
-
-      <div class="nav-section-title">System</div>
-      <a class="nav-link" href="admin-health.html">System Health</a>
-      <a class="nav-link" href="admin-audit-logs.html">Audit Logs</a>
-      <button class="nav-link" type="button" onclick="toggleTheme()" id="themeToggleLink">Dark Mode</button>
-      <button class="nav-link" onclick="logout()">Logout</button>
-    </aside>
-
-    <main class="main">
+  <script>
+    var pageMainHtml = `
       <section class="page-header">
         <div>
           <p class="eyebrow">UNGANI SaaS Control</p>
@@ -841,31 +783,54 @@
       <p class="status-line">
         Admin Subscriptions Version: Step SaaS-2 · ungani.com · info@ungani.com
       </p>
-    </main>
-  </div>
+    `;
 
-  <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    let supabaseClient = null;
+    let currentAdmin = null;
 
-    const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "admin-subscriptions",
+        pageTitle: "Subscriptions & Packages",
+        pageSubtitle: "Manage each client's package, trial status, payment status, user limit, and account access.",
+        footerTitle: "Admin Subscriptions",
+        footerVersion: "Admin Subscriptions Version: Step SaaS-2",
+        mainHtml: pageMainHtml
+      });
 
-    function updateThemeToggleLabel() {
-      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-      const link = document.getElementById("themeToggleLink");
-      if (link) link.textContent = isDark ? "Light Mode" : "Dark Mode";
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          currentUser = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "admin-subscriptions",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Admin Subscriptions",
+            footerVersion: "Admin Subscriptions Version: Step SaaS-2"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadAll();
+        }
+      });
+    });
+
+    function logout() {
+      return UnganiAdminShared.logoutAdmin();
     }
-
-    function toggleTheme() {
-      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-      const next = isDark ? "light" : "dark";
-      document.documentElement.setAttribute("data-theme", next);
-      localStorage.setItem("ungani_theme", next);
-      localStorage.setItem("ungani_admin_theme", next);
-      updateThemeToggleLabel();
-    }
-
-    document.addEventListener("DOMContentLoaded", updateThemeToggleLabel);
 
     let currentUser = null;
     let packages = [];
@@ -1421,38 +1386,6 @@
       await loadClientsAndSubscriptions();
     }
 
-    async function logout() {
-      try {
-        const sessionRes = await supabaseClient.auth.getSession();
-        const token = sessionRes?.data?.session?.access_token;
-        if (token) {
-          fetch("/api/log-audit-event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-            body: JSON.stringify({ action: "logout", entityType: "session" }),
-            keepalive: true
-          }).catch(function () {});
-        }
-      } catch (error) {
-        console.warn("Audit log warning:", error.message);
-      }
-
-      await supabaseClient.auth.signOut();
-      window.location.href = "login.html?mode=admin";
-    }
-
-    async function init() {
-      const allowed = await requireAdmin();
-
-      if (!allowed) return;
-
-      await loadAll();
-    }
-
-    init();
   </script>
-  <script src="admin-page-shell-polish.js?v=portal14y"></script>
-<script src="admin-sidebar-polish.js?v=portal14w"></script>
-<script src="admin-dark-contrast-fix.js?v=portal14z"></script>
 </body>
 </html>

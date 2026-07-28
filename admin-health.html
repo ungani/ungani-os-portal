@@ -20,6 +20,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
 
   <style>
     :root {
@@ -1040,27 +1042,6 @@
     })();
   </script>
 
-  <header class="mobile-header">
-    <div class="mobile-header-inner">
-      <div class="mobile-brand">
-        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
-        <div>
-          <strong>UNGANI Admin</strong>
-          <span>System Health</span>
-        </div>
-      </div>
-
-      <div class="mobile-actions">
-        <button class="bell-btn" type="button" onclick="toggleNotifications()" aria-label="Open notifications">
-          🔔
-          <span id="mobileNotificationCount" class="bell-dot">0</span>
-        </button>
-        <button class="hamburger" type="button" onclick="openSidebar()" aria-label="Open menu">☰</button>
-      </div>
-    </div>
-  </header>
-
-  <div id="drawerOverlay" class="drawer-overlay" onclick="closeSidebar()"></div>
   <div id="notificationOverlay" class="notification-overlay" onclick="closeNotifications()"></div>
 
   <div id="notificationPanel" class="notification-panel">
@@ -1082,111 +1063,77 @@
     </div>
   </div>
 
-  <div class="app-shell">
-    <aside id="sidebar" class="sidebar">
-      <button class="sidebar-close" type="button" onclick="closeSidebar()">Close Menu</button>
+  <div id="adminRoot"></div>
 
-      <div class="brand">
-        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
-        <div>
-          <h1>UNGANI OS</h1>
-          <p>Admin Command Center</p>
-        </div>
-      </div>
-
-      <div class="nav-section-title">Main</div>
-      <a class="nav-link" href="admin-home.html">Dashboard</a>
-
-      <div class="nav-section-title">Operations</div>
-      <a class="nav-link" href="admin.html">Client Registrations</a>
-      <a class="nav-link" href="admin-profiles.html">Client Profiles</a>
-      <a class="nav-link" href="admin-onboarding.html">Client Onboarding</a>
-      <a class="nav-link" href="sections.html">Business Types & Sections</a>
-      <a class="nav-link" href="users.html">Users & Permissions</a>
-      <a class="nav-link" href="admin-tasks.html">Tasks</a>
-      <a class="nav-link" href="admin-calendar.html">Calendar</a>
-
-      <div class="nav-section-title">Business</div>
-      <a class="nav-link" href="admin-money.html">Money Records</a>
-      <a class="nav-link" href="admin-items.html">Assets</a>
-      <a class="nav-link" href="admin-people.html">People</a>
-      <a class="nav-link" href="admin-branches.html">Branches</a>
-      <a class="nav-link" href="admin-records.html">Business Records</a>
-      <a class="nav-link" href="admin-documents.html">Documents</a>
-      <a class="nav-link" href="admin-reports.html">Reports</a>
-      <a class="nav-link" href="admin-charts.html">System Analytics</a>
-
-      <div class="nav-section-title">Support</div>
-      <a class="nav-link" href="support.html">Support Desk</a>
-      <a class="nav-link" href="admin-chat.html">Client Chat</a>
-      <a class="nav-link" href="admin-notifications.html">Notifications</a>
-      <a class="nav-link" href="notices.html">Notices</a>
-
-      <div class="nav-section-title">Account</div>
-      <a class="nav-link" href="billing.html">Billing</a>
-      <a class="nav-link" href="admin-subscriptions.html">Packages</a>
-      <a class="nav-link" href="admin-settings.html">Settings</a>
-
-      <div class="nav-section-title">System</div>
-      <a class="nav-link active" href="admin-health.html">System Health <span class="nav-pill">Active</span></a>
-      <a class="nav-link" href="admin-audit-logs.html">Audit Logs</a>
-      <a class="nav-link" href="#" onclick="logout(); return false;">Logout</a>
-    </aside>
-
-    <main class="main">
-      <div class="topbar">
-        <div>
-          <h2>System Health</h2>
-          <p>Review UNGANI OS safety checks, admin action items, smart logs, notifications, email queue, billing risks, and system readiness.</p>
-        </div>
-
-        <div class="top-actions">
-          <button class="btn light" type="button" onclick="toggleNotifications()">
-            🔔 Notifications
-            <span id="desktopNotificationCount" class="status gold" style="display:none;">0</span>
-          </button>
-          <button class="btn light" onclick="toggleTheme()" id="themeButton">Dark Mode</button>
-          <button class="btn light" onclick="loadSystemHealth()">Refresh</button>
-          <button class="btn gold" onclick="runFullSystemReview()">Run Full Review</button>
-          <button class="btn red" onclick="logout()">Logout</button>
-        </div>
+  <script>
+    var pageMainHtml = `
+      <div class="top-actions" style="margin-bottom: 16px;">
+        <button class="ungani-btn dark" type="button" onclick="toggleNotifications()">
+          🔔 Notifications
+          <span id="desktopNotificationCount" class="status gold" style="display:none;">0</span>
+        </button>
+        <button class="ungani-btn dark" onclick="loadSystemHealth()">Refresh</button>
+        <button class="ungani-btn gold" onclick="runFullSystemReview()">Run Full Review</button>
       </div>
 
       <div id="content" class="loading">Loading admin system health...</div>
-    </main>
-  </div>
+    `;
+
+    let currentAdmin = null;
+    let supabaseClient = null;
+
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "admin-health",
+        pageTitle: "System Health",
+        pageSubtitle: "Review UNGANI OS safety checks, admin action items, smart logs, notifications, email queue, billing risks, and system readiness.",
+        footerTitle: "Admin System Health",
+        footerVersion: "Admin System Health Version: Step 279",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "admin-health",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Admin System Health",
+            footerVersion: "Admin System Health Version: Step 279"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadSystemHealth();
+        }
+      });
+    });
+
+    function logout() {
+      return UnganiAdminShared.logoutAdmin();
+    }
+  </script>
 
   <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
-
-    const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-    let currentUser = null;
     let notifications = [];
     let healthSnapshot = null;
     let actionItems = null;
     let reviewSummary = null;
     let smartLogs = [];
 
-    window.addEventListener("load", initSystemHealth);
-
-    function openSidebar() {
-      closeNotifications();
-      document.getElementById("sidebar").classList.add("open");
-      document.getElementById("drawerOverlay").classList.add("open");
-      document.body.style.overflow = "hidden";
-    }
-
-    function closeSidebar() {
-      document.getElementById("sidebar").classList.remove("open");
-      document.getElementById("drawerOverlay").classList.remove("open");
-      document.body.style.overflow = "";
-    }
-
     function toggleNotifications() {
-      closeSidebar();
-
       const panel = document.getElementById("notificationPanel");
       const overlay = document.getElementById("notificationOverlay");
 
@@ -1867,26 +1814,6 @@
       button.textContent = current === "dark" ? "Light Mode" : "Dark Mode";
     }
 
-    async function logout() {
-      try {
-        const sessionRes = await supabaseClient.auth.getSession();
-        const token = sessionRes?.data?.session?.access_token;
-        if (token) {
-          fetch("/api/log-audit-event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-            body: JSON.stringify({ action: "logout", entityType: "session" }),
-            keepalive: true
-          }).catch(function () {});
-        }
-
-        await supabaseClient.auth.signOut();
-      } catch (error) {
-        console.warn(error.message);
-      }
-
-      window.location.href = "login.html?mode=admin";
-    }
 
     function getValue(obj, path, fallback) {
       try {
@@ -1951,6 +1878,5 @@
       return escapeHtml(value).replaceAll("`", "&#096;");
     }
   </script>
-  <script src="admin-sidebar-polish.js?v=portal14w"></script>
 </body>
 </html>

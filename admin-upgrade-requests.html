@@ -11,6 +11,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
 
   <style>
     :root {
@@ -582,25 +584,10 @@
     })();
   </script>
 
-  <div class="page">
-    <header class="topbar">
-      <div class="brand">
-        <img src="ungani-logo.png" alt="UNGANI Logo" />
-        <div class="brand-text">
-          <strong>UNGANI OS Admin</strong>
-          <span>Package Upgrade Requests</span>
-        </div>
-      </div>
+  <div id="adminRoot"></div>
 
-      <div class="top-actions">
-        <button class="top-btn" type="button" onclick="toggleTheme()" id="themeToggleBtn">Dark Mode</button>
-        <a class="top-btn" href="admin-notifications.html">Notifications</a>
-        <a class="top-btn" href="admin-subscriptions.html">Subscriptions</a>
-        <a class="top-btn gold" href="admin-home.html">Back to Admin</a>
-      </div>
-    </header>
-
-    <main class="content">
+  <script>
+    var pageMainHtml = `
       <section class="hero">
         <div class="hero-content">
           <h1>Client Upgrade Requests</h1>
@@ -608,6 +595,11 @@
             Review package upgrade requests submitted by clients. This page only manages
             request status. To actually change the client package, use Admin Subscriptions.
           </p>
+
+          <div class="top-actions" style="margin-top: 12px;">
+            <a class="top-btn" href="admin-notifications.html">Notifications</a>
+            <a class="top-btn" href="admin-subscriptions.html">Subscriptions</a>
+          </div>
 
           <div class="summary-grid">
             <div class="summary-card">
@@ -697,16 +689,55 @@
       <div class="footer">
         UNGANI OS · ungani.com · info@ungani.com
       </div>
-    </main>
-  </div>
 
-  <div id="toast" class="toast"></div>
+      <div id="toast" class="toast"></div>
+    `;
 
-  <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    let supabaseClient = null;
+    let currentAdmin = null;
 
-    const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "admin-upgrade-requests",
+        pageTitle: "Package Upgrade Requests",
+        pageSubtitle: "Review package upgrade requests submitted by clients. This page only manages request status. To actually change the client package, use Admin Subscriptions.",
+        footerTitle: "Admin Upgrade Requests",
+        footerVersion: "Admin Upgrade Requests Version: Step 279",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "admin-upgrade-requests",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Admin Upgrade Requests",
+            footerVersion: "Admin Upgrade Requests Version: Step 279"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadRequests();
+        }
+      });
+    });
+
+    function logout() {
+      return UnganiAdminShared.logoutAdmin();
+    }
 
     function updateThemeToggleLabel() {
       const isDark = document.documentElement.getAttribute("data-theme") === "dark";
@@ -725,11 +756,6 @@
 
     let allRequests = [];
     let tenantMap = {};
-
-    document.addEventListener("DOMContentLoaded", () => {
-      updateThemeToggleLabel();
-      verifyAdminAndLoad();
-    });
 
     async function verifyAdminAndLoad() {
       try {
@@ -1170,7 +1196,5 @@
       }, 4200);
     }
   </script>
-
-  <script src="admin-sidebar-polish.js?v=portal14w"></script>
 </body>
 </html>

@@ -44,9 +44,16 @@
       navAccount: "Account",
       billing: "Billing",
       packages: "Packages",
+      paymentProofs: "Payment Proofs",
+      upgradeRequests: "Upgrade Requests",
+      billingAutomation: "Billing Automation",
+      billingReminders: "Billing Reminders",
       adminSettings: "Settings",
       navSystem: "System",
       auditLogs: "Audit Logs",
+      emailQueue: "Email Queue",
+      smartChecks: "Smart Checks",
+      launchReadiness: "Launch Readiness",
       refresh: "Refresh",
       logout: "Logout",
       menu: "Menu",
@@ -96,9 +103,16 @@
       navAccount: "Akaunti",
       billing: "Malipo",
       packages: "Vifurushi",
+      paymentProofs: "Uthibitisho wa Malipo",
+      upgradeRequests: "Maombi ya Kuboresha",
+      billingAutomation: "Automesheni ya Malipo",
+      billingReminders: "Vikumbusho vya Malipo",
       adminSettings: "Mipangilio",
       navSystem: "Mfumo",
       auditLogs: "Kumbukumbu za Ukaguzi",
+      emailQueue: "Foleni ya Barua Pepe",
+      smartChecks: "Ukaguzi Mahiri",
+      launchReadiness: "Utayari wa Uzinduzi",
       refresh: "Sasisha",
       logout: "Toka",
       menu: "Menyu",
@@ -119,79 +133,35 @@
     }
   };
 
-  // Restructured 2026-07-21 to match UI-UX-MASTER-SPEC.md's 6-group admin
-  // sidebar (MAIN/OPERATIONS/BUSINESS/SUPPORT/ACCOUNT/SYSTEM). "portal.html"
-  // and "sections.html" aren't named in the spec's example list but are
-  // real, working pages that were already linked pre-restructure - kept
-  // rather than silently dropped. "Business Health"/"Today's Activity" as
-  // standalone destinations and the whole "Global Controls"/"Automation
-  // Rules"/"AI Settings" system-group trio are spec items with no page
-  // built yet - intentionally omitted rather than linking to something
-  // that 404s; add them here once those pages exist.
-  //
-  // Dropped "teamChat" (my-team-chat.html) - that page loads client-shared.js
-  // and resolves a CLIENT tenant, not an admin destination; it had no
-  // business being in the admin nav at all. Also dropped the duplicate
-  // "Main Admin" link that pointed at the same admin.html href as
-  // "Client Registrations" under a different label.
-  const adminNavSections = [
-    {
-      titleKey: "navMain",
-      links: [
-        { key: "adminHome", href: "admin-home.html", icon: "🏠", activeKey: "admin-home" }
-      ]
-    },
-    {
-      titleKey: "navOperations",
-      links: [
-        { key: "registrations", href: "admin.html", icon: "📝", activeKey: "admin-main" },
-        { key: "clientProfiles", href: "admin-profiles.html", icon: "🏢", activeKey: "admin-profiles" },
-        { key: "onboarding", href: "admin-onboarding.html", icon: "🧭", activeKey: "admin-onboarding" },
-        { key: "sections", href: "sections.html", icon: "🧩", activeKey: "admin-sections" },
-        { key: "users", href: "users.html", icon: "🔐", activeKey: "admin-users" },
-        { key: "tasks", href: "admin-tasks.html", icon: "✅", activeKey: "admin-tasks" },
-        { key: "calendar", href: "admin-calendar.html", icon: "📅", activeKey: "admin-calendar" }
-      ]
-    },
-    {
-      titleKey: "navBusiness",
-      links: [
-        { key: "money", href: "admin-money.html", icon: "💰", activeKey: "admin-money" },
-        { key: "itemsAssets", href: "admin-items.html", icon: "📦", activeKey: "admin-items" },
-        { key: "peopleStaff", href: "admin-people.html", icon: "🧑‍💼", activeKey: "admin-people" },
-        { key: "branches", href: "admin-branches.html", icon: "🏬", activeKey: "admin-branches" },
-        { key: "records", href: "admin-records.html", icon: "📋", activeKey: "admin-records" },
-        { key: "documents", href: "admin-documents.html", icon: "📁", activeKey: "admin-documents" },
-        { key: "reports", href: "admin-reports.html", icon: "📄", activeKey: "admin-reports" },
-        { key: "charts", href: "admin-charts.html", icon: "📊", activeKey: "admin-charts" }
-      ]
-    },
-    {
-      titleKey: "navSupport",
-      links: [
-        { key: "support", href: "support.html", icon: "🛟", activeKey: "admin-support" },
-        { key: "adminChat", href: "admin-chat.html", icon: "💬", activeKey: "admin-chat" },
-        { key: "notifications", href: "admin-notifications.html", icon: "🔔", activeKey: "admin-notifications" },
-        { key: "notices", href: "notices.html", icon: "📢", activeKey: "admin-notices" }
-      ]
-    },
-    {
-      titleKey: "navAccount",
-      links: [
-        { key: "billing", href: "billing.html", icon: "💳", activeKey: "admin-billing" },
-        { key: "packages", href: "admin-subscriptions.html", icon: "🗃️", activeKey: "admin-subscriptions" },
-        { key: "adminSettings", href: "admin-settings.html", icon: "⚙️", activeKey: "admin-settings" }
-      ]
-    },
-    {
-      titleKey: "navSystem",
-      links: [
-        { key: "healthCheck", href: "admin-health.html", icon: "❤️", activeKey: "admin-health" },
-        { key: "auditLogs", href: "admin-audit-logs.html", icon: "📜", activeKey: "admin-audit-logs" },
-        { key: "portal", href: "portal.html", icon: "🌐", activeKey: "portal" }
-      ]
+  // Sidebar groups/items now live in ungani-admin-nav-config.js (single
+  // source of truth shared with admin-home.html's own bespoke shell) -
+  // see that file's header comment for the full history/reasoning. Every
+  // page that loads admin-shared.js must also load
+  // ungani-admin-nav-config.js before renderSidebar() runs.
+  const ADMIN_SIDEBAR_COLLAPSE_KEY = "ungani_admin_sidebar_collapsed_groups";
+
+  function getAdminCollapsedGroupsState() {
+    try {
+      return JSON.parse(localStorage.getItem(ADMIN_SIDEBAR_COLLAPSE_KEY) || "{}");
+    } catch (error) {
+      return {};
     }
-  ];
+  }
+
+  function setAdminGroupCollapsed(groupKey, collapsed) {
+    const state = getAdminCollapsedGroupsState();
+    state[groupKey] = collapsed;
+    localStorage.setItem(ADMIN_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
+  }
+
+  function toggleAdminSidebarGroup(groupKey) {
+    const el = document.getElementById("unganiAdminNavGroup-" + groupKey);
+    if (!el) return;
+
+    const nowCollapsed = !el.classList.contains("collapsed");
+    el.classList.toggle("collapsed", nowCollapsed);
+    setAdminGroupCollapsed(groupKey, nowCollapsed);
+  }
 
   function safe(value) {
     return String(value ?? "")
@@ -356,6 +326,33 @@
         background: rgba(212,166,58,0.18);
         color: var(--ungani-gold);
         transform: translateX(3px);
+      }
+
+      .ungani-sidebar-section-title-toggle {
+        width: 100%;
+        background: none;
+        border: none;
+        color: inherit;
+        font: inherit;
+        text-transform: inherit;
+        letter-spacing: inherit;
+        opacity: inherit;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        padding: 0;
+        font-family: inherit;
+      }
+
+      .ungani-sidebar-toggle-icon {
+        font-size: 10px;
+        margin-left: 6px;
+        flex: none;
+      }
+
+      .ungani-nav-group.collapsible.collapsed .ungani-nav-group-items {
+        display: none;
       }
 
       .ungani-sidebar-footer {
@@ -998,32 +995,55 @@
     document.body.style.overflow = "";
   }
 
+  function renderSidebarGroup(group, activeKey, collapsedState) {
+    const itemsHtml = group.items.map(link => {
+      const isActive = activeKey === link.activeKey || activeKey === link.key;
+      return `
+        <a class="ungani-side-link ${isActive ? "active" : ""}" href="${safe(link.href)}">
+          ${safe(link.icon)} <span data-i18n="${safe(link.key)}">${safe(t(link.key))}</span>
+        </a>
+      `;
+    }).join("");
+
+    if (!group.collapsible) {
+      return `
+        <div class="ungani-sidebar-section-title" data-i18n="${safe(group.titleKey)}">${safe(t(group.titleKey))}</div>
+        ${itemsHtml}
+      `;
+    }
+
+    const containsActive = group.items.some(link => activeKey === link.activeKey || activeKey === link.key);
+    const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
+    const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
+
+    return `
+      <div class="ungani-nav-group collapsible${collapsed ? " collapsed" : ""}" id="unganiAdminNavGroup-${safe(group.key)}">
+        <button type="button" class="ungani-sidebar-section-title ungani-sidebar-section-title-toggle" onclick="UnganiAdminShared.toggleSidebarGroup('${group.key}')">
+          <span data-i18n="${safe(group.titleKey)}">${safe(t(group.titleKey))}</span>
+          <span class="ungani-sidebar-toggle-icon">${collapsed ? "▸" : "▾"}</span>
+        </button>
+        <div class="ungani-nav-group-items">${itemsHtml}</div>
+      </div>
+    `;
+  }
+
   function renderSidebar(targetId, options) {
     injectBaseStyles();
 
     const target = document.getElementById(targetId || "adminSidebar");
     if (!target) return;
 
+    if (!window.UnganiAdminNavConfig) return;
+
     const activeKey = options?.activeKey || "";
     const adminName = options?.adminName || currentAdmin?.full_name || "Admin Workspace";
     const footerTitle = options?.footerTitle || "Admin Dashboard";
     const footerVersion = options?.footerVersion || "Shared Sidebar Version: Step 279";
 
-    const sectionsHtml = adminNavSections.map(section => {
-      const linksHtml = section.links.map(link => {
-        const isActive = activeKey === link.activeKey || activeKey === link.key;
-        return `
-          <a class="ungani-side-link ${isActive ? "active" : ""}" href="${safe(link.href)}">
-            ${safe(link.icon)} <span data-i18n="${safe(link.key)}">${safe(t(link.key))}</span>
-          </a>
-        `;
-      }).join("");
+    const groups = UnganiAdminNavConfig.getSidebarGroups();
+    const collapsedState = getAdminCollapsedGroupsState();
 
-      return `
-        <div class="ungani-sidebar-section-title" data-i18n="${safe(section.titleKey)}">${safe(t(section.titleKey))}</div>
-        ${linksHtml}
-      `;
-    }).join("");
+    const sectionsHtml = groups.map(group => renderSidebarGroup(group, activeKey, collapsedState)).join("");
 
     target.className = "ungani-admin-sidebar";
     target.innerHTML = `
@@ -1435,6 +1455,7 @@
     injectBaseStyles,
     renderSidebar,
     renderShell,
+    toggleSidebarGroup: toggleAdminSidebarGroup,
     toggleAdminSidebar,
     closeAdminSidebar,
     requireAdmin,

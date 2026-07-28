@@ -20,6 +20,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
 
   <style>
     :root {
@@ -813,122 +815,66 @@
     })();
   </script>
 
-  <header class="mobile-header">
-    <div class="mobile-header-inner">
-      <div class="mobile-brand">
-        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
-        <div>
-          <strong>UNGANI Admin</strong>
-          <span>Smart Checks</span>
-        </div>
-      </div>
+  <div id="adminRoot"></div>
 
-      <div class="mobile-actions">
-        <button class="hamburger" type="button" onclick="openSidebar()" aria-label="Open menu">☰</button>
-      </div>
-    </div>
-  </header>
-
-  <div id="drawerOverlay" class="drawer-overlay" onclick="closeSidebar()"></div>
-
-  <div class="app-shell">
-    <aside id="sidebar" class="sidebar">
-      <button class="sidebar-close" type="button" onclick="closeSidebar()">Close Menu</button>
-
-      <div class="brand">
-        <img src="ungani-logo.png" alt="UNGANI Logo" onerror="this.style.display='none';" />
-        <div>
-          <h1>UNGANI OS</h1>
-          <p>Admin Command Center</p>
-        </div>
-      </div>
-
-      <div class="nav-section-title">Main</div>
-      <a class="nav-link" href="admin-home.html">Dashboard</a>
-
-      <div class="nav-section-title">Operations</div>
-      <a class="nav-link" href="admin.html">Client Registrations</a>
-      <a class="nav-link" href="admin-profiles.html">Client Profiles</a>
-      <a class="nav-link" href="admin-onboarding.html">Client Onboarding</a>
-      <a class="nav-link" href="sections.html">Business Types & Sections</a>
-      <a class="nav-link" href="users.html">Users & Permissions</a>
-      <a class="nav-link" href="admin-tasks.html">Tasks</a>
-      <a class="nav-link" href="admin-calendar.html">Calendar</a>
-
-      <div class="nav-section-title">Business</div>
-      <a class="nav-link" href="admin-money.html">Money Records</a>
-      <a class="nav-link" href="admin-items.html">Assets</a>
-      <a class="nav-link" href="admin-people.html">People</a>
-      <a class="nav-link" href="admin-branches.html">Branches</a>
-      <a class="nav-link" href="admin-records.html">Business Records</a>
-      <a class="nav-link" href="admin-documents.html">Documents</a>
-      <a class="nav-link" href="admin-reports.html">Reports</a>
-      <a class="nav-link" href="admin-charts.html">System Analytics</a>
-
-      <div class="nav-section-title">Support</div>
-      <a class="nav-link" href="support.html">Support Desk</a>
-      <a class="nav-link" href="admin-chat.html">Client Chat</a>
-      <a class="nav-link" href="admin-notifications.html">Notifications</a>
-      <a class="nav-link" href="notices.html">Notices</a>
-
-      <div class="nav-section-title">Account</div>
-      <a class="nav-link" href="billing.html">Billing</a>
-      <a class="nav-link" href="admin-subscriptions.html">Packages</a>
-      <a class="nav-link" href="admin-settings.html">Settings</a>
-
-      <div class="nav-section-title">System</div>
-      <a class="nav-link" href="admin-health.html">System Health</a>
-      <a class="nav-link" href="admin-audit-logs.html">Audit Logs</a>
-      <a class="nav-link active" href="admin-smart-checks.html">Smart Checks <span class="nav-pill">New</span></a>
-      <a class="nav-link" href="#" onclick="logout(); return false;">Logout</a>
-    </aside>
-
-    <main class="main">
-      <div class="topbar">
-        <div>
-          <h2>Smart Checks</h2>
-          <p>Run overdue task checks, low-stock checks, and follow-up nudges without opening client dashboards.</p>
-        </div>
-
-        <div class="top-actions">
-          <button class="btn light" onclick="toggleTheme()" id="themeButton">Dark Mode</button>
-          <button class="btn light" onclick="checkAdminAccess()">Refresh Access</button>
-          <a class="btn gold" href="admin-home.html">Command Center</a>
-          <button class="btn red" onclick="logout()">Logout</button>
-        </div>
+  <script>
+    var pageMainHtml = `
+      <div class="top-actions" style="margin-bottom: 16px;">
+        <button class="ungani-btn dark" onclick="checkAdminAccess()">Refresh Access</button>
       </div>
 
       <div id="content" class="loading">Loading smart checks...</div>
-    </main>
-  </div>
+    `;
 
-  <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
-
-    const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
+    let supabaseClient = null;
+    let currentAdmin = null;
     let currentUser = null;
     let adminReady = false;
     let latestResult = null;
 
-    window.addEventListener("load", initSmartChecksPage);
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "admin-smart-checks",
+        pageTitle: "Smart Checks",
+        pageSubtitle: "Run overdue task checks, low-stock checks, and follow-up nudges without opening client dashboards.",
+        footerTitle: "Admin Smart Checks",
+        footerVersion: "Admin Smart Checks Version: Step 279",
+        mainHtml: pageMainHtml
+      });
 
-    function openSidebar() {
-      document.getElementById("sidebar").classList.add("open");
-      document.getElementById("drawerOverlay").classList.add("open");
-      document.body.style.overflow = "hidden";
-    }
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          currentUser = admin;
+          supabaseClient = client;
+          adminReady = true;
 
-    function closeSidebar() {
-      document.getElementById("sidebar").classList.remove("open");
-      document.getElementById("drawerOverlay").classList.remove("open");
-      document.body.style.overflow = "";
-    }
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "admin-smart-checks",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Admin Smart Checks",
+            footerVersion: "Admin Smart Checks Version: Step 279"
+          });
 
-    async function initSmartChecksPage() {
-      updateThemeButton();
-      await checkAdminAccess();
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await checkAdminAccess();
+        }
+      });
+    });
+
+    function logout() {
+      return UnganiAdminShared.logoutAdmin();
     }
 
     async function checkAdminAccess() {
@@ -1216,26 +1162,6 @@
       return safe(value);
     }
 
-    async function logout() {
-      try {
-        const sessionRes = await supabaseClient.auth.getSession();
-        const token = sessionRes?.data?.session?.access_token;
-        if (token) {
-          fetch("/api/log-audit-event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-            body: JSON.stringify({ action: "logout", entityType: "session" }),
-            keepalive: true
-          }).catch(function () {});
-        }
-      } catch (error) {
-        console.warn("Audit log warning:", error.message);
-      }
-
-      await supabaseClient.auth.signOut();
-      window.location.href = "login.html?mode=admin";
-    }
-
     function showAccessMessage(title, message) {
       document.getElementById("content").innerHTML = `
         <div class="card">
@@ -1255,6 +1181,5 @@
       `;
     }
   </script>
-  <script src="admin-sidebar-polish.js?v=portal14w"></script>
 </body>
 </html>

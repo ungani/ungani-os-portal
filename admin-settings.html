@@ -11,6 +11,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
 
   <style>
     :root {
@@ -272,6 +273,33 @@
       background: rgba(212,166,58,0.18);
       color: var(--gold);
       transform: translateX(3px);
+    }
+
+    .sidebar-section-title-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      color: inherit;
+      font: inherit;
+      text-transform: inherit;
+      letter-spacing: inherit;
+      opacity: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    .sidebar-toggle-icon {
+      font-size: 10px;
+      margin-left: 6px;
+      flex: none;
+    }
+
+    .side-group.collapsible.collapsed .side-group-items {
+      display: none;
     }
 
     .sidebar-footer {
@@ -651,39 +679,7 @@
         <p id="sidebarAdmin">Admin Workspace</p>
       </div>
 
-      <div class="sidebar-section-title" data-i18n="main">Main</div>
-      <a class="side-link" href="admin-home.html">🏠 <span data-i18n="adminHome">Admin Home</span></a>
-      <a class="side-link" href="admin.html">🧭 <span data-i18n="mainAdmin">Main Admin</span></a>
-      <a class="side-link" href="portal.html">🌐 <span data-i18n="portal">Portal</span></a>
-      <a class="side-link" href="admin-health.html">✅ <span data-i18n="healthCheck">Health Check</span></a>
-
-      <div class="sidebar-section-title" data-i18n="clients">Clients</div>
-      <a class="side-link" href="admin-profiles.html">🏢 <span data-i18n="clientProfiles">Client Profiles</span></a>
-      <a class="side-link" href="admin-people.html">👥 <span data-i18n="peopleStaff">People / Staff</span></a>
-      <a class="side-link" href="users.html">🔐 <span data-i18n="users">Users</span></a>
-      <a class="side-link" href="sections.html">🧩 <span data-i18n="sections">Sections</span></a>
-      <a class="side-link" href="billing.html">💳 <span data-i18n="billing">Billing</span></a>
-
-      <div class="sidebar-section-title" data-i18n="operations">Operations</div>
-      <a class="side-link" href="admin-money.html">💰 <span data-i18n="money">Money</span></a>
-      <a class="side-link" href="admin-records.html">📋 <span data-i18n="records">Records</span></a>
-      <a class="side-link" href="admin-documents.html">📁 <span data-i18n="documents">Documents</span></a>
-      <a class="side-link" href="admin-tasks.html">✅ <span data-i18n="tasks">Tasks</span></a>
-      <a class="side-link" href="admin-items.html">📦 <span data-i18n="itemsAssets">Items / Assets</span></a>
-      <a class="side-link" href="admin-calendar.html">📅 <span data-i18n="calendar">Calendar</span></a>
-
-      <div class="sidebar-section-title" data-i18n="communication">Communication</div>
-      <a class="side-link" href="admin-chat.html">💬 <span data-i18n="adminChat">Admin Chat</span></a>
-      <a class="side-link" href="my-team-chat.html">👥 <span data-i18n="teamChat">Team Chat</span></a>
-      <a class="side-link" href="support.html">🛟 <span data-i18n="support">Support</span></a>
-      <a class="side-link" href="notices.html">📢 <span data-i18n="notices">Notices</span></a>
-
-      <div class="sidebar-section-title" data-i18n="reports">Reports</div>
-      <a class="side-link" href="admin-charts.html">📊 <span data-i18n="charts">Charts</span></a>
-      <a class="side-link" href="admin-reports.html">📄 <span data-i18n="reports">Reports</span></a>
-
-      <div class="sidebar-section-title" data-i18n="settings">Settings</div>
-      <a class="side-link active" href="admin-settings.html">⚙️ <span data-i18n="adminSettings">Admin Settings</span></a>
+      <div id="adminSettingsNavGroups"></div>
 
       <div class="sidebar-footer">
         <strong data-i18n="adminSettings">Admin Settings</strong><br />
@@ -1079,6 +1075,68 @@
       document.getElementById("sidebar").classList.toggle("open");
     }
 
+    const ADMIN_SETTINGS_SIDEBAR_COLLAPSE_KEY = "ungani_admin_sidebar_collapsed_groups";
+
+    function getAdminSettingsSidebarCollapsedState() {
+      try {
+        return JSON.parse(localStorage.getItem(ADMIN_SETTINGS_SIDEBAR_COLLAPSE_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function setAdminSettingsSidebarGroupCollapsed(groupKey, collapsed) {
+      const state = getAdminSettingsSidebarCollapsedState();
+      state[groupKey] = collapsed;
+      localStorage.setItem(ADMIN_SETTINGS_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
+    }
+
+    function toggleAdminSettingsSidebarGroup(groupKey) {
+      const el = document.getElementById("adminSettingsNavGroup-" + groupKey);
+      if (!el) return;
+
+      const nowCollapsed = !el.classList.contains("collapsed");
+      el.classList.toggle("collapsed", nowCollapsed);
+      setAdminSettingsSidebarGroupCollapsed(groupKey, nowCollapsed);
+    }
+
+    function renderAdminSettingsNavGroup(group, collapsedState) {
+      const itemsHtml = group.items.map(function (item) {
+        const active = item.href === "admin-settings.html" ? " active" : "";
+        return `<a class="side-link${active}" href="${item.href}">${item.icon} <span>${item.label}</span></a>`;
+      }).join("");
+
+      if (!group.collapsible) {
+        return `<div class="sidebar-section-title">${group.title}</div>${itemsHtml}`;
+      }
+
+      const containsActive = group.items.some(function (item) { return item.href === "admin-settings.html"; });
+      const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
+      const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
+
+      return `
+        <div class="side-group collapsible${collapsed ? " collapsed" : ""}" id="adminSettingsNavGroup-${group.key}">
+          <button type="button" class="sidebar-section-title sidebar-section-title-toggle" onclick="toggleAdminSettingsSidebarGroup('${group.key}')">
+            <span>${group.title}</span>
+            <span class="sidebar-toggle-icon">${collapsed ? "▸" : "▾"}</span>
+          </button>
+          <div class="side-group-items">${itemsHtml}</div>
+        </div>
+      `;
+    }
+
+    function renderAdminSettingsSidebarGroups() {
+      const container = document.getElementById("adminSettingsNavGroups");
+      if (!container || !window.UnganiAdminNavConfig) return;
+
+      const groups = UnganiAdminNavConfig.getSidebarGroups();
+      const collapsedState = getAdminSettingsSidebarCollapsedState();
+
+      container.innerHTML = groups.map(function (group) {
+        return renderAdminSettingsNavGroup(group, collapsedState);
+      }).join("");
+    }
+
     function showAccessBlocked(reason) {
       showOnly("blockedShell");
       document.getElementById("blockedReason").innerText = reason;
@@ -1188,6 +1246,7 @@
       applyLanguage();
 
       showOnly("appShell");
+      renderAdminSettingsSidebarGroups();
 
       document.getElementById("sidebarAdmin").innerText = currentAdmin.full_name || "Admin Workspace";
       document.getElementById("heroAdmin").innerText = `${currentAdmin.full_name || "Admin"} | ${currentAdmin.email || ""} | Role: ${cleanText(currentAdmin.role || "admin")}`;
@@ -1513,6 +1572,7 @@
       await loadAdminProfile();
     }
 
+    renderAdminSettingsSidebarGroups();
     window.addEventListener("DOMContentLoaded", checkExistingSession);
   </script>
 </body>

@@ -16,6 +16,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
 
   <style>
     :root {
@@ -595,72 +597,10 @@
     })();
   </script>
 
-  <div class="mobile-topbar">
-    <div class="mobile-brand">
-      <img src="ungani-logo.png" alt="UNGANI Logo" />
-      <div>
-        <strong>UNGANI Admin</strong>
-        <span>Notification Center</span>
-      </div>
-    </div>
-    <button class="mobile-menu-btn" onclick="openMobileMenu()">☰</button>
-  </div>
+  <div id="adminRoot"></div>
 
-  <div class="mobile-drawer-overlay" id="drawerOverlay" onclick="closeMobileMenu()"></div>
-
-  <div class="app-shell">
-    <aside class="sidebar" id="sidebar">
-      <div class="brand">
-        <img src="ungani-logo.png" alt="UNGANI Logo" />
-        <div>
-          <h1>UNGANI OS</h1>
-          <p>Admin Control</p>
-        </div>
-      </div>
-
-      <div class="nav-section-title">Main</div>
-      <a class="nav-link" href="admin-home.html">Dashboard</a>
-
-      <div class="nav-section-title">Operations</div>
-      <a class="nav-link" href="admin.html">Client Registrations</a>
-      <a class="nav-link" href="admin-profiles.html">Client Profiles</a>
-      <a class="nav-link" href="admin-onboarding.html">Client Onboarding</a>
-      <a class="nav-link" href="sections.html">Business Types & Sections</a>
-      <a class="nav-link" href="users.html">Users & Permissions</a>
-      <a class="nav-link" href="admin-tasks.html">Tasks</a>
-      <a class="nav-link" href="admin-calendar.html">Calendar</a>
-
-      <div class="nav-section-title">Business</div>
-      <a class="nav-link" href="admin-money.html">Money Records</a>
-      <a class="nav-link" href="admin-items.html">Assets</a>
-      <a class="nav-link" href="admin-people.html">People</a>
-      <a class="nav-link" href="admin-branches.html">Branches</a>
-      <a class="nav-link" href="admin-records.html">Business Records</a>
-      <a class="nav-link" href="admin-documents.html">Documents</a>
-      <a class="nav-link" href="admin-reports.html">Reports</a>
-      <a class="nav-link" href="admin-charts.html">System Analytics</a>
-
-      <div class="nav-section-title">Support</div>
-      <a class="nav-link" href="support.html">Support Desk</a>
-      <a class="nav-link" href="admin-chat.html">Client Chat</a>
-      <a class="nav-link active" href="admin-notifications.html">
-        Notifications <span class="nav-badge" id="sidebarUnreadCount">0</span>
-      </a>
-      <a class="nav-link" href="notices.html">Notices</a>
-
-      <div class="nav-section-title">Account</div>
-      <a class="nav-link" href="billing.html">Billing</a>
-      <a class="nav-link" href="admin-subscriptions.html">Packages</a>
-      <a class="nav-link" href="admin-settings.html">Settings</a>
-
-      <div class="nav-section-title">System</div>
-      <a class="nav-link" href="admin-health.html">System Health</a>
-      <a class="nav-link" href="admin-audit-logs.html">Audit Logs</a>
-      <button class="nav-link" type="button" onclick="toggleTheme()" id="themeToggleLink" style="border:0; width:100%; background:transparent; text-align:left; cursor:pointer; font-family:inherit;">Dark Mode</button>
-      <a class="nav-link" href="#" onclick="logout(); return false;">Logout</a>
-    </aside>
-
-    <main class="main">
+  <script>
+    var pageMainHtml = `
       <section class="page-header">
         <div>
           <p class="eyebrow">Admin Notification Center</p>
@@ -737,52 +677,54 @@
       <p class="status-line">
         Admin Notifications Version: Step Notifications-4A · ungani.com · info@ungani.com
       </p>
-    </main>
-  </div>
+    `;
 
-  <script>
-    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    let supabaseClient = null;
+    let currentAdmin = null;
 
-    const supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "admin-notifications",
+        pageTitle: "Notifications",
+        pageSubtitle: "View UNGANI admin alerts in one secure board. This page only opens admin-side sections and does not redirect into client dashboards.",
+        footerTitle: "Admin Notifications",
+        footerVersion: "Admin Notifications Version: Step Notifications-4A",
+        mainHtml: pageMainHtml
+      });
 
-    async function logout() {
-      try {
-        const sessionRes = await supabaseClient.auth.getSession();
-        const token = sessionRes?.data?.session?.access_token;
-        if (token) {
-          fetch("/api/log-audit-event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-            body: JSON.stringify({ action: "logout", entityType: "session" }),
-            keepalive: true
-          }).catch(function () {});
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          currentUser = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "admin-notifications",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Admin Notifications",
+            footerVersion: "Admin Notifications Version: Step Notifications-4A"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadNotifications();
         }
+      });
+    });
 
-        await supabaseClient.auth.signOut();
-      } catch (error) {
-        console.warn(error.message);
-      }
-
-      window.location.href = "login.html?mode=admin";
+    function logout() {
+      return UnganiAdminShared.logoutAdmin();
     }
-
-    function updateThemeToggleLabel() {
-      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-      const link = document.getElementById("themeToggleLink");
-      if (link) link.textContent = isDark ? "Light Mode" : "Dark Mode";
-    }
-
-    function toggleTheme() {
-      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-      const next = isDark ? "light" : "dark";
-      document.documentElement.setAttribute("data-theme", next);
-      localStorage.setItem("ungani_theme", next);
-      localStorage.setItem("ungani_admin_theme", next);
-      updateThemeToggleLabel();
-    }
-
-    document.addEventListener("DOMContentLoaded", updateThemeToggleLabel);
 
     let currentUser = null;
     let notifications = [];
@@ -792,8 +734,11 @@
       "admin-home.html",
       "admin.html",
       "admin-profiles.html",
+      "admin-onboarding.html",
+      "sections.html",
       "support.html",
       "billing.html",
+      "admin-billing.html",
       "admin-money.html",
       "admin-tasks.html",
       "admin-records.html",
@@ -803,6 +748,19 @@
       "admin-health.html",
       "admin-reports.html",
       "admin-settings.html",
+      "admin-subscriptions.html",
+      "admin-payment-proofs.html",
+      "admin-upgrade-requests.html",
+      "admin-billing-automation.html",
+      "admin-billing-reminders.html",
+      "admin-email-queue.html",
+      "admin-smart-checks.html",
+      "admin-launch.html",
+      "admin-audit-logs.html",
+      "admin-branches.html",
+      "admin-items.html",
+      "admin-people.html",
+      "admin-charts.html",
       "users.html",
       "notices.html"
     ]);
@@ -996,7 +954,8 @@
 
       document.getElementById("totalCount").textContent = total;
       document.getElementById("unreadCount").textContent = unread;
-      document.getElementById("sidebarUnreadCount").textContent = unread;
+      const sidebarBadge = document.getElementById("sidebarUnreadCount");
+      if (sidebarBadge) sidebarBadge.textContent = unread;
       document.getElementById("highCount").textContent = high;
       document.getElementById("todayCount").textContent = today;
     }
@@ -1242,15 +1201,6 @@
       window.location.href = safeUrl;
     }
 
-    async function init() {
-      const allowed = await requireAdmin();
-
-      if (!allowed) return;
-
-      await loadNotifications();
-    }
-
-    init();
   </script>
 </body>
 </html>
