@@ -10,6 +10,8 @@
   <meta name="theme-color" content="#061C3D" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-nav-config.js"></script>
 
   <style>
     :root {
@@ -49,6 +51,133 @@
       font-family: Arial, Helvetica, sans-serif;
       background: var(--off-white);
       color: var(--text-dark);
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+    }
+
+    .sidebar {
+      background: var(--navy);
+      color: #FFFFFF;
+      padding: 22px 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .sidebar-brand {
+      text-align: center;
+      padding-bottom: 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      margin-bottom: 16px;
+    }
+
+    .sidebar-brand img {
+      width: 110px;
+      max-width: 70%;
+      height: auto;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-brand h2 {
+      margin: 4px 0 2px;
+      font-size: 18px;
+    }
+
+    .sidebar-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.65;
+      margin: 18px 10px 8px;
+    }
+
+    .side-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 11px 12px;
+      border-radius: 14px;
+      margin-bottom: 5px;
+      transition: 0.2s ease;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .side-link:hover,
+    .side-link.active {
+      background: rgba(212,166,58,0.18);
+      color: var(--gold);
+      transform: translateX(3px);
+    }
+
+    .sidebar-section-title-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      color: inherit;
+      font: inherit;
+      text-transform: inherit;
+      letter-spacing: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    .sidebar-toggle-icon {
+      font-size: 10px;
+      margin-left: 6px;
+      flex: none;
+    }
+
+    .side-group.collapsible.collapsed .side-group-items {
+      display: none;
+    }
+
+    .sidebar-footer {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.08);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .mobile-menu {
+      display: none;
+    }
+
+    @media (max-width: 1050px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: fixed;
+        left: -310px;
+        top: 0;
+        width: 290px;
+        z-index: 100;
+        transition: 0.25s ease;
+      }
+
+      .sidebar.open {
+        left: 0;
+      }
+
+      .mobile-menu {
+        display: inline-flex;
+      }
     }
 
     .page {
@@ -507,9 +636,25 @@
     })();
   </script>
 
+  <div class="app">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" />
+        <h2>UNGANI OS</h2>
+      </div>
+
+      <div id="accountStatusNavGroups"></div>
+
+      <div class="sidebar-footer">
+        <strong>Account Status</strong><br />
+        ungani.com
+      </div>
+    </aside>
+
   <div class="page">
     <header class="topbar">
       <div class="brand">
+        <button class="mobile-menu ungani-btn" type="button" onclick="toggleSidebar()" aria-label="Toggle menu">☰</button>
         <img src="ungani-logo.png" alt="UNGANI Logo" />
         <div class="brand-text">
           <strong>UNGANI OS</strong>
@@ -646,6 +791,7 @@
       </div>
     </main>
   </div>
+  </div>
 
   <script>
     const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
@@ -672,7 +818,99 @@
       updateThemeToggleLabel();
       loadAccountStatus();
       showStoredAccessMessage();
+      loadTenantForSidebar();
     });
+
+    function toggleSidebar() {
+      document.getElementById("sidebar").classList.toggle("open");
+    }
+
+    let currentTenantForSidebar = null;
+
+    const ACCOUNT_STATUS_SIDEBAR_COLLAPSE_KEY = "ungani_sidebar_collapsed_groups";
+
+    function getAccountStatusSidebarCollapsedState() {
+      try {
+        return JSON.parse(localStorage.getItem(ACCOUNT_STATUS_SIDEBAR_COLLAPSE_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function setAccountStatusSidebarGroupCollapsed(groupKey, collapsed) {
+      const state = getAccountStatusSidebarCollapsedState();
+      state[groupKey] = collapsed;
+      localStorage.setItem(ACCOUNT_STATUS_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
+    }
+
+    function toggleAccountStatusSidebarGroup(groupKey) {
+      const el = document.getElementById("accountStatusNavGroup-" + groupKey);
+      if (!el) return;
+
+      const nowCollapsed = !el.classList.contains("collapsed");
+      el.classList.toggle("collapsed", nowCollapsed);
+      setAccountStatusSidebarGroupCollapsed(groupKey, nowCollapsed);
+    }
+
+    function renderAccountStatusNavGroup(group, collapsedState) {
+      const itemsHtml = group.items.map(function (item) {
+        const active = item[1] === "my-account-status.html" ? " active" : "";
+        return `<a class="side-link${active}" href="${item[1]}">${item[2]} <span>${item[3]}</span></a>`;
+      }).join("");
+
+      if (!group.collapsible) {
+        return `<div class="sidebar-section-title">${group.title}</div>${itemsHtml}`;
+      }
+
+      const containsActive = group.items.some(function (item) { return item[1] === "my-account-status.html"; });
+      const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
+      const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
+
+      return `
+        <div class="side-group collapsible${collapsed ? " collapsed" : ""}" id="accountStatusNavGroup-${group.key}">
+          <button type="button" class="sidebar-section-title sidebar-section-title-toggle" onclick="toggleAccountStatusSidebarGroup('${group.key}')">
+            <span>${group.title}</span>
+            <span class="sidebar-toggle-icon">${collapsed ? "▸" : "▾"}</span>
+          </button>
+          <div class="side-group-items">${itemsHtml}</div>
+        </div>
+      `;
+    }
+
+    function renderAccountStatusSidebarGroups() {
+      const container = document.getElementById("accountStatusNavGroups");
+      if (!container || !window.UnganiNavConfig) return;
+
+      const groups = UnganiNavConfig.getSidebarGroups(currentTenantForSidebar);
+      const collapsedState = getAccountStatusSidebarCollapsedState();
+
+      container.innerHTML = groups.map(function (group) {
+        return renderAccountStatusNavGroup(group, collapsedState);
+      }).join("");
+    }
+
+    async function loadTenantForSidebar() {
+      try {
+        const rpcResponse = await supabaseClient.rpc("get_my_ungani_tenant_id");
+        if (!rpcResponse.error && rpcResponse.data) {
+          const response = await supabaseClient
+            .from("tenants")
+            .select("id, business_type_key, business_type, business_name, company_name, name")
+            .eq("id", rpcResponse.data)
+            .maybeSingle();
+
+          if (!response.error && response.data) {
+            currentTenantForSidebar = response.data;
+          }
+        }
+      } catch (error) {
+        console.warn(error.message);
+      }
+
+      renderAccountStatusSidebarGroups();
+    }
+
+    renderAccountStatusSidebarGroups();
 
     async function loadAccountStatus() {
       const loadingBox = document.getElementById("loadingBox");

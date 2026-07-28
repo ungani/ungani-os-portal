@@ -404,6 +404,26 @@
         background: rgba(212,166,58,0.22);
       }
 
+      .ungani-nav-badge {
+        margin-left: auto;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: var(--ungani-gold);
+        color: var(--ungani-navy);
+        font-size: 11px;
+        font-weight: 950;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+      }
+
+      .ungani-nav-badge.show {
+        display: inline-flex;
+      }
+
       .ungani-sidebar-footer {
         border-top: 1px solid rgba(255,255,255,0.13);
         padding: 16px 10px 8px;
@@ -1610,6 +1630,7 @@
 
       renderShell(config);
       loadNotificationBadge();
+      loadSidebarBadgeCounts();
       startTeamChatPolling();
 
       const context = makeContext();
@@ -1967,6 +1988,7 @@
                 <a class="ungani-nav-link ${active}" href="${attr(item[1])}">
                   <span class="ungani-nav-icon">${safe(item[2])}</span>
                   <span>${safe(item[3])}</span>
+                  <span class="ungani-nav-badge" id="unganiNavBadge-${safe(item[0])}"></span>
                 </a>
               `;
             }).join("")}
@@ -2499,6 +2521,96 @@
 
     countEl.textContent = String(count);
     countEl.style.display = count > 0 ? "inline-flex" : "none";
+  }
+
+  // Sidebar item badges (Tasks/Support Issues/Notifications/Team Chat) -
+  // one batched round of lightweight queries per page load, not one query
+  // per nav item. Tasks reuses the exact same "overdue" definition as
+  // getNotificationItems() (status doesn't contain completed/cancelled) so
+  // the two counts never disagree, but fetches only the `status` column
+  // instead of select("*") and isn't capped at getNotificationItems()'s
+  // .slice(0, 20) merge-across-categories limit, which would otherwise
+  // undercount a single category once the combined total crosses 20.
+  async function getSidebarBadgeCounts() {
+    if (!state.supabaseClient || !state.tenantId) return {};
+
+    const counts = {};
+    const today = todayISO();
+
+    try {
+      const tasksResponse = await state.supabaseClient
+        .from("tasks")
+        .select("status")
+        .eq("tenant_id", state.tenantId)
+        .lte("due_date", today)
+        .limit(500);
+
+      if (!tasksResponse.error) {
+        counts.tasks = (tasksResponse.data || []).filter(function (row) {
+          const status = String(getValue(row, ["status"], "")).toLowerCase();
+          return !status.includes("completed") && !status.includes("cancelled");
+        }).length;
+      }
+    } catch (error) {
+      console.warn("Sidebar badge (tasks) skipped:", error.message);
+    }
+
+    try {
+      const supportResponse = await state.supabaseClient
+        .from("support_issues")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", state.tenantId)
+        .in("status", ["open", "in progress"]);
+
+      if (!supportResponse.error) counts.support = supportResponse.count || 0;
+    } catch (error) {
+      console.warn("Sidebar badge (support) skipped:", error.message);
+    }
+
+    try {
+      const notificationsResponse = await state.supabaseClient
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", state.tenantId)
+        .neq("status", "read");
+
+      if (!notificationsResponse.error) counts.notifications = notificationsResponse.count || 0;
+    } catch (error) {
+      console.warn("Sidebar badge (notifications) skipped:", error.message);
+    }
+
+    try {
+      if (state.authUser) {
+        const teamChatResponse = await state.supabaseClient
+          .from("team_chat_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", state.tenantId)
+          .eq("is_read", false)
+          .neq("sender_user_id", state.authUser.id);
+
+        if (!teamChatResponse.error) counts["team-chat"] = teamChatResponse.count || 0;
+      }
+    } catch (error) {
+      console.warn("Sidebar badge (team chat) skipped:", error.message);
+    }
+
+    return counts;
+  }
+
+  function applySidebarBadgeCounts(counts) {
+    Object.keys(counts || {}).forEach(function (key) {
+      const el = document.getElementById("unganiNavBadge-" + key);
+      if (!el) return;
+
+      const count = Number(counts[key] || 0);
+      el.textContent = count > 99 ? "99+" : String(count);
+      el.classList.toggle("show", count > 0);
+    });
+  }
+
+  async function loadSidebarBadgeCounts() {
+    const counts = await getSidebarBadgeCounts();
+    applySidebarBadgeCounts(counts);
   }
 
   let teamChatState = {

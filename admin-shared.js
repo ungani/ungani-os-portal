@@ -328,6 +328,26 @@
         transform: translateX(3px);
       }
 
+      .ungani-side-badge {
+        margin-left: auto;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: var(--ungani-gold);
+        color: var(--ungani-navy);
+        font-size: 11px;
+        font-weight: 950;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+      }
+
+      .ungani-side-badge.show {
+        display: inline-flex;
+      }
+
       .ungani-sidebar-section-title-toggle {
         width: 100%;
         background: none;
@@ -1001,6 +1021,7 @@
       return `
         <a class="ungani-side-link ${isActive ? "active" : ""}" href="${safe(link.href)}">
           ${safe(link.icon)} <span data-i18n="${safe(link.key)}">${safe(t(link.key))}</span>
+          <span class="ungani-side-badge" id="unganiSideBadge-${safe(link.key)}"></span>
         </a>
       `;
     }).join("");
@@ -1268,6 +1289,103 @@
     return currentAdmin;
   }
 
+  // Admin sidebar item badges (Client Registrations/Support Desk/Client
+  // Chat/Payment Proofs/Upgrade Requests/Notifications) - one batched round
+  // of lightweight COUNT queries per page load, matching the client-side
+  // pattern in client-shared.js. Not tenant-scoped (this is the admin's
+  // view across every client).
+  async function getAdminSidebarBadgeCounts() {
+    const client = getSupabaseClient();
+    if (!client) return {};
+
+    const counts = {};
+
+    try {
+      const registrationsResponse = await client
+        .from("registrations")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+
+      if (!registrationsResponse.error) counts.registrations = registrationsResponse.count || 0;
+    } catch (error) {
+      console.warn("Admin sidebar badge (registrations) skipped:", error.message);
+    }
+
+    try {
+      const supportResponse = await client
+        .from("support_issues")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["open", "new", "pending", "in_progress"]);
+
+      if (!supportResponse.error) counts.support = supportResponse.count || 0;
+    } catch (error) {
+      console.warn("Admin sidebar badge (support) skipped:", error.message);
+    }
+
+    try {
+      const chatResponse = await client
+        .from("admin_client_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("sender_role", "client")
+        .is("read_by_admin_at", null);
+
+      if (!chatResponse.error) counts.adminChat = chatResponse.count || 0;
+    } catch (error) {
+      console.warn("Admin sidebar badge (chat) skipped:", error.message);
+    }
+
+    try {
+      const proofsResponse = await client
+        .from("payment-proofs")
+        .select("id", { count: "exact", head: true })
+        .eq("proof_status", "submitted");
+
+      if (!proofsResponse.error) counts.paymentProofs = proofsResponse.count || 0;
+    } catch (error) {
+      console.warn("Admin sidebar badge (payment proofs) skipped:", error.message);
+    }
+
+    try {
+      const upgradeResponse = await client
+        .from("ungani_upgrade_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+
+      if (!upgradeResponse.error) counts.upgradeRequests = upgradeResponse.count || 0;
+    } catch (error) {
+      console.warn("Admin sidebar badge (upgrade requests) skipped:", error.message);
+    }
+
+    try {
+      const notificationsResponse = await client
+        .from("ungani_notifications")
+        .select("id", { count: "exact", head: true })
+        .neq("status", "read");
+
+      if (!notificationsResponse.error) counts.notifications = notificationsResponse.count || 0;
+    } catch (error) {
+      console.warn("Admin sidebar badge (notifications) skipped:", error.message);
+    }
+
+    return counts;
+  }
+
+  function applyAdminSidebarBadgeCounts(counts) {
+    Object.keys(counts || {}).forEach(function (key) {
+      const el = document.getElementById("unganiSideBadge-" + key);
+      if (!el) return;
+
+      const count = Number(counts[key] || 0);
+      el.textContent = count > 99 ? "99+" : String(count);
+      el.classList.toggle("show", count > 0);
+    });
+  }
+
+  async function loadAdminSidebarBadgeCounts() {
+    const counts = await getAdminSidebarBadgeCounts();
+    applyAdminSidebarBadgeCounts(counts);
+  }
+
   async function requireAdmin(options) {
     injectBaseStyles();
 
@@ -1299,6 +1417,8 @@
       if (typeof options?.onReady === "function") {
         options.onReady(admin, getSupabaseClient());
       }
+
+      loadAdminSidebarBadgeCounts();
 
       return admin;
     } catch (error) {

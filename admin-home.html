@@ -348,6 +348,25 @@
       width: 100%;
     }
 
+    .nav-badge {
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--gold);
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 950;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+
+    .nav-badge.show {
+      display: inline-flex;
+    }
+
     .nav-section-title-toggle {
       width: 100%;
       background: none;
@@ -389,6 +408,14 @@
       gap: 18px;
       margin-bottom: 20px;
       color: white;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(6,28,61,0.97);
+      backdrop-filter: blur(18px);
+      padding: 12px 16px;
+      border-radius: 20px;
+      box-shadow: 0 20px 50px rgba(6,28,61,0.25);
     }
 
     .topbar-mid {
@@ -2740,8 +2767,100 @@
         }
 
         loadAdminData();
+        loadAdminHomeSidebarBadgeCounts();
       })();
     });
+
+    async function getAdminHomeSidebarBadgeCounts() {
+      if (!supabaseClient) return {};
+
+      const counts = {};
+
+      try {
+        const registrationsResponse = await supabaseClient
+          .from("registrations")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending");
+
+        if (!registrationsResponse.error) counts.registrations = registrationsResponse.count || 0;
+      } catch (error) {
+        console.warn("Admin home sidebar badge (registrations) skipped:", error.message);
+      }
+
+      try {
+        const supportResponse = await supabaseClient
+          .from("support_issues")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["open", "new", "pending", "in_progress"]);
+
+        if (!supportResponse.error) counts.support = supportResponse.count || 0;
+      } catch (error) {
+        console.warn("Admin home sidebar badge (support) skipped:", error.message);
+      }
+
+      try {
+        const chatResponse = await supabaseClient
+          .from("admin_client_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("sender_role", "client")
+          .is("read_by_admin_at", null);
+
+        if (!chatResponse.error) counts.adminChat = chatResponse.count || 0;
+      } catch (error) {
+        console.warn("Admin home sidebar badge (chat) skipped:", error.message);
+      }
+
+      try {
+        const proofsResponse = await supabaseClient
+          .from("payment-proofs")
+          .select("id", { count: "exact", head: true })
+          .eq("proof_status", "submitted");
+
+        if (!proofsResponse.error) counts.paymentProofs = proofsResponse.count || 0;
+      } catch (error) {
+        console.warn("Admin home sidebar badge (payment proofs) skipped:", error.message);
+      }
+
+      try {
+        const upgradeResponse = await supabaseClient
+          .from("ungani_upgrade_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending");
+
+        if (!upgradeResponse.error) counts.upgradeRequests = upgradeResponse.count || 0;
+      } catch (error) {
+        console.warn("Admin home sidebar badge (upgrade requests) skipped:", error.message);
+      }
+
+      try {
+        const notificationsResponse = await supabaseClient
+          .from("ungani_notifications")
+          .select("id", { count: "exact", head: true })
+          .neq("status", "read");
+
+        if (!notificationsResponse.error) counts.notifications = notificationsResponse.count || 0;
+      } catch (error) {
+        console.warn("Admin home sidebar badge (notifications) skipped:", error.message);
+      }
+
+      return counts;
+    }
+
+    function applyAdminHomeSidebarBadgeCounts(counts) {
+      Object.keys(counts || {}).forEach(function (key) {
+        const el = document.getElementById("adminHomeNavBadge-" + key);
+        if (!el) return;
+
+        const count = Number(counts[key] || 0);
+        el.textContent = count > 99 ? "99+" : String(count);
+        el.classList.toggle("show", count > 0);
+      });
+    }
+
+    async function loadAdminHomeSidebarBadgeCounts() {
+      const counts = await getAdminHomeSidebarBadgeCounts();
+      applyAdminHomeSidebarBadgeCounts(counts);
+    }
 
     // Guarded Execution Utility Function Container
     async function safeDataFetch(fetchFn, fallbackUiFn) {
@@ -3212,7 +3331,10 @@
         return (
           '<a class="nav-link' + active + '" href="' + item.href + '">' +
             '<div class="nav-icon-box">' + item.icon + '</div>' +
-            '<div class="nav-link-text-container"><span>' + item.label + '</span></div>' +
+            '<div class="nav-link-text-container">' +
+              '<span>' + item.label + '</span>' +
+              '<span class="nav-badge" id="adminHomeNavBadge-' + item.key + '"></span>' +
+            '</div>' +
           '</a>'
         );
       }).join("");

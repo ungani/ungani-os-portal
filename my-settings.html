@@ -11,6 +11,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="ungani-business-config.js"></script>
+  <script src="ungani-nav-config.js"></script>
 
   <style>
     :root {
@@ -72,6 +73,137 @@
     html[data-theme="light"] body {
       background: var(--bg);
       color: var(--text);
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+    }
+
+    .sidebar {
+      background: var(--navy);
+      color: #FFFFFF;
+      padding: 22px 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .sidebar-brand {
+      text-align: center;
+      padding-bottom: 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      margin-bottom: 16px;
+    }
+
+    .sidebar-brand img {
+      width: 110px;
+      max-width: 70%;
+      height: auto;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-brand h2 {
+      margin: 4px 0 2px;
+      font-size: 18px;
+    }
+
+    .sidebar-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.65;
+      margin: 18px 10px 8px;
+    }
+
+    .side-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 11px 12px;
+      border-radius: 14px;
+      margin-bottom: 5px;
+      transition: 0.2s ease;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .side-link:hover,
+    .side-link.active {
+      background: rgba(212,166,58,0.18);
+      color: var(--gold);
+      transform: translateX(3px);
+    }
+
+    .sidebar-section-title-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      color: inherit;
+      font: inherit;
+      text-transform: inherit;
+      letter-spacing: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    .sidebar-toggle-icon {
+      font-size: 10px;
+      margin-left: 6px;
+      flex: none;
+    }
+
+    .side-group.collapsible.collapsed .side-group-items {
+      display: none;
+    }
+
+    .sidebar-footer {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.08);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .main {
+      min-width: 0;
+    }
+
+    .mobile-menu {
+      display: none;
+    }
+
+    @media (max-width: 1050px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: fixed;
+        left: -310px;
+        top: 0;
+        width: 290px;
+        z-index: 100;
+        transition: 0.25s ease;
+      }
+
+      .sidebar.open {
+        left: 0;
+      }
+
+      .mobile-menu {
+        display: inline-flex;
+      }
     }
 
     .topbar {
@@ -549,8 +681,25 @@
 </head>
 
 <body>
+  <div class="app">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" />
+        <h2>UNGANI OS</h2>
+      </div>
+
+      <div id="settingsNavGroups"></div>
+
+      <div class="sidebar-footer">
+        <strong>My Settings</strong><br />
+        ungani.com
+      </div>
+    </aside>
+
+    <div class="main">
   <header class="topbar">
     <div class="brand">
+      <button class="mobile-menu ungani-btn" type="button" onclick="toggleSidebar()" aria-label="Toggle menu">☰</button>
       <img src="ungani-logo.png" alt="UNGANI Logo" />
       <div class="brand-text">
         <strong>UNGANI OS</strong>
@@ -861,6 +1010,8 @@
       UNGANI OS · ungani.com · info@ungani.com
     </div>
   </main>
+    </div>
+  </div>
 
   <script>
     const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
@@ -869,6 +1020,74 @@
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     let currentUserId = null;
     let currentTenantId = null;
+
+    function toggleSidebar() {
+      document.getElementById("sidebar").classList.toggle("open");
+    }
+
+    const SETTINGS_SIDEBAR_COLLAPSE_KEY = "ungani_sidebar_collapsed_groups";
+
+    function getSettingsSidebarCollapsedState() {
+      try {
+        return JSON.parse(localStorage.getItem(SETTINGS_SIDEBAR_COLLAPSE_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function setSettingsSidebarGroupCollapsed(groupKey, collapsed) {
+      const state = getSettingsSidebarCollapsedState();
+      state[groupKey] = collapsed;
+      localStorage.setItem(SETTINGS_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
+    }
+
+    function toggleSettingsSidebarGroup(groupKey) {
+      const el = document.getElementById("settingsNavGroup-" + groupKey);
+      if (!el) return;
+
+      const nowCollapsed = !el.classList.contains("collapsed");
+      el.classList.toggle("collapsed", nowCollapsed);
+      setSettingsSidebarGroupCollapsed(groupKey, nowCollapsed);
+    }
+
+    function renderSettingsNavGroup(group, collapsedState) {
+      const itemsHtml = group.items.map(function (item) {
+        const active = item[1] === "my-settings.html" ? " active" : "";
+        return `<a class="side-link${active}" href="${item[1]}">${item[2]} <span>${item[3]}</span></a>`;
+      }).join("");
+
+      if (!group.collapsible) {
+        return `<div class="sidebar-section-title">${group.title}</div>${itemsHtml}`;
+      }
+
+      const containsActive = group.items.some(function (item) { return item[1] === "my-settings.html"; });
+      const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
+      const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
+
+      return `
+        <div class="side-group collapsible${collapsed ? " collapsed" : ""}" id="settingsNavGroup-${group.key}">
+          <button type="button" class="sidebar-section-title sidebar-section-title-toggle" onclick="toggleSettingsSidebarGroup('${group.key}')">
+            <span>${group.title}</span>
+            <span class="sidebar-toggle-icon">${collapsed ? "▸" : "▾"}</span>
+          </button>
+          <div class="side-group-items">${itemsHtml}</div>
+        </div>
+      `;
+    }
+
+    function renderSettingsSidebarGroups(tenant) {
+      const container = document.getElementById("settingsNavGroups");
+      if (!container || !window.UnganiNavConfig) return;
+
+      const groups = UnganiNavConfig.getSidebarGroups(tenant || null);
+      const collapsedState = getSettingsSidebarCollapsedState();
+
+      container.innerHTML = groups.map(function (group) {
+        return renderSettingsNavGroup(group, collapsedState);
+      }).join("");
+    }
+
+    renderSettingsSidebarGroups(null);
 
     // Same self-contained translations-object + applyLanguage() pattern
     // proven on admin-home.html - replaces js/language.js, which only had
@@ -1267,6 +1486,8 @@
       } catch (err) {
         console.warn("Could not load tenant row directly:", err.message);
       }
+
+      renderSettingsSidebarGroups(tenantRow);
 
       const business = data.business || {};
       const pseudoTenant = {
