@@ -1113,6 +1113,42 @@
       contain: layout style;
     }
 
+    .money-snapshot-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .money-snapshot-tile {
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent, #D4A63A);
+      border-radius: 16px;
+      padding: 12px 14px;
+      background: var(--soft);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .money-snapshot-tile span {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .money-snapshot-tile strong {
+      font-size: 18px;
+      color: var(--text);
+    }
+
+    @media (max-width: 720px) {
+      .money-snapshot-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
     .kpi-card {
       position: relative;
       border-radius: 24px;
@@ -4861,11 +4897,7 @@
         trendLabel: "Rent Collected",
         trendColor: "#D4A63A",
         trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first rent payment and this chart will start tracking your monthly collection trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("💰", "Overdue Rent", overdueRent.length, "tenant(s) unpaid", ctx.peopleHref),
-          todayItem("📅", "Today's Viewings", todaysViewings.length, "scheduled today", ctx.calendarHref),
-          todayItem("🛠️", "Maintenance", maintenanceOpen.length, "open request(s)", ctx.tasksHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -4958,11 +4990,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No deals in negotiation, viewings, or document collections need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No deals in negotiation, viewings, or document collections need attention right now.");
 
       const greetingMessages = [];
       if (dealsInNegotiation.length > 0) greetingMessages.push({ text: dealsInNegotiation.length === 1 ? "1 deal is in negotiation" : dealsInNegotiation.length + " deals are in negotiation", href: ctx.itemsHref });
@@ -4992,11 +5020,7 @@
         trendLabel: "Sales Closed",
         trendColor: "#16A34A",
         trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first sale payment and this chart will start tracking your monthly sales trend.", actionLabel: "Log Sale Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("🤝", "Deals in Negotiation", dealsInNegotiation.length, "in progress", ctx.itemsHref),
-          todayItem("📅", "Today's Viewings", todaysViewings.length, "scheduled today", ctx.calendarHref),
-          todayItem("📄", "Document Collection", docCollectionDue.length, "due", ctx.tasksHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -5141,6 +5165,10 @@
           </div>
 
           ${content.attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -5335,9 +5363,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("💰", "Overdue Rent", overdueRent.length, "tenant(s) unpaid", "my-people.html")}
-                ${todayItem("📅", "Today's Viewings", todaysViewings.length, "scheduled today", "my-calendar.html")}
-                ${todayItem("🛠️", "Maintenance", maintenanceOpen.length, "open request(s)", "my-tasks.html")}
               </div>
             </div>
           </div>
@@ -5359,6 +5384,10 @@
           </div>
 
           ${renderAttentionList(overdueRent, todaysViewings, maintenanceOpen, leasesExpiring, true)}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(dashboardData.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -5874,11 +5903,7 @@
         trendLabel: "Fuel & Operating Costs",
         trendColor: "#D4A63A",
         trendEmpty: { icon: "⛽", title: "Put your numbers here", message: "Log your first fuel or operating cost and this chart will start tracking your monthly spend trend.", actionLabel: "Log Fuel Entry", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("📦", "Overdue Deliveries", overdueDeliveries.length, "past due", ctx.tasksHref),
-          todayItem("🚚", "Today's Trips", todaysTrips.length, "scheduled today", ctx.calendarHref),
-          todayItem("🛠️", "Maintenance Due", maintenanceDue.length, "vehicle(s)/asset(s)", ctx.tasksHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -5956,11 +5981,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No cold chain assets or maintenance need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No cold chain assets or maintenance need attention right now.");
 
       const greetingMessages = [];
       if (assetsOverdueForService.length > 0) greetingMessages.push({ text: assetsOverdueForService.length === 1 ? "1 asset is overdue for service" : assetsOverdueForService.length + " assets are overdue for service", href: ctx.itemsHref });
@@ -5990,11 +6011,7 @@
         trendLabel: "Genset / Reefer Maintenance Costs",
         trendColor: "#D4A63A",
         trendEmpty: { icon: "🛠️", title: "Put your numbers here", message: "Log your first genset or reefer maintenance cost and this chart will start tracking your monthly spend trend.", actionLabel: "Log Maintenance Cost", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("🧊", "Overdue for Service", assetsOverdueForService.length, "not serviced in 90+ days", ctx.itemsHref),
-          todayItem("🛠️", "Maintenance Due", maintenanceDue.length, "task(s)", ctx.tasksHref),
-          todayItem("📅", "Service Today", todaysService.length, "appointment(s)", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -6066,11 +6083,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No document collections, container clearances, or client updates need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No document collections, container clearances, or client updates need attention right now.");
 
       const greetingMessages = [];
       if (overdueDocCollections.length > 0) greetingMessages.push({ text: overdueDocCollections.length === 1 ? "1 document collection is overdue" : overdueDocCollections.length + " document collections are overdue", href: ctx.tasksHref });
@@ -6100,11 +6113,7 @@
         trendLabel: "Documentation Costs",
         trendColor: "#D4A63A",
         trendEmpty: { icon: "📄", title: "Put your numbers here", message: "Log your first documentation cost and this chart will start tracking your monthly spend trend.", actionLabel: "Log Documentation Expense", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("📄", "Overdue Doc Collections", overdueDocCollections.length, "past due", ctx.tasksHref),
-          todayItem("📦", "Containers in Clearance", containersAwaitingClearance.length, "awaiting clearance", ctx.itemsHref),
-          todayItem("📣", "Client Updates", clientUpdateTasks.length, "pending", ctx.tasksHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -6245,6 +6254,10 @@
           </div>
 
           ${content.attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -6412,9 +6425,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("📦", "Overdue Deliveries", overdueDeliveries.length, "past due", "my-tasks.html")}
-                ${todayItem("🚚", "Today's Trips", todaysTrips.length, "scheduled today", "my-calendar.html")}
-                ${todayItem("🛠️", "Maintenance Due", maintenanceDue.length, "vehicle(s)/asset(s)", "my-tasks.html")}
               </div>
             </div>
           </div>
@@ -6436,6 +6446,10 @@
           </div>
 
           ${renderLogisticsAttentionList(overdueDeliveries, todaysTrips, [], maintenanceDue, true)}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(dashboardData.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -6710,11 +6724,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue dispatches, stock counts, maintenance, or client follow-ups need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue dispatches, stock counts, maintenance, or client follow-ups need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -6744,9 +6754,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("🚚", "Overdue Dispatches", overdueDispatches.length, "past due", "my-tasks.html")}
-                ${todayItem("📋", "Stock Counts / Maintenance", stockCountsAndMaintenance.length, "due", "my-tasks.html")}
-                ${todayItem("🧑", "Client Follow-ups", clientFollowUps.length, "open", "my-tasks.html")}
               </div>
             </div>
           </div>
@@ -6768,6 +6775,10 @@
           </div>
 
           ${attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -6943,11 +6954,7 @@
         trendLabel: "Sales",
         trendColor: "#D4A63A",
         trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first sale and this chart will start tracking your monthly sales trend.", actionLabel: "New Sale", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("📦", "Out of Stock", outOfStockItems.length, "item(s)", ctx.itemsHref),
-          todayItem("🧾", "Supplier Payments", overdueSupplierPayments.length, "overdue", ctx.moneyHref),
-          todayItem("🧑", "Customer Follow-ups", customerTasks.length, "open", ctx.tasksHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -7029,11 +7036,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No expired or expiring stock, stock issues, or restocks need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No expired or expiring stock, stock issues, or restocks need attention right now.");
 
       const greetingMessages = [];
       if (expiredItems.length > 0) greetingMessages.push({ text: expiredItems.length === 1 ? "1 item has expired" : expiredItems.length + " items have expired", href: ctx.itemsHref });
@@ -7063,11 +7066,7 @@
         trendLabel: "Sales",
         trendColor: "#D4A63A",
         trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first sale and this chart will start tracking your monthly sales trend.", actionLabel: "New Sale", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⛔", "Expired Stock", expiredItems.length, "item(s)", ctx.itemsHref),
-          todayItem("⏰", "Expiring Soon", expiringSoonItems.length, "within " + RETAIL_DATE_WARNING_DAYS + " days", ctx.itemsHref),
-          todayItem("📦", "Low / Out of Stock", outOfStockItems.length + lowStockItems.length, "item(s)", ctx.itemsHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -7138,11 +7137,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No warranties expiring, stock issues, or supplier payments need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No warranties expiring, stock issues, or supplier payments need attention right now.");
 
       const greetingMessages = [];
       if (warrantyExpiringSoon.length > 0) greetingMessages.push({ text: warrantyExpiringSoon.length === 1 ? "1 warranty expires within 30 days" : warrantyExpiringSoon.length + " warranties expire within 30 days", href: ctx.itemsHref });
@@ -7171,11 +7166,7 @@
         trendLabel: "Sales",
         trendColor: "#D4A63A",
         trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first sale and this chart will start tracking your monthly sales trend.", actionLabel: "New Sale", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("🛡️", "Warranties Expiring", warrantyExpiringSoon.length, "within " + RETAIL_DATE_WARNING_DAYS + " days", ctx.itemsHref),
-          todayItem("📦", "Low / Out of Stock", outOfStockItems.length + lowStockItems.length, "item(s)", ctx.itemsHref),
-          todayItem("🧾", "Supplier Payments", overdueSupplierPayments.length, "overdue", ctx.moneyHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -7293,6 +7284,10 @@
           </div>
 
           ${content.attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -7464,9 +7459,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("📦", "Out of Stock", outOfStockItems.length, "item(s)", "my-items.html")}
-                ${todayItem("🧾", "Supplier Payments", overdueSupplierPayments.length, "overdue", "my-money.html")}
-                ${todayItem("🧑", "Customer Follow-ups", customerTasks.length, "open", "my-tasks.html")}
               </div>
             </div>
           </div>
@@ -7488,6 +7480,10 @@
           </div>
 
           ${renderRetailAttentionList(outOfStockItems, lowStockItems, overdueSupplierPayments, restockTasks, customerTasks, true)}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(dashboardData.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -7649,11 +7645,7 @@
         trendLabel: "Revenue Collected",
         trendColor: "#D4A63A",
         trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first booking payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("🚪", "Overdue Checkouts", overdueCheckouts.length, "still occupied", ctx.peopleHref),
-          todayItem("🛎️", "Today's Check-ins", todaysCheckins.length, "scheduled today", ctx.calendarHref),
-          todayItem("🧹", "Housekeeping / Maintenance", maintenanceOpen.length, "open request(s)", ctx.tasksHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -7740,11 +7732,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No stock issues, restocks, or guest requests need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No stock issues, restocks, or guest requests need attention right now.");
 
       const greetingMessages = [];
       if (outOfStockItems.length > 0) greetingMessages.push({ text: outOfStockItems.length === 1 ? "1 item is out of stock" : outOfStockItems.length + " items are out of stock", href: ctx.itemsHref });
@@ -7774,11 +7762,7 @@
         trendLabel: "F&B Sales",
         trendColor: "#16A34A",
         trendEmpty: { icon: "💰", title: "Put your numbers here", message: "Log your first food or bar sale and this chart will start tracking your monthly sales trend.", actionLabel: "Log Sale", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("📦", "Needs Restock", needsRestockCount, "item(s)", ctx.itemsHref),
-          todayItem("🚚", "Restocks Due", supplierRestocksDue.length, "task(s)", ctx.tasksHref),
-          todayItem("🙋", "Guest Requests", guestRequestsOpen.length, "open", ctx.tasksHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -7911,6 +7895,10 @@
           </div>
 
           ${content.attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -8057,9 +8045,6 @@
 
         todayListHtml = `
           ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-          ${todayItem("📦", "Needs Restock", needsRestockCount, "item(s)", "my-items.html")}
-          ${todayItem("🚚", "Restocks Due", supplierRestocksDue.length, "task(s)", "my-tasks.html")}
-          ${todayItem("🙋", "Guest Requests", guestRequestsOpen.length, "open", "my-tasks.html")}
         `;
 
         kpiGridHtml = `
@@ -8105,11 +8090,7 @@
               <p>Out of stock / low stock items, supplier restocks due, and open guest requests — tagged by section.</p>
             </div>
           </div>
-          ${attentionGroups.length === 0
-            ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No stock issues, restocks, or guest requests need attention right now.</p></div>`
-            : attentionGroups.map(function (g) {
-                return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-              }).join("")}
+          ${renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No stock issues, restocks, or guest requests need attention right now.")}
         `;
 
         quickActionsHtml = `
@@ -8207,9 +8188,6 @@
 
         todayListHtml = `
           ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-          ${todayItem("🚪", "Overdue Checkouts", overdueCheckouts.length, "still occupied", "my-people.html")}
-          ${todayItem("🛎️", "Today's Check-ins", todaysCheckins.length, "scheduled today", "my-calendar.html")}
-          ${todayItem("🧹", "Housekeeping / Maintenance", maintenanceOpen.length, "open request(s)", "my-tasks.html")}
         `;
 
         kpiGridHtml = `
@@ -8289,6 +8267,10 @@
 
         <section class="card">
           ${attentionSectionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(dashboardData.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -9903,10 +9885,7 @@
         trendLabel: "Car Wash & Detailing Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "🚿", title: "Put your numbers here", message: "Log your first wash or detailing payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("📅", "Today's Bookings", todaysBookings.length, "scheduled today", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -10009,11 +9988,7 @@
         trendLabel: "Rental Revenue",
         trendColor: "#2563EB",
         trendEmpty: { icon: "💵", title: "Put your numbers here", message: "Log your first rental payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("🚗", "Overdue Returns", overdueReturns.length, "past due", ctx.calendarHref),
-          todayItem("🔁", "Today's Returns", todaysReturns.length, "due today", ctx.calendarHref),
-          todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", ctx.tasksHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -10116,10 +10091,7 @@
         trendLabel: "Repair Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "💵", title: "Put your numbers here", message: "Log your first repair payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("🔧", "Repair Deadlines", overdueDeadlines.length + todaysDeadlines.length, "overdue + due today", ctx.calendarHref),
-          todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", ctx.tasksHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: greetingMessages
       };
     }
@@ -10308,6 +10280,10 @@
           ${content.attentionHtml}
         </section>
 
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
         <section class="quick-actions">
           ${content.quickActionsHtml}
         </section>
@@ -10452,6 +10428,10 @@
           </div>
 
           ${content.attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(dashboardData.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -10656,10 +10636,7 @@
         trendLabel: "Clinic Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "🩺", title: "Put your numbers here", message: "Log your first consultation payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("📅", "Today's Appointments", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: base.greetingMessages
       };
     }
@@ -10691,10 +10668,7 @@
         trendLabel: "Medical Centre Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "🏥", title: "Put your numbers here", message: "Log your first treatment payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("📅", "Today's Appointments", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: base.greetingMessages
       };
     }
@@ -10726,10 +10700,7 @@
         trendLabel: "Hospital Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "🏨", title: "Put your numbers here", message: "Log your first admission or surgery payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("🔪", "Today's Surgeries", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: base.greetingMessages
       };
     }
@@ -10761,10 +10732,7 @@
         trendLabel: "Dental Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "🦷", title: "Put your numbers here", message: "Log your first dental procedure payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("📅", "Today's Appointments", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: base.greetingMessages
       };
     }
@@ -10796,10 +10764,7 @@
         trendLabel: "Lab Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "🧪", title: "Put your numbers here", message: "Log your first lab test payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("📅", "Today's Sample Collections", base.todaysEvents.length, "scheduled today", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: base.greetingMessages
       };
     }
@@ -10990,6 +10955,10 @@
           ${content.attentionHtml}
         </section>
 
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
         <section class="quick-actions">
           ${content.quickActionsHtml}
         </section>
@@ -11134,6 +11103,10 @@
           </div>
 
           ${content.attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(dashboardData.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -11290,10 +11263,7 @@
         trendLabel: revenueTitle,
         trendColor: "#16A34A",
         trendEmpty: { icon: icon, title: "Put your numbers here", message: "Log your first service payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("📅", "Today's Appointments", base.todaysAppointments.length, "scheduled today", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: base.greetingMessages
       };
     }
@@ -11344,10 +11314,7 @@
         trendLabel: "Beauty Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "💄", title: "Put your numbers here", message: "Log your first service or product sale and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("📅", "Today's Appointments", base.todaysAppointments.length, "scheduled today", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: base.greetingMessages
       };
     }
@@ -11537,6 +11504,10 @@
           ${content.attentionHtml}
         </section>
 
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
         <section class="quick-actions">
           ${content.quickActionsHtml}
         </section>
@@ -11681,6 +11652,10 @@
           </div>
 
           ${content.attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(dashboardData.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -11857,10 +11832,7 @@
         trendLabel: "Events Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "🎉", title: "Put your numbers here", message: "Log your first event payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("📅", "Upcoming Events", base.upcomingEvents.length, "from today onward", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: base.greetingMessages
       };
     }
@@ -11892,10 +11864,7 @@
         trendLabel: "Catering Revenue",
         trendColor: "#16A34A",
         trendEmpty: { icon: "🍽️", title: "Put your numbers here", message: "Log your first catering payment and this chart will start tracking your monthly revenue trend.", actionLabel: "Log Payment", actionHref: ctx.moneyHref },
-        todayListHtml: [
-          todayItem("⚠️", "Overdue Tasks", base.overdueTasks.length, "past due", ctx.tasksHref),
-          todayItem("📅", "Upcoming Catering Dates", base.upcomingEvents.length, "from today onward", ctx.calendarHref)
-        ].join(""),
+        todayListHtml: "",
         greetingMessages: base.greetingMessages
       };
     }
@@ -12083,6 +12052,10 @@
           ${content.attentionHtml}
         </section>
 
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
         <section class="quick-actions">
           ${content.quickActionsHtml}
         </section>
@@ -12227,6 +12200,10 @@
           </div>
 
           ${content.attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(dashboardData.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -12482,11 +12459,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, fee reminders, or classes need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, fee reminders, or classes need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -12516,9 +12489,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("💵", "Fee Reminders", feeRemindersDue.length, "open", "my-tasks.html")}
-                ${todayItem("📅", "Today's Classes", todaysClasses.length, "scheduled today", "my-calendar.html")}
               </div>
             </div>
           </div>
@@ -12540,6 +12510,10 @@
           </div>
 
           ${attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -12786,11 +12760,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, incident follow-ups, or shifts need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, incident follow-ups, or shifts need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -12820,9 +12790,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("🚨", "Incident Follow-ups", incidentFollowUps.length, "open", "my-tasks.html")}
-                ${todayItem("🛡️", "Today's Shifts", todaysShifts.length, "scheduled today", "my-calendar.html")}
               </div>
             </div>
           </div>
@@ -12844,6 +12811,10 @@
           </div>
 
           ${attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -13090,11 +13061,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, low stock items, or pending deliveries need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, low stock items, or pending deliveries need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -13124,9 +13091,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("📦", "Low Stock Items", lowStockItems.length, "running low", "my-items.html")}
-                ${todayItem("🚚", "Pending Deliveries", pendingDeliveries.length, "to fulfil", "my-tasks.html")}
               </div>
             </div>
           </div>
@@ -13148,6 +13112,10 @@
           </div>
 
           ${attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -13406,11 +13374,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, booking follow-ups, or upcoming tours need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, booking follow-ups, or upcoming tours need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -13440,9 +13404,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("🧳", "Booking Follow-ups", bookingFollowUps.length, "open", "my-tasks.html")}
-                ${todayItem("🧭", "Today's Tours", todaysTours.length, "departing today", "my-calendar.html")}
               </div>
             </div>
           </div>
@@ -13464,6 +13425,10 @@
           </div>
 
           ${attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -13715,11 +13680,7 @@
         });
       }
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, membership renewals, or classes need attention right now.</p></div>`
-        : attentionGroups.map(function (g) {
-            return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`;
-          }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, membership renewals, or classes need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -13749,9 +13710,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("🔁", "Renewals Due", renewalsDue.length, "membership", "my-tasks.html")}
-                ${todayItem("🏋️", "Today's Classes", todaysClasses.length, "scheduled today", "my-calendar.html")}
               </div>
             </div>
           </div>
@@ -13773,6 +13731,10 @@
           </div>
 
           ${attentionHtml}
+        </section>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
 
         <section class="quick-actions">
@@ -13909,9 +13871,7 @@
       if (deadlinesToday.length > 0) attentionGroups.push({ title: "Today's Job Deadlines", rows: deadlinesToday.map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Job Deadline"); return attentionRow("🖨️", title, getValue(event, ["event_type", "type"], "Job Deadline"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null); }) });
       if (restocksDue.length > 0) attentionGroups.push({ title: "Material Restocks Due", rows: restocksDue.map(function (task) { const title = getValue(task, ["task_title", "title"], "Material Restock"); const due = getValue(task, ["due_date"], ""); return attentionRow("📦", title, due ? "Due " + formatDate(due) : "No due date set", "Due", "orange", "my-tasks.html?highlight=" + task.id, null, "restock:" + task.id); }) });
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, job deadlines, or material restocks need attention right now.</p></div>`
-        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, job deadlines, or material restocks need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -13935,9 +13895,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("🖨️", "Job Deadlines", deadlinesToday.length, "due today", "my-calendar.html")}
-                ${todayItem("📦", "Restocks Due", restocksDue.length, "material", "my-tasks.html")}
               </div>
             </div>
           </div>
@@ -13952,6 +13909,10 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, today's job deadlines, and material restocks due — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
         <section class="quick-actions">
           ${quickAction("📅", "New Job Deadline", "Schedule a print or branding job deadline", "my-calendar.html", "#2563EB")}
           ${quickAction("💵", "Log Payment", "Record a print or branding job payment", "my-money.html", "#16A34A")}
@@ -14059,9 +14020,7 @@
       if (jobsToday.length > 0) attentionGroups.push({ title: "Today's Cleaning Jobs", rows: jobsToday.map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Cleaning Job"); return attentionRow("🧹", title, getValue(event, ["event_type", "type"], "Cleaning Job"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null); }) });
       if (restocksDue.length > 0) attentionGroups.push({ title: "Supply Restocks Due", rows: restocksDue.map(function (task) { const title = getValue(task, ["task_title", "title"], "Supply Restock"); const due = getValue(task, ["due_date"], ""); return attentionRow("🧴", title, due ? "Due " + formatDate(due) : "No due date set", "Due", "orange", "my-tasks.html?highlight=" + task.id, null, "restock:" + task.id); }) });
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, cleaning jobs, or supply restocks need attention right now.</p></div>`
-        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, cleaning jobs, or supply restocks need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -14085,9 +14044,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("🧹", "Cleaning Jobs", jobsToday.length, "scheduled today", "my-calendar.html")}
-                ${todayItem("🧴", "Restocks Due", restocksDue.length, "supply", "my-tasks.html")}
               </div>
             </div>
           </div>
@@ -14102,6 +14058,10 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, today's cleaning jobs, and supply restocks due — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
         <section class="quick-actions">
           ${quickAction("📅", "New Cleaning Job", "Schedule a cleaning job or site visit", "my-calendar.html", "#2563EB")}
           ${quickAction("💵", "Log Payment", "Record a cleaning service or contract payment", "my-money.html", "#16A34A")}
@@ -14210,9 +14170,7 @@
       if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
       if (upcomingInspections.length > 0) attentionGroups.push({ title: "Upcoming Inspections (Next First)", rows: upcomingInspections.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Inspection"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; return attentionRow("🏗️", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null); }) });
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks or upcoming inspections need attention right now.</p></div>`
-        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks or upcoming inspections need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -14236,8 +14194,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("🏗️", "Upcoming Inspections", upcomingInspections.length, "from today onward", "my-calendar.html")}
               </div>
             </div>
           </div>
@@ -14252,6 +14208,10 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks and upcoming inspections — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
         <section class="quick-actions">
           ${quickAction("📅", "Schedule Inspection", "Book a site visit or inspection", "my-calendar.html", "#2563EB")}
           ${quickAction("💵", "Log Payment", "Record a project or contract payment", "my-money.html", "#16A34A")}
@@ -14360,9 +14320,7 @@
       if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
       if (upcomingShoots.length > 0) attentionGroups.push({ title: "Upcoming Shoots (Next First)", rows: upcomingShoots.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Shoot"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; return attentionRow("📷", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null); }) });
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks or upcoming shoots need attention right now.</p></div>`
-        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks or upcoming shoots need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -14386,8 +14344,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("📷", "Upcoming Shoots", upcomingShoots.length, "from today onward", "my-calendar.html")}
               </div>
             </div>
           </div>
@@ -14402,6 +14358,10 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks and upcoming shoots — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
         <section class="quick-actions">
           ${quickAction("📅", "New Shoot Booking", "Schedule a shoot date", "my-calendar.html", "#2563EB")}
           ${quickAction("💵", "Log Payment", "Record a shoot or editing payment", "my-money.html", "#16A34A")}
@@ -14513,9 +14473,7 @@
       if (followUpsOpen.length > 0) attentionGroups.push({ title: "Material Follow-ups Open", rows: followUpsOpen.map(function (task) { const title = getValue(task, ["task_title", "title"], "Material Follow-up"); const due = getValue(task, ["due_date"], ""); return attentionRow("🪵", title, due ? "Due " + formatDate(due) : "No due date set", "Open", "orange", "my-tasks.html?highlight=" + task.id, null, "followup:" + task.id); }) });
       if (upcomingDeadlines.length > 0) attentionGroups.push({ title: "Upcoming Order Deadlines (Next First)", rows: upcomingDeadlines.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Order Deadline"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; return attentionRow("🪑", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null); }) });
 
-      const attentionHtml = attentionGroups.length === 0
-        ? `<div class="empty card-accent" style="--accent:#16A34A;"><h3>All caught up ✓</h3><p>No overdue tasks, material follow-ups, or upcoming order deadlines need attention right now.</p></div>`
-        : attentionGroups.map(function (g) { return `<div class="property-attention-group-title">${safe(g.title)}</div><div class="property-attention-list">${g.rows.join("")}</div>`; }).join("");
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, material follow-ups, or upcoming order deadlines need attention right now.");
 
       document.getElementById("content").innerHTML = `
         <section class="hero">
@@ -14539,9 +14497,6 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${todayItem("⚠️", "Overdue Tasks", overdueTasks.length, "past due", "my-tasks.html")}
-                ${todayItem("🪵", "Material Follow-ups", followUpsOpen.length, "open", "my-tasks.html")}
-                ${todayItem("🪑", "Order Deadlines", upcomingDeadlines.length, "from today onward", "my-calendar.html")}
               </div>
             </div>
           </div>
@@ -14556,6 +14511,10 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, material follow-ups, and upcoming order deadlines — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
         <section class="quick-actions">
           ${quickAction("📅", "New Order Deadline", "Schedule a custom order deadline", "my-calendar.html", "#2563EB")}
           ${quickAction("💵", "Log Payment", "Record a furniture sale or order payment", "my-money.html", "#16A34A")}
@@ -15249,6 +15208,45 @@
           href
         });
       });
+    }
+
+    // Every business-type dashboard already shows one narrow, business-
+    // flavored money KPI (e.g. "Fuel & Operating Costs" for Logistics,
+    // "Clinic Revenue" for Healthcare) - this adds the full Income/
+    // Expenses/Balance/Pending picture ALONGSIDE that, not replacing it,
+    // reusing the same calculateMoneySummary() already computed for the
+    // health-score gauge on most dashboards. Scoped to whatever
+    // transactions array the caller passes in - a section-scoped view
+    // (e.g. "Rentals only") gets a section-scoped snapshot, matching
+    // every other KPI already on that page; an Overview gets the
+    // whole-business snapshot.
+    function renderFinancialSnapshotHtml(transactions) {
+      const money = calculateMoneySummary(transactions || []);
+
+      return `
+        <div class="section-title">
+          <div>
+            <h3>Money Snapshot</h3>
+            <p>Income, expenses, and balance across your money records.</p>
+          </div>
+          <a class="btn small light" href="my-money.html">Money</a>
+        </div>
+        <div class="money-snapshot-grid">
+          ${moneySnapshotTile("Income", compactMoney(money.income), "#16A34A")}
+          ${moneySnapshotTile("Expenses", compactMoney(money.expenses), "#D4A63A")}
+          ${moneySnapshotTile("Balance", compactMoney(money.balance), money.balance >= 0 ? "#16A34A" : "#DC2626")}
+          ${moneySnapshotTile("Pending", compactMoney(money.pending), money.pending > 0 ? "#DC2626" : "#16A34A")}
+        </div>
+      `;
+    }
+
+    function moneySnapshotTile(label, value, accent) {
+      return `
+        <div class="money-snapshot-tile" style="--accent:${accent};">
+          <span>${safe(label)}</span>
+          <strong>${safe(value)}</strong>
+        </div>
+      `;
     }
 
     function calculateMoneySummary(rows) {
