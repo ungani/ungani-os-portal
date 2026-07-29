@@ -386,7 +386,7 @@
     .grid {
       margin-top: 20px;
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 18px;
     }
 
@@ -759,6 +759,36 @@
       <section class="grid">
         <div class="panel">
           <div class="panel-head">
+            <h2 data-i18n="my_account">My Account</h2>
+          </div>
+
+          <div class="panel-body">
+            <div class="info-list">
+              <div class="info-row">
+                <label data-i18n="row_name">Name</label>
+                <span id="myAccountName">—</span>
+              </div>
+
+              <div class="info-row">
+                <label data-i18n="row_email">Email</label>
+                <span id="myAccountEmail">—</span>
+              </div>
+
+              <div class="info-row">
+                <label data-i18n="row_role">Role</label>
+                <span id="myAccountRole">—</span>
+              </div>
+
+              <div class="info-row">
+                <label data-i18n="row_status">Status</label>
+                <span id="myAccountStatus">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
             <h2 data-i18n="biz_profile">Business Profile</h2>
           </div>
 
@@ -792,6 +822,11 @@
               <div class="info-row">
                 <label data-i18n="row_registration">Registration</label>
                 <span id="profileRegistration">—</span>
+              </div>
+
+              <div class="info-row">
+                <label data-i18n="row_google_drive">Google Drive</label>
+                <span id="profileGoogleDrive">—</span>
               </div>
             </div>
           </div>
@@ -1152,6 +1187,10 @@
         lbl_attention: "Attention",
         attention_desc: "Pending tasks, support, payments, and upgrade requests.",
         loading_text: "Loading settings...",
+        my_account: "My Account",
+        row_name: "Name",
+        row_role: "Role",
+        row_status: "Status",
         biz_profile: "Business Profile",
         row_biz_name: "Business Name",
         row_contact_name: "Contact Name",
@@ -1159,6 +1198,7 @@
         row_phone: "Phone",
         row_location: "Location",
         row_registration: "Registration",
+        row_google_drive: "Google Drive",
         acc_status: "Account Status",
         row_workspace: "Workspace",
         row_access: "Access",
@@ -1217,6 +1257,10 @@
         lbl_attention: "Yanayohitaji Uangalizi",
         attention_desc: "Majukumu, msaada, malipo, na maombi ya kuboresha yanayosubiri.",
         loading_text: "Inapakia mipangilio...",
+        my_account: "Akaunti Yangu",
+        row_name: "Jina",
+        row_role: "Jukumu",
+        row_status: "Hali",
         biz_profile: "Wasifu wa Biashara",
         row_biz_name: "Jina la Biashara",
         row_contact_name: "Jina la Mawasiliano",
@@ -1224,6 +1268,7 @@
         row_phone: "Simu",
         row_location: "Mahali",
         row_registration: "Usajili",
+        row_google_drive: "Google Drive",
         acc_status: "Hali ya Akaunti",
         row_workspace: "Nafasi ya Kazi",
         row_access: "Ufikiaji",
@@ -1317,9 +1362,49 @@
       applyExistingThemeSetting();
       applyLanguage();
       await checkClientSession();
+      await loadMyAccountDetails();
       await loadSettings();
       await fetchUserPreferences();
     });
+
+    async function loadMyAccountDetails() {
+      if (!currentUserId) return;
+      try {
+        const { data, error } = await supabaseClient
+          .from("users")
+          .select("full_name, email, role, status")
+          .eq("id", currentUserId)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return;
+
+        document.getElementById("myAccountName").textContent = data.full_name || "—";
+        document.getElementById("myAccountEmail").textContent = data.email || "—";
+        document.getElementById("myAccountRole").textContent = titleCase(data.role || "client");
+        document.getElementById("myAccountStatus").innerHTML = `<span class="chip ${getStatusClass(data.status || "active")}">${escapeHtml(titleCase(data.status || "Active"))}</span>`;
+      } catch (err) {
+        console.warn("Could not load account details:", err.message);
+      }
+    }
+
+    async function loadGoogleDriveStatus(tenantId) {
+      if (!tenantId) return;
+      try {
+        const { data, error } = await supabaseClient
+          .from("tenants")
+          .select("google_drive_folder_url")
+          .eq("id", tenantId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        const el = document.getElementById("profileGoogleDrive");
+        if (el && data) el.textContent = data.google_drive_folder_url ? "Connected" : "Not Set";
+      } catch (err) {
+        console.warn("Could not load Google Drive status:", err.message);
+      }
+    }
 
     function applyExistingThemeSetting() {
       const possibleKeys = ["ungani_theme", "unganiTheme", "theme", "color-theme", "mode", "ungani_mode"];
@@ -1472,6 +1557,8 @@
       const access = data.access || {};
       const branch = data.branch || {};
       const counts = data.quick_counts || {};
+
+      loadGoogleDriveStatus(data.tenant_id);
 
       const businessName = business.business_name || "My Business";
       const businessType = business.business_type || "Business operations";

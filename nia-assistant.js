@@ -35,8 +35,7 @@
     { key: "notices", href: "my-notices.html", icon: "📢", label: "Notices", aliases: ["notices", "notice", "announcements"] },
     { key: "team-chat", href: "my-team-chat.html", icon: "👨‍👩‍👧‍👦", label: "Team Chat", aliases: ["team chat", "chat with my team"] },
     { key: "profile", href: "my-profile.html", icon: "🏢", label: "Business Profile", aliases: ["business profile", "company profile"] },
-    { key: "account", href: "account.html", icon: "⚙️", label: "Settings", aliases: ["settings", "account", "account settings", "preferences", "theme", "language"] },
-    { key: "my-settings", href: "my-settings.html", icon: "🔧", label: "My Settings", aliases: ["business sections", "manage sections", "business settings", "quick settings"] },
+    { key: "my-settings", href: "my-settings.html", icon: "🔧", label: "My Settings", aliases: ["settings", "account", "account settings", "preferences", "theme", "language", "business sections", "manage sections", "business settings", "quick settings"] },
     { key: "support", href: "my-support.html", icon: "🛟", label: "Contact Support", aliases: ["support", "contact support", "help desk", "get help"] },
     { key: "print-report", href: "print-report.html", icon: "🖨️", label: "Print Report", aliases: ["print report", "printable report"] },
     { key: "security", href: "my-security.html", icon: "🔐", label: "Security & Data", aliases: ["security", "data security", "2fa", "two-factor", "two factor"] },
@@ -118,7 +117,7 @@
       key: "password",
       match: ["password", "reset password", "forgot password", "login"],
       question: "How do I reset my password?",
-      answer: "On the login screen, select \"Forgot password\" and follow the emailed reset link. If you're already signed in, you can also set a new password from Account Settings.",
+      answer: "On the login screen, select \"Forgot password\" and follow the emailed reset link.",
       href: "login.html",
       linkLabel: "Open Login"
     },
@@ -305,7 +304,7 @@
     { label: "Customers", type: "nav", key: "people" },
     { label: "Staff", type: "nav", key: "people" },
     { label: "Tasks", type: "nav", key: "tasks" },
-    { label: "Settings", type: "nav", key: "account" },
+    { label: "Settings", type: "nav", key: "my-settings" },
     { label: "Help", type: "help" },
     { label: "Contact Support", type: "nav", key: "support" }
   ];
