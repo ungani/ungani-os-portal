@@ -950,7 +950,24 @@
       if (!data) throw new Error("Your UNGANI user profile was not found.");
 
       currentTenantId = data.tenant_id;
-      isOwner = String(data.role || "").trim().toLowerCase() === "owner";
+
+      // Real tenant owners never have users.role === "owner" - that value
+      // is UNGANI's own internal admin-role string, reused on the same
+      // column for a different account population. Every real business
+      // owner has role === "client" instead, matching how client.html and
+      // staff-permission-guard.js actually determine ownership: via the
+      // get_my_ungani_staff_access() RPC, where "owner" is the default
+      // state for anyone with no team_members row, not a role string.
+      try {
+        const { data: access, error: accessError } = await supabaseClient.rpc("get_my_ungani_staff_access");
+        const staffAccess = (!accessError && access) || {};
+        const roleKey = String(staffAccess.role_key || "").toLowerCase();
+        const isConfirmedStaffRecord = roleKey !== "" && roleKey !== "guest";
+        isOwner = staffAccess.is_owner === true || !isConfirmedStaffRecord;
+      } catch (err) {
+        console.warn("Could not resolve owner status via staff-access RPC:", err.message);
+        isOwner = true;
+      }
 
       try {
         const { data: tenantRow } = await supabaseClient

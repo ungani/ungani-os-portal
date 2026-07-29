@@ -1478,6 +1478,25 @@
     }
   }
 
+  // As of sql/fix-support-access-admin-scoping-and-gate-writes.sql,
+  // admin writes to business_items/transactions/tasks/business_records/
+  // documents/client_people require a live UNGANI Support Access grant
+  // for that tenant. Without this, an admin hitting that block sees a
+  // raw Postgres "permission denied" / "row-level security policy"
+  // message, which doesn't explain what to actually do about it.
+  function describeAdminWriteError(error) {
+    const raw = String((error && error.message) || error || "");
+    const isPermissionDenied =
+      (error && error.code === "42501") ||
+      /row-level security|permission denied/i.test(raw);
+
+    if (isPermissionDenied) {
+      return "This tenant doesn't have an active Support Access grant, so this change can't be saved. Open a support session for this tenant first (UNGANI Support Access), then try again.";
+    }
+
+    return raw || "Something went wrong saving this change.";
+  }
+
   async function logoutAdmin() {
     const client = getSupabaseClient();
     await logAuditEvent("logout", { entityType: "session" });
@@ -1588,6 +1607,7 @@
     updateAdminPreferences,
     logoutAdmin,
     logAuditEvent,
+    describeAdminWriteError,
     showToast,
     openModal,
     closeModal,
