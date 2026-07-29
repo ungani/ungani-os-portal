@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Admin - Support Session</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
+
+  <style>
+    .session-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 16px 20px;
+      border-radius: 18px;
+      background: var(--ungani-card);
+      border: 2px solid var(--ungani-gold);
+      box-shadow: 0 10px 24px var(--ungani-shadow);
+      margin-bottom: 18px;
+    }
+
+    .session-banner-text strong {
+      display: block;
+      font-size: 17px;
+      color: var(--ungani-text);
+      margin-bottom: 4px;
+    }
+
+    .session-banner-text span {
+      display: block;
+      color: var(--ungani-muted);
+      font-size: 13px;
+    }
+
+    .page-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .metric-card {
+      background: var(--ungani-card);
+      border: 1px solid var(--ungani-border);
+      border-left: 6px solid var(--ungani-gold);
+      border-radius: 20px;
+      padding: 16px;
+      box-shadow: 0 10px 24px var(--ungani-shadow);
+    }
+
+    .metric-card h3 { margin: 0 0 6px; color: var(--ungani-muted); font-size: 13px; }
+    .metric-card p { margin: 0; font-size: 24px; font-weight: bold; color: var(--ungani-text); }
+
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--ungani-gold);
+      color: var(--ungani-navy);
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn.dark { background: var(--ungani-card); color: var(--ungani-text); border: 1px solid var(--ungani-border); }
+    .btn.small { padding: 6px 10px; font-size: 12.5px; border-radius: 9px; }
+
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .section-title-row h2 { margin: 0; }
+
+    .badge {
+      display: inline-block;
+      background: var(--ungani-navy);
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .badge.green { background: var(--ungani-green); }
+    .badge.gray { background: #64748B; }
+    .badge.red { background: var(--ungani-red); }
+
+    .empty {
+      text-align: center;
+      padding: 28px;
+      background: var(--ungani-card);
+      border: 1px dashed var(--ungani-border);
+      border-radius: 18px;
+    }
+
+    .empty h3 { margin: 0 0 8px; color: var(--ungani-text); }
+    .empty p { margin: 0; color: var(--ungani-muted); }
+
+    .small-text { color: var(--ungani-muted); font-size: 13px; line-height: 1.45; }
+
+    .ungani-table-wrap { overflow-x: auto; }
+
+    .ungani-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      min-width: 700px;
+    }
+
+    .ungani-table thead th {
+      text-align: left;
+      padding: 10px 12px;
+      color: var(--ungani-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--ungani-border);
+      white-space: nowrap;
+    }
+
+    .ungani-table td {
+      padding: 12px;
+      border-bottom: 1px solid var(--ungani-border);
+      vertical-align: top;
+    }
+
+    .ungani-table .row-sub {
+      display: block;
+      font-weight: normal;
+      color: var(--ungani-muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="adminRoot"></div>
+
+  <script>
+    let currentAdmin = null;
+    let supabaseClient = null;
+    let targetTenantId = null;
+    let activeGrant = null;
+    let countdownTimer = null;
+
+    const pageMainHtml = `
+      <div id="sessionBlockedBox" style="display: none;" class="empty">
+        <h3>No active support access for this tenant</h3>
+        <p id="sessionBlockedReason">This tenant has no currently-active UNGANI Support Access grant.</p>
+        <div style="margin-top: 14px;">
+          <a class="btn" href="admin-support-access.html">Back to Support Access</a>
+        </div>
+      </div>
+
+      <div id="sessionContent" style="display: none;">
+        <div class="session-banner">
+          <div class="session-banner-text">
+            <strong id="bannerTenantName">Support Session</strong>
+            <span id="bannerDetail">—</span>
+          </div>
+          <div>
+            <a class="btn dark" href="admin-support-access.html">End Session</a>
+          </div>
+        </div>
+
+        <section class="page-grid" id="summaryTiles">
+          <div class="metric-card"><h3>Money records</h3><p id="cntTransactions">0</p></div>
+          <div class="metric-card"><h3>Tasks</h3><p id="cntTasks">0</p></div>
+          <div class="metric-card"><h3>Documents</h3><p id="cntDocuments">0</p></div>
+          <div class="metric-card"><h3>People</h3><p id="cntPeople">0</p></div>
+          <div class="metric-card"><h3>Items / Assets</h3><p id="cntItems">0</p></div>
+          <div class="metric-card"><h3>Records</h3><p id="cntRecords">0</p></div>
+        </section>
+
+        <section class="ungani-card">
+          <div class="section-title-row">
+            <h2>Recent Activity</h2>
+            <button class="btn green" onclick="loadSessionData()">Refresh</button>
+          </div>
+          <p class="small-text">The 20 most recently updated records across this tenant's Money, Tasks, Documents, People, Items, and Records - most recent first.</p>
+
+          <div class="ungani-table-wrap">
+            <table class="ungani-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Record</th>
+                  <th>Status</th>
+                  <th>Updated</th>
+                  <th id="actionColHeader" style="display:none;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="activityListBox">
+                <tr><td colspan="5"><div class="empty"><h3>Loading...</h3><p>Please wait.</p></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    `;
+
+    window.addEventListener("load", function () {
+      const params = new URLSearchParams(window.location.search);
+      targetTenantId = params.get("tenant");
+
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "supportAccess",
+        pageTitle: "Support Session",
+        pageSubtitle: "Scoped, time-limited view into a tenant's workspace - only visible while their grant is active.",
+        footerTitle: "Support Session",
+        footerVersion: "Support Access Version: v1",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "supportAccess",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Support Session",
+            footerVersion: "Support Access Version: v1"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await verifyGrantAndLoad();
+        }
+      });
+    });
+
+    function safe(value) { return UnganiAdminShared.safe(value); }
+
+    function getValue(row, fields, fallback) {
+      for (let i = 0; i < fields.length; i++) {
+        const v = row && row[fields[i]];
+        if (v !== undefined && v !== null && v !== "") return v;
+      }
+      return fallback;
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return "—";
+      return d.toLocaleString("en-KE", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function formatCountdown(expiresAt) {
+      const ms = new Date(expiresAt).getTime() - Date.now();
+      if (ms <= 0) return "expired";
+      const totalMinutes = Math.floor(ms / 60000);
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      if (hours > 0) return hours + "h " + minutes + "m remaining";
+      return minutes + "m remaining";
+    }
+
+    function isGrantLiveNow(grant) {
+      if (!grant) return false;
+      if (grant.status !== "active") return false;
+      if (!grant.expires_at) return false;
+      return new Date(grant.expires_at).getTime() > Date.now();
+    }
+
+    async function logAuditEvent(action, details) {
+      try {
+        return await UnganiAdminShared.logAuditEvent(action, details);
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
+    }
+
+    async function verifyGrantAndLoad() {
+      const blockedBox = document.getElementById("sessionBlockedBox");
+      const contentBox = document.getElementById("sessionContent");
+
+      if (!targetTenantId) {
+        document.getElementById("sessionBlockedReason").textContent = "No tenant was specified.";
+        blockedBox.style.display = "block";
+        return;
+      }
+
+      try {
+        const { data, error } = await supabaseClient
+          .from("ungani_support_access_grants")
+          .select("*, tenants(company_name, business_name, name)")
+          .eq("tenant_id", targetTenantId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (!isGrantLiveNow(data)) {
+          document.getElementById("sessionBlockedReason").textContent = data && data.status === "pending"
+            ? "This tenant has invited support but has not granted access yet."
+            : "This tenant's grant is not currently active (revoked, expired, or never granted).";
+          blockedBox.style.display = "block";
+          return;
+        }
+
+        activeGrant = data;
+        contentBox.style.display = "block";
+
+        const tenant = data.tenants || {};
+        const tenantName = tenant.company_name || tenant.business_name || tenant.name || "Unnamed Business";
+        document.getElementById("bannerTenantName").textContent = "Support Session: " + tenantName;
+
+        const levelLabel = data.access_level === "full_access" ? "Full Access" : "View Only";
+        updateBannerDetail(levelLabel);
+
+        countdownTimer = setInterval(function () {
+          if (!isGrantLiveNow(activeGrant)) {
+            clearInterval(countdownTimer);
+            document.getElementById("sessionBlockedReason").textContent = "This grant has expired or been revoked.";
+            contentBox.style.display = "none";
+            blockedBox.style.display = "block";
+            return;
+          }
+          updateBannerDetail(levelLabel);
+        }, 30000);
+
+        if (data.access_level === "full_access") {
+          document.getElementById("actionColHeader").style.display = "";
+        }
+
+        await logAuditEvent("support_access_session_opened", {
+          entityType: "ungani_support_access_grants",
+          tenantId: targetTenantId,
+          metadata: { access_level: data.access_level }
+        });
+
+        await loadSessionData();
+      } catch (error) {
+        document.getElementById("sessionBlockedReason").textContent = "Could not verify support access: " + error.message;
+        blockedBox.style.display = "block";
+      }
+    }
+
+    function updateBannerDetail(levelLabel) {
+      document.getElementById("bannerDetail").textContent = levelLabel + " · " + formatCountdown(activeGrant.expires_at) + " · expires " + formatDateTime(activeGrant.expires_at);
+    }
+
+    async function countRows(table) {
+      const { count, error } = await supabaseClient
+        .from(table)
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", targetTenantId);
+      if (error) throw error;
+      return count || 0;
+    }
+
+    async function loadSessionData() {
+      try {
+        const [transactionsCount, tasksCount, documentsCount, peopleCount, itemsCount, recordsCount] = await Promise.all([
+          countRows("transactions"),
+          countRows("tasks"),
+          countRows("documents"),
+          countRows("client_people"),
+          countRows("business_items"),
+          countRows("business_records")
+        ]);
+
+        document.getElementById("cntTransactions").textContent = transactionsCount;
+        document.getElementById("cntTasks").textContent = tasksCount;
+        document.getElementById("cntDocuments").textContent = documentsCount;
+        document.getElementById("cntPeople").textContent = peopleCount;
+        document.getElementById("cntItems").textContent = itemsCount;
+        document.getElementById("cntRecords").textContent = recordsCount;
+
+        await loadRecentActivity();
+      } catch (error) {
+        document.getElementById("activityListBox").innerHTML = '<tr><td colspan="5"><div class="empty"><h3>Could not load</h3><p>' + safe(error.message) + "</p></div></td></tr>";
+      }
+    }
+
+    const TABLE_META = {
+      transactions: { label: "Money", titleFields: ["category", "transaction_type", "type"], subFields: ["amount"], statusFields: ["status"] },
+      tasks: { label: "Task", titleFields: ["task_title", "title"], subFields: ["task_type", "type"], statusFields: ["status"] },
+      documents: { label: "Document", titleFields: ["document_name", "title", "name"], subFields: ["document_type", "type"], statusFields: ["status"] },
+      client_people: { label: "Person", titleFields: ["full_name", "name"], subFields: ["person_type", "type"], statusFields: ["status"] },
+      business_items: { label: "Item", titleFields: ["item_name", "name", "title"], subFields: ["item_type", "type"], statusFields: ["property_status", "item_status", "status"] },
+      business_records: { label: "Record", titleFields: ["title", "name"], subFields: ["record_type", "type"], statusFields: ["status"] }
+    };
+
+    async function loadRecentActivity() {
+      const box = document.getElementById("activityListBox");
+      const tables = Object.keys(TABLE_META);
+
+      try {
+        const results = await Promise.all(tables.map(function (table) {
+          return supabaseClient
+            .from(table)
+            .select("*")
+            .eq("tenant_id", targetTenantId)
+            .order("updated_at", { ascending: false })
+            .limit(10)
+            .then(function (res) { return { table: table, rows: res.data || [] }; })
+            .catch(function () { return { table: table, rows: [] }; });
+        }));
+
+        let combined = [];
+        results.forEach(function (result) {
+          result.rows.forEach(function (row) {
+            combined.push({ table: result.table, row: row });
+          });
+        });
+
+        combined.sort(function (a, b) {
+          const da = new Date(a.row.updated_at || a.row.created_at || 0).getTime();
+          const db = new Date(b.row.updated_at || b.row.created_at || 0).getTime();
+          return db - da;
+        });
+
+        combined = combined.slice(0, 20);
+
+        if (combined.length === 0) {
+          box.innerHTML = '<tr><td colspan="5"><div class="empty"><h3>No records yet</h3><p>This tenant has no Money, Tasks, Documents, People, Items, or Records yet.</p></div></td></tr>';
+          return;
+        }
+
+        const canEdit = activeGrant.access_level === "full_access";
+
+        box.innerHTML = combined.map(function (entry) {
+          const meta = TABLE_META[entry.table];
+          const row = entry.row;
+          const title = getValue(row, meta.titleFields, "(untitled)");
+          const sub = getValue(row, meta.subFields, "");
+          const status = String(getValue(row, meta.statusFields, "") || "").toLowerCase();
+          const updated = row.updated_at || row.created_at;
+
+          let statusBadge = status ? '<span class="badge gray">' + safe(status) + "</span>" : "—";
+          if (status.includes("completed") || status.includes("active") || status.includes("paid")) statusBadge = '<span class="badge green">' + safe(status) + "</span>";
+          if (status.includes("overdue") || status.includes("cancelled")) statusBadge = '<span class="badge red">' + safe(status) + "</span>";
+
+          let actionHtml = "";
+          if (canEdit && entry.table === "tasks") {
+            const isDone = status.includes("completed");
+            actionHtml = `<button class="btn small dark" onclick="toggleTaskStatus('${row.id}', ${isDone})">${isDone ? "Reopen" : "Mark Complete"}</button>`;
+          }
+
+          return `
+            <tr>
+              <td><span class="badge">${safe(meta.label)}</span></td>
+              <td><strong>${safe(title)}</strong>${sub ? '<span class="row-sub">' + safe(sub) + "</span>" : ""}</td>
+              <td>${statusBadge}</td>
+              <td>${formatDateTime(updated)}</td>
+              <td>${actionHtml}</td>
+            </tr>
+          `;
+        }).join("");
+      } catch (error) {
+        box.innerHTML = '<tr><td colspan="5"><div class="empty"><h3>Could not load</h3><p>' + safe(error.message) + "</p></div></td></tr>";
+      }
+    }
+
+    async function toggleTaskStatus(taskId, isCurrentlyDone) {
+      if (!isGrantLiveNow(activeGrant) || activeGrant.access_level !== "full_access") {
+        alert("This session no longer has full access.");
+        return;
+      }
+
+      const newStatus = isCurrentlyDone ? "pending" : "completed";
+
+      try {
+        const { error } = await supabaseClient
+          .from("tasks")
+          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .eq("id", taskId)
+          .eq("tenant_id", targetTenantId);
+
+        if (error) throw error;
+
+        await logAuditEvent("support_access_record_modified", {
+          entityType: "tasks",
+          entityId: taskId,
+          tenantId: targetTenantId,
+          description: "UNGANI support changed task status to " + newStatus,
+          metadata: { field: "status", new_value: newStatus }
+        });
+
+        await loadRecentActivity();
+      } catch (error) {
+        alert("Could not update task: " + error.message);
+      }
+    }
+  </script>
+</body>
+</html>

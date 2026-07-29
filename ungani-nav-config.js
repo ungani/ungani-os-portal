@@ -100,6 +100,15 @@
         ]
       },
       {
+        key: "support-access",
+        title: "UNGANI Support Access",
+        collapsible: true,
+        defaultExpanded: false,
+        items: [
+          ["support-access", "my-support-access.html", "🛟", "Support Access"]
+        ]
+      },
+      {
         key: "billing-setup",
         title: "Billing & Setup",
         collapsible: true,

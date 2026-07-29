@@ -76,6 +76,7 @@
         defaultExpanded: false,
         items: [
           { key: "support", href: "support.html", icon: "🛟", label: "Support Desk", activeKey: "admin-support" },
+          { key: "supportAccess", href: "admin-support-access.html", icon: "🔓", label: "UNGANI Support Access", activeKey: "admin-support-access" },
           { key: "adminChat", href: "admin-chat.html", icon: "💬", label: "Client Chat", activeKey: "admin-chat" },
           { key: "notifications", href: "admin-notifications.html", icon: "🔔", label: "Notifications", activeKey: "admin-notifications" },
           { key: "notices", href: "notices.html", icon: "📢", label: "Notices", activeKey: "admin-notices" }

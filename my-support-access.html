@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI Support Access | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+  <link rel="apple-touch-icon" href="/ungani-icon-180.png" />
+  <link rel="icon" href="/ungani-icon-32.png" type="image/png" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-nav-config.js"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #061426;
+      --card: #0B2346;
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #F5F5F3;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+    }
+
+    .sidebar {
+      background: var(--navy);
+      color: #FFFFFF;
+      padding: 22px 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .sidebar-brand {
+      text-align: center;
+      padding-bottom: 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      margin-bottom: 16px;
+    }
+
+    .sidebar-brand img {
+      width: 110px;
+      max-width: 70%;
+      height: auto;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-brand h2 {
+      margin: 4px 0 2px;
+      font-size: 18px;
+    }
+
+    .sidebar-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.65;
+      margin: 18px 10px 8px;
+    }
+
+    .side-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 11px 12px;
+      border-radius: 14px;
+      margin-bottom: 5px;
+      transition: 0.2s ease;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .side-link:hover,
+    .side-link.active {
+      background: rgba(212,166,58,0.18);
+      color: var(--gold);
+      transform: translateX(3px);
+    }
+
+    .sidebar-section-title-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      color: inherit;
+      font: inherit;
+      text-transform: inherit;
+      letter-spacing: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    .sidebar-toggle-icon {
+      font-size: 10px;
+      margin-left: 6px;
+      flex: none;
+    }
+
+    .side-group.collapsible.collapsed .side-group-items {
+      display: none;
+    }
+
+    .sidebar-footer {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.08);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .main {
+      min-width: 0;
+    }
+
+    .mobile-menu {
+      display: none;
+    }
+
+    @media (max-width: 1050px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: fixed;
+        left: -310px;
+        top: 0;
+        width: 290px;
+        z-index: 100;
+        transition: 0.25s ease;
+      }
+
+      .sidebar.open {
+        left: 0;
+      }
+
+      .mobile-menu {
+        display: inline-flex;
+      }
+    }
+
+    .topbar {
+      background: rgba(3, 18, 39, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      background: #FFFFFF;
+      border-radius: 14px;
+      padding: 5px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-text strong {
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+
+    .brand-text span {
+      font-size: 13px;
+      color: #B8C3D6;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .ungani-btn {
+      position: relative;
+      border: 1.5px solid rgba(255,255,255,0.3);
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 0 18px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      font-weight: 800;
+      font-size: 14px;
+      font-family: inherit;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+      text-decoration: none;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
+    }
+
+    html[data-theme="light"] .ungani-btn {
+      border-color: var(--navy);
+      background: #FFFFFF;
+      color: var(--navy);
+    }
+
+    .ungani-btn:hover { transform: translateY(-2px); filter: brightness(1.06); }
+    .ungani-btn:active { transform: translateY(0); filter: brightness(0.98); }
+    .ungani-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .ungani-btn:disabled,
+    .ungani-btn.is-loading { cursor: not-allowed; opacity: 0.65; transform: none !important; filter: none !important; }
+
+    .ungani-btn.gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+      box-shadow: 0 10px 22px rgba(212,166,58,0.25);
+    }
+
+    .ungani-btn.danger {
+      background: #B91C1C;
+      color: #FFFFFF;
+      border-color: #B91C1C;
+      box-shadow: 0 10px 22px rgba(185,28,28,0.28);
+    }
+
+    .ungani-btn-spinner {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      border: 2px solid rgba(0,0,0,0.2);
+      border-top-color: currentColor;
+      animation: unganiBtnSpin 0.65s linear infinite;
+    }
+
+    @keyframes unganiBtnSpin {
+      to { transform: rotate(360deg); }
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 720px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .panel {
+      margin-top: 20px;
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .panel-head p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .status-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 20px;
+      border-radius: 18px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+
+    .status-banner-text strong {
+      display: block;
+      font-size: 19px;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .status-banner-text span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .chip {
+      display: inline-flex;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+      letter-spacing: 0.3px;
+    }
+
+    .chip.success { color: var(--success-text); background: var(--success-bg); }
+    .chip.warning { color: var(--warning-text); background: var(--warning-bg); }
+    .chip.info { color: var(--info-text); background: var(--info-bg); }
+    .chip.danger { color: var(--danger-text); background: var(--danger-bg); }
+    .chip.gold { color: var(--gold); background: rgba(212, 166, 58, 0.16); border: 1px solid rgba(212, 166, 58, 0.28); }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .form-group p.hint {
+      margin: 4px 0 0;
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .form-control {
+      background: rgba(3, 18, 39, 0.45);
+      border: 1px solid var(--border);
+      color: #FFFFFF;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    html[data-theme="light"] .form-control {
+      background: #FFFFFF;
+      color: #061C3D;
+    }
+
+    .form-control:focus {
+      border-color: var(--gold);
+    }
+
+    .form-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .action-msg {
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .action-msg.success { color: var(--success-text); }
+    .action-msg.error { color: var(--danger-text); }
+
+    .info-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px 18px;
+      color: var(--text-soft);
+      font-size: 13.5px;
+      line-height: 1.7;
+    }
+
+    .info-box ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+    }
+
+    .history-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .history-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px;
+      border-radius: 14px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+
+    .history-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(212, 166, 58, 0.14);
+      font-size: 16px;
+      flex: none;
+    }
+
+    .history-row-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .history-row-body strong {
+      display: block;
+      color: var(--text);
+      font-size: 14px;
+      margin-bottom: 2px;
+    }
+
+    .history-row-body span {
+      display: block;
+      color: var(--muted);
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+
+    .loading,
+    .empty,
+    .error {
+      margin-top: 20px;
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="light"] .spinner {
+      border-color: rgba(6, 28, 61, 0.14);
+      border-top-color: var(--gold);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 980px) {
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+
+      .topbar {
+        padding: 15px;
+      }
+
+      .ungani-btn {
+        font-size: 12.5px;
+        padding: 0 14px;
+      }
+
+      .status-banner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-brand">
+        <img src="ungani-logo.png" alt="UNGANI Logo" />
+        <h2>UNGANI OS</h2>
+      </div>
+
+      <div id="supportAccessNavGroups"></div>
+
+      <div class="sidebar-footer">
+        <strong>UNGANI Support Access</strong><br />
+        ungani.com
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="brand">
+          <button class="mobile-menu ungani-btn" type="button" onclick="toggleSidebar()" aria-label="Toggle menu">☰</button>
+          <img src="ungani-logo.png" alt="UNGANI Logo" />
+          <div class="brand-text">
+            <strong>UNGANI OS</strong>
+            <span>Support Access</span>
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <a class="ungani-btn" href="my-team-access.html">Team Access</a>
+          <a class="ungani-btn" href="client.html">Back to Dashboard</a>
+        </div>
+      </header>
+
+      <main class="content">
+        <section class="hero">
+          <h1>UNGANI Support Access</h1>
+          <p>
+            Let UNGANI support see (and, if you choose, fix) your workspace data to help you
+            faster - without ever sharing your password. You control who's on, for how long, and
+            can turn it off instantly. This is separate from your regular staff/team access below.
+          </p>
+        </section>
+
+        <div id="loadingBox" class="loading">
+          <span class="spinner"></span>
+          <span>Loading support access status...</span>
+        </div>
+
+        <div id="errorBox" class="error" style="display: none;"></div>
+
+        <div id="ownerOnlyBox" class="error" style="display: none;">
+          UNGANI Support Access is an owner-only control, separate from the regular
+          Owner/Manager/Accountant/Staff permission system. Ask your business owner to manage it
+          from this page.
+        </div>
+
+        <div id="mainContent" style="display: none;">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Current Status</h2>
+              <p>Whether UNGANI support currently has any access to your workspace.</p>
+            </div>
+            <div class="panel-body">
+              <div class="status-banner">
+                <div class="status-banner-text">
+                  <strong id="statusHeadline">—</strong>
+                  <span id="statusDetail">—</span>
+                </div>
+                <span id="statusChip" class="chip info">—</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" id="grantControlsPanel">
+            <div class="panel-head">
+              <h2>Invite &amp; Grant Access</h2>
+              <p>Pick what UNGANI support can do and for how long, then invite or grant directly.</p>
+            </div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="accessLevelSelect">Access Level</label>
+                  <select id="accessLevelSelect" class="form-control">
+                    <option value="view_only">View Only - can see your data, cannot change anything</option>
+                    <option value="full_access">Full Access - can see and fix records on your behalf</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="durationSelect">Duration</label>
+                  <select id="durationSelect" class="form-control">
+                    <option value="1">1 hour</option>
+                    <option value="4">4 hours</option>
+                    <option value="24" selected>24 hours</option>
+                    <option value="168">7 days</option>
+                  </select>
+                  <p class="hint">Access ends automatically after this - or revoke early any time below.</p>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button type="button" id="btnInvite" class="ungani-btn" onclick="inviteSupport()">Invite UNGANI Support</button>
+                <button type="button" id="btnGrant" class="ungani-btn gold" onclick="grantAccess()">Grant Temporary Access</button>
+                <button type="button" id="btnRevoke" class="ungani-btn danger" onclick="revokeAccess()" style="display: none;">Revoke Access Now</button>
+                <span id="grantMessage" class="action-msg"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>How This Works</h2>
+            </div>
+            <div class="panel-body">
+              <div class="info-box">
+                UNGANI support never needs, sees, or uses your password.
+                <ul>
+                  <li><strong>Invite UNGANI Support</strong> flags that you'd like help - no access is granted yet.</li>
+                  <li><strong>Grant Temporary Access</strong> is what actually turns access on, for the level and duration you choose.</li>
+                  <li>Support staff sign in with their own UNGANI login - your grant is what lets them in, not a shared password.</li>
+                  <li>Access ends automatically when it expires, or the moment you click Revoke - whichever comes first.</li>
+                  <li>Every invite, grant, revoke, and support session is recorded in the history below and in your account's audit trail.</li>
+                  <li>UNGANI Support Access never counts as one of your team seats - it's entirely separate from your Team Access user limit.</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>History</h2>
+              <p>Every support access action on your account, most recent first.</p>
+            </div>
+            <div class="panel-body">
+              <div id="historyBox">
+                <div class="empty">Loading history...</div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="footer">
+          UNGANI OS &middot; ungani.com &middot; info@ungani.com
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUserId = null;
+    let currentTenantId = null;
+    let isOwner = false;
+    let currentGrant = null;
+    let countdownTimer = null;
+
+    function toggleSidebar() {
+      document.getElementById("sidebar").classList.toggle("open");
+    }
+
+    const SUPPORT_ACCESS_SIDEBAR_COLLAPSE_KEY = "ungani_sidebar_collapsed_groups";
+
+    function getSupportAccessSidebarCollapsedState() {
+      try {
+        return JSON.parse(localStorage.getItem(SUPPORT_ACCESS_SIDEBAR_COLLAPSE_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function setSupportAccessSidebarGroupCollapsed(groupKey, collapsed) {
+      const state = getSupportAccessSidebarCollapsedState();
+      state[groupKey] = collapsed;
+      localStorage.setItem(SUPPORT_ACCESS_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
+    }
+
+    function toggleSupportAccessSidebarGroup(groupKey) {
+      const el = document.getElementById("supportAccessNavGroup-" + groupKey);
+      if (!el) return;
+
+      const nowCollapsed = !el.classList.contains("collapsed");
+      el.classList.toggle("collapsed", nowCollapsed);
+      setSupportAccessSidebarGroupCollapsed(groupKey, nowCollapsed);
+    }
+
+    function renderSupportAccessNavGroup(group, collapsedState) {
+      const itemsHtml = group.items.map(function (item) {
+        const active = item[1] === "my-support-access.html" ? " active" : "";
+        return `<a class="side-link${active}" href="${item[1]}">${item[2]} <span>${item[3]}</span></a>`;
+      }).join("");
+
+      if (!group.collapsible) {
+        return `<div class="sidebar-section-title">${group.title}</div>${itemsHtml}`;
+      }
+
+      const containsActive = group.items.some(function (item) { return item[1] === "my-support-access.html"; });
+      const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
+      const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
+
+      return `
+        <div class="side-group collapsible${collapsed ? " collapsed" : ""}" id="supportAccessNavGroup-${group.key}">
+          <button type="button" class="sidebar-section-title sidebar-section-title-toggle" onclick="toggleSupportAccessSidebarGroup('${group.key}')">
+            <span>${group.title}</span>
+            <span class="sidebar-toggle-icon">${collapsed ? "▸" : "▾"}</span>
+          </button>
+          <div class="side-group-items">${itemsHtml}</div>
+        </div>
+      `;
+    }
+
+    function renderSupportAccessSidebarGroups(tenant) {
+      const container = document.getElementById("supportAccessNavGroups");
+      if (!container || !window.UnganiNavConfig) return;
+
+      const groups = UnganiNavConfig.getSidebarGroups(tenant || null);
+      const collapsedState = getSupportAccessSidebarCollapsedState();
+
+      container.innerHTML = groups.map(function (group) {
+        return renderSupportAccessNavGroup(group, collapsedState);
+      }).join("");
+    }
+
+    renderSupportAccessSidebarGroups(null);
+
+    function applyExistingThemeSetting() {
+      const possibleKeys = ["ungani_theme", "unganiTheme", "theme", "color-theme", "mode", "ungani_mode"];
+      let foundTheme = null;
+
+      try {
+        for (const key of possibleKeys) {
+          const value = localStorage.getItem(key);
+          if (!value) continue;
+          const clean = String(value).trim().toLowerCase();
+          if (clean === "light" || clean === "white") { foundTheme = "light"; break; }
+          if (clean === "dark" || clean === "navy") { foundTheme = "dark"; break; }
+        }
+      } catch (error) {
+        foundTheme = null;
+      }
+
+      if (!foundTheme) {
+        const htmlTheme = document.documentElement.getAttribute("data-theme");
+        if (htmlTheme === "light" || htmlTheme === "dark") { foundTheme = htmlTheme; }
+      }
+
+      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+    }
+
+    function withButtonLoading(button, asyncFn) {
+      if (!button || button.disabled || button.classList.contains("is-loading")) {
+        return Promise.resolve(typeof asyncFn === "function" ? asyncFn() : undefined);
+      }
+
+      const originalHtml = button.innerHTML;
+      const originalMinWidth = button.style.minWidth;
+
+      button.style.minWidth = button.offsetWidth + "px";
+      button.disabled = true;
+      button.classList.add("is-loading");
+      button.innerHTML = '<span class="ungani-btn-spinner"></span>';
+
+      const restore = function () {
+        button.disabled = false;
+        button.classList.remove("is-loading");
+        button.innerHTML = originalHtml;
+        button.style.minWidth = originalMinWidth;
+      };
+
+      return Promise.resolve()
+        .then(function () { return typeof asyncFn === "function" ? asyncFn() : undefined; })
+        .then(function (result) { restore(); return result; })
+        .catch(function (error) { restore(); throw error; });
+    }
+
+    async function logAuditEvent(action, details) {
+      try {
+        const { data } = await supabaseClient.auth.getSession();
+        const token = data && data.session && data.session.access_token;
+        if (!token) return;
+
+        await fetch("/api/log-audit-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(Object.assign({ action: action }, details || {})),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Audit log warning:", error.message);
+      }
+    }
+
+    async function checkClientSession() {
+      const { data } = await supabaseClient.auth.getSession();
+      if (!data || !data.session) {
+        window.location.href = "login.html?redirect=my-support-access.html";
+        return false;
+      }
+      currentUserId = data.session.user.id;
+      return true;
+    }
+
+    async function loadOwnerStatus() {
+      const { data, error } = await supabaseClient
+        .from("users")
+        .select("id, tenant_id, role, full_name")
+        .eq("id", currentUserId)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error("Your UNGANI user profile was not found.");
+
+      currentTenantId = data.tenant_id;
+      isOwner = String(data.role || "").trim().toLowerCase() === "owner";
+
+      try {
+        const { data: tenantRow } = await supabaseClient
+          .from("tenants")
+          .select("business_type, business_type_key, company_name, selected_sections")
+          .eq("id", currentTenantId)
+          .maybeSingle();
+        if (tenantRow) renderSupportAccessSidebarGroups(tenantRow);
+      } catch (err) {
+        console.warn("Could not load tenant for sidebar:", err.message);
+      }
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return "—";
+      return d.toLocaleString("en-KE", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function formatCountdown(expiresAt) {
+      const ms = new Date(expiresAt).getTime() - Date.now();
+      if (ms <= 0) return "expired";
+
+      const totalMinutes = Math.floor(ms / 60000);
+      const days = Math.floor(totalMinutes / 1440);
+      const hours = Math.floor((totalMinutes % 1440) / 60);
+      const minutes = totalMinutes % 60;
+
+      if (days > 0) return days + "d " + hours + "h remaining";
+      if (hours > 0) return hours + "h " + minutes + "m remaining";
+      return minutes + "m remaining";
+    }
+
+    function isGrantLiveNow(grant) {
+      if (!grant) return false;
+      if (grant.status !== "active") return false;
+      if (!grant.expires_at) return false;
+      return new Date(grant.expires_at).getTime() > Date.now();
+    }
+
+    function renderStatusCard() {
+      const headline = document.getElementById("statusHeadline");
+      const detail = document.getElementById("statusDetail");
+      const chip = document.getElementById("statusChip");
+      const btnInvite = document.getElementById("btnInvite");
+      const btnGrant = document.getElementById("btnGrant");
+      const btnRevoke = document.getElementById("btnRevoke");
+
+      const grant = currentGrant;
+      const liveActive = isGrantLiveNow(grant);
+      const levelLabel = grant && grant.access_level === "full_access" ? "Full Access" : "View Only";
+
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+
+      if (liveActive) {
+        headline.textContent = "UNGANI Support Access is ON";
+        detail.textContent = levelLabel + " · " + formatCountdown(grant.expires_at) + " · expires " + formatDateTime(grant.expires_at);
+        chip.textContent = "Active";
+        chip.className = "chip success";
+
+        btnInvite.style.display = "none";
+        btnGrant.style.display = "none";
+        btnRevoke.style.display = "inline-flex";
+
+        countdownTimer = setInterval(function () {
+          if (!isGrantLiveNow(currentGrant)) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+            loadGrantStatus();
+            return;
+          }
+          detail.textContent = levelLabel + " · " + formatCountdown(currentGrant.expires_at) + " · expires " + formatDateTime(currentGrant.expires_at);
+        }, 60000);
+      } else if (grant && grant.status === "pending") {
+        headline.textContent = "UNGANI Support has been invited";
+        detail.textContent = "Invited " + formatDateTime(grant.invited_at) + " · no access has been granted yet.";
+        chip.textContent = "Pending";
+        chip.className = "chip warning";
+
+        btnInvite.style.display = "none";
+        btnGrant.style.display = "inline-flex";
+        btnRevoke.style.display = "inline-flex";
+        btnRevoke.textContent = "Cancel Invite";
+      } else if (grant && grant.status === "active" && grant.expires_at && new Date(grant.expires_at).getTime() <= Date.now()) {
+        headline.textContent = "UNGANI Support Access has expired";
+        detail.textContent = levelLabel + " · expired " + formatDateTime(grant.expires_at);
+        chip.textContent = "Expired";
+        chip.className = "chip info";
+
+        btnInvite.style.display = "inline-flex";
+        btnGrant.style.display = "inline-flex";
+        btnRevoke.style.display = "none";
+      } else if (grant && grant.status === "revoked") {
+        headline.textContent = "UNGANI Support Access is OFF";
+        detail.textContent = "Revoked " + formatDateTime(grant.revoked_at) + ".";
+        chip.textContent = "Revoked";
+        chip.className = "chip info";
+
+        btnInvite.style.display = "inline-flex";
+        btnGrant.style.display = "inline-flex";
+        btnRevoke.style.display = "none";
+      } else {
+        headline.textContent = "UNGANI Support Access is OFF";
+        detail.textContent = "No support access has ever been granted on this account.";
+        chip.textContent = "Off";
+        chip.className = "chip info";
+
+        btnInvite.style.display = "inline-flex";
+        btnGrant.style.display = "inline-flex";
+        btnRevoke.style.display = "none";
+      }
+
+      if (btnRevoke.style.display === "inline-flex" && !(grant && grant.status === "pending")) {
+        btnRevoke.textContent = "Revoke Access Now";
+      }
+    }
+
+    async function loadGrantStatus() {
+      const { data, error } = await supabaseClient
+        .from("ungani_support_access_grants")
+        .select("*")
+        .eq("tenant_id", currentTenantId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      currentGrant = data || null;
+      renderStatusCard();
+    }
+
+    async function inviteSupport() {
+      const btn = document.getElementById("btnInvite");
+      const msg = document.getElementById("grantMessage");
+      msg.className = "action-msg";
+      msg.textContent = "";
+
+      await withButtonLoading(btn, async function () {
+        try {
+          const { error } = await supabaseClient
+            .from("ungani_support_access_grants")
+            .upsert({
+              tenant_id: currentTenantId,
+              status: "pending",
+              invited_at: new Date().toISOString(),
+              invited_by: currentUserId,
+              updated_at: new Date().toISOString()
+            }, { onConflict: "tenant_id" });
+
+          if (error) throw error;
+
+          await logAuditEvent("support_access_invited", { entityType: "ungani_support_access_grants", tenantId: currentTenantId });
+
+          msg.className = "action-msg success";
+          msg.textContent = "UNGANI Support has been invited.";
+          await loadGrantStatus();
+          await loadHistory();
+        } catch (error) {
+          msg.className = "action-msg error";
+          msg.textContent = "Failed: " + getErrorMessage(error);
+        }
+      });
+    }
+
+    async function grantAccess() {
+      const btn = document.getElementById("btnGrant");
+      const msg = document.getElementById("grantMessage");
+      msg.className = "action-msg";
+      msg.textContent = "";
+
+      const accessLevel = document.getElementById("accessLevelSelect").value;
+      const durationHours = Number(document.getElementById("durationSelect").value);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + durationHours * 3600000);
+
+      await withButtonLoading(btn, async function () {
+        try {
+          const { error } = await supabaseClient
+            .from("ungani_support_access_grants")
+            .upsert({
+              tenant_id: currentTenantId,
+              status: "active",
+              access_level: accessLevel,
+              duration_hours: durationHours,
+              granted_at: now.toISOString(),
+              granted_by: currentUserId,
+              expires_at: expiresAt.toISOString(),
+              revoked_at: null,
+              revoked_by: null,
+              updated_at: now.toISOString()
+            }, { onConflict: "tenant_id" });
+
+          if (error) throw error;
+
+          await logAuditEvent("support_access_granted", {
+            entityType: "ungani_support_access_grants",
+            tenantId: currentTenantId,
+            metadata: { access_level: accessLevel, duration_hours: durationHours, expires_at: expiresAt.toISOString() }
+          });
+
+          msg.className = "action-msg success";
+          msg.textContent = "Access granted until " + formatDateTime(expiresAt) + ".";
+          await loadGrantStatus();
+          await loadHistory();
+        } catch (error) {
+          msg.className = "action-msg error";
+          msg.textContent = "Failed: " + getErrorMessage(error);
+        }
+      });
+    }
+
+    async function revokeAccess() {
+      if (!confirm("Revoke UNGANI Support Access now? This takes effect immediately.")) return;
+
+      const btn = document.getElementById("btnRevoke");
+      const msg = document.getElementById("grantMessage");
+      msg.className = "action-msg";
+      msg.textContent = "";
+
+      await withButtonLoading(btn, async function () {
+        try {
+          const { error } = await supabaseClient
+            .from("ungani_support_access_grants")
+            .update({
+              status: "revoked",
+              revoked_at: new Date().toISOString(),
+              revoked_by: currentUserId,
+              updated_at: new Date().toISOString()
+            })
+            .eq("tenant_id", currentTenantId);
+
+          if (error) throw error;
+
+          await logAuditEvent("support_access_revoked", { entityType: "ungani_support_access_grants", tenantId: currentTenantId });
+
+          msg.className = "action-msg success";
+          msg.textContent = "Access revoked.";
+          await loadGrantStatus();
+          await loadHistory();
+        } catch (error) {
+          msg.className = "action-msg error";
+          msg.textContent = "Failed: " + getErrorMessage(error);
+        }
+      });
+    }
+
+    const HISTORY_ICONS = {
+      support_access_invited: "📩",
+      support_access_granted: "🔓",
+      support_access_revoked: "🔒",
+      support_access_session_opened: "👀",
+      support_access_record_modified: "✏️"
+    };
+
+    const HISTORY_LABELS = {
+      support_access_invited: "UNGANI Support invited",
+      support_access_granted: "Access granted",
+      support_access_revoked: "Access revoked",
+      support_access_session_opened: "UNGANI support opened a session",
+      support_access_record_modified: "UNGANI support edited a record"
+    };
+
+    async function loadHistory() {
+      const box = document.getElementById("historyBox");
+
+      try {
+        const { data, error } = await supabaseClient
+          .from("ungani_audit_log")
+          .select("action, actor_email, description, metadata, created_at")
+          .eq("tenant_id", currentTenantId)
+          .like("action", "support_access_%")
+          .order("created_at", { ascending: false })
+          .limit(25);
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          box.innerHTML = '<div class="empty">No support access activity yet.</div>';
+          return;
+        }
+
+        box.innerHTML = '<div class="history-list">' + data.map(function (row) {
+          const icon = HISTORY_ICONS[row.action] || "•";
+          const label = HISTORY_LABELS[row.action] || row.action;
+          const actor = row.actor_email ? " · " + escapeHtml(row.actor_email) : "";
+          return `
+            <div class="history-row">
+              <div class="history-icon">${icon}</div>
+              <div class="history-row-body">
+                <strong>${escapeHtml(label)}</strong>
+                <span>${formatDateTime(row.created_at)}${actor}</span>
+              </div>
+            </div>
+          `;
+        }).join("") + "</div>";
+      } catch (error) {
+        box.innerHTML = '<div class="error">Could not load history: ' + escapeHtml(getErrorMessage(error)) + "</div>";
+      }
+    }
+
+    function getErrorMessage(error) {
+      if (!error) return "";
+      if (error.message) return error.message;
+      if (error.details) return error.details;
+      if (error.hint) return error.hint;
+      try { return JSON.stringify(error); } catch (e) { return String(error); }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyExistingThemeSetting();
+
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const ownerOnlyBox = document.getElementById("ownerOnlyBox");
+      const mainContent = document.getElementById("mainContent");
+
+      const hasSession = await checkClientSession();
+      if (!hasSession) return;
+
+      try {
+        await loadOwnerStatus();
+
+        loadingBox.style.display = "none";
+
+        if (!isOwner) {
+          ownerOnlyBox.style.display = "block";
+          return;
+        }
+
+        mainContent.style.display = "block";
+        await loadGrantStatus();
+        await loadHistory();
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.textContent = "Unable to load support access. " + getErrorMessage(error);
+      }
+    });
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>

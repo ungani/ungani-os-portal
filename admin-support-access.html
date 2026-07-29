@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Admin - Support Access</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
+
+  <style>
+    .page-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .metric-card {
+      background: var(--ungani-card);
+      border: 1px solid var(--ungani-border);
+      border-left: 6px solid var(--ungani-gold);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 10px 24px var(--ungani-shadow);
+    }
+
+    .metric-card h3 {
+      margin: 0 0 8px;
+      color: var(--ungani-muted);
+      font-size: 14px;
+    }
+
+    .metric-card p {
+      margin: 0;
+      font-size: 28px;
+      font-weight: bold;
+      color: var(--ungani-text);
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--ungani-gold);
+      color: var(--ungani-navy);
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn.dark { background: var(--ungani-card); color: var(--ungani-text); border: 1px solid var(--ungani-border); }
+    .btn.green { background: var(--ungani-green); color: #FFFFFF; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .section-title-row h2 { margin: 0; }
+
+    .badge {
+      display: inline-block;
+      background: var(--ungani-navy);
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .badge.green { background: var(--ungani-green); }
+    .badge.red { background: var(--ungani-red); }
+    .badge.orange { background: var(--ungani-orange); }
+    .badge.gray { background: #64748B; }
+
+    .empty {
+      text-align: center;
+      padding: 28px;
+      background: var(--ungani-card);
+      border: 1px dashed var(--ungani-border);
+      border-radius: 18px;
+    }
+
+    .empty h3 { margin: 0 0 8px; color: var(--ungani-text); }
+    .empty p { margin: 0; color: var(--ungani-muted); }
+
+    .small-text {
+      color: var(--ungani-muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .ungani-table-wrap { overflow-x: auto; }
+
+    .ungani-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      min-width: 760px;
+    }
+
+    .ungani-table thead th {
+      text-align: left;
+      padding: 10px 12px;
+      color: var(--ungani-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--ungani-border);
+      white-space: nowrap;
+    }
+
+    .ungani-table td {
+      padding: 12px;
+      border-bottom: 1px solid var(--ungani-border);
+      vertical-align: top;
+    }
+
+    .ungani-table .row-sub {
+      display: block;
+      font-weight: normal;
+      color: var(--ungani-muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="adminRoot"></div>
+
+  <script>
+    let currentAdmin = null;
+    let supabaseClient = null;
+    let grants = [];
+
+    const pageMainHtml = `
+      <section class="ungani-card ungani-hero-card">
+        <div style="position: relative; z-index: 1;">
+          <h2>UNGANI Support Access</h2>
+          <p>
+            Tenants who have invited or granted UNGANI support temporary access to their
+            workspace. You always sign in with your own login - a grant is what lets you into a
+            specific tenant's data, never a shared password. Opening a session and every edit you
+            make while inside one is recorded in the audit log.
+          </p>
+          <div style="margin-top: 16px;">
+            <a class="btn" href="admin-home.html">Admin Home</a>
+            <a class="btn dark" href="admin-audit-logs.html">Audit Logs</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-grid" id="summaryTiles">
+        <div class="metric-card"><h3>Active grants</h3><p id="metricActive">0</p></div>
+        <div class="metric-card"><h3>Pending invites</h3><p id="metricPending">0</p></div>
+        <div class="metric-card"><h3>Expiring within 2h</h3><p id="metricExpiringSoon">0</p></div>
+      </section>
+
+      <section class="ungani-card">
+        <div class="section-title-row">
+          <h2>Tenants</h2>
+          <button class="btn green" onclick="loadGrants()">Refresh</button>
+        </div>
+        <p class="small-text" id="grantsCountText">Loading...</p>
+
+        <div class="ungani-table-wrap">
+          <table class="ungani-table">
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th>Status</th>
+                <th>Access Level</th>
+                <th>Granted / Invited</th>
+                <th>Expires</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="grantsListBox">
+              <tr><td colspan="6"><div class="empty"><h3>Loading...</h3><p>Please wait.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "supportAccess",
+        pageTitle: "UNGANI Support Access",
+        pageSubtitle: "Tenants that have invited or granted UNGANI support temporary access.",
+        footerTitle: "Support Access",
+        footerVersion: "Support Access Version: v1",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "supportAccess",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Support Access",
+            footerVersion: "Support Access Version: v1"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadGrants();
+        }
+      });
+    });
+
+    function safe(value) { return UnganiAdminShared.safe(value); }
+    function titleCase(value) { if (!value) return "—"; return String(value).replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); }); }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return "—";
+      return d.toLocaleString("en-KE", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function isGrantLiveNow(grant) {
+      if (!grant) return false;
+      if (grant.status !== "active") return false;
+      if (!grant.expires_at) return false;
+      return new Date(grant.expires_at).getTime() > Date.now();
+    }
+
+    function isExpiringSoon(grant) {
+      if (!isGrantLiveNow(grant)) return false;
+      return new Date(grant.expires_at).getTime() - Date.now() <= 2 * 3600000;
+    }
+
+    async function loadGrants() {
+      const listBox = document.getElementById("grantsListBox");
+      const countText = document.getElementById("grantsCountText");
+
+      try {
+        const { data, error } = await supabaseClient
+          .from("ungani_support_access_grants")
+          .select("*, tenants(company_name, business_name, name)")
+          .in("status", ["pending", "active"])
+          .order("updated_at", { ascending: false });
+
+        if (error) throw error;
+
+        grants = data || [];
+
+        const activeCount = grants.filter(isGrantLiveNow).length;
+        const pendingCount = grants.filter(function (g) { return g.status === "pending"; }).length;
+        const expiringSoonCount = grants.filter(isExpiringSoon).length;
+
+        document.getElementById("metricActive").textContent = activeCount;
+        document.getElementById("metricPending").textContent = pendingCount;
+        document.getElementById("metricExpiringSoon").textContent = expiringSoonCount;
+
+        const relevant = grants.filter(function (g) { return g.status === "pending" || isGrantLiveNow(g); });
+
+        countText.textContent = relevant.length + " tenant(s) with a pending invite or active grant.";
+
+        if (relevant.length === 0) {
+          listBox.innerHTML = '<tr><td colspan="6"><div class="empty"><h3>No tenants have invited or granted support access right now</h3><p>This list only shows pending invites and currently-active grants.</p></div></td></tr>';
+          return;
+        }
+
+        listBox.innerHTML = relevant.map(renderGrantRow).join("");
+      } catch (error) {
+        listBox.innerHTML = '<tr><td colspan="6"><div class="empty"><h3>Could not load</h3><p>' + safe(error.message) + "</p></div></td></tr>";
+      }
+    }
+
+    function renderGrantRow(grant) {
+      const tenant = grant.tenants || {};
+      const tenantName = tenant.company_name || tenant.business_name || tenant.name || "Unnamed Business";
+      const live = isGrantLiveNow(grant);
+
+      let statusBadge;
+      if (live) {
+        statusBadge = isExpiringSoon(grant) ? '<span class="badge orange">Expiring Soon</span>' : '<span class="badge green">Active</span>';
+      } else if (grant.status === "pending") {
+        statusBadge = '<span class="badge gray">Pending Invite</span>';
+      } else {
+        statusBadge = '<span class="badge gray">' + safe(titleCase(grant.status)) + "</span>";
+      }
+
+      const levelBadge = grant.access_level === "full_access"
+        ? '<span class="badge red">Full Access</span>'
+        : '<span class="badge">View Only</span>';
+
+      const grantedOrInvited = grant.status === "pending"
+        ? formatDateTime(grant.invited_at)
+        : formatDateTime(grant.granted_at);
+
+      const expiresText = live ? formatDateTime(grant.expires_at) : "—";
+
+      const actionHtml = live
+        ? '<button class="btn green" onclick="openSupportSession(\'' + grant.tenant_id + '\')">Open Support Session</button>'
+        : '<span class="small-text">Awaiting client grant</span>';
+
+      return `
+        <tr>
+          <td><strong>${safe(tenantName)}</strong><span class="row-sub">${safe(grant.tenant_id)}</span></td>
+          <td>${statusBadge}</td>
+          <td>${levelBadge}</td>
+          <td>${grantedOrInvited}</td>
+          <td>${expiresText}</td>
+          <td>${actionHtml}</td>
+        </tr>
+      `;
+    }
+
+    function openSupportSession(tenantId) {
+      window.location.href = "admin-support-session.html?tenant=" + encodeURIComponent(tenantId);
+    }
+  </script>
+</body>
+</html>
