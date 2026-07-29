@@ -2185,6 +2185,7 @@
     "key": "healthcare",
     "name": "Healthcare",
     "match": [
+      "healthcare",
       "clinic",
       "health",
       "medical",

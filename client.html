@@ -7767,9 +7767,14 @@
       };
     }
 
+    // Shared by getHospitalitySectionContent, renderHospitalityDashboard, and
+    // renderHospitalityOverview so all three agree on which sections are
+    // "no lodging" - room vocabulary (housekeeping, checkouts, check-ins)
+    // must never appear on a dashboard where none of these are selected.
+    const HOSPITALITY_FNB_SECTIONS = ["Restaurant", "Bar / Lounge", "Catering"];
+
     function getHospitalitySectionContent(scopeLabel, data, ctx) {
-      const fnbSections = ["Restaurant", "Bar / Lounge", "Catering"];
-      if (fnbSections.indexOf(scopeLabel) !== -1) return buildFoodBeverageSectionContent(data, ctx);
+      if (HOSPITALITY_FNB_SECTIONS.indexOf(scopeLabel) !== -1) return buildFoodBeverageSectionContent(data, ctx);
       return buildRoomsSectionContent(data, ctx);
     }
 
@@ -7805,10 +7810,11 @@
       // and renderLogisticsDashboard: the hero top-actions below were
       // hardcoded to Hotel/Room vocabulary regardless of section, hit by
       // any unscoped render - including every F&B-only sole-section tenant.
-      const heroFnbSections = ["Restaurant", "Bar / Lounge", "Catering"];
-      const heroSoleSection = isScoped ? null : getSoleSelectedSection();
-      const heroIsFnb = heroSoleSection !== null && heroFnbSections.indexOf(heroSoleSection) !== -1;
-      const heroTopActionsHtml = heroIsFnb ? `
+      // isFnbView covers BOTH the scoped case (viewing one F&B section) and
+      // the unscoped sole-section case, so every caption on this page - not
+      // just the hero buttons - can agree on which vocabulary to show.
+      const isFnbView = HOSPITALITY_FNB_SECTIONS.indexOf(isScoped ? scopeLabel : (getSoleSelectedSection() || "")) !== -1;
+      const heroTopActionsHtml = isFnbView ? `
           <a class="btn gold" href="${attr(ctx.moneyHref)}">Log Sale</a>
           <a class="btn green" href="${attr(ctx.calendarHref)}">New Event Booking</a>
           <a class="btn light" href="${attr(ctx.itemsHref)}">Menu Items</a>
@@ -7858,7 +7864,9 @@
                 <h3>${safe(getGreeting())}, ${safe(shortPersonName())}</h3>
                 ${buildGreetingRotatorHtml(greetingMessages)}
                 <p class="desktop-only">
-                  Here's what needs attention today across your rooms, tables, and bookings. Use it to see overdue checkouts, today's check-ins, open housekeeping/maintenance, and upcoming departures, then click any card or row to open the right record.
+                  ${isFnbView
+                    ? "Here's what needs attention today across your menu, stock, and guest requests. Use it to see out-of-stock items, low stock, supplier restocks due, and open guest requests, then click any card or row to open the right record."
+                    : "Here's what needs attention today across your rooms, tables, and bookings. Use it to see overdue checkouts, today's check-ins, open housekeeping/maintenance, and upcoming departures, then click any card or row to open the right record."}
                 </p>
                 <p class="mobile-only">
                   Your hospitality summary for today. Tap any card or use ☰ for full sections.
@@ -7925,12 +7933,12 @@
           <div class="section-title">
             <div>
               <h3>Calendar — Next 5 Days</h3>
-              <p>Check-ins, reservations, checkouts, and maintenance coming up.</p>
+              <p>${isFnbView ? "Reservations, event bookings, and supplier restocks coming up." : "Check-ins, reservations, checkouts, and maintenance coming up."}</p>
             </div>
             <a class="btn small gold" href="${attr(ctx.calendarHref)}">Open Calendar</a>
           </div>
 
-          ${renderCalendarPreview(calendarPreview, false, "Check-ins, reservations, checkouts, and housekeeping/maintenance activities will appear here.")}
+          ${renderCalendarPreview(calendarPreview, false, isFnbView ? "Reservations, event bookings, and supplier restock dates will appear here." : "Check-ins, reservations, checkouts, and housekeeping/maintenance activities will appear here.")}
         </section>
 
         ${contactSupportCard()}
@@ -8298,12 +8306,12 @@
           <div class="section-title">
             <div>
               <h3>Calendar — Next 5 Days</h3>
-              <p>Check-ins, reservations, checkouts, and maintenance coming up, tagged by section.</p>
+              <p>${fnbOnly ? "Reservations, event bookings, and supplier restocks coming up, tagged by section." : "Check-ins, reservations, checkouts, and maintenance coming up, tagged by section."}</p>
             </div>
             <a class="btn small gold" href="my-calendar.html">Open Calendar</a>
           </div>
 
-          ${renderCalendarPreview(calendarPreview, true, "Check-ins, reservations, checkouts, and housekeeping/maintenance activities will appear here.")}
+          ${renderCalendarPreview(calendarPreview, true, fnbOnly ? "Reservations, event bookings, and supplier restock dates will appear here." : "Check-ins, reservations, checkouts, and housekeeping/maintenance activities will appear here.")}
         </section>
 
         ${contactSupportCard()}
@@ -10353,8 +10361,91 @@
         peopleHref: "my-people.html"
       };
 
-      const content = getAutomotiveSectionContent(sections[0], dashboardData, ctx);
-      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+      // Automotive's 3 sections (Car Wash, Car Hire, Repair Shop) each have
+      // their own bespoke content builder, but a combined Overview must show
+      // EVERY selected section's activity, not just one - so unlike the
+      // scoped single-section dashboard, this uses generic matchers that
+      // recognize any of the 3 sections' calendar/expense vocabulary at
+      // once, rather than picking one builder and dropping the rest.
+      const automotiveCalendarMatcher = function (type) {
+        return isBookingCalendarType(type) || isVehicleReturnCalendarType(type) || isRepairDeadlineCalendarType(type);
+      };
+      const automotiveCostMatcher = function (row) {
+        return isEquipmentMaintenanceExpense(row) || isVehicleMaintenanceExpense(row) || isSparePartsExpense(row);
+      };
+
+      const revenueThisMonth = sumTransactionsByMatcher(dashboardData.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(dashboardData.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(dashboardData.transactions, isIncome);
+      const costThisMonth = sumTransactionsByMatcher(dashboardData.transactions, monthKey, automotiveCostMatcher);
+
+      const todaysActivity = (dashboardData.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return automotiveCalendarMatcher(type) && date === todayStr && !status.includes("cancelled") && !status.includes("completed");
+      });
+
+      const overdueActivity = (dashboardData.events || []).filter(function (event) {
+        const type = String(getValue(event, ["event_type", "type"], ""));
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const status = statusText(event);
+        return automotiveCalendarMatcher(type) && date && date < todayStr && !status.includes("cancelled") && !status.includes("completed");
+      }).sort(function (a, b) {
+        return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
+      });
+
+      const overdueTasks = findOverdueTasksForSection(dashboardData, todayStr);
+
+      const attentionGroups = [];
+      if (overdueActivity.length > 0) {
+        attentionGroups.push({
+          title: "Overdue Bookings, Returns & Deadlines",
+          rows: overdueActivity.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Activity");
+            const date = formatDate(getValue(event, ["event_date", "date", "start_date"], ""));
+            return attentionRow("⚠️", title, "Due " + date, "Overdue", "red", ctx.calendarHref + "?highlight=" + event.id, null, "overdue:" + event.id);
+          })
+        });
+      }
+      if (overdueTasks.length > 0) {
+        attentionGroups.push({
+          title: "Overdue Tasks (Oldest First)",
+          rows: overdueTasks.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Task");
+            const due = formatDate(getValue(task, ["due_date"], ""));
+            return attentionRow("⚠️", title, "Due " + due, "Overdue", "gold", ctx.tasksHref + "?highlight=" + task.id, null, "task:" + task.id);
+          })
+        });
+      }
+      if (todaysActivity.length > 0) {
+        attentionGroups.push({
+          title: "Today's Bookings, Returns & Deadlines",
+          rows: todaysActivity.map(function (event) {
+            const title = getValue(event, ["event_title", "title", "name"], "Activity");
+            return attentionRow("📅", title, getValue(event, ["event_type", "type"], "Activity"), "Today", "blue", ctx.calendarHref + "?highlight=" + event.id, null, null);
+          })
+        });
+      }
+
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue activity or tasks need attention right now.");
+
+      const kpisHtml = [
+        kpiCard("Revenue (This Month)", compactMoney(revenueThisMonth), rentTrendSubtitle(revenueDelta, revenueLastMonth, "revenue"), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626", ctx.moneyHref, countSpan(revenueThisMonth, "money"), sparklineSvg(revenueTrendMonths.map(function (m) { return m.value; }), revenueThisMonth >= revenueLastMonth ? "#16A34A" : "#DC2626"), "💵"),
+        kpiCard("Today's Activity", todaysActivity.length, "Bookings, returns & deadlines today", "#2563EB", ctx.calendarHref, countSpan(todaysActivity.length, "plain"), null, "📅"),
+        kpiCard("Maintenance & Parts Costs", compactMoney(costThisMonth), "This month's upkeep & parts spend", "#D4A63A", ctx.moneyHref, countSpan(costThisMonth, "money"), null, "🛠️"),
+        kpiCard("Overdue Items", overdueActivity.length + overdueTasks.length, "Overdue activity + tasks needing action", (overdueActivity.length + overdueTasks.length) > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(overdueActivity.length + overdueTasks.length, "plain"), null, "⚠️")
+      ].join("");
+
+      const quickActionsHtml = [
+        quickAction("📅", "New Booking", "Book a wash, hire, or repair slot", ctx.calendarHref, "#2563EB"),
+        quickAction("💵", "Log Payment", "Record a payment", ctx.moneyHref, "#16A34A"),
+        quickAction("🚗", "Add Vehicle / Service / Job", "Add a vehicle, service, or repair job", ctx.itemsHref, "#D4A63A"),
+        quickAction("🧑", "Add Customer", "Register a new customer", ctx.peopleHref, "#14B8A6")
+      ].join("");
+
+      const hasAnyTrendHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
 
       const sectionSummaries = sections.map(function (label) {
         return calculateSectionSummary(label, monthKey, todayStr);
@@ -10364,7 +10455,10 @@
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
       const mostRecentRecord = findMostRecentRecord(dashboardData);
 
-      const greetingMessages = content.greetingMessages.slice();
+      const greetingMessages = [];
+      if (overdueActivity.length > 0) greetingMessages.push({ text: overdueActivity.length === 1 ? "1 booking/return/deadline is overdue" : overdueActivity.length + " bookings/returns/deadlines are overdue", href: ctx.calendarHref });
+      if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: ctx.tasksHref });
+      if (todaysActivity.length > 0) greetingMessages.push({ text: todaysActivity.length === 1 ? "1 activity scheduled today" : todaysActivity.length + " activities scheduled today", href: ctx.calendarHref });
       if (mostRecentRecord) {
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
@@ -10409,25 +10503,24 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${content.todayListHtml}
               </div>
             </div>
           </div>
         </section>
 
         <section class="kpi-grid">
-          ${content.kpisHtml}
+          ${kpisHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>${safe(content.attentionTitle)}</h3>
-              <p>${safe(content.attentionSubtitle)}</p>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue bookings/returns/deadlines, overdue tasks, and today's activity — in priority order.</p>
             </div>
           </div>
 
-          ${content.attentionHtml}
+          ${attentionHtml}
         </section>
 
         <section class="card money-snapshot">
@@ -10435,7 +10528,7 @@
         </section>
 
         <section class="quick-actions">
-          ${content.quickActionsHtml}
+          ${quickActionsHtml}
         </section>
 
         <section class="card">
@@ -10458,8 +10551,8 @@
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>${safe(content.trendTitle)}</h3>
-              <p>${safe(content.trendSubtitle)}</p>
+              <h3>Automotive Revenue — Last 6 Months</h3>
+              <p>Monthly revenue trend from your money records.</p>
             </div>
             <a class="btn small gold" href="my-money.html">Money</a>
           </div>
@@ -10468,7 +10561,7 @@
             <div style="position:relative;height:260px;">
               <canvas id="automotiveTrendChart"></canvas>
             </div>
-          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
+          ` : emptyStateNudge("💵", "Put your numbers here", "Log your first payment and this chart will start tracking your monthly revenue trend.", "Log Payment", ctx.moneyHref)}
         </section>
 
         <section class="card">
@@ -10492,7 +10585,7 @@
 
       updateThemeButton();
       updateNotificationCounts();
-      renderAutomotiveTrendChart(content.trendMonths, content.trendLabel, content.trendColor);
+      renderAutomotiveTrendChart(revenueTrendMonths, "Automotive Revenue", "#16A34A");
       renderSectionComparisonChart(sectionSummaries);
       initCountAnimations();
       startGreetingRotation(greetingMessages.length || 1);
@@ -11028,8 +11121,38 @@
         peopleHref: "my-people.html"
       };
 
-      const content = getHealthcareSectionContent(sections[0], dashboardData, ctx);
-      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+      // Healthcare's 5 sections (Clinic, Medical Centre, Hospital, Dental
+      // Clinic, Diagnostic Laboratory) each have their own bespoke content
+      // builder, but a combined Overview must reflect EVERY selected
+      // section's activity, not just one - so this uses a combined calendar
+      // matcher (Appointments OR Surgeries OR Sample Collections) and a
+      // combined cost matcher, rather than picking one builder and
+      // silently dropping the rest.
+      const healthcareCalendarMatcher = function (type) {
+        return isAppointmentCalendarType(type) || isSurgeryCalendarType(type) || isSampleCollectionCalendarType(type);
+      };
+      const healthcareCostMatcher = function (row) {
+        return isWardSuppliesExpense(row) || isDentalSuppliesExpense(row) || isLabSuppliesExpense(row);
+      };
+
+      const base = buildHealthcareRevenueAndAttention(dashboardData, ctx, healthcareCalendarMatcher, "Appointments", null);
+      const costThisMonth = sumTransactionsByMatcher(dashboardData.transactions, monthKey, healthcareCostMatcher);
+
+      const kpisHtml = [
+        kpiCard("Healthcare Revenue", compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🩺"),
+        kpiCard("Today's Appointments", base.todaysEvents.length, "Appointments, surgeries & sample collections today", "#2563EB", ctx.calendarHref, countSpan(base.todaysEvents.length, "plain"), null, "📅"),
+        kpiCard("Supplies & Equipment Costs", compactMoney(costThisMonth), "This month's supplies & equipment spend", "#D4A63A", ctx.moneyHref, countSpan(costThisMonth, "money"), null, "🧫"),
+        kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+      ].join("");
+
+      const quickActionsHtml = [
+        quickAction("📅", "New Appointment", "Book a patient appointment", ctx.calendarHref, "#2563EB"),
+        quickAction("💵", "Log Payment", "Record a payment", ctx.moneyHref, "#16A34A"),
+        quickAction("🩺", "Add Equipment / Service", "Add a service, equipment, or supply item", ctx.itemsHref, "#D4A63A"),
+        quickAction("🧑", "Add Patient", "Register a new patient", ctx.peopleHref, "#14B8A6")
+      ].join("");
+
+      const hasAnyTrendHistory = base.revenueTrendMonths.some(function (m) { return m.value > 0; });
 
       const sectionSummaries = sections.map(function (label) {
         return calculateSectionSummary(label, monthKey, todayStr);
@@ -11039,7 +11162,7 @@
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
       const mostRecentRecord = findMostRecentRecord(dashboardData);
 
-      const greetingMessages = content.greetingMessages.slice();
+      const greetingMessages = base.greetingMessages.slice();
       if (mostRecentRecord) {
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
@@ -11084,25 +11207,24 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${content.todayListHtml}
               </div>
             </div>
           </div>
         </section>
 
         <section class="kpi-grid">
-          ${content.kpisHtml}
+          ${kpisHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>${safe(content.attentionTitle)}</h3>
-              <p>${safe(content.attentionSubtitle)}</p>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue tasks and today's appointments, surgeries & sample collections — in priority order.</p>
             </div>
           </div>
 
-          ${content.attentionHtml}
+          ${base.attentionHtml}
         </section>
 
         <section class="card money-snapshot">
@@ -11110,7 +11232,7 @@
         </section>
 
         <section class="quick-actions">
-          ${content.quickActionsHtml}
+          ${quickActionsHtml}
         </section>
 
         <section class="card">
@@ -11133,8 +11255,8 @@
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>${safe(content.trendTitle)}</h3>
-              <p>${safe(content.trendSubtitle)}</p>
+              <h3>Healthcare Revenue — Last 6 Months</h3>
+              <p>Monthly revenue trend from your money records.</p>
             </div>
             <a class="btn small gold" href="my-money.html">Money</a>
           </div>
@@ -11143,7 +11265,7 @@
             <div style="position:relative;height:260px;">
               <canvas id="healthcareTrendChart"></canvas>
             </div>
-          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
+          ` : emptyStateNudge("🩺", "Put your numbers here", "Log your first payment and this chart will start tracking your monthly revenue trend.", "Log Payment", ctx.moneyHref)}
         </section>
 
         <section class="card">
@@ -11167,7 +11289,7 @@
 
       updateThemeButton();
       updateNotificationCounts();
-      renderHealthcareTrendChart(content.trendMonths, content.trendLabel, content.trendColor);
+      renderHealthcareTrendChart(base.revenueTrendMonths, "Healthcare Revenue", "#16A34A");
       renderSectionComparisonChart(sectionSummaries);
       initCountAnimations();
       startGreetingRotation(greetingMessages.length || 1);
@@ -11577,8 +11699,47 @@
         peopleHref: "my-people.html"
       };
 
-      const content = getSalonSectionContent(sections[0], dashboardData, ctx);
-      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+      // Salon's 4 sections each have their own bespoke content builder, but
+      // a combined Overview must reflect EVERY selected section's activity,
+      // not just one. Revenue/appointments/overdue-tasks are already fully
+      // generic across all 4 (buildSalonRevenueAndAttention, isIncome +
+      // isAppointmentCalendarType - all 4 sections share the same calendar
+      // type). Only "Available Team" needs combining by hand, since 3 of
+      // the 4 sections (Salon/Barber/Spa) have a distinct specialist person
+      // type and Beauty Services has none (it sells products instead).
+      const SALON_SPECIALIST_BY_SECTION = {
+        "Salon": "stylist",
+        "Barber": "barber",
+        "Spa": "therapist"
+      };
+
+      const base = buildSalonRevenueAndAttention(dashboardData, ctx);
+
+      let availableSpecialists = 0;
+      let totalSpecialists = 0;
+      sections.forEach(function (label) {
+        const personType = SALON_SPECIALIST_BY_SECTION[label];
+        if (!personType) return;
+        const specialists = findAvailableSpecialists(dashboardData, personType);
+        availableSpecialists += specialists.available.length;
+        totalSpecialists += specialists.all.length;
+      });
+
+      const kpisHtml = [
+        kpiCard("Revenue (This Month)", compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "💇"),
+        kpiCard("Today's Appointments", base.todaysAppointments.length, "Appointments scheduled today", "#2563EB", ctx.calendarHref, countSpan(base.todaysAppointments.length, "plain"), null, "📅"),
+        kpiCard("Available Team", availableSpecialists + " / " + totalSpecialists, "Stylists/barbers/therapists available now", "#16A34A", ctx.peopleHref, countSpan(availableSpecialists, "ratio", " / " + totalSpecialists), staticProportionBar(totalSpecialists > 0 ? availableSpecialists / totalSpecialists : 0, "#16A34A", (totalSpecialists > 0 ? Math.round((availableSpecialists / totalSpecialists) * 100) : 0) + "% available"), "🧑"),
+        kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+      ].join("");
+
+      const quickActionsHtml = [
+        quickAction("📅", "New Appointment", "Book a client appointment", ctx.calendarHref, "#2563EB"),
+        quickAction("💵", "Log Payment", "Record a payment", ctx.moneyHref, "#16A34A"),
+        quickAction("💇", "Add Service", "Add a salon, barber, spa, or beauty service", ctx.itemsHref, "#D4A63A"),
+        quickAction("🧑", "Add Client", "Register a new client", ctx.peopleHref, "#14B8A6")
+      ].join("");
+
+      const hasAnyTrendHistory = base.revenueTrendMonths.some(function (m) { return m.value > 0; });
 
       const sectionSummaries = sections.map(function (label) {
         return calculateSectionSummary(label, monthKey, todayStr);
@@ -11588,7 +11749,7 @@
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
       const mostRecentRecord = findMostRecentRecord(dashboardData);
 
-      const greetingMessages = content.greetingMessages.slice();
+      const greetingMessages = base.greetingMessages.slice();
       if (mostRecentRecord) {
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
@@ -11633,25 +11794,24 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${content.todayListHtml}
               </div>
             </div>
           </div>
         </section>
 
         <section class="kpi-grid">
-          ${content.kpisHtml}
+          ${kpisHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>${safe(content.attentionTitle)}</h3>
-              <p>${safe(content.attentionSubtitle)}</p>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue tasks and today's appointments — in priority order.</p>
             </div>
           </div>
 
-          ${content.attentionHtml}
+          ${base.attentionHtml}
         </section>
 
         <section class="card money-snapshot">
@@ -11659,7 +11819,7 @@
         </section>
 
         <section class="quick-actions">
-          ${content.quickActionsHtml}
+          ${quickActionsHtml}
         </section>
 
         <section class="card">
@@ -11682,8 +11842,8 @@
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>${safe(content.trendTitle)}</h3>
-              <p>${safe(content.trendSubtitle)}</p>
+              <h3>Salon Revenue — Last 6 Months</h3>
+              <p>Monthly revenue trend from your money records.</p>
             </div>
             <a class="btn small gold" href="my-money.html">Money</a>
           </div>
@@ -11692,7 +11852,7 @@
             <div style="position:relative;height:260px;">
               <canvas id="salonTrendChart"></canvas>
             </div>
-          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
+          ` : emptyStateNudge("💇", "Put your numbers here", "Log your first service payment and this chart will start tracking your monthly revenue trend.", "Log Payment", ctx.moneyHref)}
         </section>
 
         <section class="card">
@@ -11716,7 +11876,7 @@
 
       updateThemeButton();
       updateNotificationCounts();
-      renderSalonTrendChart(content.trendMonths, content.trendLabel, content.trendColor);
+      renderSalonTrendChart(base.revenueTrendMonths, "Salon Revenue", "#16A34A");
       renderSectionComparisonChart(sectionSummaries);
       initCountAnimations();
       startGreetingRotation(greetingMessages.length || 1);
@@ -12125,8 +12285,37 @@
         peopleHref: "my-people.html"
       };
 
-      const content = getEventsSectionContent(sections[0], dashboardData, ctx);
-      const hasAnyTrendHistory = content.trendMonths.some(function (m) { return m.value > 0; });
+      // Events' 2 sections (Events/Functions, Catering) each have their own
+      // bespoke content builder, but a combined Overview must reflect BOTH
+      // selected sections' activity, not just one - so this uses a combined
+      // calendar matcher (Event Date OR Catering Event Date) and a combined
+      // cost matcher, rather than picking one builder and dropping the
+      // other entirely.
+      const eventsCalendarMatcher = function (type) {
+        return isEventDateCalendarType(type) || isCateringEventDateCalendarType(type);
+      };
+      const eventsCostMatcher = function (row) {
+        return isVenueCostExpense(row) || isFoodSuppliesExpense(row);
+      };
+
+      const base = buildEventsRevenueAndAttention(dashboardData, ctx, eventsCalendarMatcher, "Events & Catering Dates");
+      const costThisMonth = sumTransactionsByMatcher(dashboardData.transactions, monthKey, eventsCostMatcher);
+
+      const kpisHtml = [
+        kpiCard("Revenue (This Month)", compactMoney(base.revenueThisMonth), rentTrendSubtitle(base.revenueDelta, base.revenueLastMonth, "revenue"), "#16A34A", ctx.moneyHref, countSpan(base.revenueThisMonth, "money"), sparklineSvg(base.revenueTrendMonths.map(function (m) { return m.value; }), "#16A34A"), "🎉"),
+        kpiCard("Upcoming Events & Catering Dates", base.upcomingEvents.length, "From today onward", "#2563EB", ctx.calendarHref, countSpan(base.upcomingEvents.length, "plain"), null, "📅"),
+        kpiCard("Venue & Food Supplies Costs", compactMoney(costThisMonth), "This month's venue & food spend", "#D4A63A", ctx.moneyHref, countSpan(costThisMonth, "money"), null, "🥘"),
+        kpiCard("Overdue Tasks", base.overdueTasks.length, "Tasks past their due date", base.overdueTasks.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(base.overdueTasks.length, "plain"), null, "⚠️")
+      ].join("");
+
+      const quickActionsHtml = [
+        quickAction("📅", "New Event / Catering Date", "Schedule an event or catering date", ctx.calendarHref, "#2563EB"),
+        quickAction("💵", "Log Payment", "Record a payment", ctx.moneyHref, "#16A34A"),
+        quickAction("🎉", "Add Event / Order", "Add a new event, booking, or catering order", ctx.itemsHref, "#D4A63A"),
+        quickAction("🧑", "Add Client", "Register a new client", ctx.peopleHref, "#14B8A6")
+      ].join("");
+
+      const hasAnyTrendHistory = base.revenueTrendMonths.some(function (m) { return m.value > 0; });
 
       const sectionSummaries = sections.map(function (label) {
         return calculateSectionSummary(label, monthKey, todayStr);
@@ -12136,7 +12325,7 @@
       const unreadNotifications = notifications.filter(row => String(getValue(row, ["status"], "")).toLowerCase() !== "read").length;
       const mostRecentRecord = findMostRecentRecord(dashboardData);
 
-      const greetingMessages = content.greetingMessages.slice();
+      const greetingMessages = base.greetingMessages.slice();
       if (mostRecentRecord) {
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
       }
@@ -12181,25 +12370,24 @@
               <h4>Today / Attention</h4>
               <div class="today-list">
                 ${todayItem("🔔", "Notifications", unreadNotifications, "unread update(s)", "client-notifications.html")}
-                ${content.todayListHtml}
               </div>
             </div>
           </div>
         </section>
 
         <section class="kpi-grid">
-          ${content.kpisHtml}
+          ${kpisHtml}
         </section>
 
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>${safe(content.attentionTitle)}</h3>
-              <p>${safe(content.attentionSubtitle)}</p>
+              <h3>Needs Attention Today</h3>
+              <p>Overdue tasks and upcoming events & catering dates — in priority order.</p>
             </div>
           </div>
 
-          ${content.attentionHtml}
+          ${base.attentionHtml}
         </section>
 
         <section class="card money-snapshot">
@@ -12207,7 +12395,7 @@
         </section>
 
         <section class="quick-actions">
-          ${content.quickActionsHtml}
+          ${quickActionsHtml}
         </section>
 
         <section class="card">
@@ -12230,8 +12418,8 @@
         <section class="card">
           <div class="section-title">
             <div>
-              <h3>${safe(content.trendTitle)}</h3>
-              <p>${safe(content.trendSubtitle)}</p>
+              <h3>Events Revenue — Last 6 Months</h3>
+              <p>Monthly revenue trend from your money records.</p>
             </div>
             <a class="btn small gold" href="my-money.html">Money</a>
           </div>
@@ -12240,7 +12428,7 @@
             <div style="position:relative;height:260px;">
               <canvas id="eventsTrendChart"></canvas>
             </div>
-          ` : emptyStateNudge(content.trendEmpty.icon, content.trendEmpty.title, content.trendEmpty.message, content.trendEmpty.actionLabel, content.trendEmpty.actionHref)}
+          ` : emptyStateNudge("🎉", "Put your numbers here", "Log your first payment and this chart will start tracking your monthly revenue trend.", "Log Payment", ctx.moneyHref)}
         </section>
 
         <section class="card">
@@ -12264,7 +12452,7 @@
 
       updateThemeButton();
       updateNotificationCounts();
-      renderEventsTrendChart(content.trendMonths, content.trendLabel, content.trendColor);
+      renderEventsTrendChart(base.revenueTrendMonths, "Events Revenue", "#16A34A");
       renderSectionComparisonChart(sectionSummaries);
       initCountAnimations();
       startGreetingRotation(greetingMessages.length || 1);
