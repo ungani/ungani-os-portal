@@ -1508,6 +1508,91 @@
           width: 100%;
         }
       }
+
+      /* Side panel - per UI/UX spec point on record details ("keep users
+         inside the current module and display the record details in a
+         side panel" instead of navigating to a new page). Deliberately a
+         separate component from the modal above, not a variant of it -
+         a panel keeps the list page visible/scrollable behind it (slides
+         in from the edge, doesn't take over the center), while a modal
+         is for focused add/edit forms. z-index sits just below the modal
+         so a modal (e.g. a confirm dialog) can still open on top of an
+         open panel without fighting it for stacking order. */
+      .ungani-panel-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(2,6,23,0.55);
+        display: none;
+        z-index: 9998;
+        opacity: 0;
+        transition: opacity 0.22s ease;
+      }
+
+      .ungani-panel-backdrop.open {
+        display: block;
+        opacity: 1;
+      }
+
+      .ungani-side-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(480px, 100vw);
+        background: var(--ungani-card);
+        color: var(--ungani-text);
+        border-left: 1px solid var(--ungani-border);
+        box-shadow: -30px 0 90px rgba(0,0,0,0.35);
+        display: flex;
+        flex-direction: column;
+        transform: translateX(100%);
+        transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .ungani-panel-backdrop.open .ungani-side-panel {
+        transform: translateX(0);
+      }
+
+      .ungani-panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--ungani-border);
+        flex: none;
+      }
+
+      .ungani-panel-head h3 {
+        margin: 0;
+        font-size: 19px;
+        overflow-wrap: anywhere;
+      }
+
+      .ungani-panel-close {
+        border: none;
+        background: rgba(148,163,184,0.18);
+        color: var(--ungani-text);
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 16px;
+        flex: none;
+        line-height: 1;
+      }
+
+      .ungani-panel-body {
+        padding: 22px;
+        overflow-y: auto;
+        flex: 1;
+      }
+
+      @media (max-width: 640px) {
+        .ungani-side-panel {
+          width: 100%;
+        }
+      }
     `;
 
     document.head.appendChild(style);
@@ -1573,7 +1658,80 @@
   function closeModal() {
     const backdrop = document.getElementById("unganiModalBackdrop");
     if (backdrop) backdrop.classList.remove("open");
-    document.body.style.overflow = "";
+    updateBodyScrollLock();
+  }
+
+  // A modal (e.g. "Log Maintenance") can legitimately open on top of an
+  // already-open side panel - only release the body scroll lock once
+  // NEITHER is open, so closing the modal doesn't un-lock scrolling out
+  // from under a panel that's still open behind it.
+  function updateBodyScrollLock() {
+    const modalOpen = document.getElementById("unganiModalBackdrop") && document.getElementById("unganiModalBackdrop").classList.contains("open");
+    const panelOpen = document.getElementById("unganiPanelBackdrop") && document.getElementById("unganiPanelBackdrop").classList.contains("open");
+    document.body.style.overflow = (modalOpen || panelOpen) ? "hidden" : "";
+  }
+
+  let panelEscapeListenerAttached = false;
+
+  function ensureSidePanel() {
+    injectSharedStyles();
+
+    let backdrop = document.getElementById("unganiPanelBackdrop");
+
+    if (backdrop) return backdrop;
+
+    backdrop = document.createElement("div");
+    backdrop.id = "unganiPanelBackdrop";
+    backdrop.className = "ungani-panel-backdrop";
+    backdrop.innerHTML = `
+      <div class="ungani-side-panel" role="dialog" aria-modal="true" aria-labelledby="unganiPanelTitle">
+        <div class="ungani-panel-head">
+          <h3 id="unganiPanelTitle"></h3>
+          <button type="button" class="ungani-panel-close" onclick="UnganiClientShared.closeSidePanel()" aria-label="Close">✕</button>
+        </div>
+        <div class="ungani-panel-body" id="unganiPanelBody"></div>
+      </div>
+    `;
+
+    document.body.appendChild(backdrop);
+
+    backdrop.addEventListener("click", function (event) {
+      if (event.target === backdrop) closeSidePanel();
+    });
+
+    if (!panelEscapeListenerAttached) {
+      panelEscapeListenerAttached = true;
+
+      document.addEventListener("keydown", function (event) {
+        const openBackdrop = document.getElementById("unganiPanelBackdrop");
+        if (event.key === "Escape" && openBackdrop && openBackdrop.classList.contains("open")) {
+          closeSidePanel();
+        }
+      });
+    }
+
+    return backdrop;
+  }
+
+  function openSidePanel(options) {
+    const settings = options || {};
+    const backdrop = ensureSidePanel();
+
+    document.getElementById("unganiPanelTitle").innerText = settings.title || "";
+    document.getElementById("unganiPanelBody").innerHTML = settings.bodyHtml || "";
+
+    backdrop.classList.add("open");
+    updateBodyScrollLock();
+
+    if (typeof settings.onOpen === "function") {
+      settings.onOpen();
+    }
+  }
+
+  function closeSidePanel() {
+    const backdrop = document.getElementById("unganiPanelBackdrop");
+    if (backdrop) backdrop.classList.remove("open");
+    updateBodyScrollLock();
   }
 
   function cleanText(value) {
@@ -3819,6 +3977,8 @@
       saveQuickAdd,
       openModal,
       closeModal,
+      openSidePanel,
+      closeSidePanel,
       toggleSidebarGroup,
       getCurrentUserId: function () {
         return state.authUser ? state.authUser.id : null;
