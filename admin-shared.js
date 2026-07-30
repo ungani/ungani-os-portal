@@ -12,6 +12,19 @@
 
   document.documentElement.dataset.unganiTheme = currentTheme;
 
+  // Several individual admin pages (e.g. admin-billing-automation.html,
+  // admin-reports.html) wrote their OWN light-mode CSS keyed to a plain
+  // data-theme attribute rather than data-ungani-theme, and never got
+  // wired up to actually set it - meaning the shared Theme toggle only
+  // ever changed the sidebar/topbar chrome this file itself renders,
+  // silently leaving those pages' own hero/table/card content frozen at
+  // its dark default no matter what a user picked. Mirroring the value
+  // onto data-theme too (both attributes, always in sync, set here and
+  // in applyTheme() below) lets any already-written
+  // html[data-theme="light"] CSS on those pages start working with zero
+  // per-page changes.
+  document.documentElement.setAttribute("data-theme", currentTheme);
+
   const translations = {
     en: {
       navMain: "Main",
@@ -847,13 +860,17 @@
   function applyTheme(theme) {
     currentTheme = theme === "dark" ? "dark" : "light";
     document.documentElement.dataset.unganiTheme = currentTheme;
+    document.documentElement.setAttribute("data-theme", currentTheme);
 
     // client-shared.js's applyTheme() sets this on both <html> and <body> -
     // mirrored here so any inline page CSS written against the client-side
     // convention (body[data-ungani-theme]) doesn't silently never fire on
-    // the admin side.
+    // the admin side. data-theme is mirrored for the same reason, for
+    // pages that wrote their own light-mode CSS against that attribute
+    // instead (see the comment at this file's top for the full story).
     if (document.body) {
       document.body.dataset.unganiTheme = currentTheme;
+      document.body.setAttribute("data-theme", currentTheme);
     }
 
     localStorage.setItem("ungani_theme", currentTheme);
