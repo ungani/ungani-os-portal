@@ -170,6 +170,62 @@
       answer: "Open Settings and turn on Multi-Currency. Once it's on, Money records can be entered in either KES or USD — the USD amount is converted to a KES equivalent using that day's exchange rate the moment you save, so your totals, tax figures, and reports always stay in KES. Rates refresh once a day.",
       href: "my-settings.html",
       linkLabel: "Open Settings"
+    },
+    {
+      key: "security-2fa",
+      match: ["two-factor", "two factor", "2fa", "authenticator", "security settings", "secure my account"],
+      question: "How do I set up two-factor authentication?",
+      answer: "Open Security & Data and follow the prompts to scan a QR code with an authenticator app. Once it's on, you'll be asked for a code from that app each time you log in.",
+      href: "my-security.html",
+      linkLabel: "Open Security & Data"
+    },
+    {
+      key: "team-roles",
+      match: ["what do roles mean", "staff roles", "user roles", "owner manager accountant", "permission levels", "what can staff see"],
+      question: "What do the different staff roles mean?",
+      answer: "Owner has full access to everything. Manager can manage most day-to-day operations. Accountant is scoped to Money and financial reporting. Staff gets access only to the sections you've explicitly assigned them. You set a teammate's role when you invite them from Team Access.",
+      href: "my-team-access.html",
+      linkLabel: "Open Team Access"
+    },
+    {
+      key: "support-access-explained",
+      match: ["what is support access", "ungani support access", "grant access to support", "let ungani see my data"],
+      question: "What is UNGANI Support Access?",
+      answer: "It's a way to let UNGANI's support team temporarily view (or, if you choose, edit) your workspace to help troubleshoot something — without ever needing your password. You control the access level and how long it lasts, and you can revoke it at any time.",
+      href: "my-support-access.html",
+      linkLabel: "Open Support Access"
+    },
+    {
+      key: "account-status-explained",
+      match: ["what does my account status mean", "account status", "is my account active", "trial status"],
+      question: "What does my account status mean?",
+      answer: "Account Status shows whether your workspace is active, on trial, or needs attention (like an overdue payment). Open it any time to see exactly where things stand and what, if anything, needs action.",
+      href: "my-account-status.html",
+      linkLabel: "Open Account Status"
+    },
+    {
+      key: "vat-settings-explained",
+      match: ["how do i turn on vat", "vat settings", "vat registered", "kra vat", "withholding tax settings"],
+      question: "How do I turn on VAT tracking?",
+      answer: "Open Settings and turn on VAT Registered under Tax Settings, then set your default VAT rate. Once it's on, you can mark individual Money records as VAT-applicable, and your Money dashboard will show VAT payable automatically. Withholding tax can be tracked on any transaction regardless of VAT status.",
+      href: "my-settings.html",
+      linkLabel: "Open Settings"
+    },
+    {
+      key: "sections-explained",
+      match: ["what are business sections", "what are sections", "explain sections", "why do i have sections"],
+      question: "What are business sections?",
+      answer: "Sections let a business with multiple sides — like Rooms and Food & Beverage for a hotel — track each one separately while still seeing a combined view. You can turn sections on or off any time from Settings, and your dashboard adapts to show exactly what you've selected.",
+      href: "my-settings.html",
+      linkLabel: "Open Settings"
+    },
+    {
+      key: "who-is-nia",
+      match: ["who are you", "what can you do", "what is nia", "are you a real person", "are you ai"],
+      question: "Who are you, and what can you do?",
+      answer: "I'm Nia, your UNGANI Business Assistant. I can help you navigate the system, find records, explain how features work, open pages, and walk you through common tasks. I work off a set of built-in rules and known answers, so I'm best with clear, direct questions — for anything I can't help with, Contact Support connects you with a real person.",
+      href: "my-support.html",
+      linkLabel: "Open Support"
     }
   ];
 
@@ -245,6 +301,42 @@
       match: ["record a usd transaction", "record in usd", "add a dollar transaction", "add a usd transaction", "record dollars", "log a usd payment", "enter a usd amount"],
       pageKey: "money",
       steps: ["Open Settings and turn on Multi-Currency, if you haven't already.", "Open Money and select \"+ Add Money Record\".", "Set Currency to USD and enter the amount.", "The KES equivalent is calculated automatically using that day's exchange rate before you select Save."]
+    },
+    {
+      key: "edit-delete-money",
+      match: ["edit a money record", "edit a transaction", "delete a money record", "delete a transaction", "remove an expense", "change an income record", "update a transaction"],
+      pageKey: "money",
+      steps: ["Open Money.", "Select the record you want to change from the list.", "Update the details and select Save — or select Delete to remove it. Deleted records can be recovered from Recently Deleted for a limited time."]
+    },
+    {
+      key: "complete-task",
+      match: ["mark a task as done", "complete a task", "finish a task", "close a task", "mark task complete"],
+      pageKey: "tasks",
+      steps: ["Open Tasks.", "Select the task you want to update.", "Change its status to Completed and select Save."]
+    },
+    {
+      key: "add-calendar-event",
+      match: ["add a calendar event", "schedule an event", "add to calendar", "book a viewing", "schedule a trip", "add an appointment"],
+      pageKey: "calendar",
+      steps: ["Open Calendar.", "Select \"Add Calendar Activity\".", "Fill in the title, type, and date/time.", "Select Save."]
+    },
+    {
+      key: "enable-2fa",
+      match: ["turn on two-factor", "enable 2fa", "set up authenticator", "add two-factor authentication"],
+      pageKey: "security",
+      steps: ["Open Security & Data.", "Select \"Enable Two-Factor Authentication\".", "Scan the QR code with an authenticator app (like Google Authenticator).", "Enter the 6-digit code it generates to confirm."]
+    },
+    {
+      key: "grant-support-access",
+      match: ["give ungani access", "grant support access", "let support see my account", "allow ungani to view my data"],
+      pageKey: "support-access",
+      steps: ["Open Support Access.", "Select \"Grant Temporary Access\".", "Choose the access level (view-only or full access) and how long it should last.", "Select Confirm — you can revoke it at any time from the same page."]
+    },
+    {
+      key: "turn-on-vat",
+      match: ["record vat on a transaction", "add vat to a transaction", "mark a transaction as vat", "apply vat"],
+      pageKey: "money",
+      steps: ["Make sure VAT Registered is turned on in Settings first.", "Open Money and add or edit a record.", "Check \"VAT applies to this transaction\", choose the pricing mode and rate.", "The VAT amount is calculated automatically before you save."]
     }
   ];
 
@@ -294,13 +386,31 @@
       match: ["add a business section", "manage sections", "edit business types", "add a section"],
       pageKey: "admin-sections",
       steps: ["Open Business Types & Sections.", "Select the business type you want to adjust.", "Add, edit, or remove a section, then save."]
+    },
+    {
+      key: "admin-send-notice",
+      match: ["send a notice", "send a notice to a client", "broadcast a message", "notify a client"],
+      pageKey: "admin-notices",
+      steps: ["Open Notices.", "Select \"New Notice\".", "Choose whether it goes to one client or everyone, write the message, and send."]
+    },
+    {
+      key: "admin-view-support-access",
+      match: ["view support access", "which clients granted access", "check support access", "see granted access"],
+      pageKey: "admin-support-access",
+      steps: ["Open Support Access.", "See the list of clients with an active or pending grant, including the access level and when it expires.", "Select a client for more detail on their grant."]
+    },
+    {
+      key: "admin-manage-branches",
+      match: ["activate multi-branch", "enable branches for a client", "set up branches", "multi-branch mode"],
+      pageKey: "admin-branches",
+      steps: ["Open Branches.", "Find the client and open their profile.", "Enable multi-branch mode for their package, then they can add branches from their own Settings."]
     }
   ];
 
-  // Quick "show me around" overview — a lightweight stand-in for a real
-  // guided tour (see memory: a proper step-by-step spotlight tour is a
-  // separate, bigger feature for later). This just gives a useful,
-  // linked summary of the main sections instead of a dead-end button.
+  // showOverview() below is a one-message static summary with links -
+  // kept as-is for the fallback "show me around" button and quick
+  // reference. The real step-by-step guided tour lives separately in
+  // walkthroughStepContent()/startWalkthrough() further down this file.
   const OVERVIEW_SECTIONS = [
     { key: "money", blurb: "Track your income and expenses." },
     { key: "documents", blurb: "Store and organize your files." },
@@ -561,7 +671,9 @@
     ready: false,
     messages: [],
     listening: false,
-    lastReplyText: ""
+    lastReplyText: "",
+    walkthroughSteps: null,
+    walkthroughIndex: 0
   };
 
   function safe(value) {
@@ -1069,7 +1181,17 @@
       if (!hasSeenNia()) {
         addNiaMessage(buildFirstTimeGreeting());
         markSeenNia();
-        showQuickActions();
+
+        const offerWalkthrough = await shouldOfferWalkthrough();
+
+        if (offerWalkthrough) {
+          replyWithDelay(function () {
+            addNiaMessage("Want a quick tour to get you started? I'll walk you through the key parts of the system in a few short steps.");
+            showWalkthroughOfferChips();
+          });
+        } else {
+          showQuickActions();
+        }
       } else if (state.surface !== "admin" && state.supabaseClient && state.tenantId && !hasSeenTodayBriefing()) {
         showTypingIndicator();
 
@@ -1345,6 +1467,169 @@
     addNiaMessage(buildSectionsOverviewHtml() + "Here's a quick overview of UNGANI OS:" + lines);
   }
 
+  // Guided onboarding walkthrough - a fixed, ordered sequence with real
+  // per-tenant data substitutions (section labels, hrefs), NOT a
+  // dynamically-generated tour. Distinct from showOverview() (one static
+  // message) and buildFirstTimeGreeting() (one static welcome) - this is
+  // the "walk me through it, step by step" experience neither of those
+  // provide. Client-side only, since it's oriented around the client
+  // dashboard/modules; admin has no equivalent onboarding checklist to
+  // key off yet.
+  function goldLink(href, label) {
+    return `<a href="${attr(href)}" style="color:${BRAND.gold};font-weight:800;text-decoration:none;">${safe(label)}</a>`;
+  }
+
+  async function shouldOfferWalkthrough() {
+    if (state.surface === "admin" || !state.supabaseClient || !state.tenantId) return false;
+
+    try {
+      const { data, error } = await state.supabaseClient.rpc("get_my_ungani_onboarding_progress");
+      if (error || !Array.isArray(data)) return false;
+
+      const doneCount = data.filter(function (row) { return row && row.is_done === true; }).length;
+      return doneCount <= 1;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Steps are built fresh each time (not a static constant) so they
+  // reflect this tenant's actual sections/nav at the moment the tour
+  // starts - the same real-data-substitution approach buildFirstTimeGreeting()
+  // and buildSectionsOverviewHtml() already use, just applied across a
+  // short sequence instead of one message. The Sections step is only
+  // included when the business actually has more than one - a single-
+  // section or no-section business isn't padded with an empty step.
+  function walkthroughStepContent() {
+    const sections = getBusinessSectionLabels();
+    const money = NAV_BY_KEY["money"];
+    const tasks = NAV_BY_KEY["tasks"];
+    const documents = NAV_BY_KEY["documents"];
+    const support = NAV_BY_KEY["support"];
+    const reports = NAV_BY_KEY["reports"];
+
+    const steps = [
+      {
+        title: "1. Your Dashboard",
+        html: "This is your <strong>Dashboard</strong> — it gives you a snapshot of your money, tasks, and anything that needs attention today, all in one place." +
+          (sections.length > 1
+            ? " You have " + joinWithAnd(sections.map(function (label) { return "<strong>" + safe(label) + "</strong>"; })) + " set up, so you'll see a summary across all of them here."
+            : "")
+      },
+      {
+        title: "2. Recording Money",
+        html: "Next, <strong>Money</strong> is where you log income, expenses, and petty cash. Every sale or payment you record here feeds your reports automatically. " +
+          (money ? goldLink(money.href, "Open Money →") : "")
+      },
+      {
+        title: "3. Tasks & Documents",
+        html: "<strong>Tasks</strong> keeps track of follow-ups and reminders so nothing slips through. <strong>Documents</strong> is where you keep important files for easy reference.<br>" +
+          (tasks ? goldLink(tasks.href, "Open Tasks →") : "") + (tasks && documents ? " · " : "") + (documents ? goldLink(documents.href, "Open Documents →") : "")
+      }
+    ];
+
+    if (sections.length > 1) {
+      steps.push({
+        title: (steps.length + 1) + ". Your Sections",
+        html: buildSectionsOverviewHtml()
+      });
+    }
+
+    steps.push({
+      title: (steps.length + 1) + ". Getting Help",
+      html: "Whenever you need help, just ask me — or open <strong>Support</strong> to raise a ticket, and <strong>Reports</strong> any time to see how your business is doing.<br>" +
+        (support ? goldLink(support.href, "Open Support →") : "") + (support && reports ? " · " : "") + (reports ? goldLink(reports.href, "Open Reports →") : "")
+    });
+
+    return steps;
+  }
+
+  function showWalkthroughOfferChips() {
+    const wrap = document.getElementById("niaQuickActions");
+    if (!wrap) return;
+
+    wrap.innerHTML = '<button type="button" class="nia-chip" id="niaWalkthroughYes">Yes, show me</button><button type="button" class="nia-chip" id="niaWalkthroughNo">No thanks</button>';
+
+    const yesBtn = document.getElementById("niaWalkthroughYes");
+    const noBtn = document.getElementById("niaWalkthroughNo");
+    if (yesBtn) yesBtn.addEventListener("click", startWalkthrough);
+    if (noBtn) noBtn.addEventListener("click", declineWalkthrough);
+  }
+
+  function declineWalkthrough() {
+    addUserMessage("No thanks");
+    replyWithDelay(function () {
+      addNiaMessage("No problem — I'm always here if you need anything. You can ask me to \"take the tour\" any time.");
+      showQuickActions();
+    });
+  }
+
+  function startWalkthrough() {
+    addUserMessage("Yes, show me");
+    beginWalkthrough();
+  }
+
+  // Separated from startWalkthrough() so the typed-phrase entry point
+  // (isWalkthroughRequestPhrase()) doesn't echo a synthetic "Yes, show
+  // me" user bubble on top of the real message submitMessage() already
+  // echoed - only the offer-chip click path needs that.
+  function beginWalkthrough() {
+    state.walkthroughSteps = walkthroughStepContent();
+    state.walkthroughIndex = 0;
+    replyWithDelay(showWalkthroughStep);
+  }
+
+  function showWalkthroughStep() {
+    const steps = state.walkthroughSteps;
+    const i = state.walkthroughIndex;
+
+    if (!steps || i >= steps.length) {
+      addNiaMessage("That's the tour! You're all set — ask me anything, any time.");
+      state.walkthroughSteps = null;
+      showQuickActions();
+      return;
+    }
+
+    addNiaMessage(safe(steps[i].title) + "<br><br>" + steps[i].html);
+    showWalkthroughStepChips();
+  }
+
+  function showWalkthroughStepChips() {
+    const wrap = document.getElementById("niaQuickActions");
+    if (!wrap) return;
+
+    const isLast = state.walkthroughIndex >= (state.walkthroughSteps.length - 1);
+    wrap.innerHTML = '<button type="button" class="nia-chip" id="niaWalkthroughNext">' + (isLast ? "Finish" : "Next →") + '</button><button type="button" class="nia-chip" id="niaWalkthroughSkip">Skip tour</button>';
+
+    const nextBtn = document.getElementById("niaWalkthroughNext");
+    const skipBtn = document.getElementById("niaWalkthroughSkip");
+    if (nextBtn) nextBtn.addEventListener("click", advanceWalkthrough);
+    if (skipBtn) skipBtn.addEventListener("click", skipWalkthrough);
+  }
+
+  function advanceWalkthrough() {
+    const isLast = state.walkthroughIndex >= (state.walkthroughSteps.length - 1);
+    addUserMessage(isLast ? "Finish" : "Next");
+    state.walkthroughIndex += 1;
+    replyWithDelay(showWalkthroughStep);
+  }
+
+  function skipWalkthrough() {
+    addUserMessage("Skip tour");
+    state.walkthroughSteps = null;
+    replyWithDelay(function () {
+      addNiaMessage("No problem — you can always ask me to \"take the tour\" later.");
+      showQuickActions();
+    });
+  }
+
+  function isWalkthroughRequestPhrase(text) {
+    const t = String(text || "").toLowerCase();
+    return ["take the tour", "start the tour", "give me a tour", "walk me through", "walkthrough", "tour of the system", "tour of ungani", "show me a tour"].some(function (phrase) {
+      return t.indexOf(phrase) !== -1;
+    });
+  }
+
   function isVoiceSupported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   }
@@ -1602,6 +1887,22 @@
         );
         showQuickActions();
         return { spoken: (name ? "Hi " + name + "!" : "Hi there!") + " What would you like to do?" };
+      }
+
+      // Explicit, unambiguous request to (re)start the guided walkthrough -
+      // checked early since it's a distinct, high-priority intent, not
+      // something a generic phrase list should risk mismatching against.
+      // Client-side only (see shouldOfferWalkthrough()'s own comment) -
+      // admin gets pointed at the existing static overview instead.
+      if (isWalkthroughRequestPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("A step-by-step tour isn't available on the admin side yet, but I can give you a quick overview instead.");
+          showOverview();
+          return { spoken: "A step-by-step tour isn't available on the admin side yet, but here's a quick overview." };
+        }
+
+        beginWalkthrough();
+        return { spoken: "Sure — let me walk you through it." };
       }
 
       // Checked ahead of the generic createAction/howTo matchers below:
