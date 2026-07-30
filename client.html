@@ -788,6 +788,11 @@
       color: white;
     }
 
+    .btn.blue {
+      background: var(--blue);
+      color: white;
+    }
+
     .btn.small {
       padding: 8px 11px;
       font-size: 12px;
@@ -917,7 +922,7 @@
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: rgba(255,255,255,0.55);
+      color: rgba(255,255,255,0.82);
     }
 
     .welcome-back-card .welcome-back-title {
@@ -942,6 +947,30 @@
 
     @media (max-width: 640px) {
       .welcome-back-card .welcome-back-cta { display: none; }
+    }
+
+    /* Soft blue "help" treatment - distinct from gold (actionable) and
+       navy (base), reuses --blue (#2563EB), already this app's
+       established blue (calendar row "Open" tags, several quick-action
+       icons), not a new color. The gradient wash layers on top of the
+       existing themed --card background rather than replacing it, so it
+       still adapts correctly between light and dark mode. */
+    .contact-support-card {
+      background: linear-gradient(135deg, rgba(37,99,235,0.10), rgba(37,99,235,0.03)), var(--card);
+      border-color: rgba(37,99,235,0.22);
+    }
+
+    .contact-support-icon {
+      flex: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: rgba(37,99,235,0.18);
+      color: var(--blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
     }
 
     .hero p {
@@ -1679,6 +1708,27 @@
       background: var(--soft);
       border: 1px dashed var(--border);
       color: var(--text-soft);
+    }
+
+    /* Celebrates the "all caught up" moment briefly on load, then settles -
+       not a looping animation, so it doesn't nag every time the card is
+       glanced at. */
+    .attention-empty-check {
+      display: block;
+      font-size: 28px;
+      line-height: 1;
+      margin: 0 auto 10px;
+      color: var(--accent, #16A34A);
+      animation: attentionCheckPulse 1s ease-in-out 3;
+    }
+
+    @keyframes attentionCheckPulse {
+      0%, 100% { transform: scale(1); text-shadow: 0 0 0 rgba(22,163,74,0); }
+      50% { transform: scale(1.18); text-shadow: 0 0 14px rgba(22,163,74,0.6); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .attention-empty-check { animation: none; }
     }
 
     .nudge-empty h3 {
@@ -6890,13 +6940,16 @@
       }).length;
 
       return `
-        <section class="card card-accent" style="--accent:#DB2777;">
+        <section class="card card-accent contact-support-card" style="--accent:var(--blue);">
           <div class="section-title">
-            <div>
-              <h3>Contact Support</h3>
-              <p>${openCount > 0 ? openCount + " open support issue" + (openCount === 1 ? "" : "s") + " with UNGANI." : "Need help? Raise a ticket with UNGANI support."}</p>
+            <div style="display:flex;align-items:center;gap:14px;">
+              <span class="contact-support-icon" aria-hidden="true">💬</span>
+              <div>
+                <h3>Contact Support</h3>
+                <p>${openCount > 0 ? openCount + " open support issue" + (openCount === 1 ? "" : "s") + " with UNGANI." : "Need help? Raise a ticket with UNGANI support."}</p>
+              </div>
             </div>
-            <a class="btn small light" href="my-support.html">Open Support</a>
+            <a class="btn small blue" href="my-support.html">Open Support</a>
           </div>
         </section>
       `;
@@ -9463,6 +9516,7 @@
           <div class="empty">
             <h3>Nothing scheduled in the next 5 days</h3>
             <p>${safe(emptyText || "Viewings, lease renewals, and maintenance activities will appear here.")}</p>
+            <a class="btn small gold" href="my-calendar.html" style="display:inline-flex;margin-top:12px;">+ Add to Calendar</a>
           </div>
         `;
       }
@@ -9857,7 +9911,12 @@
 
     function renderAttentionGroups(groups, emptyAccent, emptyTitle, emptyMessage) {
       if (!groups || groups.length === 0) {
-        return `<div class="empty card-accent" style="--accent:${attr(emptyAccent || "#16A34A")};"><h3>${safe(emptyTitle || "All caught up ✓")}</h3><p>${safe(emptyMessage || "Nothing needs attention right now.")}</p></div>`;
+        // The checkmark is its own element (not baked into the title
+        // string) so it can carry the brief pulse animation independently -
+        // strips a trailing "✓" from whatever title was passed in, since
+        // every call site currently includes one inline.
+        const cleanTitle = String(emptyTitle || "All caught up").replace(/\s*✓\s*$/, "").trim();
+        return `<div class="empty card-accent" style="--accent:${attr(emptyAccent || "#16A34A")};"><span class="attention-empty-check" aria-hidden="true">✓</span><h3>${safe(cleanTitle)}</h3><p>${safe(emptyMessage || "Nothing needs attention right now.")}</p></div>`;
       }
 
       return groups.map(function (g) {
