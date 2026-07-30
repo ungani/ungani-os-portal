@@ -518,6 +518,7 @@
     let registrations = [];
     let tenants = [];
     let users = [];
+    let registrationsSubscription = null;
     let isBusy = false;
 
     var pageMainHtml = `
@@ -653,9 +654,37 @@
           document.getElementById("unganiAppShell").classList.remove("hidden");
 
           await loadPageData();
+          startRegistrationsRealtime();
         }
       });
     });
+
+    // This page previously only ever loaded registrations once on open (plus
+    // after the admin's own approve/reject actions) - a new registration
+    // submitted by someone else while the page was already open just never
+    // appeared until a manual reload, which read as "pending approvals take
+    // a noticeable delay to show up." Mirrors admin-chat.html's
+    // startRealtime() pattern: any change to the registrations table
+    // triggers a real refetch, so a new pending row (or another admin's
+    // approval/rejection) appears without the current admin doing anything.
+    function startRegistrationsRealtime() {
+      if (registrationsSubscription) return;
+
+      registrationsSubscription = supabaseClient
+        .channel("admin-registrations-live")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "registrations"
+          },
+          function () {
+            loadPageData();
+          }
+        )
+        .subscribe();
+    }
 
     function showToast(message) {
       UnganiAdminShared.showToast(message);
