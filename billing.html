@@ -616,8 +616,8 @@
 
       const [tenantRows, paymentRows, upgradeRows, packageRows] = await Promise.all([
         safeSelect("tenants"),
-        safeSelect("payments"),
-        safeSelect("upgrade_requests"),
+        safeSelect("ungani_payments"),
+        safeSelect("ungani_upgrade_requests"),
         safeSelect("packages")
       ]);
 
@@ -1037,24 +1037,26 @@
     }
 
     async function updatePaymentStatus(paymentId, status) {
-      const { error } = await supabaseClient
-        .from("payments")
-        .update({
-          status: status,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", paymentId);
+      // Was a raw .from("payments").update({status: ...}) against an
+      // orphaned table with the wrong column name too (real column is
+      // payment_status) - see sql/fix-billing-html-table-split.sql. No
+      // existing RPC covered arbitrary status changes (every other
+      // ungani_payments write path is narrow-purpose), so this uses a new
+      // one built specifically for this, admin-gated, matching the shape
+      // of the other admin_update_ungani_* RPCs.
+      const { data, error } = await supabaseClient.rpc("admin_update_ungani_payment_status", {
+        p_payment_id: paymentId,
+        p_status: status
+      });
 
       if (error) {
-        const fallback = await supabaseClient
-          .from("payments")
-          .update({ status: status })
-          .eq("id", paymentId);
+        alert(error.message);
+        return;
+      }
 
-        if (fallback.error) {
-          alert(fallback.error.message);
-          return;
-        }
+      if (!data || data.ok !== true) {
+        alert((data && data.message) || "Could not update payment status.");
+        return;
       }
 
       UnganiAdminShared.showToast("Payment status updated ✓");
@@ -1062,24 +1064,20 @@
     }
 
     async function updateUpgradeRequestStatus(requestId, status) {
-      const { error } = await supabaseClient
-        .from("upgrade_requests")
-        .update({
-          status: status,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", requestId);
+      // Was a raw .from("upgrade_requests").update(...) against an
+      // orphaned table nothing else in the app reads/writes - see
+      // sql/fix-billing-html-table-split.sql. Redirected to the same RPC
+      // admin-upgrade-requests.html (the correct, working page) already
+      // uses successfully against the real table.
+      const { data, error } = await supabaseClient.rpc("admin_update_ungani_upgrade_request", {
+        p_request_id: requestId,
+        p_status: status,
+        p_admin_notes: ""
+      });
 
       if (error) {
-        const fallback = await supabaseClient
-          .from("upgrade_requests")
-          .update({ status: status })
-          .eq("id", requestId);
-
-        if (fallback.error) {
-          alert(fallback.error.message);
-          return;
-        }
+        alert(error.message);
+        return;
       }
 
       UnganiAdminShared.showToast("Upgrade request status updated ✓");
