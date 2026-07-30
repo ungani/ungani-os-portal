@@ -884,6 +884,13 @@
 
     <section class="panel">
       <div class="panel-head">
+        <h2>Payment Instructions</h2>
+      </div>
+      <div style="padding: 18px;" id="paymentInstructionsBody"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
         <h2>Invoice & Payment Records</h2>
 
         <div class="filters">
@@ -922,9 +929,7 @@
 
       <div id="errorBox" class="error" style="display: none;"></div>
 
-      <div id="emptyBox" class="empty" style="display: none;">
-        No billing records found yet. If you recently made a payment, please contact UNGANI support for confirmation.
-      </div>
+      <div id="emptyBox" class="empty" style="display: none;"></div>
 
       <div id="tableWrap" class="table-wrap" style="display: none;">
         <table>
@@ -1010,11 +1015,46 @@
 
     let allPayments = [];
     let allProofs = [];
+
+    const NO_BILLING_RECORDS_YET_HTML =
+      "No billing record yet — that's expected until UNGANI approves your package request and creates your invoice. " +
+      "Haven't requested a package yet? <a href=\"my-package.html\" style=\"color: var(--gold); font-weight: 800; text-decoration: none;\">Open My Package</a> to get started. " +
+      "Already approved? Records typically appear here shortly after — if it's been a while, contact UNGANI support.";
     let currentTenantId = null;
     let selectedPaymentForProof = null;
 
+    // TODO: Once UNGANI has real payment details (M-Pesa Paybill/Till number,
+    // account name, bank details, etc.), set PAYMENT_INSTRUCTIONS_READY to
+    // true and fill in PAYMENT_INSTRUCTIONS_HTML below - renderPaymentInstructions()
+    // already handles both states, so no other change is needed.
+    const PAYMENT_INSTRUCTIONS_READY = false;
+    const PAYMENT_INSTRUCTIONS_HTML = "";
+
+    function renderPaymentInstructions() {
+      const body = document.getElementById("paymentInstructionsBody");
+      if (!body) return;
+
+      if (PAYMENT_INSTRUCTIONS_READY && PAYMENT_INSTRUCTIONS_HTML) {
+        body.innerHTML = PAYMENT_INSTRUCTIONS_HTML;
+        return;
+      }
+
+      body.innerHTML = `
+        <p class="muted" style="margin: 0 0 10px; line-height: 1.55;">
+          UNGANI will share exact payment details (e.g. M-Pesa Paybill or bank transfer) here
+          once your package request is approved — you don't need to guess or ask separately.
+        </p>
+        <p class="muted" style="margin: 0; line-height: 1.55;">
+          Haven't requested a package yet?
+          <a href="my-package.html" style="color: var(--gold); font-weight: 800; text-decoration: none;">Open My Package</a>
+          to get started.
+        </p>
+      `;
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
       applyExistingThemeSetting();
+      renderPaymentInstructions();
       loadBillingData();
     });
 
@@ -1268,7 +1308,9 @@
       if (!filtered.length) {
         tableWrap.style.display = "none";
         emptyBox.style.display = "block";
-        emptyBox.textContent = "No billing records match your filters.";
+        emptyBox.innerHTML = allPayments.length
+          ? "No billing records match your filters."
+          : NO_BILLING_RECORDS_YET_HTML;
         return;
       }
 

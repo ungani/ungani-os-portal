@@ -133,9 +133,14 @@
     },
     {
       key: "subscription",
-      match: ["subscription", "billing", "plan", "upgrade", "change my plan"],
-      question: "How do I change my subscription?",
-      answer: "Open Package to review your current plan and submit an upgrade request, or open Billing to see invoices and upload payment proof.",
+      match: [
+        "subscription", "billing", "plan", "upgrade", "change my plan",
+        "how do i pay", "how to pay", "payment process", "how does payment work",
+        "how does upgrading work", "how do i renew", "renew my plan",
+        "trial ended", "trial has ended", "continue after trial", "after my trial"
+      ],
+      question: "How do I pay / continue after my trial?",
+      answer: "It's a few steps, not a single click-to-pay button: 1) Request your package on My Package (or select your current one to renew). 2) UNGANI reviews it. 3) Once approved, you'll receive payment instructions (e.g. M-Pesa Paybill or bank details). 4) Upload your proof of payment on Billing. 5) UNGANI confirms it and your full access is restored.",
       href: "my-package.html",
       linkLabel: "Open Package"
     },
@@ -1210,6 +1215,8 @@
         addNiaMessage(personalizeGreeting(getPageConfig().greeting));
         showQuickActions();
       }
+
+      offerReadOnlyHelpIfStuck();
     }
 
     const input = document.getElementById("niaTextInput");
@@ -2612,6 +2619,53 @@
     } catch (error) {
       // Ignore storage failures (private browsing, quota, etc.)
     }
+  }
+
+  // Same day-keyed pattern as the briefing above, for the proactive
+  // "here's how to pay / continue after your trial" offer - read-only is a
+  // persistent blocking state, so a once-a-day nudge is warranted rather
+  // than a one-time-ever offer, but every single open would be naggy.
+  const READONLY_OFFER_SEEN_KEY = "ungani_nia_last_readonly_offer_date";
+
+  function hasOfferedReadOnlyHelpToday() {
+    try {
+      return localStorage.getItem(READONLY_OFFER_SEEN_KEY) === todayDateKey();
+    } catch (error) {
+      return true; // fail closed - don't nag if storage is unavailable
+    }
+  }
+
+  function markOfferedReadOnlyHelpToday() {
+    try {
+      localStorage.setItem(READONLY_OFFER_SEEN_KEY, todayDateKey());
+    } catch (error) {
+      // Ignore storage failures (private browsing, quota, etc.)
+    }
+  }
+
+  function isClientReadOnly() {
+    return !!(
+      window.UnganiClientShared &&
+      typeof window.UnganiClientShared.isReadOnlyMode === "function" &&
+      window.UnganiClientShared.isReadOnlyMode()
+    );
+  }
+
+  function offerReadOnlyHelpIfStuck() {
+    if (state.surface === "admin") return;
+    if (hasOfferedReadOnlyHelpToday()) return;
+    if (!isClientReadOnly()) return;
+
+    markOfferedReadOnlyHelpToday();
+
+    replyWithDelay(function () {
+      addNiaMessage(
+        "Looks like your workspace is in read-only mode right now (usually because a trial ended). Here's how to get back to full access: " +
+        "1) Request your package on " + goldLink("my-package.html", "My Package") + " (or select your current one to renew). " +
+        "2) UNGANI reviews it. 3) You'll receive payment instructions once approved. " +
+        "4) Upload proof of payment on " + goldLink("my-billing.html", "Billing") + ". 5) UNGANI confirms it and restores full access."
+      );
+    });
   }
 
   async function buildMorningBriefingHtml() {
