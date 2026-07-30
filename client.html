@@ -1119,30 +1119,6 @@
       gap: 12px;
     }
 
-    .money-snapshot-tile {
-      border: 1px solid var(--border);
-      border-left: 4px solid var(--accent, #D4A63A);
-      border-radius: 16px;
-      padding: 12px 14px;
-      background: var(--soft);
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .money-snapshot-tile span {
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-    }
-
-    .money-snapshot-tile strong {
-      font-size: 18px;
-      color: var(--text);
-    }
-
     @media (max-width: 720px) {
       .money-snapshot-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -15284,6 +15260,35 @@
       return buckets.map(function (b) { return b.value; });
     }
 
+    // Real composition, not a guess: sums each row's actual category
+    // field and returns the top N by amount. Returns "" (not a
+    // fabricated placeholder) when rows have no usable category data,
+    // so callers can fall back to a plain description instead of
+    // showing an empty or misleading breakdown.
+    function topCategoryBreakdown(rows, predicate, limit) {
+      const totals = {};
+
+      (rows || []).forEach(function (row) {
+        if (predicate && !predicate(row)) return;
+
+        const category = String(getValue(row, ["category", "category_name"], "")).trim();
+        if (!category) return;
+
+        const amount = Number(getValue(row, ["amount"], 0) || 0);
+        totals[category] = (totals[category] || 0) + amount;
+      });
+
+      const top = Object.keys(totals)
+        .map(function (key) { return { label: key, value: totals[key] }; })
+        .filter(function (entry) { return entry.value > 0; })
+        .sort(function (a, b) { return b.value - a.value; })
+        .slice(0, limit || 2);
+
+      if (!top.length) return "";
+
+      return top.map(function (entry) { return entry.label + " " + compactMoney(entry.value); }).join(" · ");
+    }
+
     function calculateOutstandingRentTrend(data, rentalConceptsApply) {
       if (!rentalConceptsApply) return [];
 
@@ -15409,7 +15414,19 @@
     // every other KPI already on that page; an Overview gets the
     // whole-business snapshot.
     function renderFinancialSnapshotHtml(transactions) {
-      const money = calculateMoneySummary(transactions || []);
+      const rows = transactions || [];
+      const money = calculateMoneySummary(rows);
+      const amountOf = function (row) { return Number(getValue(row, ["amount"], 0) || 0); };
+
+      const incomeTrend = buildMonthlyTrend(rows, ["transaction_date", "created_at"], isIncome, amountOf);
+      const expensesTrend = buildMonthlyTrend(rows, ["transaction_date", "created_at"], isExpense, amountOf);
+      const balanceTrend = incomeTrend.map(function (v, i) { return v - expensesTrend[i]; });
+
+      const incomeBreakdown = topCategoryBreakdown(rows, isIncome, 2);
+      const expenseBreakdown = topCategoryBreakdown(rows, isExpense, 2);
+      const pendingCount = rows.filter(function (row) {
+        return String(getValue(row, ["status"], "completed")).toLowerCase().includes("pending");
+      }).length;
 
       return `
         <div class="section-title">
@@ -15420,19 +15437,10 @@
           <a class="btn small light" href="my-money.html">Money</a>
         </div>
         <div class="money-snapshot-grid">
-          ${moneySnapshotTile("Income", compactMoney(money.income), "#16A34A")}
-          ${moneySnapshotTile("Expenses", compactMoney(money.expenses), "#D4A63A")}
-          ${moneySnapshotTile("Balance", compactMoney(money.balance), money.balance >= 0 ? "#16A34A" : "#DC2626")}
-          ${moneySnapshotTile("Pending", compactMoney(money.pending), money.pending > 0 ? "#DC2626" : "#16A34A")}
-        </div>
-      `;
-    }
-
-    function moneySnapshotTile(label, value, accent) {
-      return `
-        <div class="money-snapshot-tile" style="--accent:${accent};">
-          <span>${safe(label)}</span>
-          <strong>${safe(value)}</strong>
+          ${kpiCard("Income", compactMoney(money.income), incomeBreakdown || "Recorded income", "#16A34A", "my-money.html", countSpan(money.income, "money"), sparklineSvg(incomeTrend, "#16A34A"), "💰")}
+          ${kpiCard("Expenses", compactMoney(money.expenses), expenseBreakdown || "Recorded expenses", "#D4A63A", "my-money.html", countSpan(money.expenses, "money"), sparklineSvg(expensesTrend, "#D4A63A"), "🧾")}
+          ${kpiCard("Balance", compactMoney(money.balance), "Income minus expenses", money.balance >= 0 ? "#16A34A" : "#DC2626", "my-money.html", countSpan(money.balance, "money"), sparklineSvg(balanceTrend, money.balance >= 0 ? "#16A34A" : "#DC2626"), "⚖️")}
+          ${kpiCard("Pending", compactMoney(money.pending), pendingCount + " record(s) awaiting completion", money.pending > 0 ? "#DC2626" : "#16A34A", "my-money.html", countSpan(money.pending, "money"), null, "⏳")}
         </div>
       `;
     }
