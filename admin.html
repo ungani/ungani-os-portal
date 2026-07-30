@@ -955,7 +955,32 @@
       showApprovalMessage(result.approval_message || buildApprovalMessage(result));
       showToast("Registration approved ✓");
 
+      // Best-effort, non-blocking - the approval itself already succeeded
+      // and the "Copy" text is already shown by the time this runs. The
+      // RPC already queued the email; this just triggers an immediate
+      // send instead of waiting for the next cron run. A failure here
+      // only means the email goes out on the next cron instead of
+      // instantly - it must never affect the approval flow itself.
+      triggerApprovalEmailSendNow();
+
       await loadPageData();
+    }
+
+    async function triggerApprovalEmailSendNow() {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+
+        if (!token) return;
+
+        await fetch("/api/send-email-queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ limit: 15 })
+        });
+      } catch (error) {
+        console.warn("Could not trigger immediate approval email send:", error.message);
+      }
     }
 
     async function rejectRegistration(registrationId) {
