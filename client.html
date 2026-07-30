@@ -867,6 +867,83 @@
       text-decoration: underline;
     }
 
+    /* Pulled out of the greeting-rotator's cycling text (which stays for
+       every OTHER contextual tip, e.g. "3 tasks due today") into its own
+       persistent "welcome back" card - a rotating card would either force
+       every other tip into the same heavy visual weight, or jump in and
+       out of this treatment every 5s, so it lives outside the rotation
+       instead. */
+    .welcome-back-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 6px 0 16px;
+      padding: 16px 18px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(212,166,58,0.4);
+      border-left: 3px solid var(--gold);
+      border-radius: 16px;
+      text-decoration: none;
+      color: white;
+      transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+    }
+
+    .welcome-back-card:hover {
+      background: rgba(255,255,255,0.10);
+      border-color: var(--gold);
+      transform: translateY(-1px);
+    }
+
+    .welcome-back-card .welcome-back-icon {
+      flex: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: rgba(212,166,58,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .welcome-back-card .welcome-back-body {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .welcome-back-card .welcome-back-eyebrow {
+      margin: 0 0 3px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.55);
+    }
+
+    .welcome-back-card .welcome-back-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: white;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .welcome-back-card .welcome-back-cta {
+      flex: none;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--gold);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    @media (max-width: 640px) {
+      .welcome-back-card .welcome-back-cta { display: none; }
+    }
+
     .hero p {
       margin: 0;
       color: rgba(255,255,255,0.74);
@@ -15739,10 +15816,35 @@
       return candidates[0];
     }
 
+    const WELCOME_BACK_PREFIX = "Pick up where you left off: ";
+
+    // The "welcome back" message is pulled out of the cycling rotator (see
+    // .welcome-back-card CSS) into its own persistent card - every OTHER
+    // contextual tip (task counts, alerts, etc.) keeps rotating below it
+    // exactly as before. Detected by its stable, unique text prefix rather
+    // than a separate flag, since every one of the ~19 dashboard render
+    // paths already builds it as a plain {text, href} greeting message.
     function buildGreetingRotatorHtml(messages) {
-      const rows = (messages && messages.length) ? messages : [{ text: "Everything's on track today", href: null }];
+      const all = messages || [];
+      const welcomeBackMsg = all.find(function (m) { return m.text && m.text.indexOf(WELCOME_BACK_PREFIX) === 0; });
+      const remaining = welcomeBackMsg ? all.filter(function (m) { return m !== welcomeBackMsg; }) : all;
+      const rows = remaining.length ? remaining : [{ text: "Everything's on track today", href: null }];
+
+      const cardHtml = welcomeBackMsg
+        ? `
+          <a class="welcome-back-card" href="${attr(welcomeBackMsg.href)}">
+            <span class="welcome-back-icon" aria-hidden="true">↻</span>
+            <span class="welcome-back-body">
+              <span class="welcome-back-eyebrow">Pick up where you left off</span>
+              <span class="welcome-back-title">${safe(welcomeBackMsg.text.slice(WELCOME_BACK_PREFIX.length))}</span>
+            </span>
+            <span class="welcome-back-cta">Open →</span>
+          </a>
+        `
+        : "";
 
       return `
+        ${cardHtml}
         <div class="greeting-rotator" id="greetingRotator">
           ${rows.map(function (m, i) {
             return m.href
