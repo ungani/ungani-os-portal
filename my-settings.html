@@ -936,6 +936,36 @@
         </div>
       </section>
 
+      <section class="panel full" id="multiCurrencyPanel">
+        <div class="panel-head">
+          <h2 data-i18n="multi_currency_settings">Multi-Currency</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;" data-i18n="multi_currency_explainer">
+            Turn this on if your business also gets paid in US Dollars. Once on, Money records can
+            be entered in either KES or USD - the USD amount is converted to a KES equivalent
+            using that day's exchange rate at the moment you save, so every total, VAT/withholding
+            figure, and report stays in KES. Rates are refreshed once a day and provided by
+            <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">ExchangeRate-API.com</a>.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--border); border-radius: 14px; cursor: pointer;">
+                <input type="checkbox" id="multiCurrencyEnabled" style="width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer;" />
+                <span style="color: var(--text);" data-i18n="multi_currency_enable_label">Allow Money records in USD (in addition to KES)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="multiCurrencyMessage" class="action-msg"></span>
+            <button type="button" id="btnSaveMultiCurrency" class="ungani-btn gold" onclick="saveMultiCurrency()" data-i18n="save_multi_currency_btn">Save Multi-Currency Setting</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full">
         <div class="panel-head">
           <h2 data-i18n="user_prefs">User Preferences</h2>
@@ -1215,6 +1245,10 @@
         tax_pricing_inclusive_option: "Amount includes VAT",
         tax_pricing_exclusive_option: "VAT added on top of amount",
         save_tax_settings_btn: "Save Tax Settings",
+        multi_currency_settings: "Multi-Currency",
+        multi_currency_explainer: "Turn this on if your business also gets paid in US Dollars. Once on, Money records can be entered in either KES or USD - the USD amount is converted to a KES equivalent using that day's exchange rate at the moment you save, so every total, VAT/withholding figure, and report stays in KES. Rates are refreshed once a day and provided by ExchangeRate-API.com.",
+        multi_currency_enable_label: "Allow Money records in USD (in addition to KES)",
+        save_multi_currency_btn: "Save Multi-Currency Setting",
         user_prefs: "User Preferences",
         field_lang: "Language",
         field_currency: "Currency",
@@ -1285,6 +1319,10 @@
         tax_pricing_inclusive_option: "Kiasi kinajumuisha VAT",
         tax_pricing_exclusive_option: "VAT inaongezwa juu ya kiasi",
         save_tax_settings_btn: "Hifadhi Mipangilio ya Kodi",
+        multi_currency_settings: "Sarafu Nyingi",
+        multi_currency_explainer: "Washa hii ikiwa biashara yako pia hulipwa kwa Dola za Marekani. Ikiwashwa, rekodi za Fedha zinaweza kuingizwa kwa KES au USD - kiasi cha USD kinabadilishwa kuwa sawa na KES kwa kutumia kiwango cha ubadilishaji cha siku hiyo wakati unapohifadhi, hivyo jumla zote, takwimu za VAT/kodi ya makato, na ripoti zinabaki kwa KES. Viwango vinasasishwa mara moja kwa siku na kutolewa na ExchangeRate-API.com.",
+        multi_currency_enable_label: "Ruhusu rekodi za Fedha kwa USD (pamoja na KES)",
+        save_multi_currency_btn: "Hifadhi Mpangilio wa Sarafu Nyingi",
         user_prefs: "Mapendeleo ya Mtumiaji",
         field_lang: "Lugha",
         field_currency: "Sarafu",
@@ -1621,7 +1659,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -1632,6 +1670,7 @@
 
       renderSettingsSidebarGroups(tenantRow);
       renderTaxSettingsPanel(tenantRow);
+      renderMultiCurrencyPanel(tenantRow);
 
       const business = data.business || {};
       const pseudoTenant = {
@@ -1759,6 +1798,45 @@
 
           msgSpan.className = "action-msg success";
           msgSpan.textContent = "Tax settings saved.";
+        } catch (err) {
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
+    }
+
+    function renderMultiCurrencyPanel(tenantRow) {
+      const el = document.getElementById("multiCurrencyEnabled");
+      if (!el) return;
+      el.checked = !!(tenantRow && tenantRow.multi_currency_enabled);
+    }
+
+    async function saveMultiCurrency() {
+      const msgSpan = document.getElementById("multiCurrencyMessage");
+      const btn = document.getElementById("btnSaveMultiCurrency");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const multiCurrencyEnabled = document.getElementById("multiCurrencyEnabled").checked;
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { error } = await supabaseClient
+            .from("tenants")
+            .update({ multi_currency_enabled: multiCurrencyEnabled })
+            .eq("id", currentTenantId);
+
+          if (error) throw error;
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = "Multi-currency setting saved.";
         } catch (err) {
           msgSpan.className = "action-msg error";
           msgSpan.textContent = "Failed to save: " + getErrorMessage(err);

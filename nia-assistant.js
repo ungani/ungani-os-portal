@@ -162,6 +162,14 @@
       answer: "Open Support Issues and submit your question — the UNGANI team will follow up from there.",
       href: "my-support.html",
       linkLabel: "Open Support"
+    },
+    {
+      key: "multi-currency",
+      match: ["multi-currency", "multi currency", "usd", "dollars", "dollar transactions", "exchange rate", "foreign currency", "record in usd", "currency settings"],
+      question: "How do I record transactions in USD?",
+      answer: "Open Settings and turn on Multi-Currency. Once it's on, Money records can be entered in either KES or USD — the USD amount is converted to a KES equivalent using that day's exchange rate the moment you save, so your totals, tax figures, and reports always stay in KES. Rates refresh once a day.",
+      href: "my-settings.html",
+      linkLabel: "Open Settings"
     }
   ];
 
@@ -231,6 +239,12 @@
       match: ["add a record", "add record", "create a record", "new record", "log a record"],
       pageKey: "records",
       steps: ["Open Records.", "Select \"+ Add Record\".", "Fill in the title, record type, and status.", "Select Save."]
+    },
+    {
+      key: "record-usd-transaction",
+      match: ["record a usd transaction", "record in usd", "add a dollar transaction", "add a usd transaction", "record dollars", "log a usd payment", "enter a usd amount"],
+      pageKey: "money",
+      steps: ["Open Settings and turn on Multi-Currency, if you haven't already.", "Open Money and select \"+ Add Money Record\".", "Set Currency to USD and enter the amount.", "The KES equivalent is calculated automatically using that day's exchange rate before you select Save."]
     }
   ];
 

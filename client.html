@@ -15295,7 +15295,7 @@
         const category = String(getValue(row, ["category", "category_name"], "")).trim();
         if (!category) return;
 
-        const amount = Number(getValue(row, ["amount"], 0) || 0);
+        const amount = Number(getValue(row, ["amount_kes", "amount"], 0) || 0);
         totals[category] = (totals[category] || 0) + amount;
       });
 
@@ -15437,7 +15437,11 @@
     function renderFinancialSnapshotHtml(transactions) {
       const rows = transactions || [];
       const money = calculateMoneySummary(rows);
-      const amountOf = function (row) { return Number(getValue(row, ["amount"], 0) || 0); };
+      // Prefers the KES-equivalent column so a multi-currency tenant's
+      // USD transactions still roll into one correct KES total - falls
+      // back to amount for rows/tenants that never touch that feature,
+      // where the two are always identical anyway.
+      const amountOf = function (row) { return Number(getValue(row, ["amount_kes", "amount"], 0) || 0); };
 
       const incomeTrend = buildMonthlyTrend(rows, ["transaction_date", "created_at"], isIncome, amountOf);
       const expensesTrend = buildMonthlyTrend(rows, ["transaction_date", "created_at"], isExpense, amountOf);
@@ -15472,7 +15476,11 @@
       let pending = 0;
 
       rows.forEach(row => {
-        const amount = Number(getValue(row, ["amount"], 0) || 0);
+        // Prefers amount_kes over amount for the same multi-currency
+        // reason as renderFinancialSnapshotHtml's amountOf() above -
+        // this function also backs the health-score gauge on most
+        // dashboards, so fixing it here covers both.
+        const amount = Number(getValue(row, ["amount_kes", "amount"], 0) || 0);
         const status = String(getValue(row, ["status"], "completed")).toLowerCase();
 
         if (isIncome(row)) income += amount;

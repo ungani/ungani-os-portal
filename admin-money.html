@@ -806,7 +806,10 @@
       let withholdingRecordCount = 0;
 
       rows.forEach(row => {
-        const vatAmount = Number(row.vat_amount || 0);
+        // Prefer the _kes twin (see my-money.html's calculateTaxSummary)
+        // so a mix of KES and USD transactions still rolls up into one
+        // KRA-facing KES figure.
+        const vatAmount = Number(row.vat_amount_kes != null ? row.vat_amount_kes : (row.vat_amount || 0));
         if (row.vat_applicable && vatAmount > 0) {
           vatRecordCount += 1;
           const type = moneyType(row);
@@ -814,7 +817,7 @@
           else if (type === "expense") inputVat += vatAmount;
         }
 
-        const withholdingAmount = Number(row.withholding_amount || 0);
+        const withholdingAmount = Number(row.withholding_amount_kes != null ? row.withholding_amount_kes : (row.withholding_amount || 0));
         if (row.withholding_applicable && withholdingAmount > 0 && moneyType(row) === "income") {
           withholdingRecordCount += 1;
           withholdingDeducted += withholdingAmount;

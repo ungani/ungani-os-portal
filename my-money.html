@@ -57,6 +57,7 @@
     let sectionOptions = [];
     let currentSectionFilter = "";
     let activeMoneyCategory = "all";
+    let currentExchangeRate = null;
     let urlActionApplied = false;
 
     // Pagination: moneySummaryRows holds every row matching the current
@@ -123,7 +124,7 @@
     // Same bug class as documents.type, introduced by the same commit
     // (ae27767) across all six list pages - this one hadn't been hit live
     // yet, found via a full repo sweep.
-    const MONEY_SUMMARY_COLUMNS = "id, amount, transaction_type, type, category_name, category, status, transaction_date, created_at, vat_applicable, vat_amount, withholding_applicable, withholding_amount";
+    const MONEY_SUMMARY_COLUMNS = "id, amount, transaction_type, type, category_name, category, status, transaction_date, created_at, vat_applicable, vat_amount, withholding_applicable, withholding_amount, currency, exchange_rate, amount_kes, vat_amount_kes, withholding_amount_kes";
 
     // Applies the filters that scope BOTH the summary fetch and the page
     // fetch: tenant, section, status dropdown, and free-text search. Search
@@ -1555,9 +1556,10 @@
                       ${sectionLabel ? `<div><span class="ungani-badge blue" style="margin-top:4px;">${UnganiClientShared.safe(sectionLabel)}</span></div>` : ""}
                     </td>
                     <td class="money-amount">
-                      ${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(amount))}
-                      ${row.vat_applicable ? `<div><span class="ungani-badge blue" style="margin-top:4px;" title="VAT ${UnganiClientShared.safe(row.vat_rate)}% included (${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(row.vat_amount || 0))})">VAT</span></div>` : ""}
-                      ${row.withholding_applicable ? `<div><span class="ungani-badge gold" style="margin-top:4px;" title="Withholding tax deducted (${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(row.withholding_amount || 0))})">WHT</span></div>` : ""}
+                      ${UnganiClientShared.safe(formatNative(amount, row.currency))}
+                      ${usdEquivalentBadge(row)}
+                      ${row.vat_applicable ? `<div><span class="ungani-badge blue" style="margin-top:4px;" title="VAT ${UnganiClientShared.safe(row.vat_rate)}% included (${UnganiClientShared.safe(formatNative(row.vat_amount || 0, row.currency))})">VAT</span></div>` : ""}
+                      ${row.withholding_applicable ? `<div><span class="ungani-badge gold" style="margin-top:4px;" title="Withholding tax deducted (${UnganiClientShared.safe(formatNative(row.withholding_amount || 0, row.currency))})">WHT</span></div>` : ""}
                     </td>
                     <td>${UnganiClientShared.safe(method || "—")}</td>
                     <td>${statusBadge(status)}</td>
@@ -1632,14 +1634,18 @@
         const rowDate = String(UnganiClientShared.getValue(row, ["transaction_date", "created_at"], ""));
         if (!rowDate.startsWith(monthKey)) return;
 
-        const vatAmount = Number(UnganiClientShared.getValue(row, ["vat_amount"], 0) || 0);
+        // Prefer the _kes twin so a mix of KES and USD transactions still
+        // rolls up into one KRA-facing KES figure - falls back to the
+        // native column for rows/selects predating the multi-currency
+        // migration, where the two are always identical anyway.
+        const vatAmount = Number(UnganiClientShared.getValue(row, ["vat_amount_kes", "vat_amount"], 0) || 0);
         if (row.vat_applicable && vatAmount > 0) {
           vatRecordCount += 1;
           if (isIncomeRow(row)) outputVat += vatAmount;
           else if (isExpenseRow(row)) inputVat += vatAmount;
         }
 
-        const withholdingAmount = Number(UnganiClientShared.getValue(row, ["withholding_amount"], 0) || 0);
+        const withholdingAmount = Number(UnganiClientShared.getValue(row, ["withholding_amount_kes", "withholding_amount"], 0) || 0);
         if (row.withholding_applicable && withholdingAmount > 0 && isIncomeRow(row)) {
           withholdingRecordCount += 1;
           withholdingDeducted += withholdingAmount;
@@ -1805,8 +1811,18 @@
 
             <div>
               <label for="moneyAmount" id="moneyAmountLabel">Amount</label>
-              <input id="moneyAmount" type="number" step="0.01" min="0" placeholder="Example: 50000" required value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["amount"], "")) : ""}" oninput="recalculateVatAmount()" />
+              <input id="moneyAmount" type="number" step="0.01" min="0" placeholder="Example: 50000" required value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["amount"], "")) : ""}" oninput="recalculateVatAmount(); updateCurrencyPreview();" />
             </div>
+
+            ${currentContext.tenant && currentContext.tenant.multi_currency_enabled ? `
+              <div>
+                <label for="moneyCurrency">Currency</label>
+                <select id="moneyCurrency" onchange="updateCurrencyPreview()">
+                  <option value="KES">KES (Kenyan Shilling)</option>
+                  <option value="USD">USD (US Dollar)</option>
+                </select>
+              </div>
+            ` : ""}
 
             <div>
               <label for="moneyDate">Date</label>
@@ -1864,6 +1880,14 @@
               <textarea id="moneyNotes" rows="4" placeholder="Example: Client payment, supplier invoice, fuel expense, service income...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
             </div>
           </div>
+
+          ${currentContext.tenant && currentContext.tenant.multi_currency_enabled ? `
+            <div id="moneyCurrencyPreviewBox" class="money-tax-section" style="display:none;">
+              <label>KES equivalent (locked in at today's rate when you save)</label>
+              <div id="moneyCurrencyPreviewDisplay" class="money-tax-computed">Ksh 0</div>
+              <p id="moneyCurrencyRateNote" style="margin:6px 0 0;color:var(--muted,#8a93a6);font-size:12px;"></p>
+            </div>
+          ` : ""}
 
           ${currentContext.tenant && currentContext.tenant.vat_registered ? `
             <div class="money-tax-section">
@@ -1953,6 +1977,13 @@
             document.getElementById("moneySection").value = row
               ? UnganiClientShared.getValue(row, ["section_label"], "")
               : (currentSectionFilter || sectionOptions[0] || "");
+          }
+
+          const currencyEl = document.getElementById("moneyCurrency");
+
+          if (currencyEl) {
+            currencyEl.value = row && row.currency === "USD" ? "USD" : "KES";
+            refreshExchangeRateThenPreview();
           }
 
           const vatApplicableEl = document.getElementById("moneyVatApplicable");
@@ -2056,7 +2087,10 @@
         }
       }
 
-      display.textContent = UnganiAnalytics.moneyFormat(vatAmount);
+      const previewCurrencyEl = document.getElementById("moneyCurrency");
+      const previewCurrency = previewCurrencyEl && previewCurrencyEl.value === "USD" ? "USD" : "KES";
+
+      display.textContent = formatNative(vatAmount, previewCurrency);
 
       if (amountLabel) {
         amountLabel.textContent = applicable
@@ -2075,7 +2109,66 @@
       }
 
       if (totalDisplay) {
-        totalDisplay.textContent = UnganiAnalytics.moneyFormat(total);
+        totalDisplay.textContent = formatNative(total, previewCurrency);
+      }
+    }
+
+    // exchange_rates has one row per calendar date, upserted daily by
+    // api/fetch-exchange-rate.js. Ordering by rate_date descending and
+    // taking the first row gets today's rate when the cron has already
+    // run, and gracefully falls back to the most recent prior rate
+    // otherwise (a missed cron run, or a transaction dated before the
+    // feature existed) - never a silent guess, and the fallback date is
+    // shown to the user in the preview note below.
+    async function getLatestExchangeRate() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("exchange_rates")
+          .select("rate, rate_date")
+          .order("rate_date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (response.error || !response.data) return null;
+        return response.data;
+      } catch (error) {
+        console.warn("Could not load exchange rate:", error.message);
+        return null;
+      }
+    }
+
+    async function refreshExchangeRateThenPreview() {
+      currentExchangeRate = await getLatestExchangeRate();
+      updateCurrencyPreview();
+    }
+
+    function updateCurrencyPreview() {
+      const box = document.getElementById("moneyCurrencyPreviewBox");
+      if (!box) return;
+
+      const currencyEl = document.getElementById("moneyCurrency");
+      const isUsd = !!(currencyEl && currencyEl.value === "USD");
+
+      box.style.display = isUsd ? "" : "none";
+      if (!isUsd) return;
+
+      const amount = Number(UnganiClientShared.value("moneyAmount") || 0);
+      const display = document.getElementById("moneyCurrencyPreviewDisplay");
+      const note = document.getElementById("moneyCurrencyRateNote");
+
+      if (!currentExchangeRate) {
+        if (display) display.textContent = "Rate unavailable";
+        if (note) note.textContent = "No exchange rate is available yet - please try again shortly, or contact support if this continues.";
+        return;
+      }
+
+      const kesAmount = amount * Number(currentExchangeRate.rate || 0);
+      if (display) display.textContent = UnganiAnalytics.moneyFormat(kesAmount);
+
+      if (note) {
+        const today = new Date().toISOString().slice(0, 10);
+        const isToday = currentExchangeRate.rate_date === today;
+        note.textContent = "1 USD = " + currentExchangeRate.rate + " KES" + (isToday ? " (today's rate)" : " (rate as of " + currentExchangeRate.rate_date + " - today's hasn't refreshed yet)");
       }
     }
 
@@ -2135,6 +2228,17 @@
         return;
       }
 
+      const currencyEl = document.getElementById("moneyCurrency");
+      const currency = currencyEl && currencyEl.value === "USD" ? "USD" : "KES";
+
+      if (currency === "USD" && (!currentExchangeRate || !currentExchangeRate.rate)) {
+        showMoneyWarning("No exchange rate is available right now. Please try again in a moment.");
+        UnganiClientShared.showToast("Exchange rate unavailable - please try again.");
+        return;
+      }
+
+      const exchangeRate = currency === "USD" ? Number(currentExchangeRate.rate) : 1;
+
       // amount ALWAYS ends up representing the actual gross cash that
       // moved - in exclusive mode, the figure the user typed is the
       // pre-VAT base price, so it's grossed up here BEFORE duplicate/
@@ -2180,6 +2284,9 @@ const payload = {
   transaction_type: transactionType,
   category: category,
   amount: recordAmount,
+  currency: currency,
+  exchange_rate: exchangeRate,
+  amount_kes: Math.round(recordAmount * exchangeRate * 100) / 100,
   transaction_date: transactionDate,
   payment_method: UnganiClientShared.value("moneyMethod") || null,
   status: UnganiClientShared.value("moneyStatus") || "completed",
@@ -2201,10 +2308,12 @@ const payload = {
         payload.vat_rate = vatRate;
         payload.vat_amount = vatAmount;
         payload.vat_pricing_mode = vatPricingMode;
+        payload.vat_amount_kes = Math.round(vatAmount * exchangeRate * 100) / 100;
       } else {
         payload.vat_rate = null;
         payload.vat_amount = null;
         payload.vat_pricing_mode = "inclusive";
+        payload.vat_amount_kes = null;
       }
 
       const whtApplicable = document.getElementById("moneyWhtApplicable").checked;
@@ -2215,9 +2324,11 @@ const payload = {
         const whtAmountValue = UnganiClientShared.value("moneyWhtAmount");
         payload.withholding_rate = whtRateValue ? Number(whtRateValue) : null;
         payload.withholding_amount = whtAmountValue ? Number(whtAmountValue) : null;
+        payload.withholding_amount_kes = whtAmountValue ? Math.round(Number(whtAmountValue) * exchangeRate * 100) / 100 : null;
       } else {
         payload.withholding_rate = null;
         payload.withholding_amount = null;
+        payload.withholding_amount_kes = null;
       }
 
       let response;
@@ -2408,6 +2519,35 @@ const payload = {
         type.includes("commission") ||
         type.includes("maintenance")
       );
+    }
+
+    // Native-currency display: a USD row shows its own typed amount (in
+    // $), never the converted KES figure directly - the KES equivalent
+    // is available on hover/via the badge below, matching the existing
+    // VAT/WHT badge-plus-tooltip convention rather than inventing a new
+    // UI pattern for this.
+    function formatNative(value, currency) {
+      const amount = Number(value || 0);
+
+      if (currency === "USD") {
+        try {
+          return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(amount);
+        } catch (error) {
+          return "$" + amount.toLocaleString("en-US", { maximumFractionDigits: 2 });
+        }
+      }
+
+      return UnganiAnalytics.moneyFormat(amount);
+    }
+
+    function usdEquivalentBadge(row) {
+      if (!row || row.currency !== "USD") return "";
+
+      const kesAmount = Number(UnganiClientShared.getValue(row, ["amount_kes"], 0) || 0);
+      const rate = Number(row.exchange_rate || 0);
+      const rateNote = rate ? ` at 1 USD = ${rate} KES` : "";
+
+      return `<div><span class="ungani-badge blue" style="margin-top:4px;" title="≈ ${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(kesAmount))}${rateNote}">≈ ${UnganiClientShared.safe(UnganiAnalytics.moneyFormat(kesAmount))}</span></div>`;
     }
 
     function typeBadge(type) {

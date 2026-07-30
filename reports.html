@@ -754,14 +754,17 @@
       let withholdingRecordCount = 0;
 
       (rows || []).forEach(function (row) {
-        const vatAmount = Number(UnganiClientShared.getValue(row, ["vat_amount"], 0) || 0);
+        // Prefer the _kes twin (see my-money.html's calculateTaxSummary)
+        // so a mix of KES and USD transactions still rolls up into one
+        // KRA-facing KES figure.
+        const vatAmount = Number(UnganiClientShared.getValue(row, ["vat_amount_kes", "vat_amount"], 0) || 0);
         if (row.vat_applicable && vatAmount > 0) {
           vatRecordCount += 1;
           if (isIncomeRow(row)) outputVat += vatAmount;
           else if (isExpenseRow(row)) inputVat += vatAmount;
         }
 
-        const withholdingAmount = Number(UnganiClientShared.getValue(row, ["withholding_amount"], 0) || 0);
+        const withholdingAmount = Number(UnganiClientShared.getValue(row, ["withholding_amount_kes", "withholding_amount"], 0) || 0);
         if (row.withholding_applicable && withholdingAmount > 0 && isIncomeRow(row)) {
           withholdingRecordCount += 1;
           withholdingDeducted += withholdingAmount;
