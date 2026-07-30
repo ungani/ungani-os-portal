@@ -1207,6 +1207,10 @@
             <div>
               <label for="documentFileUrl">File / Drive Link</label>
               <input id="documentFileUrl" type="url" placeholder="https://..." value="${row ? UnganiClientShared.attr(fileUrl) : ""}" />
+              <div class="ungani-button-row" style="margin-top:8px;">
+                <button type="button" class="ungani-btn small dark" onclick="pickFromGoogleDrive()">📁 Pick from Google Drive</button>
+              </div>
+              <span id="googleDrivePickerMessage" class="ungani-small" style="display:block;margin-top:4px;"></span>
             </div>
 
             <div>
@@ -1277,6 +1281,112 @@
           }
         }
       });
+    }
+
+    // Google Drive Picker (Option B: Connect + Picker, replaces manually
+    // pasting a URL). The picker widget itself handles all of the user's
+    // Drive browsing/searching - we never fetch or paginate a file list
+    // ourselves; the app only ever sees the one file the user picks,
+    // matching the drive.file OAuth scope this whole integration is
+    // built around. gapi/picker scripts are loaded lazily, only on first
+    // use, not on every page load.
+    let googlePickerApiLoaded = false;
+
+    function loadGooglePickerApi() {
+      return new Promise(function (resolve, reject) {
+        if (googlePickerApiLoaded && window.google && window.google.picker) {
+          resolve();
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.src = "https://apis.google.com/js/api.js";
+        script.onload = function () {
+          window.gapi.load("picker", function () {
+            googlePickerApiLoaded = true;
+            resolve();
+          });
+        };
+        script.onerror = function () {
+          reject(new Error("Could not load Google's file picker. Check your connection and try again."));
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    async function pickFromGoogleDrive() {
+      const msgSpan = document.getElementById("googleDrivePickerMessage");
+      if (msgSpan) {
+        msgSpan.textContent = "Opening Google Drive...";
+        msgSpan.className = "ungani-small";
+      }
+
+      try {
+        const { data: sessionData } = await currentContext.supabaseClient.auth.getSession();
+        const accessToken = sessionData && sessionData.session ? sessionData.session.access_token : null;
+
+        if (!accessToken) {
+          throw new Error("Your session has expired. Please refresh and try again.");
+        }
+
+        const [configResponse, tokenResponse] = await Promise.all([
+          fetch("/api/google-drive-config"),
+          fetch("/api/google-drive-get-access-token", { headers: { Authorization: "Bearer " + accessToken } })
+        ]);
+
+        const configBody = await configResponse.json();
+        const tokenBody = await tokenResponse.json();
+
+        if (!tokenResponse.ok || !tokenBody.ok) {
+          if (tokenBody && (tokenBody.notConnected || tokenBody.needsReconnect)) {
+            if (msgSpan) {
+              msgSpan.innerHTML = 'Google Drive isn\'t connected yet. <a href="my-settings.html" style="color:var(--gold);font-weight:800;">Connect it in Settings</a>, then come back here.';
+            }
+            return;
+          }
+          throw new Error((tokenBody && tokenBody.message) || "Could not access Google Drive.");
+        }
+
+        if (!configResponse.ok || !configBody.ok) {
+          throw new Error((configBody && configBody.message) || "Google Drive integration is not configured.");
+        }
+
+        await loadGooglePickerApi();
+
+        const picker = new google.picker.PickerBuilder()
+          .addView(new google.picker.DocsView().setIncludeFolders(true).setSelectFolderEnabled(true))
+          .setOAuthToken(tokenBody.accessToken)
+          .setDeveloperKey(configBody.apiKey)
+          .setCallback(function (data) {
+            if (data.action !== google.picker.Action.PICKED) return;
+
+            const file = data.docs && data.docs[0];
+            if (!file) return;
+
+            const urlInput = document.getElementById("documentFileUrl");
+            const nameInput = document.getElementById("documentFileName");
+            const titleInput = document.getElementById("documentTitle");
+
+            if (urlInput) urlInput.value = file.url || "";
+            if (nameInput) nameInput.value = file.name || "";
+            if (titleInput && !titleInput.value.trim()) titleInput.value = file.name || "";
+
+            if (msgSpan) {
+              msgSpan.textContent = "Picked: " + (file.name || "file");
+              msgSpan.className = "ungani-small";
+            }
+          })
+          .build();
+
+        picker.setVisible(true);
+
+        if (msgSpan) msgSpan.textContent = "";
+      } catch (error) {
+        if (msgSpan) {
+          msgSpan.textContent = error.message || "Could not open Google Drive.";
+          msgSpan.className = "ungani-small";
+        }
+      }
     }
 
     async function saveDocument(event) {

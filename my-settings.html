@@ -966,6 +966,35 @@
         </div>
       </section>
 
+      <section class="panel full" id="googleDriveIntegrationPanel">
+        <div class="panel-head">
+          <h2 data-i18n="google_drive_integration">Google Drive Integration</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;" data-i18n="google_drive_integration_explainer">
+            Connect your business's Google Drive account once, then pick real files or folders
+            straight from Drive when adding a document - no more pasting links by hand. UNGANI only
+            ever gets access to files you specifically pick, never your whole Drive.
+          </p>
+
+          <div id="googleDriveStatusBox" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px;">
+            <div>
+              <strong id="googleDriveStatusText" style="color: var(--text); display: block; margin-bottom: 3px;" data-i18n="google_drive_checking">Checking connection...</strong>
+              <span id="googleDriveStatusSubtext" style="color: var(--muted); font-size: 13px;"></span>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <button type="button" id="btnConnectGoogleDrive" class="ungani-btn gold" style="display: none;" onclick="connectGoogleDrive()" data-i18n="google_drive_connect_btn">Connect Google Drive</button>
+              <button type="button" id="btnDisconnectGoogleDrive" class="ungani-btn dark" style="display: none;" onclick="disconnectGoogleDrive()" data-i18n="google_drive_disconnect_btn">Disconnect</button>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="googleDriveMessage" class="action-msg"></span>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full">
         <div class="panel-head">
           <h2 data-i18n="user_prefs">User Preferences</h2>
@@ -1403,6 +1432,8 @@
       await loadMyAccountDetails();
       await loadSettings();
       await fetchUserPreferences();
+      handleGoogleDriveOAuthRedirect();
+      await loadGoogleDriveIntegrationStatus();
     });
 
     async function loadMyAccountDetails() {
@@ -1442,6 +1473,135 @@
       } catch (err) {
         console.warn("Could not load Google Drive status:", err.message);
       }
+    }
+
+    // Real Google Drive OAuth connection (Option B: Connect + Picker) -
+    // distinct from the legacy tenants.google_drive_folder_url field
+    // shown just above (an admin-set convenience link, not a live
+    // connection). This panel reflects a genuine OAuth-connected account.
+    async function loadGoogleDriveIntegrationStatus() {
+      const statusText = document.getElementById("googleDriveStatusText");
+      const statusSubtext = document.getElementById("googleDriveStatusSubtext");
+      const connectBtn = document.getElementById("btnConnectGoogleDrive");
+      const disconnectBtn = document.getElementById("btnDisconnectGoogleDrive");
+
+      if (!statusText) return;
+
+      try {
+        const { data, error } = await supabaseClient.rpc("get_my_ungani_google_drive_status");
+        if (error) throw error;
+
+        if (data && data.connected) {
+          statusText.textContent = "Connected";
+          statusSubtext.textContent = data.connected_email ? "Connected as " + data.connected_email : "";
+          connectBtn.style.display = "none";
+          disconnectBtn.style.display = "";
+        } else {
+          statusText.textContent = "Not connected";
+          statusSubtext.textContent = "Connect your Google Drive to pick real files when adding documents.";
+          connectBtn.style.display = "";
+          disconnectBtn.style.display = "none";
+        }
+      } catch (err) {
+        statusText.textContent = "Could not check connection";
+        statusSubtext.textContent = getErrorMessage(err);
+        connectBtn.style.display = "";
+        disconnectBtn.style.display = "none";
+      }
+    }
+
+    async function connectGoogleDrive() {
+      const msgSpan = document.getElementById("googleDriveMessage");
+      const connectBtn = document.getElementById("btnConnectGoogleDrive");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      try {
+        connectBtn.disabled = true;
+        connectBtn.textContent = "Connecting...";
+
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const accessToken = sessionData && sessionData.session ? sessionData.session.access_token : null;
+
+        if (!accessToken) {
+          throw new Error("Your session has expired. Please refresh and try again.");
+        }
+
+        const response = await fetch("/api/google-drive-oauth-start", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + accessToken }
+        });
+
+        const body = await response.json();
+
+        if (!response.ok || !body.ok || !body.authorizeUrl) {
+          throw new Error((body && body.message) || "Could not start the Google Drive connection.");
+        }
+
+        window.location.href = body.authorizeUrl;
+      } catch (err) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = getErrorMessage(err);
+        connectBtn.disabled = false;
+        connectBtn.textContent = "Connect Google Drive";
+      }
+    }
+
+    async function disconnectGoogleDrive() {
+      if (!confirm("Disconnect Google Drive? You can reconnect at any time - documents you've already linked won't be affected.")) {
+        return;
+      }
+
+      const msgSpan = document.getElementById("googleDriveMessage");
+      const disconnectBtn = document.getElementById("btnDisconnectGoogleDrive");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      try {
+        disconnectBtn.disabled = true;
+
+        const { data, error } = await supabaseClient.rpc("disconnect_my_ungani_google_drive");
+        if (error) throw error;
+
+        if (!data || data.ok !== true) {
+          throw new Error((data && data.message) || "Could not disconnect Google Drive.");
+        }
+
+        msgSpan.className = "action-msg success";
+        msgSpan.textContent = "Google Drive disconnected.";
+
+        await loadGoogleDriveIntegrationStatus();
+      } catch (err) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = getErrorMessage(err);
+      } finally {
+        disconnectBtn.disabled = false;
+      }
+    }
+
+    function handleGoogleDriveOAuthRedirect() {
+      const params = new URLSearchParams(window.location.search);
+      const status = params.get("google_drive");
+
+      if (!status) return;
+
+      const msgSpan = document.getElementById("googleDriveMessage");
+
+      if (status === "success") {
+        msgSpan.className = "action-msg success";
+        msgSpan.textContent = "Google Drive connected successfully.";
+      } else {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = params.get("google_drive_message") || "Could not connect Google Drive.";
+      }
+
+      params.delete("google_drive");
+      params.delete("google_drive_message");
+      const cleanQuery = params.toString();
+      const newUrl = window.location.pathname + (cleanQuery ? "?" + cleanQuery : "");
+      window.history.replaceState({}, document.title, newUrl);
     }
 
     function applyExistingThemeSetting() {
