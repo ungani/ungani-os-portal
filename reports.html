@@ -144,6 +144,8 @@
 
       const tenantName = UnganiClientShared.getTenantName(currentContext.tenant);
       const money = calculateMoneySummary(filtered.transactions);
+      const taxSummary = calculateTaxSummary(filtered.transactions);
+      const vatRegistered = currentContext.tenant && currentContext.tenant.vat_registered === true;
       const taskSummary = calculateTaskSummary(filtered.tasks);
       const itemSummary = calculateItemSummary(filtered.items);
       const peopleSummary = calculatePeopleSummary(filtered.people);
@@ -571,6 +573,22 @@
           </div>
         </section>
 
+        ${(vatRegistered || taxSummary.withholdingRecordCount > 0) ? `
+          <section class="report-section-grid">
+            <div class="ungani-card" style="grid-column: 1 / -1;">
+              <div class="ungani-section-title">
+                <div>
+                  <h3>Tax Summary</h3>
+                  <p class="ungani-small">VAT and withholding tax recorded for this report period.</p>
+                </div>
+                <a class="ungani-btn gold" href="my-money.html">Open Money</a>
+              </div>
+
+              ${renderTaxSummaryReport(taxSummary, vatRegistered)}
+            </div>
+          </section>
+        ` : ""}
+
         <section class="report-section-grid">
           <div class="ungani-card">
             <div class="ungani-section-title">
@@ -720,6 +738,41 @@
         expenses,
         pending,
         balance: income - expenses
+      };
+    }
+
+    // Same math as calculateTaxSummary() in my-money.html (output VAT
+    // minus input VAT; withholding summed from income rows only), but
+    // scoped to whatever date range the report filter already applied
+    // to `rows` - no "this month" restriction here, since that's this
+    // page's own from/to filter's job, not the tax math's.
+    function calculateTaxSummary(rows) {
+      let outputVat = 0;
+      let inputVat = 0;
+      let withholdingDeducted = 0;
+      let vatRecordCount = 0;
+      let withholdingRecordCount = 0;
+
+      (rows || []).forEach(function (row) {
+        const vatAmount = Number(UnganiClientShared.getValue(row, ["vat_amount"], 0) || 0);
+        if (row.vat_applicable && vatAmount > 0) {
+          vatRecordCount += 1;
+          if (isIncomeRow(row)) outputVat += vatAmount;
+          else if (isExpenseRow(row)) inputVat += vatAmount;
+        }
+
+        const withholdingAmount = Number(UnganiClientShared.getValue(row, ["withholding_amount"], 0) || 0);
+        if (row.withholding_applicable && withholdingAmount > 0 && isIncomeRow(row)) {
+          withholdingRecordCount += 1;
+          withholdingDeducted += withholdingAmount;
+        }
+      });
+
+      return {
+        vatPayable: outputVat - inputVat,
+        withholdingDeducted: withholdingDeducted,
+        vatRecordCount: vatRecordCount,
+        withholdingRecordCount: withholdingRecordCount
       };
     }
 
@@ -1001,6 +1054,35 @@
               </div>
             `;
           }).join("")}
+        </div>
+      `;
+    }
+
+    function renderTaxSummaryReport(taxSummary, vatRegistered) {
+      const hasVat = vatRegistered && taxSummary.vatRecordCount > 0;
+      const hasWithholding = taxSummary.withholdingRecordCount > 0;
+
+      if (!hasVat && !hasWithholding) {
+        return `
+          <div class="ungani-empty">
+            <h3>No tax-tagged records in this period</h3>
+            <p>${vatRegistered ? "" : "Turn on VAT in Settings if this business is VAT-registered. "}VAT/withholding tags on Money records will show up here once added.</p>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="report-summary-list">
+          ${vatRegistered ? summaryRow(
+            "VAT Payable",
+            UnganiAnalytics.moneyFormat(taxSummary.vatPayable),
+            "Output VAT minus input VAT across " + taxSummary.vatRecordCount + " tagged record(s) this period."
+          ) : ""}
+          ${summaryRow(
+            "Withholding Deducted",
+            UnganiAnalytics.moneyFormat(taxSummary.withholdingDeducted),
+            "Tax withheld by customers on " + taxSummary.withholdingRecordCount + " income record(s) this period - a credit toward income tax."
+          )}
         </div>
       `;
     }

@@ -326,6 +326,35 @@
       font-size: 13px;
     }
 
+    .tax-overview {
+      background: var(--ungani-card);
+      border: 1px solid var(--ungani-border);
+      border-left: 6px solid var(--ungani-blue);
+      border-radius: 20px;
+      padding: 14px 18px;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .tax-overview-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .tax-overview-stat strong {
+      font-size: 17px;
+      color: var(--ungani-text);
+    }
+
+    .tax-overview-stat span {
+      color: var(--ungani-muted);
+      font-size: 12px;
+    }
+
     tbody tr {
       cursor: pointer;
       transition: background 0.15s ease;
@@ -401,6 +430,8 @@
         <strong>Loading...</strong>
         <span>Estimated balance (income minus expenses and petty cash)</span>
       </div>
+
+      <div class="tax-overview no-print" id="taxOverviewBox" style="display:none;"></div>
 
       <section class="category-tiles no-print" id="categoryTiles">
         <div class="empty"><h3>Loading categories...</h3><p>Please wait.</p></div>
@@ -648,7 +679,7 @@
       const selected = document.getElementById("clientFilter").value;
 
       const options = tenants
-        .map(row => `<option value="${safe(row.id)}">${safe(getTenantName(row))}</option>`)
+        .map(row => `<option value="${safe(row.id)}">${safe(getTenantName(row))}${row.vat_registered ? " (VAT)" : ""}</option>`)
         .join("");
 
       document.getElementById("clientFilter").innerHTML = `<option value="">All Clients</option>${options}`;
@@ -761,6 +792,71 @@
       };
     }
 
+    // Same math as calculateTaxSummary() in my-money.html: output VAT
+    // (income rows) minus input VAT (expense rows) = what the business
+    // would owe/be refunded; withholding is summed from income rows
+    // only (tax withheld BY the client's own customers, a credit - not
+    // WHT the client withholds from its own suppliers, which is a
+    // separate, unbuilt scenario documented in the tax migration SQL).
+    function calculateTaxOverview(rows) {
+      let outputVat = 0;
+      let inputVat = 0;
+      let withholdingDeducted = 0;
+      let vatRecordCount = 0;
+      let withholdingRecordCount = 0;
+
+      rows.forEach(row => {
+        const vatAmount = Number(row.vat_amount || 0);
+        if (row.vat_applicable && vatAmount > 0) {
+          vatRecordCount += 1;
+          const type = moneyType(row);
+          if (type === "income") outputVat += vatAmount;
+          else if (type === "expense") inputVat += vatAmount;
+        }
+
+        const withholdingAmount = Number(row.withholding_amount || 0);
+        if (row.withholding_applicable && withholdingAmount > 0 && moneyType(row) === "income") {
+          withholdingRecordCount += 1;
+          withholdingDeducted += withholdingAmount;
+        }
+      });
+
+      return {
+        vatPayable: outputVat - inputVat,
+        withholdingDeducted,
+        vatRecordCount,
+        withholdingRecordCount
+      };
+    }
+
+    function renderTaxOverview() {
+      const rows = baseFilteredMoneyRecords();
+      const overview = calculateTaxOverview(rows);
+      const vatRegisteredCount = tenants.filter(t => t.vat_registered === true).length;
+      const box = document.getElementById("taxOverviewBox");
+
+      if (vatRegisteredCount === 0 && overview.withholdingRecordCount === 0) {
+        box.style.display = "none";
+        return;
+      }
+
+      box.style.display = "flex";
+      box.innerHTML = `
+        <div class="tax-overview-stat">
+          <strong>${safe(vatRegisteredCount)} of ${safe(tenants.length)}</strong>
+          <span>Client(s) VAT-registered</span>
+        </div>
+        <div class="tax-overview-stat">
+          <strong>${safe(moneyFormat(overview.vatPayable))}</strong>
+          <span>VAT payable across ${safe(overview.vatRecordCount)} tagged record(s) shown</span>
+        </div>
+        <div class="tax-overview-stat">
+          <strong>${safe(moneyFormat(overview.withholdingDeducted))}</strong>
+          <span>Withholding deducted across ${safe(overview.withholdingRecordCount)} tagged record(s) shown</span>
+        </div>
+      `;
+    }
+
     function renderCategoryTiles() {
       const rows = baseFilteredMoneyRecords();
 
@@ -794,6 +890,7 @@
       moneyCurrentPage = 1;
       renderCategoryTiles();
       renderBalanceBanner();
+      renderTaxOverview();
       renderClientSummary();
       renderMoneyRecords();
     }
@@ -807,11 +904,15 @@
         clientMap[tenant.id] = {
           id: tenant.id,
           name: getTenantName(tenant),
+          vatRegistered: tenant.vat_registered === true,
           records: 0,
           income: 0,
           expenses: 0,
           pettyCash: 0,
-          other: 0
+          other: 0,
+          outputVat: 0,
+          inputVat: 0,
+          withholdingDeducted: 0
         };
       });
 
@@ -829,12 +930,24 @@
         else if (type === "expense") clientMap[tenantId].expenses += amount;
         else if (type === "petty_cash") clientMap[tenantId].pettyCash += amount;
         else clientMap[tenantId].other += amount;
+
+        const vatAmount = Number(row.vat_amount || 0);
+        if (row.vat_applicable && vatAmount > 0) {
+          if (type === "income") clientMap[tenantId].outputVat += vatAmount;
+          else if (type === "expense") clientMap[tenantId].inputVat += vatAmount;
+        }
+
+        const withholdingAmount = Number(row.withholding_amount || 0);
+        if (row.withholding_applicable && withholdingAmount > 0 && type === "income") {
+          clientMap[tenantId].withholdingDeducted += withholdingAmount;
+        }
       });
 
       const summaryRows = Object.values(clientMap)
         .filter(row => row.records > 0)
         .map(row => {
           row.net = row.income - row.expenses - row.pettyCash;
+          row.vatPayable = row.outputVat - row.inputVat;
           return row;
         })
         .sort((a, b) => b.records - a.records)
@@ -852,12 +965,14 @@
 
       document.getElementById("clientSummaryBox").innerHTML = summaryRows.map(row => `
         <div class="row-card ${row.net >= 0 ? "income-card" : "expense-card"}">
-          <div class="row-title">${safe(row.name)}</div>
+          <div class="row-title">${safe(row.name)} ${row.vatRegistered ? '<span class="badge blue" style="font-size:10px;">VAT</span>' : ""}</div>
           <p class="row-detail"><strong>Records:</strong> ${safe(row.records)}</p>
           <p class="row-detail"><strong>Income:</strong> ${safe(moneyFormat(row.income))}</p>
           <p class="row-detail"><strong>Expenses:</strong> ${safe(moneyFormat(row.expenses))}</p>
           <p class="row-detail"><strong>Petty Cash:</strong> ${safe(moneyFormat(row.pettyCash))}</p>
           <p class="row-detail"><strong>Estimated Balance:</strong> ${safe(moneyFormat(row.net))}</p>
+          ${row.vatRegistered ? `<p class="row-detail"><strong>VAT Payable:</strong> ${safe(moneyFormat(row.vatPayable))}</p>` : ""}
+          ${row.withholdingDeducted > 0 ? `<p class="row-detail"><strong>Withholding Deducted:</strong> ${safe(moneyFormat(row.withholdingDeducted))}</p>` : ""}
           <span class="badge ${row.net >= 0 ? "green" : "red"}">${safe(row.net >= 0 ? "Positive" : "Negative")}</span>
         </div>
       `).join("");
@@ -914,7 +1029,11 @@
                   <tr style="--accent:${accent};" onclick="openMoneyModal(${index})">
                     <td>${safe(getTenantNameById(row.tenant_id))}</td>
                     <td>${safe(typeLabel(type))}</td>
-                    <td>${safe(moneyFormat(amountValue(row)))}</td>
+                    <td>
+                      ${safe(moneyFormat(amountValue(row)))}
+                      ${row.vat_applicable ? `<div><span class="badge blue" style="margin-top:4px;" title="VAT ${safe(row.vat_rate)}% (${safe(moneyFormat(row.vat_amount || 0))})">VAT</span></div>` : ""}
+                      ${row.withholding_applicable ? `<div><span class="badge gold" style="margin-top:4px;" title="Withholding tax deducted (${safe(moneyFormat(row.withholding_amount || 0))})">WHT</span></div>` : ""}
+                    </td>
                     <td>${safe(getMoneyCategory(row))}</td>
                     <td>${safe(getMoneyDescription(row))}</td>
                     <td>${safe(getMoneyReference(row))}</td>
@@ -970,6 +1089,18 @@
             <label>Description</label>
             <p>${safe(getMoneyDescription(row))}</p>
           </div>
+          ${row.vat_applicable ? `
+            <div class="modal-form-grid-full">
+              <label>VAT <span class="badge blue" style="margin-left:6px;">${safe(row.vat_pricing_mode === "exclusive" ? "Exclusive" : "Inclusive")}</span></label>
+              <p>${safe(row.vat_rate)}% &bull; ${safe(moneyFormat(row.vat_amount || 0))}</p>
+            </div>
+          ` : ""}
+          ${row.withholding_applicable ? `
+            <div class="modal-form-grid-full">
+              <label>Withholding Tax</label>
+              <p>${safe(row.withholding_rate)}% &bull; ${safe(moneyFormat(row.withholding_amount || 0))}</p>
+            </div>
+          ` : ""}
         </div>
 
         <div class="button-row">
