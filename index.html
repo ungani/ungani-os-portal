@@ -903,6 +903,29 @@
         "Registration submitted successfully. UNGANI will review and approve your business account before login access.",
         "success"
       );
+
+      queueRegistrationConfirmationEmail(registrationResponse.registrationId);
+    }
+
+    // Best-effort, non-blocking - the registration itself already
+    // succeeded and the success message is already shown by the time
+    // this runs. A failure here (network hiccup, RPC error) must never
+    // make a successful registration look broken to the person who just
+    // submitted it - only logged for later investigation.
+    async function queueRegistrationConfirmationEmail(registrationId) {
+      if (!registrationId) return;
+
+      try {
+        const { data, error } = await supabaseClient.rpc("queue_ungani_registration_confirmation_email", {
+          p_registration_id: registrationId
+        });
+
+        if (error || !data || data.ok !== true) {
+          console.warn("Could not queue registration confirmation email:", (error && error.message) || (data && data.message));
+        }
+      } catch (error) {
+        console.warn("Could not queue registration confirmation email:", error.message);
+      }
     }
 
     async function insertRegistration(data) {
@@ -924,7 +947,9 @@
       try {
         const response = await supabaseClient
           .from("registrations")
-          .insert([payload]);
+          .insert([payload])
+          .select("id")
+          .single();
 
         if (response.error) {
           console.error("Registration insert failed:", response.error.message);
@@ -934,7 +959,7 @@
           };
         }
 
-        return { ok: true };
+        return { ok: true, registrationId: response.data ? response.data.id : null };
       } catch (error) {
         console.error("Registration insert failed:", error.message);
         return {
