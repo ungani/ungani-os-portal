@@ -4364,6 +4364,16 @@
         return;
       }
 
+      // Escape-hatch buttons (e.g. "Submit Upgrade Request" on
+      // my-package.html, "Upload Proof" on my-billing.html) are the ONLY
+      // way a read-only tenant can pay their way back to active - the
+      // generic write-word text match below would otherwise block them
+      // too (a real bug: "Submit Upgrade Request" contains "submit"),
+      // leaving a trial-ended client with no way to proceed to payment.
+      if (target.hasAttribute("data-ungani-allow-readonly")) {
+        return;
+      }
+
       const text = String(target.textContent || "").toLowerCase();
 
       const writeWords = [

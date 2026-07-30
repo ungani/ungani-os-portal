@@ -1004,10 +1004,11 @@
             </div>
           </div>
 
-          <h3>Request Upgrade</h3>
+          <h3>Request Package / Continue on Current Plan</h3>
           <p>
-            Submit an upgrade request to UNGANI. This does not change your package
-            automatically. Admin will review and update your subscription.
+            Request a package change, or select your current package to continue
+            on it and proceed to payment. This does not change your package
+            automatically — UNGANI admin will review and update your subscription.
           </p>
 
           <div class="form-group">
@@ -1031,7 +1032,7 @@
           </div>
 
           <div class="actions">
-            <button class="ungani-btn gold" type="button" id="submitUpgradeBtn" onclick="submitUpgradeRequest()">
+            <button class="ungani-btn gold" type="button" id="submitUpgradeBtn" data-ungani-allow-readonly onclick="submitUpgradeRequest()">
               Submit Upgrade Request
             </button>
 
@@ -1577,14 +1578,22 @@
       renderTrialNotice(subscriptionStatus, daysLeft);
     }
 
+    // The current-package option used to be disabled here, on the
+    // assumption this screen is only ever used to move to a DIFFERENT
+    // (higher) package. That silently locks out a client whose trial
+    // just ended and simply wants to pay to continue on their existing
+    // package - if that package happens to be their lowest/only option
+    // (e.g. Starter), disabling it left them with no selectable option
+    // at all and no way to proceed to payment. Left selectable, just
+    // labeled, so "request my current plan" (a renewal) is always a
+    // real, submittable choice alongside actual upgrades.
     function setRequestedPackageOptions(packageKey) {
       const select = document.getElementById("requestedPackage");
 
       Array.from(select.options).forEach(option => {
         option.disabled = false;
 
-        if (option.value && option.value === packageKey) {
-          option.disabled = true;
+        if (option.value && option.value === packageKey && option.textContent.indexOf("— Current") === -1) {
           option.textContent = option.textContent + " — Current";
         }
       });
@@ -1804,11 +1813,6 @@
         return;
       }
 
-      if (requestedPackage === currentPackageKey) {
-        showUpgradeMessage("You are already on this package.", "warning");
-        return;
-      }
-
       if (!reason) {
         showUpgradeMessage("Please add a short reason or message for your upgrade request.", "warning");
         return;
@@ -1828,15 +1832,17 @@
             throw error;
           }
 
+          const isRenewal = requestedPackage === currentPackageKey;
           document.getElementById("requestedPackage").value = "";
           document.getElementById("upgradeReason").value = "";
 
-          showUpgradeMessage(
-            "Upgrade request submitted successfully. UNGANI admin will review it.",
-            "success"
-          );
+          const successText = isRenewal
+            ? "Request submitted successfully. UNGANI admin will review it and move you forward to payment."
+            : "Upgrade request submitted successfully. UNGANI admin will review it.";
 
-          showToast("Upgrade request submitted successfully.", "success");
+          showUpgradeMessage(successText, "success");
+
+          showToast(successText, "success");
 
           await loadMyPackage();
         } catch (error) {
