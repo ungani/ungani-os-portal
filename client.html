@@ -21,6 +21,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="team-chat-shared.js"></script>
   <script src="ungani-business-config.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script src="ungani-analytics.js"></script>
@@ -2439,9 +2440,9 @@
           🔔
           <span id="mobileNotificationCount" class="bell-dot">0</span>
         </button>
-        <button class="bell-btn" type="button" onclick="toggleTeamChatPopup()" aria-label="Team chat">
+        <button class="bell-btn" type="button" onclick="UnganiTeamChat.toggle()" aria-label="Team chat">
           💬
-          <span id="mobileChatCount" class="bell-dot">0</span>
+          <span id="mobileChatCount" class="bell-dot" data-ungani-chat-badge>0</span>
         </button>
         <button class="hamburger" type="button" onclick="openSidebar()" aria-label="Open menu">☰</button>
       </div>
@@ -2489,24 +2490,7 @@
     </div>
   </div>
 
-  <div id="teamChatPanel" class="notification-panel chat-panel">
-    <div class="chat-head">
-      <div>
-        <h3>Team Chat</h3>
-        <p id="chatSubtext">Quick follow-ups between your team.</p>
-      </div>
-      <button class="btn small light" type="button" onclick="closeTeamChatPopup()">Close</button>
-    </div>
-
-    <div id="chatMessagesList" class="chat-messages">
-      <div class="empty">Loading messages...</div>
-    </div>
-
-    <form class="chat-input-row" onsubmit="sendDashboardChatMessage(event); return false;">
-      <input id="dashboardChatInput" type="text" placeholder="Message your team..." autocomplete="off" />
-      <button class="chat-send-btn" type="submit" aria-label="Send">➤</button>
-    </form>
-  </div>
+  <div id="unganiTeamChatPanel" style="display:none;"></div>
 
   <div id="quickAddPanel" class="notification-panel">
     <div class="notification-head">
@@ -2592,8 +2576,8 @@
           <button class="bell-btn" type="button" onclick="toggleNotifications()" aria-label="Notifications" title="Notifications">
             🔔<span id="desktopNotificationCount" class="bell-dot">0</span>
           </button>
-          <button class="bell-btn" type="button" onclick="toggleTeamChatPopup()" aria-label="Team chat" title="Team Chat">
-            💬<span id="desktopChatCount" class="bell-dot">0</span>
+          <button class="bell-btn" type="button" onclick="UnganiTeamChat.toggle()" aria-label="Team chat" title="Team Chat">
+            💬<span id="desktopChatCount" class="bell-dot" data-ungani-chat-badge>0</span>
           </button>
           <button class="topbar-pill" type="button" onclick="NiaAssistant.open()">
             <img src="nia-avatar.jpg" alt="Nia" class="topbar-pill-avatar" /> Nia
@@ -2713,7 +2697,7 @@
     function closeAllPanels() {
       closeNotifications();
       closeSearchPanel();
-      closeTeamChatPopup();
+      if (window.UnganiTeamChat) UnganiTeamChat.close();
       closeQuickAddPanel();
       closeProfilePanel();
       closeDesktopSearchDropdown();
@@ -2879,7 +2863,7 @@
 
     function showDesktopSearchDropdown() {
       closeNotifications();
-      closeTeamChatPopup();
+      if (window.UnganiTeamChat) UnganiTeamChat.close();
       closeQuickAddPanel();
       closeProfilePanel();
 
@@ -2989,262 +2973,6 @@
           </a>
         `;
       }).join(""));
-    }
-
-    let chatMessages = [];
-    let chatPollTimer = null;
-    let chatFirstLoadDone = false;
-
-    function toggleTeamChatPopup() {
-      closeSidebar();
-
-      const panel = document.getElementById("teamChatPanel");
-      const isOpen = panel.classList.contains("open");
-
-      closeAllPanels();
-
-      if (!isOpen) {
-        panel.classList.add("open");
-        document.getElementById("notificationOverlay").classList.add("open");
-        document.body.style.overflow = "hidden";
-
-        loadDashboardChatMessages().then(function () {
-          markDashboardChatRead();
-          scrollChatToBottom();
-
-          setTimeout(function () {
-            const input = document.getElementById("dashboardChatInput");
-            if (input) input.focus();
-          }, 60);
-        });
-      }
-    }
-
-    function closeTeamChatPopup() {
-      const panel = document.getElementById("teamChatPanel");
-      if (panel) panel.classList.remove("open");
-      document.getElementById("notificationOverlay").classList.remove("open");
-      document.body.style.overflow = "";
-    }
-
-    async function loadDashboardChatMessages(silent) {
-      if (!currentTenantId) return;
-
-      try {
-        const response = await supabaseClient
-          .from("team_chat_messages")
-          .select("*")
-          .eq("tenant_id", currentTenantId)
-          .order("created_at", { ascending: true })
-          .limit(100);
-
-        if (response.error) {
-          console.warn("Team chat load skipped:", response.error.message);
-          return;
-        }
-
-        const previousMessages = chatMessages;
-        chatMessages = response.data || [];
-
-        if (chatFirstLoadDone) {
-          checkForNewChatMessages(previousMessages, chatMessages);
-        }
-
-        chatFirstLoadDone = true;
-        updateChatBadge();
-
-        const panel = document.getElementById("teamChatPanel");
-
-        if (panel && panel.classList.contains("open")) {
-          renderDashboardChatMessages();
-
-          if (!silent) {
-            scrollChatToBottom();
-          }
-        }
-      } catch (error) {
-        console.warn("Team chat load skipped:", error.message);
-      }
-    }
-
-    function checkForNewChatMessages(previousMessages, newMessages) {
-      const previousIds = new Set(previousMessages.map(function (m) { return m.id; }));
-      const myUserId = currentUser ? currentUser.id : null;
-
-      const freshOnes = newMessages.filter(function (m) {
-        return !previousIds.has(m.id) && m.sender_user_id !== myUserId;
-      });
-
-      const panel = document.getElementById("teamChatPanel");
-      const isOpen = panel && panel.classList.contains("open");
-
-      if (freshOnes.length > 0 && !isOpen) {
-        showChatToast(freshOnes[freshOnes.length - 1]);
-      }
-    }
-
-    function updateChatBadge() {
-      const myUserId = currentUser ? currentUser.id : null;
-      const unread = chatMessages.filter(function (m) {
-        return m.sender_user_id !== myUserId && !m.is_read;
-      }).length;
-
-      const mobileEl = document.getElementById("mobileChatCount");
-      const desktopEl = document.getElementById("desktopChatCount");
-
-      if (mobileEl) {
-        mobileEl.innerText = unread > 99 ? "99+" : String(unread);
-        mobileEl.classList.toggle("show", unread > 0);
-      }
-
-      if (desktopEl) {
-        desktopEl.innerText = unread > 99 ? "99+" : String(unread);
-        desktopEl.classList.toggle("show", unread > 0);
-      }
-    }
-
-    function showChatToast(message) {
-      const existing = document.getElementById("dashboardChatToast");
-      if (existing) existing.remove();
-
-      const toast = document.createElement("div");
-      toast.id = "dashboardChatToast";
-      toast.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:99999;max-width:min(340px,calc(100vw - 32px));background:linear-gradient(135deg, rgba(8,38,84,0.98), rgba(6,28,61,0.98));color:#FFFFFF;border:1px solid rgba(212,166,58,0.35);border-radius:18px;box-shadow:0 18px 45px rgba(0,0,0,0.35);padding:14px;display:flex;gap:11px;align-items:flex-start;cursor:pointer;transform:translateY(14px);opacity:0;transition:0.28s ease;";
-
-      const senderName = getValue(message, ["sender_name"], "Team Member");
-      const rawBody = String(getValue(message, ["message_body", "message", "body"], "New team message"));
-      const body = rawBody.length > 90 ? rawBody.slice(0, 90) + "..." : rawBody;
-
-      toast.innerHTML = `
-        <div style="font-size:20px;">💬</div>
-        <div>
-          <strong style="display:block;color:#D4A63A;font-size:13px;margin-bottom:3px;">${safe(senderName)}</strong>
-          <p style="margin:0;font-size:13px;color:#F5F5F3;line-height:1.4;">${safe(body)}</p>
-        </div>
-      `;
-
-      toast.addEventListener("click", function () {
-        toast.remove();
-        toggleTeamChatPopup();
-      });
-
-      document.body.appendChild(toast);
-
-      setTimeout(function () { toast.style.transform = "translateY(0)"; toast.style.opacity = "1"; }, 30);
-      setTimeout(function () {
-        toast.style.transform = "translateY(14px)";
-        toast.style.opacity = "0";
-        setTimeout(function () { toast.remove(); }, 300);
-      }, 7000);
-    }
-
-    function renderDashboardChatMessages() {
-      const box = document.getElementById("chatMessagesList");
-      if (!box) return;
-
-      if (!chatMessages.length) {
-        box.innerHTML = `
-          <div class="empty" style="margin:auto;">
-            <h3>No messages yet</h3>
-            <p>Send a quick note to your team to get started.</p>
-          </div>
-        `;
-        return;
-      }
-
-      const myUserId = currentUser ? currentUser.id : null;
-
-      box.innerHTML = chatMessages.map(function (row) {
-        const isMine = row.sender_user_id === myUserId;
-        const senderName = getValue(row, ["sender_name"], isMine ? "You" : "Team Member");
-        const body = getValue(row, ["message_body", "message", "body"], "");
-        const time = formatDate(getValue(row, ["created_at"], ""));
-
-        return `
-          <div class="chat-bubble ${isMine ? "mine" : "theirs"}">
-            ${isMine ? "" : `<span class="chat-sender">${safe(senderName)}</span>`}
-            <span>${safe(body)}</span>
-            <span class="chat-time">${safe(time)}</span>
-          </div>
-        `;
-      }).join("");
-    }
-
-    function scrollChatToBottom() {
-      const box = document.getElementById("chatMessagesList");
-      if (box) box.scrollTop = box.scrollHeight;
-    }
-
-    async function markDashboardChatRead() {
-      if (!currentTenantId || !currentUser) return;
-
-      try {
-        await supabaseClient
-          .from("team_chat_messages")
-          .update({ is_read: true, updated_at: new Date().toISOString() })
-          .eq("tenant_id", currentTenantId)
-          .neq("sender_user_id", currentUser.id)
-          .eq("is_read", false);
-
-        chatMessages.forEach(function (m) {
-          if (m.sender_user_id !== currentUser.id) m.is_read = true;
-        });
-
-        updateChatBadge();
-      } catch (error) {
-        console.warn("Could not mark team chat read:", error.message);
-      }
-    }
-
-    async function sendDashboardChatMessage(event) {
-      if (event && event.preventDefault) event.preventDefault();
-
-      const input = document.getElementById("dashboardChatInput");
-      const body = input ? String(input.value || "").trim() : "";
-
-      if (!body || !currentUser) return;
-
-      const senderName = getValue(currentTenant, ["contact_name"], "") || getValue(currentUser, ["email"], "Team Member");
-
-      const payload = {
-        tenant_id: currentTenantId,
-        sender_user_id: currentUser.id,
-        sender_name: senderName,
-        sender_role: "team",
-        message_type: "message",
-        message_body: body,
-        message: body,
-        body: body,
-        is_read: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      input.value = "";
-
-      try {
-        const response = await supabaseClient.from("team_chat_messages").insert(payload);
-
-        if (response.error) {
-          alert("Could not send message: " + response.error.message);
-          return;
-        }
-
-        await loadDashboardChatMessages(true);
-        scrollChatToBottom();
-      } catch (error) {
-        alert("Could not send message: " + error.message);
-      }
-    }
-
-    function startChatPolling() {
-      if (chatPollTimer) clearInterval(chatPollTimer);
-
-      loadDashboardChatMessages(true);
-
-      chatPollTimer = setInterval(function () {
-        loadDashboardChatMessages(true);
-      }, 12000);
     }
 
     let quickAddType = "task";
@@ -3824,7 +3552,18 @@
         loadClientReadOnlyAccess()
       ]);
 
-      startChatPolling();
+      if (window.UnganiTeamChat) {
+        UnganiTeamChat.init(function () {
+          return {
+            supabaseClient: supabaseClient,
+            tenantId: currentTenantId,
+            authUser: currentUser,
+            userProfile: { full_name: currentTenant ? currentTenant.contact_name : null }
+          };
+        }).then(function () {
+          UnganiTeamChat.startPolling();
+        });
+      }
       setInterval(updateLastUpdatedIndicator, 30000);
     }
 

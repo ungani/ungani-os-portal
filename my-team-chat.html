@@ -9,6 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script>
     (function () {
@@ -46,6 +47,7 @@
     let currentContext = null;
     let messages = [];
     let refreshTimer = null;
+    let roster = { owner: null, members: [] };
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -64,11 +66,60 @@
 
     async function startTeamChatPage(context) {
       currentContext = context;
+      await loadRoster();
       await loadMessages();
 
       refreshTimer = setInterval(function () {
         loadMessages(true);
       }, 20000);
+    }
+
+    async function loadRoster() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_team_members_for_assignment");
+        if (!response.error && response.data && response.data.ok === true) {
+          roster = { owner: response.data.owner || null, members: response.data.members || [] };
+        }
+      } catch (error) {
+        console.warn("Could not load team roster:", error.message);
+      }
+    }
+
+    function isMe(authUserId) {
+      return authUserId && currentContext.authUser && authUserId === currentContext.authUser.id;
+    }
+
+    function recipientOptions() {
+      const options = [`<option value="">Team (Everyone)</option>`];
+
+      if (roster.owner && !isMe(roster.owner.auth_user_id)) {
+        options.push(`<option value="owner">${UnganiClientShared.safe(roster.owner.full_name || "Owner")} (Owner) - Private</option>`);
+      }
+
+      roster.members.forEach(function (m) {
+        if (isMe(m.auth_user_id)) return;
+        options.push(`<option value="tm:${UnganiClientShared.attr(m.id)}">${UnganiClientShared.safe(m.full_name)}${m.role_key ? " (" + UnganiClientShared.safe(m.role_key) + ")" : ""} - Private</option>`);
+      });
+
+      return options.join("");
+    }
+
+    function peerLabelForRow(row) {
+      const recipientTeamMemberId = UnganiClientShared.getValue(row, ["recipient_team_member_id"], "");
+      const recipientIsOwner = !!UnganiClientShared.getValue(row, ["recipient_is_owner"], false);
+
+      if (!recipientTeamMemberId && !recipientIsOwner) return null;
+
+      const senderId = String(UnganiClientShared.getValue(row, ["sender_user_id"], ""));
+      const isMine = senderId === String(currentContext.authUser.id);
+
+      if (isMine) {
+        if (recipientIsOwner) return "to " + ((roster.owner && roster.owner.full_name) || "Owner");
+        const member = roster.members.find(function (m) { return m.id === recipientTeamMemberId; });
+        return "to " + (member ? member.full_name : "a team member");
+      }
+
+      return "private message";
     }
 
     async function loadMessages(silent) {
@@ -140,8 +191,8 @@
         <section class="ungani-grid">
           ${UnganiClientShared.metricCard("Total Messages", messages.length, "All internal team messages", "blue")}
           ${UnganiClientShared.metricCard("Your Messages", summary.myMessages, "Messages sent by you", "gold")}
-          ${UnganiClientShared.metricCard("Team Messages", summary.teamMessages, "Messages from other team members", "green")}
-          ${UnganiClientShared.metricCard("Unread Team Messages", summary.unreadTeam, "Unread internal messages", summary.unreadTeam > 0 ? "orange" : "green")}
+          ${UnganiClientShared.metricCard("From Others", summary.teamMessages, "Team messages and private DMs sent to you", "green")}
+          ${UnganiClientShared.metricCard("Unread", summary.unreadTeam, "Unread team messages and DMs", summary.unreadTeam > 0 ? "orange" : "green")}
         </section>
 
         <section class="ungani-two-col">
@@ -194,6 +245,11 @@
     function renderMessageForm() {
       return `
         <form id="teamChatForm" onsubmit="sendMessage(event)">
+          <label for="messageRecipient">Send To</label>
+          <select id="messageRecipient">
+            ${recipientOptions()}
+          </select>
+
           <label for="messageType">Message Type</label>
           <select id="messageType">
             <option value="message">General Message</option>
@@ -248,8 +304,9 @@
       const created = UnganiClientShared.getValue(row, ["created_at"], "");
       const read = UnganiClientShared.getValue(row, ["is_read"], false);
 
+      const peerLabel = peerLabelForRow(row);
       const bg = isMine ? "rgba(6,28,61,0.05)" : "rgba(212,166,58,0.14)";
-      const border = isMine ? "#061C3D" : "#D4A63A";
+      const border = peerLabel ? "#7C3AED" : (isMine ? "#061C3D" : "#D4A63A");
 
       return `
         <div class="ungani-card" style="box-shadow:none;border-left:5px solid ${border};background:${bg};">
@@ -263,6 +320,7 @@
             </div>
 
             <div>
+              ${peerLabel ? badge("private - " + peerLabel, "blue") : ""}
               ${badge(type, isMine ? "blue" : "gold")}
               ${isMine ? badge(read ? "read" : "sent", read ? "green" : "orange") : ""}
             </div>
@@ -312,6 +370,7 @@
       }
 
       const senderName = getSenderName();
+      const recipientValue = UnganiClientShared.value("messageRecipient") || "";
 
       const payload = {
         tenant_id: currentContext.tenantId,
@@ -327,6 +386,12 @@
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
+
+      if (recipientValue === "owner") {
+        payload.recipient_is_owner = true;
+      } else if (recipientValue.indexOf("tm:") === 0) {
+        payload.recipient_team_member_id = recipientValue.slice(3);
+      }
 
       let response;
 
