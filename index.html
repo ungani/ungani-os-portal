@@ -929,7 +929,20 @@
     }
 
     async function insertRegistration(data) {
+      // The id is generated here, client-side, and passed in explicitly -
+      // rather than using .select().single() to read it back after insert.
+      // Chaining .select() after an insert makes PostgREST RETURNING the
+      // row, which requires the row to also pass the table's SELECT RLS
+      // policy, not just INSERT - and registrations has no public/anon
+      // SELECT policy (correctly, since it holds other people's business
+      // data). That combination briefly broke every registration with
+      // "new row violates row-level security policy" even though the
+      // INSERT policy itself was always fine. Generating the id up front
+      // avoids needing RETURNING at all.
+      const registrationId = crypto.randomUUID();
+
       const payload = {
+        id: registrationId,
         business_name: data.businessName,
         company_name: data.businessName,
         contact_name: data.contactName,
@@ -947,9 +960,7 @@
       try {
         const response = await supabaseClient
           .from("registrations")
-          .insert([payload])
-          .select("id")
-          .single();
+          .insert([payload]);
 
         if (response.error) {
           console.error("Registration insert failed:", response.error.message);
@@ -959,7 +970,7 @@
           };
         }
 
-        return { ok: true, registrationId: response.data ? response.data.id : null };
+        return { ok: true, registrationId: registrationId };
       } catch (error) {
         console.error("Registration insert failed:", error.message);
         return {
