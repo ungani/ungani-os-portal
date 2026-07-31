@@ -32,6 +32,44 @@
   loadUiPolish();
   registerServiceWorker();
   loadAccessGuards();
+  initSplashScreen();
+
+  // Entry pages (login/index/client/admin/staff-login) render a full-bleed
+  // navy+logo #unganiSplash as the very first thing in <body>, so there's
+  // never a blank/white flash while the render-blocking <script> tags in
+  // <head> load - the browser paints something branded immediately instead
+  // of nothing. This hides it once the page is actually ready to show real
+  // content. window.load fires after every script/resource has finished,
+  // which is also roughly when each page's own loading-shell/skeleton takes
+  // over - a brief crossfade between the two is expected and looks
+  // intentional. A hard timeout is a safety net so a slow or failed
+  // resource can never leave the splash stuck on screen indefinitely -
+  // that would be worse than no splash at all.
+  function initSplashScreen() {
+    let hidden = false;
+
+    function hide() {
+      if (hidden) return;
+      hidden = true;
+
+      const splash = document.getElementById("unganiSplash");
+      if (!splash) return;
+
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        splash.remove();
+        return;
+      }
+
+      splash.classList.add("ungani-splash-hide");
+      splash.addEventListener("transitionend", function () { splash.remove(); }, { once: true });
+    }
+
+    window.addEventListener("load", function () {
+      requestAnimationFrame(function () { requestAnimationFrame(hide); });
+    });
+
+    setTimeout(hide, 6000);
+  }
 
   function setPortalModeFromUrl() {
     const page = getCurrentPage();
