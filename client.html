@@ -1049,6 +1049,12 @@
       margin-bottom: 14px;
     }
 
+    /* The "not enough data yet" nudge is a full-width card, not a
+       gauge-plus-caption row - override the row layout just for it. */
+    .health-gauge-block.health-gauge-empty {
+      display: block;
+    }
+
     .health-gauge {
       position: relative;
       width: 84px;
@@ -5204,7 +5210,8 @@
             occupiedUnits: occupiedUnitsForHealth,
             totalUnits: totalUnitsForHealth,
             maintenanceOpen: maintenanceOpenForHealth,
-            leasesExpiring: leasesExpiringForHealth
+            leasesExpiring: leasesExpiringForHealth,
+            hasTaskData: (data.tasks || []).length > 0
           });
         } catch (healthError) {
           health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
@@ -5432,7 +5439,8 @@
           occupiedUnits: occupiedUnits,
           totalUnits: totalUnits,
           maintenanceOpen: maintenanceOpen,
-          leasesExpiring: leasesExpiring
+          leasesExpiring: leasesExpiring,
+          hasTaskData: (dashboardData.tasks || []).length > 0
         });
       } catch (healthError) {
         health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
@@ -15145,7 +15153,11 @@
       const applicable = factors.filter(function (f) { return f.applicable !== false; });
       const totalWeight = applicable.reduce(function (sum, f) { return sum + f.weight; }, 0);
 
-      if (totalWeight <= 0) return 100;
+      // No applicable factor has any real data behind it - there's nothing
+      // to average, so this must not silently read as a perfect 100.
+      // Callers should treat a null score as "not enough data yet", not
+      // "everything is fine".
+      if (totalWeight <= 0) return null;
 
       const weighted = applicable.reduce(function (sum, f) { return sum + (f.score * f.weight); }, 0);
 
@@ -15154,6 +15166,14 @@
 
     function renderHealthGaugeHtml(score, summary) {
       try {
+        if (score === null || score === undefined) {
+          return `
+            <div class="health-gauge-block health-gauge-empty">
+              ${emptyStateNudge("📊", "Getting started", summary || "Your Business Health Score will appear here once you've logged some activity.")}
+            </div>
+          `;
+        }
+
         const band = healthBandFor(score);
         const radius = 42;
         const circumference = 2 * Math.PI * radius;
@@ -15236,6 +15256,22 @@
     function computePropertyHealthScore(input) {
       const linkedCount = input.linkedTenants.length;
       const totalUnits = input.totalUnits;
+      // Whether ANY maintenance task has ever been logged (open or not) -
+      // without this, zero currently-open maintenance requests scores as
+      // "perfect" (100) whether that's because maintenance is genuinely
+      // under control, or because the tenant has no units/tasks at all yet.
+      const hasTaskData = !!input.hasTaskData;
+
+      // If there are no linked tenants, no units, and no task history at
+      // all, there is nothing to score - this is a brand-new property
+      // account, not a perfectly-run one.
+      if (linkedCount === 0 && totalUnits === 0 && !hasTaskData) {
+        return {
+          score: null,
+          notEnoughData: true,
+          summary: "Your Business Health Score will appear here once you've added units, tenants, or maintenance activity."
+        };
+      }
 
       const rentScore = linkedCount > 0 ? Math.round(((linkedCount - input.overdueRent.length) / linkedCount) * 100) : 0;
       const occupancyScore = totalUnits > 0 ? Math.round((input.occupiedUnits / totalUnits) * 100) : 0;
@@ -15245,7 +15281,7 @@
       const factors = [
         { key: "rent", weight: 40, score: rentScore, applicable: linkedCount > 0 },
         { key: "occupancy", weight: 30, score: occupancyScore, applicable: totalUnits > 0 },
-        { key: "maintenance", weight: 20, score: maintenanceScore },
+        { key: "maintenance", weight: 20, score: maintenanceScore, applicable: hasTaskData },
         { key: "lease", weight: 10, score: leaseScore, applicable: linkedCount > 0 }
       ];
 
@@ -15254,7 +15290,7 @@
       const summary = healthSummaryFromWeakest([
         { label: "unpaid rent", score: rentScore, applicable: linkedCount > 0, text: input.overdueRent.length === 1 ? "1 tenant has unpaid rent this month." : input.overdueRent.length + " tenants have unpaid rent this month." },
         { label: "occupancy", score: occupancyScore, applicable: totalUnits > 0, text: "Occupancy is lower than it could be — " + input.occupiedUnits + " of " + totalUnits + " units filled." },
-        { label: "open maintenance", score: maintenanceScore, text: input.maintenanceOpen.length + " open maintenance request(s) need attention." },
+        { label: "open maintenance", score: maintenanceScore, applicable: hasTaskData, text: input.maintenanceOpen.length + " open maintenance request(s) need attention." },
         { label: "expiring leases", score: leaseScore, applicable: linkedCount > 0, text: input.leasesExpiring.length + " lease(s) expiring within 7 days — plan renewals now." }
       ], "Rent collection and occupancy are both in good shape.");
 
@@ -15277,30 +15313,53 @@
     }
 
     function computeGenericHealthScore(input) {
+      // Zero overdue tasks / zero open support issues score as "perfect"
+      // (100) whether that's because things are genuinely under control,
+      // or because the tenant has never logged a single task or support
+      // issue at all - a brand-new account looks identical to a
+      // perfectly-run one on these two factors. hasTaskData/hasSupportData
+      // (mirroring the hasMoneyData gate that already existed for
+      // payments) exclude a factor from the average entirely when there's
+      // no real history behind it, instead of letting "no data" masquerade
+      // as "no problems".
+      const hasTaskData = (input.tasks.pending + input.tasks.completed) > 0;
+      const hasSupportData = input.support.total > 0;
+      const hasMoneyData = input.money.income > 0 || input.money.pending > 0;
+      const recentCount = countRecentActivity(input.dashboardData);
+
+      // If NONE of the four dimensions have any real data behind them,
+      // there is nothing to score - a brand-new tenant isn't "healthy",
+      // it just doesn't have a health score yet.
+      if (!hasTaskData && !hasSupportData && !hasMoneyData && recentCount === 0) {
+        return {
+          score: null,
+          notEnoughData: true,
+          summary: "Your Business Health Score will appear here once you've logged a few tasks, payments, or support activity."
+        };
+      }
+
       const tasksScore = tierScore(input.tasks.overdue, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
 
       const pendingRatio = input.money.pending / Math.max(input.money.income, 1);
-      const hasMoneyData = input.money.income > 0 || input.money.pending > 0;
       const paymentScore = pendingRatio <= 0.05 ? 100 : pendingRatio <= 0.15 ? 80 : pendingRatio <= 0.30 ? 55 : 30;
 
       const supportScore = tierScore(input.support.open, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
 
-      const recentCount = countRecentActivity(input.dashboardData);
       const activityScore = tierScore(recentCount, [[0, 45], [2, 70], [6, 90], [Infinity, 100]]);
 
       const factors = [
-        { key: "tasks", weight: 35, score: tasksScore },
+        { key: "tasks", weight: 35, score: tasksScore, applicable: hasTaskData },
         { key: "payments", weight: 30, score: paymentScore, applicable: hasMoneyData },
-        { key: "support", weight: 20, score: supportScore },
+        { key: "support", weight: 20, score: supportScore, applicable: hasSupportData },
         { key: "activity", weight: 15, score: activityScore }
       ];
 
       const score = weightedHealthScore(factors);
 
       const summary = healthSummaryFromWeakest([
-        { label: "overdue tasks", score: tasksScore, text: input.tasks.overdue === 1 ? "1 overdue task needs attention." : input.tasks.overdue + " overdue tasks need attention." },
+        { label: "overdue tasks", score: tasksScore, applicable: hasTaskData, text: input.tasks.overdue === 1 ? "1 overdue task needs attention." : input.tasks.overdue + " overdue tasks need attention." },
         { label: "pending payments", score: paymentScore, applicable: hasMoneyData, text: "Outstanding pending payments are affecting your collection health." },
-        { label: "open support issues", score: supportScore, text: input.support.open === 1 ? "1 open support issue is waiting on a response." : input.support.open + " open support issues are waiting on a response." },
+        { label: "open support issues", score: supportScore, applicable: hasSupportData, text: input.support.open === 1 ? "1 open support issue is waiting on a response." : input.support.open + " open support issues are waiting on a response." },
         { label: "recent activity", score: activityScore, text: "It's been quiet — log some activity to keep your records current." }
       ], "Tasks, payments, and support are all in good shape.");
 
