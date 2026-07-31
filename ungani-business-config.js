@@ -3441,6 +3441,14 @@
   const GENERIC_ITEM_FIELD_SET = {
     valueLabel: "Price / Value",
     statusOptions: ["available", "in use", "maintenance", "inactive"],
+    // Shared by ~12 unrelated business types with no bespoke field-set yet
+    // (Gym, Warehouse, Security, Cleaning, Construction, Healthcare, School,
+    // Events, Photography, Furniture/Carpentry, Tourism, Wholesale, plus any
+    // Automotive/Salon/Hospitality section not explicitly mapped below) - a
+    // concrete example from any ONE of those industries would be just as
+    // wrong for the other eleven, so this stays genuinely generic rather
+    // than picking a specific noun.
+    namePlaceholder: "Example: Item or asset name",
     fields: [
       // id must be "stock_quantity", not "quantity" - client.html's
       // getStockQuantity()/isLowStockItem() (built for Retail's low-stock
@@ -3478,6 +3486,7 @@
   const LOGISTICS_TRANSPORT_FIELD_SET = {
     valueLabel: "Estimated Value",
     statusOptions: ["available", "in use", "in maintenance", "retired", "inactive"],
+    namePlaceholder: "Example: Truck KDA 123B, Delivery Van 2",
     fields: [
       { id: "registration_number", label: "Registration Number", type: "text", placeholder: "Example: KDA 123B" },
       { id: "capacity", label: "Capacity", type: "text", placeholder: "Example: 7 tonnes / 14 seats" },
@@ -3489,6 +3498,7 @@
   const LOGISTICS_COLD_CHAIN_FIELD_SET = {
     valueLabel: "Estimated Value",
     statusOptions: ["available", "in use", "in maintenance", "retired", "inactive"],
+    namePlaceholder: "Example: Reefer Unit 2, Cold Room A",
     fields: [
       { id: "fuel_capacity_liters", label: "Fuel Capacity (Liters)", type: "number", placeholder: "Example: 200" },
       { id: "temperature_range", label: "Temperature Range", type: "text", placeholder: "Example: -18°C to -22°C" },
@@ -3499,6 +3509,7 @@
   const LOGISTICS_CLEARING_FIELD_SET = {
     valueLabel: "Estimated Value",
     statusOptions: ["available", "in progress", "cleared", "on hold", "inactive"],
+    namePlaceholder: "Example: Container MSKU1234567, Shipment #4521",
     fields: [
       { id: "reference_number", label: "Container / Reference Number", type: "text", placeholder: "Example: MSKU1234567" },
       { id: "origin", label: "Origin", type: "text", placeholder: "Example: Mombasa Port" },
@@ -3510,6 +3521,7 @@
   const HOSPITALITY_ROOM_FIELD_SET = {
     valueLabel: "Rate per Night",
     statusOptions: ["available", "occupied", "reserved", "maintenance", "inactive"],
+    namePlaceholder: "Example: Room 204, Deluxe Suite 3",
     fields: [
       { id: "room_type", label: "Room / Unit Type", type: "text", placeholder: "Example: Single, Double, Suite" },
       { id: "capacity", label: "Guest Capacity", type: "number", placeholder: "Example: 2" },
@@ -3521,6 +3533,7 @@
   const HOSPITALITY_FNB_FIELD_SET = {
     valueLabel: "Unit Price",
     statusOptions: ["available", "low stock", "out of stock", "discontinued"],
+    namePlaceholder: "Example: Grilled Chicken, Coca-Cola 500ml",
     fields: [
       { id: "category", label: "Category", type: "text", placeholder: "Example: Main Course, Drink, Equipment" },
       { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 25" },
@@ -3529,9 +3542,19 @@
     ]
   };
 
-  const RETAIL_EXPIRY_FIELD_SET = {
+  // Pharmacy/Agrovet/Cosmetics used to share ONE RETAIL_EXPIRY_FIELD_SET
+  // object - identical field structure (expiry-tracked shop stock) but
+  // three genuinely different industries, so a single shared example
+  // (previously "MedSupply Kenya"/"Amoxicillin 500mg") was accurate for
+  // Pharmacy and wrong for the other two. Split into three otherwise-
+  // identical field-sets so each gets its own namePlaceholder/supplier
+  // example - same fix shape as the Items/Nia vocabulary-leak bug this
+  // session, just at the individual-field level instead of the whole
+  // business-type level.
+  const RETAIL_PHARMACY_FIELD_SET = {
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "expired", "discontinued"],
+    namePlaceholder: "Example: Amoxicillin 500mg, Paracetamol 500mg",
     fields: [
       { id: "expiry_date", label: "Expiry Date", type: "date" },
       { id: "batch_number", label: "Batch Number", type: "text", placeholder: "Example: B20260614" },
@@ -3541,9 +3564,50 @@
     ]
   };
 
-  const RETAIL_SERIAL_FIELD_SET = {
+  const RETAIL_AGROVET_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "expired", "discontinued"],
+    namePlaceholder: "Example: Dairy Meal 50kg, Maize Seed 2kg",
+    fields: [
+      { id: "expiry_date", label: "Expiry Date", type: "date" },
+      { id: "batch_number", label: "Batch Number", type: "text", placeholder: "Example: B20260614" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 40" },
+      { id: "reorder_level", label: "Reorder Level", type: "number", placeholder: "Example: 10" },
+      { id: "supplier", label: "Supplier", type: "text", placeholder: "Example: Kenya Farmers Agrovet Supplies" }
+    ]
+  };
+
+  const RETAIL_COSMETICS_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "expired", "discontinued"],
+    namePlaceholder: "Example: Vaseline Lotion 400ml, Shea Butter Cream",
+    fields: [
+      { id: "expiry_date", label: "Expiry Date", type: "date" },
+      { id: "batch_number", label: "Batch Number", type: "text", placeholder: "Example: B20260614" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 40" },
+      { id: "reorder_level", label: "Reorder Level", type: "number", placeholder: "Example: 10" },
+      { id: "supplier", label: "Supplier", type: "text", placeholder: "Example: Beauty World Distributors" }
+    ]
+  };
+
+  // Electronics/Mobile Phones - split from one shared RETAIL_SERIAL_
+  // FIELD_SET for the same reason as Pharmacy/Agrovet/Cosmetics above.
+  const RETAIL_ELECTRONICS_FIELD_SET = {
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    namePlaceholder: "Example: Samsung TV 55-inch, HP Laptop 15s",
+    fields: [
+      { id: "serial_number", label: "Serial Number / IMEI", type: "text", placeholder: "Example: 356789104561234" },
+      { id: "warranty_expiry", label: "Warranty Expiry", type: "date" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 15" },
+      { id: "supplier", label: "Supplier", type: "text" }
+    ]
+  };
+
+  const RETAIL_MOBILE_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    namePlaceholder: "Example: iPhone 13 Pro, Samsung Galaxy A14",
     fields: [
       { id: "serial_number", label: "Serial Number / IMEI", type: "text", placeholder: "Example: 356789104561234" },
       { id: "warranty_expiry", label: "Warranty Expiry", type: "date" },
@@ -3555,6 +3619,7 @@
   const RETAIL_VARIANT_FIELD_SET = {
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    namePlaceholder: "Example: Men's Denim Jacket, Ladies Sandals",
     fields: [
       { id: "size", label: "Size", type: "text", placeholder: "Example: M, 42, UK 8" },
       { id: "color", label: "Color", type: "text", placeholder: "Example: Navy Blue" },
@@ -3566,6 +3631,7 @@
   const RETAIL_FURNITURE_FIELD_SET = {
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    namePlaceholder: "Example: 3-Seater Sofa, Dining Table Set",
     fields: [
       { id: "dimensions", label: "Dimensions", type: "text", placeholder: "Example: 180cm x 90cm x 75cm" },
       { id: "material", label: "Material", type: "text", placeholder: "Example: Oak, Steel, Fabric" },
@@ -3577,6 +3643,7 @@
   const RETAIL_BOOK_FIELD_SET = {
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    namePlaceholder: "Example: Mathematics Textbook Form 3, A4 Notebook",
     fields: [
       { id: "isbn", label: "ISBN", type: "text", placeholder: "Example: 978-3-16-148410-0" },
       { id: "author", label: "Author", type: "text" },
@@ -3585,9 +3652,41 @@
     ]
   };
 
-  const RETAIL_GENERIC_FIELD_SET = {
+  // Supermarket/Hardware/General Retail - split from one shared
+  // RETAIL_GENERIC_FIELD_SET for the same reason as the two groups above.
+  const RETAIL_SUPERMARKET_FIELD_SET = {
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    namePlaceholder: "Example: Sugar 2kg, Cooking Oil 1L",
+    fields: [
+      { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 50" },
+      { id: "reorder_level", label: "Reorder Level", type: "number", placeholder: "Example: 10" },
+      { id: "supplier", label: "Supplier", type: "text" }
+    ]
+  };
+
+  const RETAIL_HARDWARE_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    namePlaceholder: "Example: Hammer, Paint Bucket 20L",
+    fields: [
+      { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },
+      { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 50" },
+      { id: "reorder_level", label: "Reorder Level", type: "number", placeholder: "Example: 10" },
+      { id: "supplier", label: "Supplier", type: "text" }
+    ]
+  };
+
+  const RETAIL_GENERAL_FIELD_SET = {
+    valueLabel: "Cost Price",
+    statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
+    // "General Retail" is itself a catch-all for shops that don't fit the
+    // other Retail sections, so unlike the splits above, a single concrete
+    // industry example would just re-introduce the same wrong-example
+    // problem for whichever OTHER kind of shop picks this one - stays
+    // genuinely generic on purpose, same reasoning as GENERIC_ITEM_FIELD_SET.
+    namePlaceholder: "Example: Product name, SKU-00123",
     fields: [
       { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },
       { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 50" },
@@ -3613,17 +3712,17 @@
     bar_lounge: HOSPITALITY_FNB_FIELD_SET,
     catering: HOSPITALITY_FNB_FIELD_SET,
 
-    pharmacy: RETAIL_EXPIRY_FIELD_SET,
-    agrovet: RETAIL_EXPIRY_FIELD_SET,
-    cosmetics: RETAIL_EXPIRY_FIELD_SET,
-    electronics: RETAIL_SERIAL_FIELD_SET,
-    mobile_phones: RETAIL_SERIAL_FIELD_SET,
+    pharmacy: RETAIL_PHARMACY_FIELD_SET,
+    agrovet: RETAIL_AGROVET_FIELD_SET,
+    cosmetics: RETAIL_COSMETICS_FIELD_SET,
+    electronics: RETAIL_ELECTRONICS_FIELD_SET,
+    mobile_phones: RETAIL_MOBILE_FIELD_SET,
     fashion: RETAIL_VARIANT_FIELD_SET,
     furniture_retail: RETAIL_FURNITURE_FIELD_SET,
     bookshop: RETAIL_BOOK_FIELD_SET,
-    supermarket: RETAIL_GENERIC_FIELD_SET,
-    hardware: RETAIL_GENERIC_FIELD_SET,
-    general_retail: RETAIL_GENERIC_FIELD_SET
+    supermarket: RETAIL_SUPERMARKET_FIELD_SET,
+    hardware: RETAIL_HARDWARE_FIELD_SET,
+    general_retail: RETAIL_GENERAL_FIELD_SET
   };
 
   // Resolves which field-set a tenant's item form/card should use: the
