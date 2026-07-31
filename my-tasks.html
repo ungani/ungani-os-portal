@@ -58,6 +58,14 @@
     let lastPriorityRows = [];
     let urlActionApplied = false;
 
+    // "My Tasks" filtering + the assignee picker both key off who's
+    // actually logged in - resolved once at page load via the app's single
+    // source of truth for owner/staff identity (the same RPC the page
+    // guards use), not re-derived here.
+    let myStaffAccess = null;
+    let assignableTeamMembers = [];
+    let editingTaskOriginalAssignee = { teamMemberId: null, isOwner: false };
+
     // See my-money.html for the full rationale: taskSummaryRows covers every
     // row in the current tenant/section/status/priority/search scope with
     // only narrow columns (not select("*")) - drives KPI counts, charts,
@@ -102,7 +110,28 @@
         subEl.innerText = "Tasks, follow-ups, reminders, and deadlines for " + businessPreset.name + ".";
       }
 
+      await loadMyStaffAccessAndTeamMembers();
       await loadTaskRows();
+    }
+
+    async function loadMyStaffAccessAndTeamMembers() {
+      try {
+        const accessResponse = await currentContext.supabaseClient.rpc("get_my_ungani_staff_access");
+        myStaffAccess = (!accessResponse.error && accessResponse.data) ? accessResponse.data : null;
+      } catch (error) {
+        console.warn("Could not load staff access:", error.message);
+        myStaffAccess = null;
+      }
+
+      try {
+        const membersResponse = await currentContext.supabaseClient.rpc("get_my_ungani_team_members_for_assignment");
+        assignableTeamMembers = (!membersResponse.error && membersResponse.data && membersResponse.data.ok === true)
+          ? (membersResponse.data.members || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load team members for assignment:", error.message);
+        assignableTeamMembers = [];
+      }
     }
 
     // "type" removed - never written anywhere for tasks (saveTaskRecord()'s
@@ -133,7 +162,26 @@
         query = query.or(UnganiClientShared.buildSearchOrFilter(["task_title", "assigned_to", "notes"], search));
       }
 
+      if (isMyTasksOnlyChecked()) {
+        if (myStaffAccess && myStaffAccess.is_owner === true) {
+          query = query.eq("assigned_to_is_owner", true);
+        } else if (myStaffAccess && myStaffAccess.team_member_id) {
+          query = query.eq("assigned_to_team_member_id", myStaffAccess.team_member_id);
+        } else {
+          // No resolvable identity yet (access still loading, or a guest
+          // session) - "my tasks" can't mean anything real here, so match
+          // nothing rather than silently showing everyone's tasks.
+          query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+        }
+      }
+
       return query;
+    }
+
+    function isMyTasksOnlyChecked() {
+      const el = document.getElementById("filterMyTasksOnly");
+      if (el) return el.checked;
+      return sessionStorage.getItem("ungani_task_filter_my_tasks_only") === "true";
     }
 
     async function loadTaskSummaryRows() {
@@ -677,6 +725,15 @@
               <label for="filterSearch">Search</label>
               <input id="filterSearch" placeholder="Search task, type, assigned person..." oninput="onTaskSearchInput();" />
             </div>
+
+            ${myStaffAccess && (myStaffAccess.is_owner === true || myStaffAccess.team_member_id) ? `
+              <div style="display:flex;align-items:flex-end;">
+                <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-weight:600;">
+                  <input id="filterMyTasksOnly" type="checkbox" style="width:auto;" onchange="onTaskFilterChange();" />
+                  My Tasks Only
+                </label>
+              </div>
+            ` : ""}
           </div>
         </section>
 
@@ -1085,26 +1142,31 @@
       if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_task_filter_status", UnganiClientShared.value("filterStatus"));
       if (document.getElementById("filterPriority")) sessionStorage.setItem("ungani_task_filter_priority", UnganiClientShared.value("filterPriority"));
       if (document.getElementById("filterSearch")) sessionStorage.setItem("ungani_task_filter_search", UnganiClientShared.value("filterSearch"));
+      if (document.getElementById("filterMyTasksOnly")) sessionStorage.setItem("ungani_task_filter_my_tasks_only", String(document.getElementById("filterMyTasksOnly").checked));
     }
 
     function restoreTaskFilters() {
       if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_task_filter_status") || "";
       if (document.getElementById("filterPriority")) document.getElementById("filterPriority").value = sessionStorage.getItem("ungani_task_filter_priority") || "";
       if (document.getElementById("filterSearch")) document.getElementById("filterSearch").value = sessionStorage.getItem("ungani_task_filter_search") || "";
+      if (document.getElementById("filterMyTasksOnly")) document.getElementById("filterMyTasksOnly").checked = sessionStorage.getItem("ungani_task_filter_my_tasks_only") === "true";
     }
 
     function resetTaskFilters() {
       sessionStorage.removeItem("ungani_task_filter_status");
       sessionStorage.removeItem("ungani_task_filter_priority");
       sessionStorage.removeItem("ungani_task_filter_search");
+      sessionStorage.removeItem("ungani_task_filter_my_tasks_only");
       activeTaskCategory = "all";
 
       const statusEl = document.getElementById("filterStatus");
       const priorityEl = document.getElementById("filterPriority");
       const searchEl = document.getElementById("filterSearch");
+      const myTasksEl = document.getElementById("filterMyTasksOnly");
       if (statusEl) statusEl.value = "";
       if (priorityEl) priorityEl.value = "";
       if (searchEl) searchEl.value = "";
+      if (myTasksEl) myTasksEl.checked = false;
 
       refreshTaskData();
       UnganiClientShared.showToast("Task filters reset ✓");
@@ -1124,6 +1186,11 @@
       }
 
       editingTaskId = row ? row.id : null;
+
+      editingTaskOriginalAssignee = {
+        teamMemberId: row ? (UnganiClientShared.getValue(row, ["assigned_to_team_member_id"], null) || null) : null,
+        isOwner: row ? !!UnganiClientShared.getValue(row, ["assigned_to_is_owner"], false) : false
+      };
 
       const currentStatus = row ? String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase() : "";
       const showMarkDone = row && currentStatus !== "completed";
@@ -1186,7 +1253,13 @@
 
             <div>
               <label for="taskAssignedTo">Assigned To</label>
-              <input id="taskAssignedTo" placeholder="Staff, driver, agent, stylist, manager..." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["assigned_to"], "")) : ""}" />
+              <select id="taskAssignedTo">
+                <option value="">Unassigned</option>
+                <option value="owner">Owner</option>
+                ${assignableTeamMembers.map(function (member) {
+                  return `<option value="tm_${UnganiClientShared.attr(member.id)}">${UnganiClientShared.safe(member.full_name)}${member.role_key ? " (" + UnganiClientShared.safe(member.role_key) + ")" : ""}</option>`;
+                }).join("")}
+              </select>
             </div>
 
             <div>
@@ -1225,6 +1298,22 @@
           document.getElementById("taskPriority").value = row ? UnganiClientShared.getValue(row, ["priority"], "normal") : "normal";
           document.getElementById("taskStatus").value = row ? UnganiClientShared.getValue(row, ["status"], "pending") : "pending";
 
+          const assignedToEl = document.getElementById("taskAssignedTo");
+          if (assignedToEl) {
+            if (editingTaskOriginalAssignee.isOwner) {
+              assignedToEl.value = "owner";
+            } else if (editingTaskOriginalAssignee.teamMemberId) {
+              assignedToEl.value = "tm_" + editingTaskOriginalAssignee.teamMemberId;
+            } else {
+              assignedToEl.value = "";
+            }
+            // Old free-text assignments (or a since-deactivated team
+            // member) won't match any option - falls back to
+            // "Unassigned" in the picker rather than silently selecting
+            // the wrong person. The original free-text display cache is
+            // untouched unless this task is actually re-saved.
+          }
+
           if (sectionOptions.length > 1 && document.getElementById("taskSection")) {
             document.getElementById("taskSection").value = row
               ? UnganiClientShared.getValue(row, ["section_label"], "")
@@ -1247,6 +1336,9 @@
       const submitBtn = event.submitter || event.target.querySelector('button[type="submit"]');
 
       await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        const assignedToValue = UnganiClientShared.value("taskAssignedTo") || "";
+        const assignee = resolveAssigneeFromPickerValue(assignedToValue);
+
         const payload = {
           tenant_id: currentContext.tenantId,
           task_title: title,
@@ -1254,7 +1346,9 @@
           priority: UnganiClientShared.value("taskPriority") || "normal",
           status: UnganiClientShared.value("taskStatus") || "pending",
           due_date: UnganiClientShared.value("taskDueDate") || null,
-          assigned_to: UnganiClientShared.value("taskAssignedTo") || null,
+          assigned_to: assignee.displayName,
+          assigned_to_team_member_id: assignee.teamMemberId,
+          assigned_to_is_owner: assignee.isOwner,
           related_person: UnganiClientShared.value("taskRelatedPerson") || null,
           related_item: UnganiClientShared.value("taskRelatedItem") || null,
           notes: UnganiClientShared.value("taskNotes") || null
@@ -1265,6 +1359,7 @@
         }
 
         let response;
+        const savedTaskId = editingTaskId;
 
         try {
           if (editingTaskId) {
@@ -1276,7 +1371,9 @@
           } else {
             response = await currentContext.supabaseClient
               .from("tasks")
-              .insert([payload]);
+              .insert([payload])
+              .select("id")
+              .single();
           }
         } catch (error) {
           UnganiClientShared.showToast("Could not save task: " + (error.message || "Network error. Please check your connection."));
@@ -1288,11 +1385,56 @@
           return;
         }
 
+        // Best-effort, non-blocking - the task itself already saved
+        // successfully by this point. Only notify when the assignee
+        // actually changed (a brand-new task counts as "changed" from
+        // nobody), not on every unrelated edit to an already-assigned task.
+        const assigneeChanged =
+          assignee.isOwner !== editingTaskOriginalAssignee.isOwner ||
+          assignee.teamMemberId !== editingTaskOriginalAssignee.teamMemberId;
+
+        if (assigneeChanged && (assignee.isOwner || assignee.teamMemberId)) {
+          const notifyTaskId = savedTaskId || (response.data && response.data.id);
+          notifyTaskAssignment(notifyTaskId, assignee);
+        }
+
         UnganiClientShared.showToast(editingTaskId ? "Task updated ✓" : "Task added ✓");
         editingTaskId = null;
         UnganiClientShared.closeModal();
         await loadTaskRows();
       });
+    }
+
+    function resolveAssigneeFromPickerValue(value) {
+      if (value === "owner") {
+        return { isOwner: true, teamMemberId: null, displayName: "Owner" };
+      }
+
+      if (value && value.indexOf("tm_") === 0) {
+        const teamMemberId = value.slice(3);
+        const member = assignableTeamMembers.find(function (item) { return String(item.id) === teamMemberId; });
+        return { isOwner: false, teamMemberId: teamMemberId, displayName: member ? member.full_name : null };
+      }
+
+      return { isOwner: false, teamMemberId: null, displayName: null };
+    }
+
+    async function notifyTaskAssignment(taskId, assignee) {
+      if (!taskId) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("notify_ungani_task_assignment", {
+          p_task_id: taskId,
+          p_assignee_team_member_id: assignee.teamMemberId,
+          p_assignee_is_owner: assignee.isOwner
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          console.warn("Could not send assignment notification:", (response.error && response.error.message) || (response.data && response.data.message));
+        }
+      } catch (error) {
+        console.warn("Could not send assignment notification:", error.message);
+      }
     }
 
     async function markTaskCompleted(id, buttonEl) {
