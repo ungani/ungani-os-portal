@@ -447,7 +447,7 @@
     { key: "createTask", match: ["create task", "add task", "new task", "create a follow-up", "add a follow-up"], href: "my-tasks.html", params: { action: "add" }, confirm: "Opening Tasks with a new task ready to fill in." },
     { key: "createCustomer", match: ["create customer", "add customer", "new customer", "create client", "add client"], href: "my-people.html", params: { action: "add" }, confirm: "Opening People with a new person ready to fill in." },
     { key: "createEmployee", match: ["create employee", "add employee", "new employee", "add staff", "create staff"], href: "my-people.html", params: { action: "add" }, confirm: "Opening People with a new person ready to fill in." },
-    { key: "createProperty", match: ["create property", "add property", "new property", "add item", "create item", "new item"], href: "my-items.html", params: { action: "add" }, confirm: "Opening Items with a new property ready to fill in." },
+    { key: "createProperty", match: ["create property", "add property", "new property", "add item", "create item", "new item"], href: "my-items.html", params: { action: "add" }, confirm: "Opening Items with a new item ready to fill in." },
     { key: "createRecord", match: ["create record", "add record", "new record", "log a record"], href: "my-records.html", params: { action: "add" }, confirm: "Opening Records with a new record ready to fill in." },
     { key: "uploadDocument", match: ["upload document", "upload a document", "add document"], href: "my-documents.html", params: { action: "add" }, confirm: "Opening Documents with a new document ready to fill in." },
     { key: "openCalendar", match: ["open calendar"], href: "my-calendar.html", params: {}, confirm: "Opening Calendar." },
@@ -509,19 +509,6 @@
         { label: "Find a Task", type: "search-prompt" },
         { label: "Insights & Tools", type: "insights" },
         { label: "How do I add a task?", type: "howto", key: "add-task" },
-        { label: "Dashboard", type: "nav", key: "dashboard" },
-        { label: "Help", type: "help" }
-      ]
-    },
-    items: {
-      greeting: "Welcome back! Here's what I can help with on Items.",
-      chips: [
-        { label: "Add Property", type: "create", actionKey: "createProperty" },
-        { label: "Find a Property", type: "search-prompt" },
-        { label: "What needs attention?", type: "asset-attention" },
-        { label: "How many do I have?", type: "asset-count" },
-        { label: "How do I log maintenance?", type: "howto", key: "log-maintenance" },
-        { label: "How do I print a QR label?", type: "howto", key: "print-label" },
         { label: "Dashboard", type: "nav", key: "dashboard" },
         { label: "Help", type: "help" }
       ]
@@ -596,6 +583,47 @@
     }
   }
 
+  // Items chips need to know Real Estate vs. everyone else, the same way
+  // my-items.html's own detectRealEstate() does - Real Estate is the one
+  // type with its own bespoke "Property/Listing" form and vocabulary;
+  // every other type uses my-items.html's generic Item form, so "item" is
+  // always accurate for them (unlike "property", which previously showed
+  // for all 19 types unconditionally - see getItemsPageConfig() below).
+  function isRealEstateBusiness() {
+    if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") return false;
+
+    try {
+      const resolved = UnganiBusinessConfig.resolve(state.tenant);
+      return !!(resolved && resolved.key === "real_estate");
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Items is the one PAGE_CONFIGS entry that used to be hardcoded to Real
+  // Estate wording ("Add Property"/"Find a Property") for every business
+  // type - a Retail/Salon/Logistics/etc. tenant would see Nia suggest
+  // "Add Property" on their own Items page. Built dynamically instead of
+  // as a static PAGE_CONFIGS entry so it can check the tenant's actual
+  // resolved type each time Nia opens on this page.
+  function getItemsPageConfig() {
+    const isRealEstate = isRealEstateBusiness();
+
+    return {
+      greeting: "Welcome back! Here's what I can help with on " + (isRealEstate ? "Properties / Listings" : "Items") + ".",
+      chips: [
+        { label: isRealEstate ? "Add Property" : "Add Item", type: "create", actionKey: "createProperty" },
+        { label: isRealEstate ? "Find a Property" : "Find an Item", type: "search-prompt" },
+        { label: "What needs attention?", type: "asset-attention" },
+        { label: "How many do I have?", type: "asset-count" },
+        { label: "How do I log maintenance?", type: "howto", key: "log-maintenance" },
+        { label: "How do I print a QR label?", type: "howto", key: "print-label" },
+        { label: "Dashboard", type: "nav", key: "dashboard" },
+        { label: "Help", type: "help" }
+      ]
+    };
+  }
+
   function joinWithAnd(items) {
     if (items.length === 0) return "";
     if (items.length === 1) return items[0];
@@ -658,6 +686,8 @@
       const sectionConfig = getSectionPageConfig();
       if (sectionConfig) return sectionConfig;
     }
+
+    if (state.pageKey === "items") return getItemsPageConfig();
 
     return PAGE_CONFIGS[state.pageKey] || PAGE_CONFIGS.dashboard;
   }

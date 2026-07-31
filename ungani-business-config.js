@@ -3235,6 +3235,53 @@
     ].join(" ").toLowerCase();
   }
 
+  // Same normalization index.html's registration form uses (makeBusinessKey)
+  // to turn a picked business type name into the business_type_key it saves -
+  // reused here so a stored business_type_key round-trips back to the exact
+  // same type it was derived from, regardless of whether it happens to equal
+  // type.key (only true for single-word names like "Retail"/"Healthcare") or
+  // a slugified form of the full display name (every other type). Also
+  // idempotent on an already-clean key like "real_estate", so it's safe to
+  // apply to type.key itself when building the lookup table below.
+  function normalizeTypeKey(value) {
+    return String(value || "")
+      .toLowerCase()
+      .trim()
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
+  // Exact-match lookup, built once: a tenant's own business_type_key or
+  // business_type is the authoritative signal the business owner (or the
+  // approval flow) explicitly set - it must always win over scanning free
+  // text (which includes the business name) for an incidental keyword
+  // match. Without this, a Retail business named e.g. "Beauty Supplies
+  // Hardware Ltd" resolves to Salon (its name contains "beauty", one of
+  // Salon's own match keywords) even though business_type_key says
+  // "retail" - the entire app then shows Salon vocabulary/fields/sections
+  // to a Retail tenant, not just a cosmetic label mismatch. Keyed by both
+  // the raw type.key ("real_estate") and the normalized type.name
+  // ("real_estate_property_management") since business_type_key in the
+  // database isn't guaranteed to be one or the other - it can come from
+  // index.html's own slugified-name registration path, or from a separate
+  // business_types lookup table used by approve_ungani_registration().
+  const TYPE_BY_EXACT_KEY = {};
+  TYPES.forEach(function (type) {
+    TYPE_BY_EXACT_KEY[type.key] = type;
+    TYPE_BY_EXACT_KEY[normalizeTypeKey(type.name)] = type;
+  });
+
+  function resolveExact(tenant) {
+    const rawKey = normalizeTypeKey(getValue(tenant, ["business_type_key"], ""));
+    if (rawKey && TYPE_BY_EXACT_KEY[rawKey]) return TYPE_BY_EXACT_KEY[rawKey];
+
+    const rawType = normalizeTypeKey(getValue(tenant, ["business_type"], ""));
+    if (rawType && TYPE_BY_EXACT_KEY[rawType]) return TYPE_BY_EXACT_KEY[rawType];
+
+    return null;
+  }
+
   // Plain raw.includes(keyword) matched a keyword as a substring ANYWHERE,
   // including inside an unrelated word - e.g. salon's "spa" keyword matched
   // inside "Sparkle" (as in "Sparkle Cleaning Services"), misclassifying a
@@ -3253,6 +3300,9 @@
   }
 
   function resolve(tenant) {
+    const exact = resolveExact(tenant);
+    if (exact) return exact;
+
     const raw = getRawBusinessText(tenant);
 
     for (let i = 0; i < TYPES.length; i++) {
