@@ -482,10 +482,14 @@
     documents: {
       greeting: "Welcome back! Here's what I can help with on Documents.",
       chips: [
-        { label: "Upload Document", type: "create", actionKey: "uploadDocument" },
+        // Labeled "Add Document" (not "Upload") to match the real button on
+        // my-documents.html - this app has never stored real file uploads,
+        // only links (Google Drive/Dropbox/etc.) - "Upload" implied a
+        // capability that doesn't exist and confused at least one tester.
+        { label: "Add Document", type: "create", actionKey: "uploadDocument" },
         { label: "Find a Document", type: "search-prompt" },
         { label: "Insights & Tools", type: "insights" },
-        { label: "How do I upload a document?", type: "howto", key: "upload-document" },
+        { label: "How do I add a document?", type: "howto", key: "upload-document" },
         { label: "Dashboard", type: "nav", key: "dashboard" },
         { label: "Help", type: "help" }
       ]
