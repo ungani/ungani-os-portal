@@ -1098,13 +1098,20 @@
         ${safe(footerVersion)}<br />
         ungani.com
 
-        <div style="margin-top:12px;">
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
           <button class="ungani-btn" id="unganiAdminThemeBtn" type="button" data-i18n="theme">${safe(t("theme"))}</button>
+          <button class="ungani-btn dark" id="unganiSidebarLogoutButton" type="button" data-i18n="logout">${safe(t("logout"))}</button>
         </div>
       </div>
     `;
 
     document.getElementById("unganiAdminThemeBtn")?.addEventListener("click", toggleTheme);
+    // The sidebar drawer is the primary mobile nav surface (the topbar's
+    // own Logout button sits at max-width:1100px behind the sidebar
+    // overlay when the drawer is open, and easy to miss even when it
+    // isn't) - Logout needs to be reachable from here too, not only from
+    // the topbar or (on admin-home.html) a separate profile panel.
+    document.getElementById("unganiSidebarLogoutButton")?.addEventListener("click", logoutAdmin);
 
     applyLanguage(target);
   }

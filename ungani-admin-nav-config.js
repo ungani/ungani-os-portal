@@ -109,8 +109,7 @@
           { key: "auditLogs", href: "admin-audit-logs.html", icon: "📜", label: "Audit Logs", activeKey: "admin-audit-logs" },
           { key: "emailQueue", href: "admin-email-queue.html", icon: "✉️", label: "Email Queue", activeKey: "admin-email-queue" },
           { key: "smartChecks", href: "admin-smart-checks.html", icon: "🧠", label: "Smart Checks", activeKey: "admin-smart-checks" },
-          { key: "launchReadiness", href: "admin-launch.html", icon: "🚀", label: "Launch Readiness", activeKey: "admin-launch" },
-          { key: "portal", href: "portal.html", icon: "🌐", label: "Portal", activeKey: "portal" }
+          { key: "launchReadiness", href: "admin-launch.html", icon: "🚀", label: "Launch Readiness", activeKey: "admin-launch" }
         ]
       }
     ];
