@@ -1680,6 +1680,86 @@
       flex-wrap: wrap;
     }
 
+    .chat-thread-header {
+      border: 1px solid var(--border);
+      background: var(--soft);
+      border-radius: 16px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    .chat-thread-header strong {
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .chat-thread-meta {
+      margin: 4px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    .chat-thread-messages {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 320px;
+      overflow-y: auto;
+      padding: 4px 2px;
+      margin-bottom: 12px;
+    }
+
+    .chat-thread-msg {
+      max-width: 85%;
+      padding: 9px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    .chat-thread-msg.admin {
+      align-self: flex-end;
+      background: #061C3D;
+      color: #FFFFFF;
+      border-color: #061C3D;
+    }
+
+    html[data-ungani-theme="dark"] .chat-thread-msg.admin {
+      background: var(--ungani-gold, #D4A63A);
+      color: #061C3D;
+      border-color: var(--ungani-gold, #D4A63A);
+    }
+
+    .chat-thread-msg.client {
+      align-self: flex-start;
+      background: var(--card-solid);
+      color: var(--text);
+    }
+
+    .chat-thread-msg-meta {
+      font-size: 10px;
+      opacity: 0.75;
+      margin-bottom: 3px;
+    }
+
+    .chat-thread-msg-body {
+      white-space: pre-wrap;
+      font-size: 13px;
+    }
+
+    .chat-thread-compose textarea {
+      width: 100%;
+      resize: vertical;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card-solid);
+      color: var(--text);
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+    }
+
     @media (max-width: 1180px) {
       body {
         background: var(--page-bg);
@@ -2038,20 +2118,41 @@
   </div>
 
   <div id="chatPreviewPanel" class="notification-panel">
-    <div class="notification-head">
-      <div>
-        <h3 data-i18n="chat_head_title">Client Chat</h3>
-        <p data-i18n="chat_head_subtitle">Recent conversations across all clients.</p>
+    <div id="chatPreviewListView">
+      <div class="notification-head">
+        <div>
+          <h3 data-i18n="chat_head_title">Client Chat</h3>
+          <p data-i18n="chat_head_subtitle">Recent conversations across all clients.</p>
+        </div>
+        <button class="btn small light" type="button" onclick="closeChatPreview()" data-i18n="btn_close">Close</button>
       </div>
-      <button class="btn small light" type="button" onclick="closeChatPreview()" data-i18n="btn_close">Close</button>
+
+      <div class="top-actions" style="justify-content:flex-start;margin-bottom:12px;">
+        <a class="btn small gold" href="admin-chat.html" data-i18n="chat_open_full">Open Full Chat</a>
+      </div>
+
+      <div id="chatPreviewList" class="summary-list">
+        <div class="loading" data-i18n="loading_chat">Loading conversations...</div>
+      </div>
     </div>
 
-    <div class="top-actions" style="justify-content:flex-start;margin-bottom:12px;">
-      <a class="btn small gold" href="admin-chat.html" data-i18n="chat_open_full">Open Full Chat</a>
-    </div>
+    <div id="chatThreadView" style="display:none;">
+      <div class="notification-head">
+        <button class="btn small light" type="button" onclick="showChatPreviewList()">&larr; Back</button>
+        <button class="btn small light" type="button" onclick="closeChatPreview()" data-i18n="btn_close">Close</button>
+      </div>
 
-    <div id="chatPreviewList" class="summary-list">
-      <div class="loading" data-i18n="loading_chat">Loading conversations...</div>
+      <div id="chatThreadHeader" class="chat-thread-header"></div>
+
+      <div id="chatThreadMessages" class="chat-thread-messages"></div>
+
+      <div class="chat-thread-compose">
+        <textarea id="chatThreadReplyText" placeholder="Write your reply..." rows="3"></textarea>
+        <div class="top-actions" style="justify-content:space-between;margin-top:8px;">
+          <a class="btn small light" id="chatThreadFullLink" href="admin-chat.html" data-i18n="chat_open_full_thread">Open Full Page</a>
+          <button class="btn small gold" type="button" onclick="sendChatThreadReply()">Send</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2341,6 +2442,12 @@
     var supabaseClient = null;
     var currentLang = 'en';
     var globalCurrency = 'KES';
+    var currentAdminId = null;
+    var currentAdminName = 'UNGANI Admin';
+    var chatPreviewMessagesRaw = [];
+    var chatPreviewTenantsById = {};
+    var chatThreadSelectedTenantId = null;
+    var chatRealtimeChannel = null;
 
     // Multilingual Dictionary Repository
     var translations = {
@@ -2478,6 +2585,7 @@
         chat_head_title: "Client Chat",
         chat_head_subtitle: "Recent conversations across all clients.",
         chat_open_full: "Open Full Chat",
+        chat_open_full_thread: "Open Full Page",
         loading_chat: "Loading conversations...",
         no_chat: "No client conversations yet."
       },
@@ -2615,6 +2723,7 @@
         chat_head_title: "Mazungumzo ya Mteja",
         chat_head_subtitle: "Mazungumzo ya hivi karibuni kwa wateja wote.",
         chat_open_full: "Fungua Mazungumzo Yote",
+        chat_open_full_thread: "Fungua Ukurasa Mzima",
         loading_chat: "Inapakia mazungumzo...",
         no_chat: "Hakuna mazungumzo ya wateja bado."
       }
@@ -2700,11 +2809,14 @@
             var authRes = await supabaseClient.auth.getUser();
             var user = authRes.data ? authRes.data.user : null;
             if (user) {
+              currentAdminId = user.id;
               var profileRes = await supabaseClient.from('users').select('tenant_id, full_name, role, email').eq('id', user.id).maybeSingle();
               var profile = profileRes.data;
               if (profile) {
+                currentAdminName = profile.full_name || profile.email || user.email || currentAdminName;
                 updateAdminProfileChip(profile.full_name || profile.email || user.email, profile.role);
               } else {
+                currentAdminName = user.email || currentAdminName;
                 updateAdminProfileChip(user.email, null);
               }
               if (profile && profile.tenant_id) {
@@ -2768,8 +2880,27 @@
 
         loadAdminData();
         loadAdminHomeSidebarBadgeCounts();
+        startChatRealtime();
       })();
     });
+
+    function startChatRealtime() {
+      if (chatRealtimeChannel || !supabaseClient) return;
+
+      chatRealtimeChannel = supabaseClient
+        .channel('admin-home-chat-panel')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'admin_client_messages' },
+          function () {
+            loadChatPreview();
+            if (chatThreadSelectedTenantId) {
+              renderChatThread(chatThreadSelectedTenantId);
+            }
+          }
+        )
+        .subscribe();
+    }
 
     async function getAdminHomeSidebarBadgeCounts() {
       if (!supabaseClient) return {};
@@ -3185,8 +3316,10 @@
 
         var tenantsById = {};
         (tenantsRes.data || []).forEach(function (t) { tenantsById[t.id] = t; });
+        chatPreviewTenantsById = tenantsById;
 
         var messages = (messagesRes.data || []).filter(function (m) { return m.is_internal !== true; });
+        chatPreviewMessagesRaw = messages;
 
         var byTenant = {};
         messages.forEach(function (m) {
@@ -3216,6 +3349,10 @@
         });
 
         renderChatPreview(conversations.slice(0, 6));
+
+        if (chatThreadSelectedTenantId) {
+          renderChatThread(chatThreadSelectedTenantId);
+        }
       }, function () {
         if (list) list.innerHTML = '<div class="empty">' + translations[currentLang].no_data + '</div>';
       });
@@ -3236,14 +3373,125 @@
         var timeStr = c.latest.created_at ? new Date(c.latest.created_at).toLocaleDateString() : '';
         var accent = c.unread > 0 ? '#B91C1C' : '#64748B';
 
-        return '<a class="summary-row" href="admin-chat.html?tenant=' + encodeURIComponent(c.tenantId) + '" style="--accent:' + accent + ';text-decoration:none;">' +
+        return '<div class="summary-row" role="button" tabindex="0" onclick="openChatThread(\'' + escapeHtml(String(c.tenantId)) + '\')" onkeypress="if(event.key===\'Enter\')openChatThread(\'' + escapeHtml(String(c.tenantId)) + '\')" style="--accent:' + accent + ';cursor:pointer;">' +
                  '<div>' +
                    '<strong>' + escapeHtml(c.tenantName) + '</strong>' +
                    '<p>' + escapeHtml(preview || 'No messages yet') + ' &bull; ' + escapeHtml(timeStr) + '</p>' +
                  '</div>' +
                  (c.unread > 0 ? '<span class="status red">' + c.unread + '</span>' : '<span class="status green">Read</span>') +
-               '</a>';
+               '</div>';
       }).join('');
+    }
+
+    function tenantMessagesForChat(tenantId) {
+      return chatPreviewMessagesRaw
+        .filter(function (m) { return String(m.tenant_id) === String(tenantId); })
+        .sort(function (a, b) { return new Date(a.created_at || 0) - new Date(b.created_at || 0); });
+    }
+
+    function showChatPreviewList() {
+      chatThreadSelectedTenantId = null;
+      var threadView = document.getElementById('chatThreadView');
+      var listView = document.getElementById('chatPreviewListView');
+      if (threadView) threadView.style.display = 'none';
+      if (listView) listView.style.display = 'block';
+    }
+
+    function openChatThread(tenantId) {
+      chatThreadSelectedTenantId = tenantId;
+      var threadView = document.getElementById('chatThreadView');
+      var listView = document.getElementById('chatPreviewListView');
+      if (listView) listView.style.display = 'none';
+      if (threadView) threadView.style.display = 'block';
+
+      renderChatThread(tenantId);
+      markChatThreadRead(tenantId);
+
+      var fullLink = document.getElementById('chatThreadFullLink');
+      if (fullLink) fullLink.href = 'admin-chat.html?tenant=' + encodeURIComponent(tenantId);
+    }
+
+    function renderChatThread(tenantId) {
+      var headerEl = document.getElementById('chatThreadHeader');
+      var boxEl = document.getElementById('chatThreadMessages');
+      if (!headerEl || !boxEl) return;
+
+      var tenant = chatPreviewTenantsById[tenantId];
+      var tenantName = tenant ? (tenant.business_name || tenant.company_name || tenant.name || 'Client') : 'Client';
+      var rows = tenantMessagesForChat(tenantId);
+      var unread = rows.filter(function (m) { return String(m.sender_role || '').toLowerCase() === 'client' && !m.read_by_admin_at; }).length;
+
+      headerEl.innerHTML =
+        '<strong>' + escapeHtml(tenantName) + '</strong>' +
+        '<p class="chat-thread-meta">' + rows.length + ' message(s)' +
+          (unread > 0 ? ' &bull; <span style="color:#B91C1C;">' + unread + ' unread</span>' : '') +
+        '</p>';
+
+      if (!rows.length) {
+        boxEl.innerHTML = '<div class="empty">No messages yet. Send the first message below.</div>';
+        return;
+      }
+
+      boxEl.innerHTML = rows.map(function (row) {
+        var role = String(row.sender_role || '').toLowerCase() === 'admin' ? 'admin' : 'client';
+        var senderName = row.sender_name || (role === 'admin' ? 'UNGANI Admin' : tenantName);
+        var timeStr = row.created_at ? new Date(row.created_at).toLocaleString() : '';
+
+        return '<div class="chat-thread-msg ' + role + '">' +
+                 '<div class="chat-thread-msg-meta">' + escapeHtml(senderName) + ' &bull; ' + escapeHtml(timeStr) + '</div>' +
+                 '<div class="chat-thread-msg-body">' + escapeHtml(row.message_body || '') + '</div>' +
+               '</div>';
+      }).join('');
+
+      boxEl.scrollTop = boxEl.scrollHeight;
+    }
+
+    async function markChatThreadRead(tenantId) {
+      if (!supabaseClient) return;
+
+      var unread = tenantMessagesForChat(tenantId).filter(function (m) {
+        return String(m.sender_role || '').toLowerCase() === 'client' && !m.read_by_admin_at;
+      });
+      if (!unread.length) return;
+
+      var ids = unread.map(function (m) { return m.id; });
+      var now = new Date().toISOString();
+
+      try {
+        await supabaseClient.from('admin_client_messages').update({ read_by_admin_at: now }).in('id', ids);
+        await loadChatPreview();
+      } catch (err) {
+        console.warn('markChatThreadRead failed:', err);
+      }
+    }
+
+    async function sendChatThreadReply() {
+      var textEl = document.getElementById('chatThreadReplyText');
+      if (!textEl || !chatThreadSelectedTenantId || !supabaseClient) return;
+
+      var text = textEl.value.trim();
+      if (!text) return;
+
+      var now = new Date().toISOString();
+      var payload = {
+        tenant_id: chatThreadSelectedTenantId,
+        sender_id: currentAdminId,
+        sender_name: currentAdminName,
+        sender_role: 'admin',
+        message_body: text,
+        is_internal: false,
+        read_by_admin_at: now,
+        created_at: now
+      };
+
+      var res = await supabaseClient.from('admin_client_messages').insert(payload);
+      if (res.error) {
+        alert(res.error.message);
+        return;
+      }
+
+      textEl.value = '';
+      await loadChatPreview();
     }
 
     async function markAllNotificationsRead() {
@@ -3448,6 +3696,7 @@
     function closeChatPreview() {
       var panel = document.getElementById('chatPreviewPanel');
       if (panel) panel.classList.remove('open');
+      showChatPreviewList();
     }
 
     function toggleProfilePanel() {
