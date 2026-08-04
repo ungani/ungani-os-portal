@@ -13,6 +13,7 @@
   <script src="pwa-register.js"></script>
   <script src="ungani-business-config.js"></script>
   <script src="ungani-nav-config.js"></script>
+  <script src="ungani-analytics.js"></script>
 
   <style>
     :root {
@@ -625,17 +626,33 @@
             </select>
           </label>
 
+          <label>
+            Monthly Salary / Wage (optional)
+            <input id="monthlySalary" type="number" min="0" step="0.01" placeholder="Example: 25000" />
+          </label>
+
+          <label>
+            Pay Frequency
+            <select id="payFrequency">
+              <option value="monthly" selected>Monthly</option>
+              <option value="weekly">Weekly</option>
+              <option value="daily">Daily</option>
+            </select>
+          </label>
+
           <button class="ungani-btn gold" type="submit" id="saveStaffBtn">Save Staff Member</button>
         </form>
 
         <div class="notice">
-          This page creates the control system. The next step will connect the page guard so staff cannot open sections they are not assigned to.
+          This page creates the control system. The next step will connect the page guard so staff cannot open sections they are not assigned to. The salary figure above is for your own reference only - nothing here calculates PAYE/NSSF/NHIF or generates payslips.
         </div>
       </div>
 
       <div class="card">
         <h2>Staff Members</h2>
         <p>Tick what each coworker can access. Owner accounts keep full control.</p>
+
+        <div id="staffPaymentsSummary"></div>
 
         <div id="membersBox" class="member-list">
           <div class="loading">Loading team members...</div>
@@ -702,6 +719,8 @@
     let members = [];
     let currentTenantId = null;
     let currentTenant = null;
+    let staffPaymentsByMember = {};
+    let staffPaymentsTotal = 0;
 
     function toggleSidebar() {
       document.getElementById("sidebar").classList.toggle("open");
@@ -819,6 +838,91 @@
       }
 
       await loadTeamMembers();
+      await loadStaffPayments();
+    }
+
+    // Payroll/staff-payment tracking: sums this-calendar-month expense
+    // transactions tagged to a real team member (my-money.html's "Team
+    // Member" field on the expense side, related_team_member_id). Reads
+    // transactions directly rather than via an RPC - this page has no
+    // existing table access of its own, but every other client page
+    // (my-money.html etc.) already reads transactions directly under the
+    // same tenant-scoped RLS, so this follows that established pattern
+    // rather than inventing a new owner-only RPC for a simple read.
+    function formatMoney(amount) {
+      return window.UnganiAnalytics ? UnganiAnalytics.moneyFormat(amount) : "KSh " + Number(amount || 0).toLocaleString("en-KE");
+    }
+
+    async function loadStaffPayments() {
+      try {
+        let tenantId = currentTenantId;
+
+        if (!tenantId) {
+          const rpcResponse = await supabaseClient.rpc("get_my_ungani_tenant_id");
+          if (!rpcResponse.error && rpcResponse.data) tenantId = rpcResponse.data;
+        }
+
+        if (!tenantId) return;
+
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+
+        const response = await supabaseClient
+          .from("transactions")
+          .select("amount, amount_kes, related_team_member_id, transaction_date, type")
+          .eq("tenant_id", tenantId)
+          .eq("type", "expense")
+          .not("related_team_member_id", "is", null)
+          .gte("transaction_date", monthStart);
+
+        if (response.error) {
+          console.warn("loadStaffPayments failed:", response.error.message);
+          return;
+        }
+
+        const rows = response.data || [];
+        const byMember = {};
+        let total = 0;
+
+        rows.forEach(row => {
+          const amount = Number(row.amount_kes != null ? row.amount_kes : (row.amount || 0));
+          const memberId = row.related_team_member_id;
+          byMember[memberId] = (byMember[memberId] || 0) + amount;
+          total += amount;
+        });
+
+        staffPaymentsByMember = byMember;
+        staffPaymentsTotal = total;
+
+        renderStaffPaymentsSummary();
+        renderMembers();
+      } catch (error) {
+        console.warn("loadStaffPayments error:", error.message);
+      }
+    }
+
+    function renderStaffPaymentsSummary() {
+      const box = document.getElementById("staffPaymentsSummary");
+      if (!box) return;
+
+      const paidCount = Object.keys(staffPaymentsByMember).length;
+
+      if (!paidCount) {
+        box.innerHTML = "";
+        return;
+      }
+
+      box.innerHTML = `
+        <div class="member-card" style="margin-bottom:4px;">
+          <div class="member-head">
+            <div>
+              <strong>Paid to staff this month</strong>
+              <small>${paidCount} staff member(s) paid so far, based on tagged Money records</small>
+            </div>
+            <span class="badge">${safe(formatMoney(staffPaymentsTotal))}</span>
+          </div>
+        </div>
+      `;
     }
 
     async function loadTeamMembers() {
@@ -855,6 +959,7 @@
 
       box.innerHTML = members.map(member => {
         const permissions = member.permissions || {};
+        const paidThisMonth = staffPaymentsByMember[member.id] || 0;
 
         return `
           <div class="member-card">
@@ -862,6 +967,9 @@
               <div>
                 <strong>${safe(member.full_name || "Unnamed Staff")}</strong>
                 <small>${safe(member.email || "No email")} · ${safe(member.phone || "No phone")}</small>
+                <small>
+                  ${member.monthly_salary ? `Salary: ${safe(formatMoney(member.monthly_salary))} / ${safe(member.pay_frequency || "period")} · ` : ""}Paid this month: ${safe(formatMoney(paidThisMonth))}
+                </small>
               </div>
               <span class="badge">${safe(member.role_key || "staff")} · ${safe(member.status || "active")}</span>
             </div>
@@ -914,12 +1022,16 @@
       const submitBtn = event.submitter || document.getElementById("saveStaffBtn");
 
       await withButtonLoading(submitBtn, async () => {
+        const salaryValue = document.getElementById("monthlySalary").value;
+
         const payload = {
           p_full_name: document.getElementById("fullName").value,
           p_email: document.getElementById("email").value,
           p_phone: document.getElementById("phone").value,
           p_role_key: document.getElementById("roleKey").value,
-          p_status: document.getElementById("status").value
+          p_status: document.getElementById("status").value,
+          p_monthly_salary: salaryValue ? Number(salaryValue) : null,
+          p_pay_frequency: document.getElementById("payFrequency").value
         };
 
         const response = await supabaseClient.rpc("owner_upsert_ungani_team_member", payload);
@@ -945,8 +1057,11 @@
         document.getElementById("phone").value = "";
         document.getElementById("roleKey").value = "staff";
         document.getElementById("status").value = "active";
+        document.getElementById("monthlySalary").value = "";
+        document.getElementById("payFrequency").value = "monthly";
 
         await loadTeamMembers();
+        await loadStaffPayments();
       });
     }
 

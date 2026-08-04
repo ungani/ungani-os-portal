@@ -55,6 +55,7 @@
     let editingMoneyId = null;
     let isRealEstate = false;
     let personOptions = [];
+    let teamMemberOptions = [];
     let sectionOptions = [];
     let currentSectionFilter = "";
     let activeMoneyCategory = "all";
@@ -261,7 +262,8 @@
 
       const loaders = [
         loadCategorySuggestions(),
-        loadRecurringRows()
+        loadRecurringRows(),
+        loadTeamMemberOptions()
       ];
 
       if (isRealEstate) {
@@ -351,6 +353,32 @@
         console.warn("Person options skipped:", error.message);
         personOptions = [];
       }
+    }
+
+    // Payroll/staff-payment tracking: lets an expense transaction be
+    // tagged to a real Team Access profile (staff salary/wage payments,
+    // logged as ordinary expense rows) - see my-team-access.html's
+    // "Paid this month" summary, which sums transactions by this link.
+    // Reuses the same RPC my-tasks.html's assignee picker already calls
+    // (tenant + active-member scoped server-side) rather than a new one.
+    async function loadTeamMemberOptions() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_team_members_for_assignment");
+        teamMemberOptions = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.members || [])
+          : [];
+      } catch (error) {
+        console.warn("Team member options skipped:", error.message);
+        teamMemberOptions = [];
+      }
+    }
+
+    function getTeamMemberLabel(id) {
+      const member = teamMemberOptions.find(function (row) {
+        return String(row.id) === String(id);
+      });
+
+      return member ? member.full_name : "";
     }
 
     function getPersonLabel(id) {
@@ -1546,6 +1574,8 @@
                 const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
                 const relatedPersonId = UnganiClientShared.getValue(row, ["related_person_id"], "");
                 const relatedPersonLabel = relatedPersonId ? getPersonLabel(relatedPersonId) : "";
+                const relatedTeamMemberId = UnganiClientShared.getValue(row, ["related_team_member_id"], "");
+                const relatedTeamMemberLabel = relatedTeamMemberId ? getTeamMemberLabel(relatedTeamMemberId) : "";
                 const sectionLabel = UnganiClientShared.getValue(row, ["section_label"], "");
 
                 return `
@@ -1564,7 +1594,7 @@
                     </td>
                     <td>${UnganiClientShared.safe(method || "—")}</td>
                     <td>${statusBadge(status)}</td>
-                    <td>${UnganiClientShared.safe(notes || (relatedPersonLabel ? "Tenant: " + relatedPersonLabel : "—"))}</td>
+                    <td>${UnganiClientShared.safe(notes || (relatedPersonLabel ? "Tenant: " + relatedPersonLabel : (relatedTeamMemberLabel ? "Staff: " + relatedTeamMemberLabel : "—")))}</td>
                   </tr>
                 `;
               }).join("")}
@@ -1754,6 +1784,14 @@
       UnganiClientShared.showToast("Money filters reset ✓");
     }
 
+    function updateTeamMemberFieldVisibility() {
+      const wrap = document.getElementById("moneyTeamMemberWrap");
+      const typeEl = document.getElementById("moneyType");
+      if (!wrap || !typeEl) return;
+
+      wrap.style.display = typeEl.value === "expense" ? "" : "none";
+    }
+
     function updateCategoryOptions() {
       const typeEl = document.getElementById("moneyType");
       const categoryEl = document.getElementById("moneyCategory");
@@ -1798,7 +1836,7 @@
           <div class="money-form-grid">
             <div>
               <label for="moneyType">Type</label>
-              <select id="moneyType" onchange="updateCategoryOptions()">
+              <select id="moneyType" onchange="updateCategoryOptions(); updateTeamMemberFieldVisibility();">
                 <option value="income">Income</option>
                 <option value="expense">Expense</option>
                 <option value="petty_cash">Petty Cash</option>
@@ -1864,6 +1902,16 @@
                 </select>
               </div>
             ` : ""}
+
+            <div id="moneyTeamMemberWrap">
+              <label for="moneyTeamMember">Team Member (optional)</label>
+              <select id="moneyTeamMember">
+                <option value="">Not linked to a team member</option>
+                ${teamMemberOptions.map(function (member) {
+                  return `<option value="${UnganiClientShared.attr(member.id)}">${UnganiClientShared.safe(member.full_name)}${member.role_key ? " (" + UnganiClientShared.safe(member.role_key) + ")" : ""}</option>`;
+                }).join("")}
+              </select>
+            </div>
 
             ${sectionOptions.length > 1 ? `
               <div>
@@ -1962,6 +2010,7 @@
         onOpen: function () {
           document.getElementById("moneyType").value = row ? getRowType(row) : ((presetValues && presetValues.type) || "income");
           updateCategoryOptions();
+          updateTeamMemberFieldVisibility();
 
           document.getElementById("moneyCategory").value = row
             ? UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "")
@@ -1972,6 +2021,10 @@
 
           if (isRealEstate && document.getElementById("moneyRelatedPerson")) {
             document.getElementById("moneyRelatedPerson").value = row ? UnganiClientShared.getValue(row, ["related_person_id"], "") : "";
+          }
+
+          if (document.getElementById("moneyTeamMember")) {
+            document.getElementById("moneyTeamMember").value = row ? UnganiClientShared.getValue(row, ["related_team_member_id"], "") : "";
           }
 
           if (sectionOptions.length > 1 && document.getElementById("moneySection")) {
@@ -2298,6 +2351,8 @@ const payload = {
       if (isRealEstate) {
         payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
       }
+
+      payload.related_team_member_id = broadType === "expense" ? (UnganiClientShared.value("moneyTeamMember") || null) : null;
 
       if (sectionOptions.length > 1) {
         payload.section_label = UnganiClientShared.value("moneySection") || null;
