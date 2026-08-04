@@ -63,6 +63,33 @@ async function isAdminRequest(bearerToken) {
   }
 }
 
+// For tenant-triggered instant delivery (task assignment, team
+// invitation, payroll payment - all owner/staff actions, not UNGANI
+// admin actions, so isAdminRequest() above never applies to them).
+// Verifies the caller's own session the same way as isAdminRequest()
+// above (their own JWT, not service role), then reuses the already-
+// existing get_my_ungani_tenant_id() RPC (used everywhere else in this
+// app for the same purpose) to resolve their real tenant_id - the
+// caller can never claim to be any tenant other than their own. The
+// returned tenant_id is used below to scope getPendingEmails() to ONLY
+// that tenant's rows, so this can never be used to trigger delivery of
+// another tenant's queued email.
+async function getRequestingTenantId(bearerToken) {
+  if (!bearerToken) return null;
+
+  try {
+    const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: "Bearer " + bearerToken } },
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    const { data, error } = await userClient.rpc("get_my_ungani_tenant_id");
+    return !error && data ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 function isLegacySecretRequest(req) {
   const providedSecret =
     req.headers["x-ungani-email-secret"] ||
@@ -189,11 +216,17 @@ async function updateQueueRecord(supabase, id, patch) {
   return { ok: true };
 }
 
-async function getPendingEmails(supabase, limit) {
-  const { data, error } = await supabase
+async function getPendingEmails(supabase, limit, tenantId) {
+  let query = supabase
     .from(QUEUE_TABLE)
     .select("*")
-    .in(STATUS_COLUMN, PENDING_STATUSES)
+    .in(STATUS_COLUMN, PENDING_STATUSES);
+
+  if (tenantId) {
+    query = query.eq("tenant_id", tenantId);
+  }
+
+  const { data, error } = await query
     .order("created_at", { ascending: true })
     .limit(limit);
 
@@ -213,13 +246,29 @@ export default async function handler(req, res) {
     const authHeader = req.headers["authorization"] || "";
     const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
 
-    const via = isCronRequest(bearerToken)
+    let via = isCronRequest(bearerToken)
       ? "cron"
       : (await isAdminRequest(bearerToken))
         ? "admin"
         : isLegacySecretRequest(req)
           ? "legacy_secret"
           : null;
+
+    // Tenant-scoped instant delivery for owner/staff-triggered events
+    // (task assignment, team invitation, payroll payment) - none of
+    // these are UNGANI-admin actions, so isAdminRequest() above never
+    // matches them, and they'd otherwise wait for the once-daily cron.
+    // Checked only after the admin/cron/legacy paths above all miss, so
+    // an actual admin or cron request is never mistakenly narrowed to
+    // tenant scope.
+    let requestingTenantId = null;
+
+    if (!via) {
+      requestingTenantId = await getRequestingTenantId(bearerToken);
+      if (requestingTenantId) {
+        via = "tenant_self";
+      }
+    }
 
     if (!via) {
       return json(res, 401, { ok: false, message: "Unauthorized email sender request." });
@@ -250,8 +299,16 @@ export default async function handler(req, res) {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    const limit = Math.max(1, Math.min(Number(req.body?.limit || req.query?.limit || 15), 25));
-    const pendingResult = await getPendingEmails(supabase, limit);
+    // Tenant-scoped requests get a lower cap (defense-in-depth on top of
+    // the tenant_id scoping itself - a real tenant can only ever have a
+    // handful of their own pending rows at once from these trigger
+    // points, so there's no legitimate reason for them to request more).
+    const requestedLimit = Number(req.body?.limit || req.query?.limit || 15);
+    const limit = via === "tenant_self"
+      ? Math.max(1, Math.min(requestedLimit, 5))
+      : Math.max(1, Math.min(requestedLimit, 25));
+
+    const pendingResult = await getPendingEmails(supabase, limit, via === "tenant_self" ? requestingTenantId : null);
 
     if (!pendingResult.ok) {
       return json(res, 500, { ok: false, message: pendingResult.message });

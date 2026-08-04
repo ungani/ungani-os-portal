@@ -1199,6 +1199,8 @@
 
         showProofReviewMessage("Proof accepted and payment marked as paid successfully.", "success");
 
+        triggerApprovalEmailSendNow();
+
         await loadProofs();
 
         setTimeout(() => {
@@ -1209,6 +1211,23 @@
       } finally {
         button.disabled = false;
         button.textContent = "Accept & Mark Paid";
+      }
+    }
+
+    async function triggerApprovalEmailSendNow() {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+
+        if (!token) return;
+
+        await fetch("/api/send-email-queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ limit: 15 })
+        });
+      } catch (error) {
+        console.warn("Could not trigger immediate payment approval email send:", error.message);
       }
     }
 

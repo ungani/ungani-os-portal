@@ -894,8 +894,42 @@
         return;
       }
 
+      if (adminResponse) {
+        try {
+          const emailResult = await supabaseClient.rpc("queue_ungani_support_response_email", {
+            p_issue_id: selectedIssueId,
+            p_admin_response: adminResponse
+          });
+
+          if (emailResult.error || !emailResult.data || emailResult.data.ok !== true) {
+            console.warn("Could not queue support response email:", (emailResult.error && emailResult.error.message) || (emailResult.data && emailResult.data.message));
+          } else {
+            triggerSupportEmailSendNow();
+          }
+        } catch (error) {
+          console.warn("Could not queue support response email:", error.message);
+        }
+      }
+
       UnganiAdminShared.showToast("Support issue saved ✓");
       await loadPageData();
+    }
+
+    async function triggerSupportEmailSendNow() {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+
+        if (!token) return;
+
+        await fetch("/api/send-email-queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ limit: 15 })
+        });
+      } catch (error) {
+        console.warn("Could not trigger immediate support response email send:", error.message);
+      }
     }
   </script>
 </body>

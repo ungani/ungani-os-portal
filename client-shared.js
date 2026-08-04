@@ -3145,6 +3145,33 @@
     }
   }
 
+  // Fire-and-forget instant-send for the caller's OWN tenant's pending
+  // emails - mirrors admin.html's triggerApprovalEmailSendNow() but hits
+  // the tenant-scoped auth path (get_my_ungani_tenant_id RPC) added to
+  // api/send-email-queue.js so owner/staff-triggered emails (task
+  // assignment, team invitation, payroll payment) don't wait for the
+  // once-daily cron. Never throws - a failed instant-send just means the
+  // email sits in the queue until the next cron run instead.
+  async function triggerEmailSendNow() {
+    try {
+      if (!state.supabaseClient) return;
+
+      const sessionRes = await state.supabaseClient.auth.getSession();
+      const token = sessionRes?.data?.session?.access_token;
+
+      if (!token) return;
+
+      await fetch("/api/send-email-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ limit: 5 }),
+        keepalive: true
+      });
+    } catch (error) {
+      console.warn("Instant email send warning:", error.message);
+    }
+  }
+
   // ---- CSV export ----
   // Shared by every my-*.html list page (Money/Tasks/Documents/People/
   // Records/Items), which all already compute a full matching-id list for
@@ -3571,6 +3598,7 @@
       toggleSidebar,
       logout,
       logAuditEvent,
+      triggerEmailSendNow,
       exportRecordsToCsv,
       signInFromForm,
       getTenantName,

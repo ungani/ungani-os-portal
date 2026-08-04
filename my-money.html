@@ -2413,6 +2413,27 @@ const payload = {
         return;
       }
 
+      const wasNewInsert = !editingMoneyId;
+
+      if (wasNewInsert && broadType === "expense" && payload.related_team_member_id) {
+        try {
+          const emailResult = await currentContext.supabaseClient.rpc("queue_ungani_payroll_payment_email", {
+            p_team_member_id: payload.related_team_member_id,
+            p_amount: recordAmount,
+            p_currency: currency,
+            p_transaction_date: transactionDate
+          });
+
+          if (emailResult.error || !emailResult.data || emailResult.data.ok !== true) {
+            console.warn("Could not queue payroll payment email:", (emailResult.error && emailResult.error.message) || (emailResult.data && emailResult.data.message));
+          } else {
+            UnganiClientShared.triggerEmailSendNow();
+          }
+        } catch (error) {
+          console.warn("Could not queue payroll payment email:", error.message);
+        }
+      }
+
       UnganiClientShared.showToast(editingMoneyId ? "Money record updated ✓" : "Money record added ✓");
       editingMoneyId = null;
       UnganiClientShared.closeModal();

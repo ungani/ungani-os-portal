@@ -1052,6 +1052,8 @@
           description: "Added/updated staff member " + payload.p_email + " with role " + payload.p_role_key
         });
 
+        triggerTenantEmailSendNow();
+
         document.getElementById("fullName").value = "";
         document.getElementById("email").value = "";
         document.getElementById("phone").value = "";
@@ -1142,6 +1144,23 @@
         });
       } catch (error) {
         console.warn("Audit log warning:", error.message);
+      }
+    }
+
+    async function triggerTenantEmailSendNow() {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (!token) return;
+
+        await fetch("/api/send-email-queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ limit: 5 }),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Instant email send warning:", error.message);
       }
     }
 
