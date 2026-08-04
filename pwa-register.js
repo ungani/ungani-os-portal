@@ -150,6 +150,8 @@
 
     if (publicPages.includes(page)) return;
 
+    loadScriptOnce("push-notifications.js");
+
     const isAdminPage = page.startsWith("admin") || page === "support.html" || page === "users.html" ||
       page === "sections.html" || page === "billing.html" || page === "notices.html";
 

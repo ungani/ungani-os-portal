@@ -800,6 +800,23 @@
       </section>
 
       <section class="card">
+        <h2>Browser Notifications</h2>
+        <p class="row-detail">Get notified instantly on this device for important updates - even when this tab isn't open. This is a per-device setting: turning it on here only affects this browser on this device.</p>
+        <div id="pushStatusBox" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; margin-top: 10px;">
+          <div>
+            <strong id="pushStatusText" style="display: block; margin-bottom: 3px;">Checking...</strong>
+            <span id="pushStatusSubtext" style="font-size: 13px; color: var(--muted);"></span>
+          </div>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button type="button" id="btnEnablePush" style="display: none;" onclick="enablePushNotifications()">Enable Notifications</button>
+            <button type="button" id="btnDisablePush" class="dark-btn" style="display: none;" onclick="disablePushNotifications()">Turn Off On This Device</button>
+            <button type="button" id="btnTestPush" class="dark-btn" style="display: none;" onclick="sendTestPushNotification()">Send Yourself a Test Push</button>
+          </div>
+        </div>
+        <p id="pushMessage" class="row-detail" style="margin-top: 8px;"></p>
+      </section>
+
+      <section class="card">
         <h2 data-i18n="mfaTitle">Two-Factor Authentication</h2>
         <p class="row-detail" data-i18n="mfaIntro">Add a second step to your admin login using an authenticator app (Google Authenticator, Authy, or similar). Optional, but strongly recommended for admin accounts.</p>
         <div id="mfaBox">
@@ -1259,6 +1276,93 @@
 
       renderAdminDetails();
       loadMfaStatus();
+      refreshPushStatus();
+    }
+
+    // push-notifications.js is loaded globally by pwa-register.js on
+    // every authenticated admin page - it may not have finished loading
+    // by the time this runs, so this polls briefly rather than assuming
+    // window.UnganiPush already exists.
+    async function waitForUnganiPush(timeoutMs) {
+      const start = Date.now();
+      while (!window.UnganiPush) {
+        if (Date.now() - start > (timeoutMs || 5000)) return null;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return window.UnganiPush;
+    }
+
+    async function refreshPushStatus() {
+      const push = await waitForUnganiPush();
+      const statusText = document.getElementById("pushStatusText");
+      const statusSubtext = document.getElementById("pushStatusSubtext");
+      const btnEnable = document.getElementById("btnEnablePush");
+      const btnDisable = document.getElementById("btnDisablePush");
+      const btnTest = document.getElementById("btnTestPush");
+
+      if (!statusText) return;
+
+      if (!push) {
+        statusText.textContent = "Could not load notifications.";
+        statusSubtext.textContent = "Please refresh the page and try again.";
+        return;
+      }
+
+      const status = await push.getStatus();
+
+      btnEnable.style.display = "none";
+      btnDisable.style.display = "none";
+      btnTest.style.display = "none";
+
+      if (status === "unsupported") {
+        statusText.textContent = "Not supported on this browser/device.";
+        statusSubtext.textContent = "On iPhone/iPad, this requires adding UNGANI OS to your Home Screen first (Safari → Share → Add to Home Screen), then opening it from there.";
+      } else if (status === "blocked") {
+        statusText.textContent = "Blocked by your browser.";
+        statusSubtext.textContent = "Notifications were previously denied. Re-enable them from your browser's site settings for this page.";
+      } else if (status === "enabled") {
+        statusText.textContent = "Enabled on this device.";
+        statusSubtext.textContent = "You'll get real notifications here, even when this tab isn't open.";
+        btnDisable.style.display = "";
+        btnTest.style.display = "";
+      } else {
+        statusText.textContent = "Not enabled on this device.";
+        statusSubtext.textContent = "Turn this on to get notified instantly for important updates.";
+        btnEnable.style.display = "";
+      }
+    }
+
+    async function enablePushNotifications() {
+      const push = await waitForUnganiPush();
+      if (!push) return;
+
+      const msg = document.getElementById("pushMessage");
+      msg.textContent = "Requesting permission...";
+
+      const result = await push.subscribe();
+      msg.textContent = result.message || "";
+      await refreshPushStatus();
+    }
+
+    async function disablePushNotifications() {
+      const push = await waitForUnganiPush();
+      if (!push) return;
+
+      const msg = document.getElementById("pushMessage");
+      const result = await push.unsubscribe();
+      msg.textContent = result.message || "";
+      await refreshPushStatus();
+    }
+
+    async function sendTestPushNotification() {
+      const push = await waitForUnganiPush();
+      if (!push) return;
+
+      const msg = document.getElementById("pushMessage");
+      msg.textContent = "Sending test push...";
+
+      const result = await push.sendTestPush();
+      msg.textContent = result.message || "";
     }
 
     function renderAdminDetails() {

@@ -995,6 +995,36 @@
         </div>
       </section>
 
+      <section class="panel full" id="pushNotificationsPanel">
+        <div class="panel-head">
+          <h2>Browser Notifications</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Get notified instantly on this device for important updates - even when this tab isn't
+            open. This is a per-device setting: turning it on here only affects this browser on
+            this device, not your whole account.
+          </p>
+
+          <div id="pushStatusBox" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px;">
+            <div>
+              <strong id="pushStatusText" style="color: var(--text); display: block; margin-bottom: 3px;">Checking...</strong>
+              <span id="pushStatusSubtext" style="color: var(--muted); font-size: 13px;"></span>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button type="button" id="btnEnablePush" class="ungani-btn gold" style="display: none;" onclick="enablePushNotifications()">Enable Notifications</button>
+              <button type="button" id="btnDisablePush" class="ungani-btn dark" style="display: none;" onclick="disablePushNotifications()">Turn Off On This Device</button>
+              <button type="button" id="btnTestPush" class="ungani-btn dark" style="display: none;" onclick="sendTestPushNotification()">Send Yourself a Test Push</button>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="pushMessage" class="action-msg"></span>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full">
         <div class="panel-head">
           <h2 data-i18n="user_prefs">User Preferences</h2>
@@ -1434,7 +1464,92 @@
       await fetchUserPreferences();
       handleGoogleDriveOAuthRedirect();
       await loadGoogleDriveIntegrationStatus();
+      await refreshPushStatus();
     });
+
+    // push-notifications.js is loaded globally by pwa-register.js on
+    // every authenticated page - it may not have finished loading by the
+    // time DOMContentLoaded fires here, so this polls briefly rather than
+    // assuming window.UnganiPush already exists.
+    async function waitForUnganiPush(timeoutMs) {
+      const start = Date.now();
+      while (!window.UnganiPush) {
+        if (Date.now() - start > (timeoutMs || 5000)) return null;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return window.UnganiPush;
+    }
+
+    async function refreshPushStatus() {
+      const push = await waitForUnganiPush();
+      const statusText = document.getElementById("pushStatusText");
+      const statusSubtext = document.getElementById("pushStatusSubtext");
+      const btnEnable = document.getElementById("btnEnablePush");
+      const btnDisable = document.getElementById("btnDisablePush");
+      const btnTest = document.getElementById("btnTestPush");
+
+      if (!push) {
+        statusText.textContent = "Could not load notifications.";
+        statusSubtext.textContent = "Please refresh the page and try again.";
+        return;
+      }
+
+      const status = await push.getStatus();
+
+      btnEnable.style.display = "none";
+      btnDisable.style.display = "none";
+      btnTest.style.display = "none";
+
+      if (status === "unsupported") {
+        statusText.textContent = "Not supported on this browser/device.";
+        statusSubtext.textContent = "On iPhone/iPad, this requires adding UNGANI OS to your Home Screen first (Safari → Share → Add to Home Screen), then opening it from there.";
+      } else if (status === "blocked") {
+        statusText.textContent = "Blocked by your browser.";
+        statusSubtext.textContent = "Notifications were previously denied. Re-enable them from your browser's site settings for this page.";
+      } else if (status === "enabled") {
+        statusText.textContent = "Enabled on this device.";
+        statusSubtext.textContent = "You'll get real notifications here, even when this tab isn't open.";
+        btnDisable.style.display = "";
+        btnTest.style.display = "";
+      } else {
+        statusText.textContent = "Not enabled on this device.";
+        statusSubtext.textContent = "Turn this on to get notified instantly for important updates.";
+        btnEnable.style.display = "";
+      }
+    }
+
+    async function enablePushNotifications() {
+      const push = await waitForUnganiPush();
+      if (!push) return;
+
+      const msg = document.getElementById("pushMessage");
+      msg.textContent = "Requesting permission...";
+
+      const result = await push.subscribe();
+      msg.textContent = result.message || "";
+      await refreshPushStatus();
+    }
+
+    async function disablePushNotifications() {
+      const push = await waitForUnganiPush();
+      if (!push) return;
+
+      const msg = document.getElementById("pushMessage");
+      const result = await push.unsubscribe();
+      msg.textContent = result.message || "";
+      await refreshPushStatus();
+    }
+
+    async function sendTestPushNotification() {
+      const push = await waitForUnganiPush();
+      if (!push) return;
+
+      const msg = document.getElementById("pushMessage");
+      msg.textContent = "Sending test push...";
+
+      const result = await push.sendTestPush();
+      msg.textContent = result.message || "";
+    }
 
     async function loadMyAccountDetails() {
       if (!currentUserId) return;
