@@ -905,6 +905,7 @@
             console.warn("Could not queue support response email:", (emailResult.error && emailResult.error.message) || (emailResult.data && emailResult.data.message));
           } else {
             triggerSupportEmailSendNow();
+            triggerSupportPushNow(selectedIssueId);
           }
         } catch (error) {
           console.warn("Could not queue support response email:", error.message);
@@ -929,6 +930,26 @@
         });
       } catch (error) {
         console.warn("Could not trigger immediate support response email send:", error.message);
+      }
+    }
+
+    async function triggerSupportPushNow(issueId) {
+      if (!issueId) return;
+
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+
+        if (!token) return;
+
+        await fetch("/api/send-event-push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ eventType: "support_response", relatedId: issueId }),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Could not trigger support response push:", error.message);
       }
     }
   </script>

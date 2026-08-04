@@ -945,6 +945,27 @@
       );
 
       queueRegistrationConfirmationEmail(registrationResponse.registrationId);
+      notifyAdminsPushNewRegistration(registrationResponse.registrationId);
+    }
+
+    // Best-effort, non-blocking, and anonymous - the person submitting
+    // this form is never logged in, so no bearer token is sent. The
+    // endpoint itself never trusts anything from this call except the
+    // registration id; it re-derives real content server-side and only
+    // ever notifies admin push subscriptions.
+    async function notifyAdminsPushNewRegistration(registrationId) {
+      if (!registrationId) return;
+
+      try {
+        await fetch("/api/send-event-push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventType: "new_registration", relatedId: registrationId }),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Could not trigger admin push notification:", error.message);
+      }
     }
 
     // Best-effort, non-blocking - the registration itself already

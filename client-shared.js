@@ -3172,6 +3172,31 @@
     }
   }
 
+  // Fire-and-forget trigger for an event-specific push notification (task
+  // assignment, etc.) - mirrors triggerEmailSendNow() above. The endpoint
+  // itself re-derives the real recipient/content server-side from
+  // relatedId; this call only tells it WHICH event fired, never who to
+  // notify or what to say.
+  async function triggerEventPush(eventType, relatedId) {
+    try {
+      if (!state.supabaseClient || !relatedId) return;
+
+      const sessionRes = await state.supabaseClient.auth.getSession();
+      const token = sessionRes?.data?.session?.access_token;
+
+      if (!token) return;
+
+      await fetch("/api/send-event-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ eventType: eventType, relatedId: relatedId }),
+        keepalive: true
+      });
+    } catch (error) {
+      console.warn("Event push trigger warning:", error.message);
+    }
+  }
+
   // ---- CSV export ----
   // Shared by every my-*.html list page (Money/Tasks/Documents/People/
   // Records/Items), which all already compute a full matching-id list for
@@ -3599,6 +3624,7 @@
       logout,
       logAuditEvent,
       triggerEmailSendNow,
+      triggerEventPush,
       exportRecordsToCsv,
       signInFromForm,
       getTenantName,
