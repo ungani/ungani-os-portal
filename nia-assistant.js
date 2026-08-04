@@ -39,7 +39,7 @@
     { key: "support", href: "my-support.html", icon: "🛟", label: "Contact Support", aliases: ["support", "contact support", "help desk", "get help"] },
     { key: "print-report", href: "print-report.html", icon: "🖨️", label: "Print Report", aliases: ["print report", "printable report"] },
     { key: "security", href: "my-security.html", icon: "🔐", label: "Security & Data", aliases: ["security", "data security", "2fa", "two-factor", "two factor"] },
-    { key: "team-access", href: "my-team-access.html", icon: "🧑‍🤝‍🧑", label: "Team Access", aliases: ["team access", "staff access", "invite staff", "add staff", "manage staff"] },
+    { key: "team-access", href: "my-team-access.html", icon: "🧑‍🤝‍🧑", label: "Team Access", aliases: ["team access", "staff access", "invite staff", "add staff", "manage staff", "payroll", "staff salary", "staff salaries", "staff wages"] },
     { key: "support-access", href: "my-support-access.html", icon: "🛟", label: "UNGANI Support Access", aliases: ["support access", "ungani support", "grant access", "invite support", "revoke access", "temporary access"] },
     { key: "recently-deleted", href: "my-recently-deleted.html", icon: "🗑️", label: "Recently Deleted", aliases: ["recently deleted", "deleted", "recover", "recycle bin", "restore"] },
     { key: "package", href: "my-package.html", icon: "💼", label: "Package", aliases: ["package", "my package", "upgrade request", "upgrade requests"] },
@@ -183,6 +183,14 @@
       answer: "Open Security & Data and follow the prompts to scan a QR code with an authenticator app. Once it's on, you'll be asked for a code from that app each time you log in.",
       href: "my-security.html",
       linkLabel: "Open Security & Data"
+    },
+    {
+      key: "payroll-explained",
+      match: ["what is payroll", "payroll card", "payroll feature", "track staff salaries", "staff salary tracking", "set a staff salary", "record staff wages"],
+      question: "What is Payroll and how do I use it?",
+      answer: "Payroll lets you record each staff member's salary or wage on their Team Access profile (for your own reference — nothing is calculated automatically), then tag any expense in Money to that person when you actually pay them. Your Dashboard and Team Access both show a running total of what's been paid to staff this month. It doesn't calculate PAYE, NSSF, NHIF, or generate payslips — it's just a simple record of what's been paid.",
+      href: "my-team-access.html",
+      linkLabel: "Open Team Access"
     },
     {
       key: "team-roles",
@@ -350,6 +358,12 @@
       match: ["record vat on a transaction", "add vat to a transaction", "mark a transaction as vat", "apply vat"],
       pageKey: "money",
       steps: ["Make sure VAT Registered is turned on in Settings first.", "Open Money and add or edit a record.", "Check \"VAT applies to this transaction\", choose the pricing mode and rate.", "The VAT amount is calculated automatically before you save."]
+    },
+    {
+      key: "record-staff-payment",
+      match: ["record a staff payment", "pay a staff member", "log a salary payment", "tag a payment to staff", "record payroll", "set a staff salary"],
+      pageKey: "money",
+      steps: ["Optional: open Team Access and set a Monthly Salary / Wage on the staff member's profile, for your own reference.", "Open Money and add a new Expense.", "Pick the Team Member you're paying from the dropdown.", "Fill in the amount and date, then select Save — it'll count toward that person's total on your Dashboard and Team Access."]
     }
   ];
 
@@ -2004,6 +2018,19 @@
         return runAssetCountIntent(text);
       }
 
+      // Live-data payroll question ("how much have I paid staff", "who's
+      // been paid this month") - checked ahead of the static howTo/help
+      // matchers for the same reason as the asset checks above: this needs
+      // a real Supabase query, not a canned answer.
+      if (isPayrollQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Payroll details aren't available on the admin side yet.");
+          return { spoken: "That's not available on the admin side yet." };
+        }
+
+        return runPayrollQueryIntent(text);
+      }
+
       // "print this for me" / "give me a report" - checked ahead of the
       // generic summary phrase below, since a print request should always
       // win over a conversational one even if both phrase lists could
@@ -2438,6 +2465,109 @@
 
     addNiaMessage("You have " + total + " item" + (total === 1 ? "" : "s") + " on record.");
     return { spoken: "You have " + total + " items on record." };
+  }
+
+  // ---- Payroll / staff-payment questions ----
+  // Reads the same transactions.related_team_member_id link client.html's
+  // dashboard Payroll card and my-team-access.html's summary already use -
+  // a transaction counts as a staff payment purely by carrying that link,
+  // not by matching a category-keyword heuristic (which would miss
+  // "Staff Wages"/"Guard Wages"/"Driver Allowance"/etc - see the isStaffPayment
+  // comment in client.html for the full reasoning). Works identically
+  // across all 19 business types since it never branches on business type.
+
+  // Requires BOTH a payroll/staff-money topic word AND a data-seeking
+  // phrase - matching on the topic word alone would swallow conceptual
+  // ("what is payroll?") and how-to ("how do I record a staff payment?")
+  // questions that should reach HELP_TOPICS/HOW_TO_TOPICS instead, the
+  // same trap the asset-query phrase matchers above already avoid by
+  // requiring a real question shape, not just the bare noun.
+  function isPayrollQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    const mentionsPayrollTopic = ["payroll", "staff", "salary", "salaries", "wage", "wages"].some(function (word) { return lower.indexOf(word) !== -1; });
+    if (!mentionsPayrollTopic) return false;
+
+    return [
+      "how much", "who's been paid", "whos been paid", "who has been paid", "who is paid",
+      "total paid", "paid so far", "status", "this month", "this week", "last payment", "when was"
+    ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  async function fetchNiaPayrollRows() {
+    const response = await state.supabaseClient
+      .from("transactions")
+      .select("id, amount, amount_kes, related_team_member_id, transaction_date, created_at")
+      .eq("tenant_id", state.tenantId)
+      .not("related_team_member_id", "is", null)
+      .order("transaction_date", { ascending: false })
+      .limit(500);
+
+    if (response.error) throw new Error(response.error.message);
+    return response.data || [];
+  }
+
+  async function runPayrollQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your staff payment records...");
+
+    let rows;
+    try {
+      rows = await fetchNiaPayrollRows();
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (!rows.length) {
+      addNiaMessage(
+        "No staff payments have been tagged yet. Set a salary on a staff profile from " +
+        goldLink("my-team-access.html", "Team Access") +
+        ", then pick that Team Member on an expense in " + goldLink("my-money.html", "Money") + " when you pay them."
+      );
+      return { spoken: "No staff payments have been tagged yet." };
+    }
+
+    const monthKey = new Date().toISOString().slice(0, 7);
+    let totalThisMonth = 0;
+    const paidMemberIds = {};
+    let lastPaymentDate = null;
+
+    rows.forEach(function (row) {
+      const amount = Number(pickField(row, ["amount_kes", "amount"], 0)) || 0;
+      const dateStr = String(pickField(row, ["transaction_date", "created_at"], "")).slice(0, 10);
+
+      if (dateStr && (!lastPaymentDate || dateStr > lastPaymentDate)) {
+        lastPaymentDate = dateStr;
+      }
+
+      if (dateStr.slice(0, 7) === monthKey) {
+        totalThisMonth += amount;
+        const memberId = pickField(row, ["related_team_member_id"], "");
+        if (memberId) paidMemberIds[memberId] = true;
+      }
+    });
+
+    const staffCount = Object.keys(paidMemberIds).length;
+    const lastPaidText = lastPaymentDate
+      ? "Last staff payment logged: " + new Date(lastPaymentDate).toLocaleDateString("en-KE", { month: "short", day: "numeric", year: "numeric" }) + "."
+      : "";
+
+    const html =
+      `<strong>Payroll</strong>` +
+      `<div style="margin-top:8px;">🧑‍💼 Paid to staff this month: ${safe(formatNiaKES(totalThisMonth))} across ${staffCount} staff member${staffCount === 1 ? "" : "s"}</div>` +
+      (lastPaidText ? `<div style="margin-top:4px;opacity:0.85;">${safe(lastPaidText)}</div>` : "") +
+      `<div style="margin-top:8px;">${goldLink("my-team-access.html", "See staff payment details →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: "Paid to staff this month: " + formatNiaKES(totalThisMonth) + " across " + staffCount +
+        " staff member" + (staffCount === 1 ? "" : "s") + "." + (lastPaidText ? " " + lastPaidText : "")
+    };
   }
 
   // ---- Summaries, print-report handoff, and the morning briefing ----
