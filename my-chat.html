@@ -6,6 +6,24 @@
 
   <title>UNGANI OS - Chat with UNGANI</title>
 
+  <style>
+    /* Nia's reused HELP_TOPICS/HOW_TO_TOPICS answers (via getGuidanceHtml())
+       carry an a.nia-link-btn - nia-assistant.js only styles that inside its
+       own .nia-bubble (the floating panel's message markup), which this
+       page's Nia widget doesn't use, so it renders unstyled without this. */
+    a.nia-link-btn {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #D4A63A;
+      color: #061C3D;
+      font-weight: 800;
+      font-size: 12px;
+      text-decoration: none;
+    }
+  </style>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
@@ -47,6 +65,28 @@
     let currentContext = null;
     let messages = [];
     let refreshTimer = null;
+
+    // Nia first-responder widget - see CHAT_CATEGORIES below for the full
+    // behavior of each category. State is tracked here (not just left in
+    // the DOM) because renderChatPage() fully replaces the page content
+    // every 20s (loadMessages(true) on refreshTimer) and after every send -
+    // rebuilding the widget from this state on each render is what keeps
+    // it from silently resetting mid-conversation.
+    let niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null };
+
+    // guidanceKey maps to a real NiaAssistant.getGuidanceHtml() key (from
+    // HELP_TOPICS or HOW_TO_TOPICS in nia-assistant.js) - reusing Nia's
+    // actual existing knowledge rather than writing new copy that could
+    // drift out of sync with what she already says elsewhere in the app.
+    // alwaysEscalate categories are ones a real human needs to act on
+    // regardless of what guidance Nia can offer first.
+    const CHAT_CATEGORIES = [
+      { key: "login", label: "Trouble logging in", guidanceKey: "password", alwaysEscalate: false },
+      { key: "registration", label: "Registration issues", guidanceKey: "registration-status", alwaysEscalate: true },
+      { key: "document", label: "Document upload help", guidanceKey: "upload-document", alwaysEscalate: false },
+      { key: "billing", label: "Billing question", guidanceKey: "subscription", alwaysEscalate: false },
+      { key: "other", label: "Something else", guidanceKey: null, alwaysEscalate: true }
+    ];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -137,6 +177,8 @@
           </div>
         </section>
 
+        ${renderNiaWidget()}
+
         <section class="ungani-grid">
           ${UnganiClientShared.metricCard("Total Messages", messages.length, "All chat messages", "blue")}
           ${UnganiClientShared.metricCard("Your Messages", summary.clientMessages, "Sent by your business", "gold")}
@@ -186,6 +228,143 @@
       `);
 
       scrollChatToBottom();
+    }
+
+    // Nia's own message bubbles reuse the exact same .ungani-card left-
+    // border style renderMessageCard() already uses for "UNGANI" replies
+    // (gold border) - visually it reads as one more voice in the same
+    // conversation, not a separate bolted-on widget.
+    function niaBubble(html) {
+      return `
+        <div class="ungani-card" style="box-shadow:none;border-left:5px solid #D4A63A;background:rgba(212,166,58,0.14);margin-bottom:12px;">
+          <div class="ungani-section-title">
+            <div><h3>Nia</h3></div>
+          </div>
+          <div style="white-space:pre-wrap;">${html}</div>
+        </div>
+      `;
+    }
+
+    function clientChoiceBubble(label) {
+      return `
+        <div class="ungani-card" style="box-shadow:none;border-left:5px solid #061C3D;background:rgba(6,28,61,0.05);margin-bottom:12px;">
+          <div class="ungani-section-title">
+            <div><h3>You</h3></div>
+          </div>
+          <p style="margin:0;">${UnganiClientShared.safe(label)}</p>
+        </div>
+      `;
+    }
+
+    function niaChip(label, onclick) {
+      return `<button type="button" class="ungani-btn small gold" onclick="${onclick}">${UnganiClientShared.safe(label)}</button>`;
+    }
+
+    function renderNiaWidget() {
+      const parts = [];
+
+      parts.push(niaBubble("Welcome to UNGANI! How can I help you today?"));
+
+      if (niaWidgetState.stage === "categories") {
+        parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">${CHAT_CATEGORIES.map(function (c) {
+          return niaChip(c.label, "selectNiaCategory('" + c.key + "')");
+        }).join("")}</div>`);
+
+        return `<section class="ungani-card">${parts.join("")}</section>`;
+      }
+
+      const category = CHAT_CATEGORIES.find(function (c) { return c.key === niaWidgetState.categoryKey; });
+      if (category) parts.push(clientChoiceBubble(category.label));
+      if (niaWidgetState.answerHtml) parts.push(niaBubble(niaWidgetState.answerHtml));
+
+      if (niaWidgetState.stage === "answered") {
+        parts.push(niaBubble("Did this solve it?"));
+        parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">
+          ${niaChip("Yes, thanks!", "niaFeedback(true)")}
+          ${niaChip("No, I still need help", "niaFeedback(false)")}
+        </div>`);
+      } else if (niaWidgetState.stage === "resolved") {
+        parts.push(niaBubble("Glad I could help! If anything else comes up, I'm right here."));
+        parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">${niaChip("Ask something else", "resetNiaWidget()")}</div>`);
+      } else if (niaWidgetState.stage === "escalated") {
+        parts.push(niaBubble("Thanks for reaching out - I've noted your message and our team will respond to you shortly."));
+        parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">${niaChip("Ask something else", "resetNiaWidget()")}</div>`);
+      }
+
+      return `<section class="ungani-card">${parts.join("")}</section>`;
+    }
+
+    function resetNiaWidget() {
+      niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null };
+      renderChatPage();
+    }
+
+    function selectNiaCategory(key) {
+      const category = CHAT_CATEGORIES.find(function (c) { return c.key === key; });
+      if (!category) return;
+
+      const guidance = category.guidanceKey && window.NiaAssistant && typeof window.NiaAssistant.getGuidanceHtml === "function"
+        ? window.NiaAssistant.getGuidanceHtml(category.guidanceKey)
+        : null;
+
+      niaWidgetState.categoryKey = key;
+      niaWidgetState.answerHtml = guidance ? guidance.html : null;
+
+      if (category.alwaysEscalate) {
+        escalateToAdmin(category, guidance ? guidance.spoken : null);
+        niaWidgetState.stage = "escalated";
+      } else {
+        niaWidgetState.stage = "answered";
+      }
+
+      renderChatPage();
+    }
+
+    function niaFeedback(helped) {
+      if (helped) {
+        niaWidgetState.stage = "resolved";
+        renderChatPage();
+        return;
+      }
+
+      const category = CHAT_CATEGORIES.find(function (c) { return c.key === niaWidgetState.categoryKey; });
+      escalateToAdmin(category, niaWidgetState.answerHtml ? "Nia's suggested answer didn't resolve it." : null);
+      niaWidgetState.stage = "escalated";
+      renderChatPage();
+    }
+
+    // Routes an unresolved Nia conversation into the same admin_client_
+    // messages flow the manual "Send Message" form below already uses -
+    // same payload shape, so it shows up in admin-chat.html exactly like
+    // any other client message. Best-effort: a failure here still leaves
+    // the client seeing the acknowledgment (set by the caller regardless),
+    // since the actual chat form is always right there as a fallback if
+    // this silently doesn't land.
+    async function escalateToAdmin(category, note) {
+      const label = category ? category.label : "General inquiry";
+      let body = "Nia chat routing - client selected: " + label + ".";
+      if (note) body += " " + note;
+
+      const payload = {
+        tenant_id: currentContext.tenantId,
+        sender_user_id: currentContext.authUser.id,
+        sender_role: "client",
+        message_type: "support_request",
+        message_body: body,
+        message: body,
+        body: body,
+        attachment_url: null,
+        is_read: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      try {
+        await currentContext.supabaseClient.from("admin_client_messages").insert(payload);
+        await loadMessages(true);
+      } catch (error) {
+        console.warn("Could not route Nia conversation to admin:", error.message);
+      }
     }
 
     function renderMessageForm() {

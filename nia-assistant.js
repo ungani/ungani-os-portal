@@ -231,6 +231,14 @@
       answer: "I'm Nia, your UNGANI Business Assistant. I can help you navigate the system, find records, explain how features work, open pages, and walk you through common tasks. I work off a set of built-in rules and known answers, so I'm best with clear, direct questions — for anything I can't help with, Contact Support connects you with a real person.",
       href: "my-support.html",
       linkLabel: "Open Support"
+    },
+    {
+      key: "registration-status",
+      match: ["registration issue", "registration problem", "haven't been approved", "havent been approved", "still pending", "registration status", "waiting for approval", "not approved yet"],
+      question: "What's happening with my registration?",
+      answer: "After you register, UNGANI reviews it and you'll get an email once it's approved - this usually doesn't take long, but it isn't instant. You can check exactly where things stand any time on Account Status. If it's been a while or something looks stuck, this is worth flagging to our team directly since registration status is something only they can check and fix on their end.",
+      href: "my-account-status.html",
+      linkLabel: "Open Account Status"
     }
   ];
 
@@ -2034,18 +2042,24 @@
     }
   }
 
-  function answerHowTo(topic) {
+  // Pure HTML builder, split out from answerHowTo() so the same content can
+  // be reused outside the floating panel (e.g. the inline Nia widget on
+  // my-chat.html) without depending on addNiaMessage()/the panel being open.
+  function buildHowToHtml(topic) {
     const onThisPage = state.pageKey && state.pageKey === topic.pageKey;
     const stepsHtml = "<ol>" + topic.steps.map(function (step) { return "<li>" + safe(step) + "</li>"; }).join("") + "</ol>";
 
     if (onThisPage) {
-      addNiaMessage("You're already on the right page for this. Here's how:" + stepsHtml);
-    } else {
-      const navItem = getNavByKey()[topic.pageKey];
-      const linkHtml = navItem ? `<a class="nia-link-btn" href="${attr(navItem.href)}">Open ${safe(navItem.label)}</a>` : "";
-      addNiaMessage("Here's how:" + stepsHtml + linkHtml);
+      return "You're already on the right page for this. Here's how:" + stepsHtml;
     }
 
+    const navItem = getNavByKey()[topic.pageKey];
+    const linkHtml = navItem ? `<a class="nia-link-btn" href="${attr(navItem.href)}">Open ${safe(navItem.label)}</a>` : "";
+    return "Here's how:" + stepsHtml + linkHtml;
+  }
+
+  function answerHowTo(topic) {
+    addNiaMessage(buildHowToHtml(topic));
     return { spoken: "Here's how to do that. I've listed the steps for you." };
   }
 
@@ -2066,13 +2080,30 @@
     return { spoken: "Here's how to do that. I've listed the steps for you." };
   }
 
-  function answerHelpTopic(topic) {
-    addNiaMessage(
-      "<strong>" + safe(topic.question) + "</strong><br>" + safe(topic.answer) +
-      `<br><a class="nia-link-btn" href="${attr(topic.href)}">${safe(topic.linkLabel)}</a>`
-    );
+  // Pure HTML builder, same reasoning as buildHowToHtml() above.
+  function buildHelpTopicHtml(topic) {
+    return "<strong>" + safe(topic.question) + "</strong><br>" + safe(topic.answer) +
+      `<br><a class="nia-link-btn" href="${attr(topic.href)}">${safe(topic.linkLabel)}</a>`;
+  }
 
+  function answerHelpTopic(topic) {
+    addNiaMessage(buildHelpTopicHtml(topic));
     return { spoken: topic.answer };
+  }
+
+  // Looks up a HELP_TOPICS or HOW_TO_TOPICS entry by its exact key (not
+  // free-text matching) and returns ready-to-render guidance HTML - used by
+  // the inline Nia widget on my-chat.html, where the client picks a known
+  // category chip rather than typing a question. Returns null if the key
+  // doesn't exist in either array, so callers can fall back cleanly.
+  function getGuidanceHtml(key) {
+    const helpTopic = HELP_TOPICS.find(function (t) { return t.key === key; });
+    if (helpTopic) return { html: buildHelpTopicHtml(helpTopic), spoken: helpTopic.answer };
+
+    const howToTopic = HOW_TO_TOPICS.find(function (t) { return t.key === key; });
+    if (howToTopic) return { html: buildHowToHtml(howToTopic), spoken: "Here's how to do that." };
+
+    return null;
   }
 
   function navigateTo(key) {
@@ -2978,7 +3009,8 @@
     open: openNia,
     close: closeNia,
     toggle: toggleNia,
-    debugVoiceInfo: debugVoiceInfo
+    debugVoiceInfo: debugVoiceInfo,
+    getGuidanceHtml: getGuidanceHtml
   };
 
   if (document.readyState === "loading") {
