@@ -542,6 +542,12 @@
       const response = await ctx.supabaseClient
         .from("team_chat_messages")
         .select("*")
+        // Department Channel messages (channel_id set) are a my-connect.html
+        // hub concept as of Ungani Connect Phase 1 - deliberately excluded
+        // here so this compact popup's "Team" tab isn't contaminated with
+        // channel chatter it has no UI context for. See my-connect.html for
+        // the full Team + Channels + DMs view.
+        .is("channel_id", null)
         .eq("tenant_id", ctx.tenantId)
         .order("created_at", { ascending: true })
         .limit(300);
