@@ -10,6 +10,7 @@
   <script src="pwa-register.js"></script>
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
   <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script>
     (function () {
@@ -51,6 +52,7 @@
     let businessPreset = null;
     let peopleRows = [];
     let editingPersonId = null;
+    let editingPersonOriginalStatus = "";
     let highlightApplied = false;
     let isRealEstate = false;
     let isHospitality = false;
@@ -895,6 +897,7 @@
                 <th>Contact</th>
                 <th>Relationship / Follow-up</th>
                 <th>Status</th>
+                <th></th>
               </tr>
             </thead>
 
@@ -926,6 +929,9 @@
                       <span class="row-sub">${followUp ? "Follow-up: " + UnganiClientShared.safe(UnganiClientShared.formatDate(followUp)) : "No follow-up set"}</span>
                     </td>
                     <td>${statusBadge(status)}</td>
+                    <td>
+                      <button class="ungani-btn small dark" type="button" onclick="event.stopPropagation(); openPersonDiscussionPanel('${UnganiClientShared.attr(row.id)}')" title="Discussion, activity, and attachments for this person">💬 Discuss</button>
+                    </td>
                   </tr>
                 `;
               }).join("")}
@@ -1123,6 +1129,7 @@
       }
 
       editingPersonId = row ? row.id : null;
+      editingPersonOriginalStatus = row ? String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase() : "";
 
       const bodyHtml = `
         <form onsubmit="savePerson(event)">
@@ -1247,6 +1254,7 @@
 
           <div class="ungani-button-row" style="margin-top:16px;">
             <button class="ungani-btn gold" type="submit">${row ? "Update Person" : "Save Person"}</button>
+            ${row ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal(); openPersonDiscussionPanel('${UnganiClientShared.attr(row.id)}')">💬 Discussion</button>` : ""}
             ${row ? `<button class="ungani-btn red" type="button" onclick="deletePerson('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
             <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
           </div>
@@ -1325,7 +1333,9 @@
         } else {
           response = await currentContext.supabaseClient
             .from("client_people")
-            .insert([payload]);
+            .insert([payload])
+            .select("id")
+            .single();
         }
       } catch (error) {
         UnganiClientShared.showToast("Could not save person: " + (error.message || "Network error. Please check your connection."));
@@ -1337,10 +1347,48 @@
         return;
       }
 
+      const wasNewInsert = !editingPersonId;
+      const savedPersonId = editingPersonId || (response.data && response.data.id);
+
+      // Ungani Connect Phase 3: real Timeline entries on creation and
+      // real status changes only, same judgment as Tasks/Money/Documents.
+      if (wasNewInsert) {
+        UnganiConnectPanel.logActivity(currentContext, "client_people", savedPersonId, "created", "Person added.");
+      } else if (payload.status !== editingPersonOriginalStatus) {
+        UnganiConnectPanel.logActivity(currentContext, "client_people", savedPersonId, "status_changed", "Status changed from " + toTitlePerson(editingPersonOriginalStatus || "active") + " to " + toTitlePerson(payload.status) + ".");
+      }
+
       UnganiClientShared.showToast(editingPersonId ? "Person updated ✓" : "Person added ✓");
       editingPersonId = null;
       UnganiClientShared.closeModal();
       await loadPeopleRows();
+    }
+
+    // Ungani Connect Phase 3: reuses the shared ungani-connect-panel.js
+    // module. Attachments via documents.linked_person_id (same pattern
+    // as linked_task_id/linked_item_id).
+    function openPersonDiscussionPanel(id) {
+      const row = peopleRows.find(function (item) { return String(item.id) === String(id); });
+
+      if (!row) {
+        UnganiClientShared.showToast("Person not found.");
+        return;
+      }
+
+      const type = getPersonType(row);
+      const status = UnganiClientShared.getValue(row, ["status"], "active");
+
+      UnganiConnectPanel.open(currentContext, {
+        recordTable: "client_people",
+        recordId: id,
+        title: getPersonName(row),
+        subtitleHtml: `<p class="ungani-small">${UnganiClientShared.safe(type)} · ${statusBadge(status)}</p>`,
+        attachments: { linkColumn: "linked_person_id", deepLinkParam: "linkedPersonId" }
+      });
+    }
+
+    function toTitlePerson(value) {
+      return String(value || "").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
     }
 
     async function deletePerson(id) {

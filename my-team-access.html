@@ -721,6 +721,12 @@
     let currentTenant = null;
     let staffPaymentsByMember = {};
     let staffPaymentsTotal = 0;
+    // Ungani Connect Phase 3: Employees (ungani_team_members) is
+    // owner-only per Phase 0's finding (no staff-facing permission
+    // section exists for it) - can_access_ungani_record() already
+    // denies non-owners at the RLS layer, this is the client-side UI
+    // mirror of that so staff never even see the affordance.
+    let isOwnerViewer = false;
 
     function toggleSidebar() {
       document.getElementById("sidebar").classList.toggle("open");
@@ -835,6 +841,13 @@
           </div>
         `;
         return;
+      }
+
+      try {
+        const accessResponse = await supabaseClient.rpc("get_my_ungani_staff_access");
+        isOwnerViewer = !!(accessResponse.data && accessResponse.data.is_owner === true);
+      } catch (error) {
+        isOwnerViewer = false;
       }
 
       await loadTeamMembers();
@@ -1009,6 +1022,7 @@
             </div>
 
             <div class="actions" style="justify-content:flex-start;">
+              ${isOwnerViewer ? `<button class="ungani-btn small dark" type="button" onclick="openMemberDiscussionPanel('${attr(member.id)}')">💬 Discuss</button>` : ""}
               <button class="ungani-btn small red" type="button" onclick="disableMember('${attr(member.id)}', this)">Disable Staff</button>
             </div>
           </div>
@@ -1034,6 +1048,14 @@
           p_pay_frequency: document.getElementById("payFrequency").value
         };
 
+        // This form has no editingMemberId concept - it upserts by email
+        // server-side. Determine new-vs-existing from the already-loaded
+        // members list (cheap, accurate) so the Timeline logs the right
+        // event, same "only log what changed" judgment as Tasks/Money/
+        // Documents/People.
+        const emailLower = (payload.p_email || "").trim().toLowerCase();
+        const existingMember = members.find(m => (m.email || "").toLowerCase() === emailLower);
+
         const response = await supabaseClient.rpc("owner_upsert_ungani_team_member", payload);
 
         if (response.error) {
@@ -1051,6 +1073,14 @@
           entityId: response.data.id ? String(response.data.id) : payload.p_email,
           description: "Added/updated staff member " + payload.p_email + " with role " + payload.p_role_key
         });
+
+        const savedMemberId = response.data.team_member_id;
+
+        if (!existingMember) {
+          logMemberActivity(savedMemberId, "created", "Staff member added.");
+        } else if (payload.p_status !== (existingMember.status || "active")) {
+          logMemberActivity(savedMemberId, "status_changed", "Status changed from " + toTitleMember(existingMember.status || "active") + " to " + toTitleMember(payload.p_status) + ".");
+        }
 
         triggerTenantEmailSendNow();
 
@@ -1121,8 +1151,443 @@
           description: "Disabled staff member"
         });
 
+        logMemberActivity(memberId, "status_changed", "Marked as Disabled.");
+
         await loadTeamMembers();
       });
+    }
+
+    // ============================================================
+    // Ungani Connect Phase 3: Discussion + Timeline + Attachments for
+    // Employees. This page never loads client-shared.js (deliberately
+    // standalone, same as client.html), so it can't reuse
+    // UnganiClientShared.openSidePanel() or the shared
+    // ungani-connect-panel.js module built for the other 4 record
+    // types - this is a bespoke, self-contained implementation calling
+    // the same Phase 0 RPCs/tables directly. Owner-only: the "💬
+    // Discuss" button above is already hidden for non-owners, and
+    // can_access_ungani_record() denies non-owners at the RLS layer
+    // regardless (belt-and-suspenders, RLS is the real control).
+    // ============================================================
+
+    function toTitleMember(value) {
+      return String(value || "").replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function formatMemberDateTime(value) {
+      if (!value) return "";
+      try {
+        return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      } catch (error) {
+        return "";
+      }
+    }
+
+    function formatMemberDate(value) {
+      if (!value) return "";
+      try {
+        return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      } catch (error) {
+        return "";
+      }
+    }
+
+    async function logMemberActivity(memberId, eventType, description) {
+      if (!memberId) return;
+
+      try {
+        await supabaseClient.rpc("log_ungani_record_activity", {
+          p_record_table: "ungani_team_members",
+          p_record_id: memberId,
+          p_event_type: eventType,
+          p_description: description
+        });
+      } catch (error) {
+        console.warn("Could not log member activity:", error.message);
+      }
+    }
+
+    function injectMemberPanelStylesOnce() {
+      if (document.getElementById("unganiMemberPanelStyles")) return;
+
+      const style = document.createElement("style");
+      style.id = "unganiMemberPanelStyles";
+      style.textContent = `
+        .mp-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(6,28,61,0.45);
+          z-index: 99998;
+          display: flex;
+          justify-content: flex-end;
+        }
+
+        .mp-panel {
+          width: min(480px, 100vw);
+          height: 100%;
+          background: var(--card-solid, #FFFFFF);
+          color: var(--text, #061C3D);
+          box-shadow: -20px 0 60px rgba(6,28,61,0.28);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .mp-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px 18px;
+          background: var(--navy, #061C3D);
+          color: #FFFFFF;
+          flex: none;
+        }
+
+        .mp-close {
+          border: none;
+          background: rgba(255,255,255,0.14);
+          color: #FFFFFF;
+          border-radius: 999px;
+          width: 30px;
+          height: 30px;
+          cursor: pointer;
+        }
+
+        .mp-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 18px;
+        }
+
+        .mp-section {
+          border: 1px solid var(--border, rgba(6,28,61,0.12));
+          border-radius: 14px;
+          padding: 16px;
+          margin-bottom: 16px;
+          background: var(--card, #FFFFFF);
+        }
+
+        .mp-section h3 {
+          margin: 0 0 4px;
+        }
+
+        .mp-small {
+          color: var(--text-soft, #64748B);
+          font-size: 12.5px;
+          margin: 0 0 12px;
+        }
+
+        .mp-item {
+          display: grid;
+          grid-template-columns: 32px minmax(0, 1fr);
+          gap: 10px;
+          align-items: start;
+          padding: 10px;
+          border: 1px solid var(--border, rgba(6,28,61,0.1));
+          background: var(--soft, #F8FAFC);
+          border-radius: 12px;
+          margin-bottom: 8px;
+        }
+
+        .mp-item-icon {
+          width: 32px;
+          height: 32px;
+          border-radius: 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--card, #FFFFFF);
+          font-size: 14px;
+        }
+
+        .mp-item strong { display: block; font-size: 13px; }
+        .mp-item p { margin: 2px 0 0; font-size: 12px; color: var(--text-soft, #64748B); }
+        .mp-item time { display: block; margin-top: 4px; font-size: 10.5px; color: var(--text-soft, #64748B); }
+
+        .mp-compose {
+          display: flex;
+          gap: 8px;
+          margin-top: 10px;
+          align-items: flex-end;
+        }
+
+        .mp-compose textarea {
+          flex: 1;
+          border-radius: 10px;
+          border: 1px solid var(--border, rgba(6,28,61,0.16));
+          padding: 8px 10px;
+          font-family: inherit;
+          font-size: 13px;
+          resize: vertical;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    let activeMemberPanelId = null;
+
+    function openMemberDiscussionPanel(id) {
+      if (!isOwnerViewer) return;
+
+      const member = members.find(m => String(m.id) === String(id));
+      if (!member) {
+        alert("Staff member not found.");
+        return;
+      }
+
+      activeMemberPanelId = id;
+      injectMemberPanelStylesOnce();
+
+      const existing = document.getElementById("unganiMemberPanelBackdrop");
+      if (existing) existing.remove();
+
+      const backdrop = document.createElement("div");
+      backdrop.id = "unganiMemberPanelBackdrop";
+      backdrop.className = "mp-backdrop";
+      backdrop.onclick = function (event) {
+        if (event.target === backdrop) closeMemberDiscussionPanel();
+      };
+
+      backdrop.innerHTML = `
+        <div class="mp-panel">
+          <div class="mp-head">
+            <strong>${safe(member.full_name || "Staff Member")}</strong>
+            <button class="mp-close" type="button" onclick="closeMemberDiscussionPanel()">✕</button>
+          </div>
+          <div class="mp-body" id="mpBody">
+            <p class="mp-small">Loading discussion...</p>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(backdrop);
+      renderMemberPanelBody(member);
+    }
+
+    function closeMemberDiscussionPanel() {
+      const backdrop = document.getElementById("unganiMemberPanelBackdrop");
+      if (backdrop) backdrop.remove();
+      activeMemberPanelId = null;
+    }
+
+    function renderMemberPanelBody(member) {
+      const body = document.getElementById("mpBody");
+      if (!body) return;
+
+      body.innerHTML = `
+        <div class="mp-section">
+          <p class="mp-small">${safe(member.role_key || "staff")} · ${safe(member.status || "active")}</p>
+        </div>
+
+        <div class="mp-section">
+          <h3>Discussion</h3>
+          <p class="mp-small">Comments visible to the owner only (Employees has no staff-facing section yet).</p>
+          <div id="mpDiscussionList"><p class="mp-small">Loading comments...</p></div>
+          <form class="mp-compose" onsubmit="postMemberComment(event)">
+            <textarea id="mpCommentInput" rows="2" placeholder="Write a comment..." required></textarea>
+            <button class="ungani-btn gold" type="submit">Post</button>
+          </form>
+        </div>
+
+        <div class="mp-section">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <h3>Attachments</h3>
+              <p class="mp-small">Documents linked to this staff member.</p>
+            </div>
+            <a class="ungani-btn small gold" href="${attr("my-documents.html?action=add&linkedTeamMemberId=" + encodeURIComponent(member.id))}">Attach Document</a>
+          </div>
+          <div id="mpAttachmentsList"><p class="mp-small">Loading documents...</p></div>
+        </div>
+
+        <div class="mp-section">
+          <h3>Activity Timeline</h3>
+          <p class="mp-small">Everything logged against this staff member, newest first.</p>
+          <div id="mpTimelineList"><p class="mp-small">Loading activity...</p></div>
+        </div>
+      `;
+
+      loadMemberComments(member.id);
+      loadMemberAttachments(member.id);
+      loadMemberTimeline(member.id);
+    }
+
+    async function loadMemberComments(memberId) {
+      const container = document.getElementById("mpDiscussionList");
+      if (!container) return;
+
+      let response;
+
+      try {
+        response = await supabaseClient
+          .from("ungani_record_comments")
+          .select("id, author_name, body, created_at")
+          .eq("record_table", "ungani_team_members")
+          .eq("record_id", memberId)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: true });
+      } catch (error) {
+        container.innerHTML = `<p class="mp-small">Could not load comments.</p>`;
+        return;
+      }
+
+      if (response.error) {
+        container.innerHTML = `<p class="mp-small">Could not load comments.</p>`;
+        return;
+      }
+
+      renderMemberComments(response.data || []);
+    }
+
+    function renderMemberComments(rows) {
+      const container = document.getElementById("mpDiscussionList");
+      if (!container) return;
+
+      if (!rows.length) {
+        container.innerHTML = `<p class="mp-small">No comments yet - start the discussion below.</p>`;
+        return;
+      }
+
+      container.innerHTML = rows.map(row => `
+        <div class="mp-item">
+          <div class="mp-item-icon">💬</div>
+          <div>
+            <strong>${safe(row.author_name || "Someone")}</strong>
+            <p style="white-space:pre-wrap;">${safe(row.body)}</p>
+            <time>${safe(formatMemberDateTime(row.created_at))}</time>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function postMemberComment(event) {
+      event.preventDefault();
+      if (!activeMemberPanelId) return;
+
+      const input = document.getElementById("mpCommentInput");
+      const bodyText = input ? String(input.value || "").trim() : "";
+      if (!bodyText) return;
+
+      const submitBtn = event.submitter || (event.target.querySelector && event.target.querySelector('button[type="submit"]'));
+
+      await withButtonLoading(submitBtn, async () => {
+        let response;
+
+        try {
+          response = await supabaseClient.rpc("add_ungani_record_comment", {
+            p_record_table: "ungani_team_members",
+            p_record_id: activeMemberPanelId,
+            p_body: bodyText
+          });
+        } catch (error) {
+          alert("Could not post comment: " + (error.message || "Network error. Please check your connection."));
+          return;
+        }
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          alert((response.data && response.data.message) || (response.error && response.error.message) || "Could not post comment.");
+          return;
+        }
+
+        if (input) input.value = "";
+        await loadMemberComments(activeMemberPanelId);
+        await loadMemberTimeline(activeMemberPanelId);
+      });
+    }
+
+    async function loadMemberAttachments(memberId) {
+      const container = document.getElementById("mpAttachmentsList");
+      if (!container) return;
+
+      let response;
+
+      try {
+        response = await supabaseClient
+          .from("documents")
+          .select("id, document_title, document_type, document_date, file_url")
+          .eq("linked_team_member_id", memberId)
+          .eq("tenant_id", currentTenantId)
+          .order("document_date", { ascending: false });
+      } catch (error) {
+        container.innerHTML = `<p class="mp-small">Could not load documents.</p>`;
+        return;
+      }
+
+      if (response.error) {
+        container.innerHTML = `<p class="mp-small">Could not load documents.</p>`;
+        return;
+      }
+
+      renderMemberAttachments(response.data || []);
+    }
+
+    function renderMemberAttachments(rows) {
+      const container = document.getElementById("mpAttachmentsList");
+      if (!container) return;
+
+      if (!rows.length) {
+        container.innerHTML = `<p class="mp-small">No documents linked yet - use "Attach Document" above to add one.</p>`;
+        return;
+      }
+
+      container.innerHTML = rows.map(row => `
+        <a class="mp-item" href="${attr(row.file_url || ("my-documents.html?highlight=" + encodeURIComponent(row.id)))}"${row.file_url ? ' target="_blank" rel="noopener noreferrer"' : ""} style="text-decoration:none;color:inherit;">
+          <div class="mp-item-icon">📄</div>
+          <div>
+            <strong>${safe(getValue(row, ["document_title"], "Document"))}</strong>
+            <p>${safe(toTitleMember(getValue(row, ["document_type"], "Document")))} · ${safe(formatMemberDate(row.document_date))}</p>
+          </div>
+        </a>
+      `).join("");
+    }
+
+    async function loadMemberTimeline(memberId) {
+      const container = document.getElementById("mpTimelineList");
+      if (!container) return;
+
+      let response;
+
+      try {
+        response = await supabaseClient
+          .from("ungani_record_activity")
+          .select("id, event_type, description, actor_name, created_at")
+          .eq("record_table", "ungani_team_members")
+          .eq("record_id", memberId)
+          .order("created_at", { ascending: false })
+          .limit(30);
+      } catch (error) {
+        container.innerHTML = `<p class="mp-small">Could not load activity history.</p>`;
+        return;
+      }
+
+      if (response.error) {
+        container.innerHTML = `<p class="mp-small">Could not load activity history.</p>`;
+        return;
+      }
+
+      renderMemberTimeline(response.data || []);
+    }
+
+    const MEMBER_TIMELINE_ICONS = { created: "✨", status_changed: "🔄", commented: "💬" };
+
+    function renderMemberTimeline(rows) {
+      const container = document.getElementById("mpTimelineList");
+      if (!container) return;
+
+      if (!rows.length) {
+        container.innerHTML = `<p class="mp-small">No activity logged yet.</p>`;
+        return;
+      }
+
+      container.innerHTML = rows.map(row => `
+        <div class="mp-item">
+          <div class="mp-item-icon">${MEMBER_TIMELINE_ICONS[row.event_type] || "•"}</div>
+          <div>
+            <p>${safe(row.description || "")}${row.actor_name ? " · " + safe(row.actor_name) : ""}</p>
+            <time>${safe(formatMemberDateTime(row.created_at))}</time>
+          </div>
+        </div>
+      `).join("");
     }
 
     function getChecked(memberId, sectionKey, action) {

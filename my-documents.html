@@ -10,6 +10,7 @@
   <script src="pwa-register.js"></script>
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
   <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script>
     (function () {
@@ -51,11 +52,15 @@
     let businessPreset = null;
     let documentRows = [];
     let editingDocumentId = null;
+    let editingDocumentOriginalStatus = "";
     let currentAuthUserId = null;
     let sectionOptions = [];
     let currentSectionFilter = "";
     let linkableItems = [];
     let linkableTasks = [];
+    let linkablePeople = [];
+    let linkableTransactions = [];
+    let linkableTeamMembers = [];
     let activeDocumentCategory = "all";
     let urlActionApplied = false;
 
@@ -101,7 +106,73 @@
         subEl.innerText = "Documents, file links, agreements, receipts, and records for " + businessPreset.name + ".";
       }
 
-      await Promise.all([loadDocumentRows(), loadLinkableItems(), loadLinkableTasks()]);
+      await Promise.all([loadDocumentRows(), loadLinkableItems(), loadLinkableTasks(), loadLinkablePeople(), loadLinkableTransactions(), loadLinkableTeamMembers()]);
+    }
+
+    async function loadLinkableTeamMembers() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_team_members_for_assignment");
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          linkableTeamMembers = [];
+          return;
+        }
+
+        linkableTeamMembers = (response.data.members || []).map(function (m) {
+          return { id: m.id, name: m.full_name };
+        }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+      } catch (error) {
+        linkableTeamMembers = [];
+      }
+    }
+
+    // Powers "Link to Person" and "Link to Payment" - same pattern as
+    // loadLinkableItems()/loadLinkableTasks() above, via the new
+    // documents.linked_person_id/linked_transaction_id columns
+    // (Ungani Connect Phase 3).
+    async function loadLinkablePeople() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name")
+          .eq("tenant_id", currentContext.tenantId)
+          .order("created_at", { ascending: false })
+          .limit(500);
+
+        if (response.error) {
+          linkablePeople = [];
+          return;
+        }
+
+        linkablePeople = (response.data || []).map(function (row) {
+          return { id: row.id, name: UnganiClientShared.getValue(row, ["full_name"], "Unnamed Person") };
+        }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+      } catch (error) {
+        linkablePeople = [];
+      }
+    }
+
+    async function loadLinkableTransactions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("transactions")
+          .select("id, category, amount, transaction_date")
+          .eq("tenant_id", currentContext.tenantId)
+          .order("transaction_date", { ascending: false })
+          .limit(500);
+
+        if (response.error) {
+          linkableTransactions = [];
+          return;
+        }
+
+        linkableTransactions = (response.data || []).map(function (row) {
+          const label = UnganiClientShared.getValue(row, ["category"], "Payment") + " - " + UnganiClientShared.formatDate(row.transaction_date) + " (" + UnganiClientShared.formatKES(Number(row.amount || 0)) + ")";
+          return { id: row.id, name: label };
+        });
+      } catch (error) {
+        linkableTransactions = [];
+      }
     }
 
     // Powers the "Link to Task" dropdown (Ungani Connect Phase 2's
@@ -845,7 +916,10 @@
         urlActionApplied = true;
         const linkedItemId = params.get("linkedItemId") || null;
         const linkedTaskId = params.get("linkedTaskId") || null;
-        setTimeout(function () { openDocumentModal(null, { linkedItemId: linkedItemId, linkedTaskId: linkedTaskId }); }, 250);
+        const linkedPersonId = params.get("linkedPersonId") || null;
+        const linkedTransactionId = params.get("linkedTransactionId") || null;
+        const linkedTeamMemberId = params.get("linkedTeamMemberId") || null;
+        setTimeout(function () { openDocumentModal(null, { linkedItemId: linkedItemId, linkedTaskId: linkedTaskId, linkedPersonId: linkedPersonId, linkedTransactionId: linkedTransactionId, linkedTeamMemberId: linkedTeamMemberId }); }, 250);
       }
     }
 
@@ -969,6 +1043,7 @@
                 <th>Folder / File</th>
                 <th>Date</th>
                 <th>Status</th>
+                <th></th>
               </tr>
             </thead>
 
@@ -991,6 +1066,9 @@
                     <td>${UnganiClientShared.safe(fileName || "—")}</td>
                     <td>${UnganiClientShared.safe(date ? UnganiClientShared.formatDate(date) : "No date")}</td>
                     <td>${statusBadge(status)}</td>
+                    <td>
+                      <button class="ungani-btn small dark" type="button" onclick="event.stopPropagation(); openDocumentDiscussionPanel('${UnganiClientShared.attr(row.id)}')" title="Discussion and activity for this document">💬 Discuss</button>
+                    </td>
                   </tr>
                 `;
               }).join("")}
@@ -1181,6 +1259,7 @@
       }
 
       editingDocumentId = row ? row.id : null;
+      editingDocumentOriginalStatus = row ? String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase() : "";
 
       const fileUrl = row ? UnganiClientShared.getValue(row, ["file_url", "url", "document_url"], "") : "";
 
@@ -1272,6 +1351,36 @@
               </select>
             </div>
 
+            <div>
+              <label for="documentLinkedPerson">Link to Person (optional)</label>
+              <select id="documentLinkedPerson">
+                <option value="">— Not linked to a person —</option>
+                ${linkablePeople.map(function (person) {
+                  return `<option value="${UnganiClientShared.attr(person.id)}">${UnganiClientShared.safe(person.name)}</option>`;
+                }).join("")}
+              </select>
+            </div>
+
+            <div>
+              <label for="documentLinkedTransaction">Link to Payment (optional)</label>
+              <select id="documentLinkedTransaction">
+                <option value="">— Not linked to a payment —</option>
+                ${linkableTransactions.map(function (transaction) {
+                  return `<option value="${UnganiClientShared.attr(transaction.id)}">${UnganiClientShared.safe(transaction.name)}</option>`;
+                }).join("")}
+              </select>
+            </div>
+
+            <div>
+              <label for="documentLinkedTeamMember">Link to Staff Member (optional)</label>
+              <select id="documentLinkedTeamMember">
+                <option value="">— Not linked to a staff member —</option>
+                ${linkableTeamMembers.map(function (member) {
+                  return `<option value="${UnganiClientShared.attr(member.id)}">${UnganiClientShared.safe(member.name)}</option>`;
+                }).join("")}
+              </select>
+            </div>
+
             ${sectionOptions.length > 1 ? `
               <div>
                 <label for="documentSection">Section</label>
@@ -1291,6 +1400,7 @@
 
           <div class="ungani-button-row" style="margin-top:16px;">
             <button class="ungani-btn gold" type="submit">${row ? "Update Document" : "Save Document"}</button>
+            ${row ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal(); openDocumentDiscussionPanel('${UnganiClientShared.attr(row.id)}')">💬 Discussion</button>` : ""}
             ${row ? `<button class="ungani-btn red" type="button" onclick="deleteDocument('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
             <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
           </div>
@@ -1317,6 +1427,24 @@
             document.getElementById("documentLinkedTask").value = row
               ? (UnganiClientShared.getValue(row, ["linked_task_id"], "") || "")
               : ((presetValues && presetValues.linkedTaskId) || "");
+          }
+
+          if (document.getElementById("documentLinkedPerson")) {
+            document.getElementById("documentLinkedPerson").value = row
+              ? (UnganiClientShared.getValue(row, ["linked_person_id"], "") || "")
+              : ((presetValues && presetValues.linkedPersonId) || "");
+          }
+
+          if (document.getElementById("documentLinkedTransaction")) {
+            document.getElementById("documentLinkedTransaction").value = row
+              ? (UnganiClientShared.getValue(row, ["linked_transaction_id"], "") || "")
+              : ((presetValues && presetValues.linkedTransactionId) || "");
+          }
+
+          if (document.getElementById("documentLinkedTeamMember")) {
+            document.getElementById("documentLinkedTeamMember").value = row
+              ? (UnganiClientShared.getValue(row, ["linked_team_member_id"], "") || "")
+              : ((presetValues && presetValues.linkedTeamMemberId) || "");
           }
 
           if (sectionOptions.length > 1 && document.getElementById("documentSection")) {
@@ -1461,6 +1589,9 @@
         related_item: UnganiClientShared.value("documentRelatedItem") || null,
         linked_item_id: UnganiClientShared.value("documentLinkedItem") || null,
         linked_task_id: UnganiClientShared.value("documentLinkedTask") || null,
+        linked_person_id: UnganiClientShared.value("documentLinkedPerson") || null,
+        linked_transaction_id: UnganiClientShared.value("documentLinkedTransaction") || null,
+        linked_team_member_id: UnganiClientShared.value("documentLinkedTeamMember") || null,
         notes: UnganiClientShared.value("documentNotes") || null
       };
 
@@ -1484,7 +1615,9 @@
 
           response = await currentContext.supabaseClient
             .from("documents")
-            .insert([payload]);
+            .insert([payload])
+            .select("id")
+            .single();
         }
       } catch (error) {
         UnganiClientShared.showToast("Could not save document: " + (error.message || "Network error. Please check your connection."));
@@ -1496,10 +1629,49 @@
         return;
       }
 
+      const wasNewInsert = !editingDocumentId;
+      const savedDocumentId = editingDocumentId || (response.data && response.data.id);
+
+      // Ungani Connect Phase 3: real Timeline entries on creation and
+      // real status changes only, same judgment as Tasks/Money.
+      if (wasNewInsert) {
+        UnganiConnectPanel.logActivity(currentContext, "documents", savedDocumentId, "created", "Document added.");
+      } else if (payload.status !== editingDocumentOriginalStatus) {
+        UnganiConnectPanel.logActivity(currentContext, "documents", savedDocumentId, "status_changed", "Status changed from " + toTitleDocument(editingDocumentOriginalStatus || "active") + " to " + toTitleDocument(payload.status) + ".");
+      }
+
       UnganiClientShared.showToast(editingDocumentId ? "Document updated ✓" : "Document added ✓");
       editingDocumentId = null;
       UnganiClientShared.closeModal();
       await loadDocumentRows();
+    }
+
+    // Ungani Connect Phase 3: Discussion + Timeline only - a document
+    // attaching other documents to itself doesn't match any existing
+    // pattern in this app, so no Attachments tab here (deliberate scope
+    // decision, not an oversight).
+    function openDocumentDiscussionPanel(id) {
+      const row = documentRows.find(function (item) { return String(item.id) === String(id); });
+
+      if (!row) {
+        UnganiClientShared.showToast("Document not found.");
+        return;
+      }
+
+      const type = getDocumentType(row);
+      const status = UnganiClientShared.getValue(row, ["status"], "active");
+
+      UnganiConnectPanel.open(currentContext, {
+        recordTable: "documents",
+        recordId: id,
+        title: getDocumentTitle(row),
+        subtitleHtml: `<p class="ungani-small">${UnganiClientShared.safe(type)} · ${statusBadge(status)}</p>`,
+        attachments: null
+      });
+    }
+
+    function toTitleDocument(value) {
+      return String(value || "").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
     }
 
     async function deleteDocument(id) {

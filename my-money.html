@@ -10,6 +10,7 @@
   <script src="pwa-register.js"></script>
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
   <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script>
     (function () {
@@ -53,6 +54,7 @@
     let categorySuggestions = [];
     let recurringRows = [];
     let editingMoneyId = null;
+    let editingMoneyOriginalStatus = "";
     let isRealEstate = false;
     let personOptions = [];
     let teamMemberOptions = [];
@@ -1560,6 +1562,7 @@
                 <th>Method</th>
                 <th>Status</th>
                 <th>Notes</th>
+                <th></th>
               </tr>
             </thead>
 
@@ -1595,6 +1598,9 @@
                     <td>${UnganiClientShared.safe(method || "—")}</td>
                     <td>${statusBadge(status)}</td>
                     <td>${UnganiClientShared.safe(notes || (relatedPersonLabel ? "Tenant: " + relatedPersonLabel : (relatedTeamMemberLabel ? "Staff: " + relatedTeamMemberLabel : "—")))}</td>
+                    <td>
+                      <button class="ungani-btn small dark" type="button" onclick="event.stopPropagation(); openMoneyDiscussionPanel('${UnganiClientShared.attr(row.id)}')" title="Discussion, activity, and attachments for this record">💬 Discuss</button>
+                    </td>
                   </tr>
                 `;
               }).join("")}
@@ -1830,6 +1836,7 @@
       }
 
       editingMoneyId = row ? row.id : null;
+      editingMoneyOriginalStatus = row ? String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase() : "";
 
       const bodyHtml = `
         <form onsubmit="saveMoneyRecord(event)">
@@ -1998,6 +2005,7 @@
 
           <div class="ungani-button-row" style="margin-top:16px;">
             <button class="ungani-btn gold" type="submit">${row ? "Update Record" : "Save Record"}</button>
+            ${row ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal(); openMoneyDiscussionPanel('${UnganiClientShared.attr(row.id)}')">💬 Discussion</button>` : ""}
             ${row ? `<button class="ungani-btn red" type="button" onclick="deleteMoneyRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
             <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
           </div>
@@ -2401,7 +2409,9 @@ const payload = {
 
           response = await currentContext.supabaseClient
             .from("transactions")
-            .insert([payload]);
+            .insert([payload])
+            .select("id")
+            .single();
         }
       } catch (error) {
         UnganiClientShared.showToast("Could not save record: " + (error.message || "Network error. Please check your connection."));
@@ -2414,6 +2424,17 @@ const payload = {
       }
 
       const wasNewInsert = !editingMoneyId;
+      const savedMoneyId = editingMoneyId || (response.data && response.data.id);
+
+      // Ungani Connect Phase 3: real Timeline entries on creation and
+      // real status changes only - same "only log what changed"
+      // judgment already used for Tasks (Phase 2) and the existing
+      // payroll-email trigger just above.
+      if (wasNewInsert) {
+        UnganiConnectPanel.logActivity(currentContext, "transactions", savedMoneyId, "created", "Money record created.");
+      } else if (payload.status !== editingMoneyOriginalStatus) {
+        UnganiConnectPanel.logActivity(currentContext, "transactions", savedMoneyId, "status_changed", "Status changed from " + toTitleMoney(editingMoneyOriginalStatus || "completed") + " to " + toTitleMoney(payload.status) + ".");
+      }
 
       if (wasNewInsert && broadType === "expense" && payload.related_team_member_id) {
         try {
@@ -2438,6 +2459,32 @@ const payload = {
       editingMoneyId = null;
       UnganiClientShared.closeModal();
       await loadMoneyRows();
+    }
+
+    // Ungani Connect Phase 3: reuses the shared ungani-connect-panel.js
+    // module built for Phase 2's Tasks panel - Discussion + Timeline +
+    // Attachments (documents.linked_transaction_id, the same pattern as
+    // linked_task_id/linked_item_id before it).
+    function openMoneyDiscussionPanel(id) {
+      const row = moneyRows.find(function (item) { return String(item.id) === String(id); });
+
+      if (!row) {
+        UnganiClientShared.showToast("Record not found.");
+        return;
+      }
+
+      const type = getRowType(row);
+      const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+      const category = UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "Uncategorized");
+      const status = UnganiClientShared.getValue(row, ["status"], "completed");
+
+      UnganiConnectPanel.open(currentContext, {
+        recordTable: "transactions",
+        recordId: id,
+        title: toTitleMoney(category) + " - " + formatNative(amount, row.currency),
+        subtitleHtml: `<p class="ungani-small">${typeBadge(type)} ${statusBadge(status)}</p>`,
+        attachments: { linkColumn: "linked_transaction_id", deepLinkParam: "linkedTransactionId" }
+      });
     }
 
     async function confirmDuplicateIfNeeded(amount, category, transactionDate) {
@@ -2570,6 +2617,10 @@ const payload = {
 
     function getRowType(row) {
       return String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "income")).toLowerCase();
+    }
+
+    function toTitleMoney(value) {
+      return String(value || "").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
     }
 
     function isIncomeRow(row) {
