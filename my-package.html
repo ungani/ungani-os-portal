@@ -1736,6 +1736,16 @@
       });
     }
 
+    // Counts real seats against ungani_team_members - the actual staff
+    // table - plus 1 for the business owner, who is never a row in that
+    // table (get_my_ungani_staff_access() resolves the owner via
+    // registrations entirely separately from the staff lookup). This
+    // used to guess at 4 table names that don't exist in this schema
+    // (ungani_users/tenant_users/client_users/profiles), so it was
+    // always either "unavailable" or matching the wrong table by
+    // coincidence - same "active" definition as the real enforcement
+    // logic in owner_upsert_ungani_team_member, so this number always
+    // agrees with what actually gets blocked.
     async function loadCurrentUsers(subscription) {
       const currentUsersElement = document.getElementById("currentUsers");
       const tenantId =
@@ -1747,27 +1757,21 @@
         return;
       }
 
-      const possibleTables = [
-        { table: "ungani_users", tenantColumn: "tenant_id" },
-        { table: "tenant_users", tenantColumn: "tenant_id" },
-        { table: "client_users", tenantColumn: "tenant_id" },
-        { table: "profiles", tenantColumn: "tenant_id" }
-      ];
+      try {
+        const { count, error } = await supabaseClient
+          .from("ungani_team_members")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId)
+          .is("deactivated_at", null)
+          .neq("status", "disabled")
+          .or("is_active.is.null,is_active.eq.true");
 
-      for (const option of possibleTables) {
-        try {
-          const { count, error } = await supabaseClient
-            .from(option.table)
-            .select("*", { count: "exact", head: true })
-            .eq(option.tenantColumn, tenantId);
-
-          if (!error && typeof count === "number") {
-            currentUsersElement.textContent = "Current users: " + count;
-            return;
-          }
-        } catch (error) {
-          // Try next possible table without exposing technical details to the client.
+        if (!error && typeof count === "number") {
+          currentUsersElement.textContent = "Current users: " + (count + 1) + " (including you)";
+          return;
         }
+      } catch (error) {
+        // Falls through to "unavailable" below.
       }
 
       currentUsersElement.textContent = "Current users: unavailable";
