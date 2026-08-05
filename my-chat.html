@@ -113,6 +113,19 @@
     }
 
     async function loadMessages(silent) {
+      // renderChatPage() below rebuilds the ENTIRE page including the
+      // message textarea - on the 20s auto-poll (silent=true) that means
+      // a message in progress gets silently wiped out from under the
+      // user's cursor, mid-keystroke on mobile. Skip this poll cycle
+      // entirely while they're actively composing (focused or has typed
+      // something) rather than destroying their draft; the next poll
+      // after they stop picks the conversation back up.
+      if (silent) {
+        const draftEl = document.getElementById("messageBody");
+        const userIsComposing = draftEl && (document.activeElement === draftEl || draftEl.value.trim().length > 0);
+        if (userIsComposing) return;
+      }
+
       if (!silent) {
         currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading chat messages...");
       }
@@ -166,6 +179,7 @@
       UnganiClientShared.setContent(`
         <section class="ungani-card ungani-hero">
           <h2>Chat with UNGANI</h2>
+          <p class="ungani-small" style="margin:0 0 8px;font-weight:800;color:#D4A63A;">💬 Chatting with UNGANI Support</p>
           <p>
             Use this chat for support questions, setup requests, business workflow questions, and updates that need a response from UNGANI.
           </p>
@@ -345,7 +359,10 @@
       let body = "Nia chat routing - client selected: " + label + ".";
       if (note) body += " " + note;
 
+      const messageId = crypto.randomUUID();
+
       const payload = {
+        id: messageId,
         tenant_id: currentContext.tenantId,
         sender_user_id: currentContext.authUser.id,
         sender_role: "client",
@@ -361,6 +378,7 @@
 
       try {
         await currentContext.supabaseClient.from("admin_client_messages").insert(payload);
+        UnganiClientShared.triggerEventPush("client_admin_message", messageId);
         await loadMessages(true);
       } catch (error) {
         console.warn("Could not route Nia conversation to admin:", error.message);
@@ -480,7 +498,10 @@
         return;
       }
 
+      const messageId = crypto.randomUUID();
+
       const payload = {
+        id: messageId,
         tenant_id: currentContext.tenantId,
         sender_user_id: currentContext.authUser.id,
         sender_role: "client",
@@ -509,6 +530,8 @@
         alert(response.error.message);
         return;
       }
+
+      UnganiClientShared.triggerEventPush("client_admin_message", messageId);
 
       clearForm();
       UnganiClientShared.showToast("Message sent ✓");

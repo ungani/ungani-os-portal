@@ -444,6 +444,72 @@ async function handleAdminClientMessage(req, supabaseAdmin, messageId, res) {
   return json(res, 200, { ok: true, sent: results.filter((r) => r.ok).length, results });
 }
 
+// Authenticated (any tenant member), tenant-verified - the reverse
+// direction of handleAdminClientMessage. Notifies every admin-type
+// subscription, same recipient set as new_registration. Real gap found
+// via live testing: my-chat.html's own sendMessage()/escalateToAdmin()
+// insert into the same admin_client_messages table with sender_role
+// "client" but had never had any push wired at all - this covers that.
+async function handleClientAdminMessage(req, supabaseAdmin, messageId, res) {
+  const callerTenantId = await resolveCallerTenantId(getBearerToken(req));
+
+  if (!callerTenantId) {
+    return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
+  }
+
+  const { data: message } = await supabaseAdmin
+    .from("admin_client_messages")
+    .select("id, tenant_id, sender_role, message_body")
+    .eq("id", messageId)
+    .maybeSingle();
+
+  if (!message) {
+    return json(res, 200, { ok: true, sent: 0, message: "Message not found." });
+  }
+
+  if (message.tenant_id !== callerTenantId) {
+    return json(res, 403, { ok: false, message: "Message does not belong to your account." });
+  }
+
+  if (String(message.sender_role || "").toLowerCase() !== "client") {
+    return json(res, 200, { ok: true, sent: 0, message: "Not a client-originated message." });
+  }
+
+  if (await alreadySent(supabaseAdmin, "client_admin_message", messageId, "admin")) {
+    return json(res, 200, { ok: true, sent: 0, message: "Already notified." });
+  }
+
+  const { data: subscriptions } = await supabaseAdmin
+    .from(SUBSCRIPTIONS_TABLE)
+    .select("id, endpoint, p256dh, auth_key")
+    .eq("user_type", "admin");
+
+  if (!subscriptions || subscriptions.length === 0) {
+    await markSent(supabaseAdmin, "client_admin_message", messageId, "admin");
+    return json(res, 200, { ok: true, sent: 0, message: "No admin push subscriptions." });
+  }
+
+  const { data: tenant } = await supabaseAdmin
+    .from("tenants")
+    .select("business_name")
+    .eq("id", message.tenant_id)
+    .maybeSingle();
+
+  const bodyText = String(message.message_body || "").slice(0, 140);
+
+  const payload = JSON.stringify({
+    title: "New message from " + (tenant?.business_name || "a client"),
+    body: bodyText,
+    url: "/admin.html",
+    tag: "client-chat-" + message.id
+  });
+
+  const results = await sendToSubscriptions(supabaseAdmin, subscriptions, payload);
+  await markSent(supabaseAdmin, "client_admin_message", messageId, "admin");
+
+  return json(res, 200, { ok: true, sent: results.filter((r) => r.ok).length, results });
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
@@ -488,6 +554,10 @@ export default async function handler(req, res) {
 
     if (eventType === "admin_client_message") {
       return await handleAdminClientMessage(req, supabaseAdmin, relatedId, res);
+    }
+
+    if (eventType === "client_admin_message") {
+      return await handleClientAdminMessage(req, supabaseAdmin, relatedId, res);
     }
 
     return json(res, 400, { ok: false, message: "Unknown eventType." });

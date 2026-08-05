@@ -100,6 +100,18 @@
 
       body[data-theme="dark"] .utc-tabs { border-color: rgba(255,255,255,0.10); }
 
+      .utc-active-label {
+        padding: 6px 12px;
+        font-size: 11.5px;
+        font-weight: 800;
+        color: rgba(6,28,61,0.55);
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        flex: none;
+      }
+
+      body[data-theme="dark"] .utc-active-label { color: rgba(255,255,255,0.55); }
+
       .utc-tab {
         position: relative;
         flex: none;
@@ -539,7 +551,23 @@
       updateBadges();
 
       if (state.isOpen) {
-        renderPanel();
+        // renderPanel() rebuilds the whole panel, including #utcInput -
+        // on the 12s auto-poll that wipes a message in progress mid-
+        // keystroke (worse on mobile, where it also drops the keyboard).
+        // While the user is actively typing, only refresh the message
+        // bubbles via renderMessages() (already a separate, input-
+        // untouched update) - the tabs/unread-dots catch up next time
+        // renderPanel() runs (switching conversations, sending, opening
+        // the panel), which is a fine tradeoff against losing a draft.
+        const inputEl = document.getElementById("utcInput");
+        const userIsTyping = inputEl && (document.activeElement === inputEl || inputEl.value.trim().length > 0);
+
+        if (userIsTyping) {
+          renderMessages();
+        } else {
+          renderPanel();
+        }
+
         if (!silent) scrollToBottom();
       }
     } catch (error) {
@@ -666,6 +694,10 @@
           ${targets.map(function (t) { return `<option value="${safe(t.key)}">${safe(t.label)}</option>`; }).join("")}
         </select>
         <button type="button" onclick="UnganiTeamChat.confirmStartDm()">Start</button>
+      </div>
+
+      <div class="utc-active-label">
+        ${state.activeKey === "team" ? "Chatting with your whole Team" : "Chatting with " + safe(peerLabel(state.activeKey, null)) + " (private)"}
       </div>
 
       <div id="utcMessages" class="utc-messages"></div>
