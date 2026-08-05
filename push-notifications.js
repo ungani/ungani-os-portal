@@ -11,6 +11,45 @@
     return "serviceWorker" in navigator && "PushManager" in window && typeof Notification !== "undefined";
   }
 
+  // The Badging API is a separate, much less consistently supported
+  // browser capability from push itself - notably absent on Android
+  // Chrome entirely (no navigator.setAppBadge at all, on any Chrome
+  // version, as of this writing), present on iOS 16.4+ but ONLY for a
+  // PWA actually installed to the Home Screen (an open Safari tab has no
+  // access to it, same install requirement as push), and present on some
+  // desktop browsers (Chrome/Edge, taskbar/dock icon). Always feature-
+  // detected - silently does nothing where unsupported, which is the
+  // correct behavior (not a bug) rather than something to warn about.
+  function isBadgingSupported() {
+    return "setAppBadge" in navigator && "clearAppBadge" in navigator;
+  }
+
+  async function setAppBadgeCount(total) {
+    if (!isBadgingSupported()) return;
+
+    try {
+      const count = Math.max(0, Number(total) || 0);
+
+      if (count > 0) {
+        await navigator.setAppBadge(count);
+      } else {
+        await navigator.clearAppBadge();
+      }
+    } catch (error) {
+      console.warn("UNGANI app badge update skipped:", error.message);
+    }
+  }
+
+  async function clearAppBadgeNow() {
+    if (!isBadgingSupported()) return;
+
+    try {
+      await navigator.clearAppBadge();
+    } catch (error) {
+      console.warn("UNGANI app badge clear skipped:", error.message);
+    }
+  }
+
   function urlBase64ToUint8Array(base64String) {
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -272,7 +311,10 @@
     unsubscribe,
     sendTestPush,
     getStatus,
-    maybeShowBanner
+    maybeShowBanner,
+    isBadgingSupported,
+    setAppBadgeCount,
+    clearAppBadgeNow
   };
 
   // Auto-offer the banner once there's a real session - only on pages

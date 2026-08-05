@@ -777,7 +777,14 @@
     const senderName = getField(ctx.userProfile, ["full_name", "name"], "") ||
       getField(ctx.authUser, ["email"], "Team Member");
 
+    // Generated up front (not read back via .select() after insert) - the
+    // same "avoid RETURNING against a table with no broad SELECT policy"
+    // pattern already used for registrations - so there's an id to pass
+    // to the push trigger below without an extra round trip.
+    const messageId = crypto.randomUUID();
+
     const payload = {
+      id: messageId,
       tenant_id: ctx.tenantId,
       sender_user_id: ctx.authUser.id,
       sender_name: senderName,
@@ -809,6 +816,10 @@
           alert("Could not send message: " + response.error.message);
         }
         return;
+      }
+
+      if (typeof window.UnganiClientShared !== "undefined" && typeof window.UnganiClientShared.triggerEventPush === "function") {
+        window.UnganiClientShared.triggerEventPush("team_chat_message", messageId);
       }
 
       await loadMessages(true);

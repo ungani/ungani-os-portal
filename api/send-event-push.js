@@ -305,6 +305,145 @@ async function handleSupportResponse(req, supabaseAdmin, issueId, res) {
   return json(res, 200, { ok: true, sent: results.filter((r) => r.ok).length, results });
 }
 
+// Authenticated (any tenant member), tenant-verified. team_chat_messages
+// is DM-style (recipient_is_owner OR recipient_team_member_id, set by the
+// sender's active conversation) - same shape as tasks' assignee columns,
+// so this reuses the exact same two-lookup resolution as
+// handleTaskAssignment above, independently re-deriving the real
+// recipient rather than trusting one from the caller. relatedId is a
+// client-generated uuid (team-chat-shared.js sets it on insert, same
+// "generate id up front, no .select() RETURNING" pattern already used
+// for registrations) - dedup is a clean (event_type, related_id) pair
+// since every send genuinely has its own id, no content-hash needed.
+async function handleTeamChatMessage(req, supabaseAdmin, messageId, res) {
+  const callerTenantId = await resolveCallerTenantId(getBearerToken(req));
+
+  if (!callerTenantId) {
+    return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
+  }
+
+  const { data: message } = await supabaseAdmin
+    .from("team_chat_messages")
+    .select("id, tenant_id, sender_user_id, sender_name, message_body, recipient_is_owner, recipient_team_member_id")
+    .eq("id", messageId)
+    .maybeSingle();
+
+  if (!message) {
+    return json(res, 200, { ok: true, sent: 0, message: "Message not found." });
+  }
+
+  if (message.tenant_id !== callerTenantId) {
+    return json(res, 403, { ok: false, message: "Message does not belong to your account." });
+  }
+
+  let recipientUserId = null;
+
+  if (message.recipient_is_owner) {
+    const { data: reg } = await supabaseAdmin
+      .from("registrations")
+      .select("auth_user_id")
+      .eq("tenant_id", message.tenant_id)
+      .in("status", ["approved", "active", "trial"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    recipientUserId = reg?.auth_user_id || null;
+  } else if (message.recipient_team_member_id) {
+    const { data: tm } = await supabaseAdmin
+      .from("ungani_team_members")
+      .select("auth_user_id")
+      .eq("id", message.recipient_team_member_id)
+      .eq("tenant_id", message.tenant_id)
+      .maybeSingle();
+
+    recipientUserId = tm?.auth_user_id || null;
+  }
+
+  if (!recipientUserId || recipientUserId === message.sender_user_id) {
+    return json(res, 200, { ok: true, sent: 0, message: "No resolvable recipient for this message." });
+  }
+
+  if (await alreadySent(supabaseAdmin, "team_chat_message", messageId, "broadcast")) {
+    return json(res, 200, { ok: true, sent: 0, message: "Already notified." });
+  }
+
+  const { data: subscriptions } = await supabaseAdmin
+    .from(SUBSCRIPTIONS_TABLE)
+    .select("id, endpoint, p256dh, auth_key")
+    .eq("auth_user_id", recipientUserId);
+
+  if (!subscriptions || subscriptions.length === 0) {
+    await markSent(supabaseAdmin, "team_chat_message", messageId, "broadcast");
+    return json(res, 200, { ok: true, sent: 0, message: "Recipient has no push subscriptions." });
+  }
+
+  const bodyText = String(message.message_body || "").slice(0, 140);
+
+  const payload = JSON.stringify({
+    title: "New message from " + (message.sender_name || "a team member"),
+    body: bodyText,
+    url: "/client.html",
+    tag: "team-chat-" + message.id
+  });
+
+  const results = await sendToSubscriptions(supabaseAdmin, subscriptions, payload);
+  await markSent(supabaseAdmin, "team_chat_message", messageId, "broadcast");
+
+  return json(res, 200, { ok: true, sent: results.filter((r) => r.ok).length, results });
+}
+
+// Admin-gated, same shape as handleSupportResponse - broadcasts to every
+// client-type subscription on the message's tenant. relatedId is a
+// client-generated uuid (admin.html/admin-home.html's sendChatThreadReply()
+// sets it on insert), so dedup is a clean (event_type, related_id) pair.
+async function handleAdminClientMessage(req, supabaseAdmin, messageId, res) {
+  const isAdmin = await resolveCallerIsAdmin(getBearerToken(req));
+
+  if (!isAdmin) {
+    return json(res, 401, { ok: false, message: "Only UNGANI admin can trigger this." });
+  }
+
+  const { data: message } = await supabaseAdmin
+    .from("admin_client_messages")
+    .select("id, tenant_id, sender_name, message_body")
+    .eq("id", messageId)
+    .maybeSingle();
+
+  if (!message) {
+    return json(res, 200, { ok: true, sent: 0, message: "Message not found." });
+  }
+
+  if (await alreadySent(supabaseAdmin, "admin_client_message", messageId, "broadcast")) {
+    return json(res, 200, { ok: true, sent: 0, message: "Already notified." });
+  }
+
+  const { data: subscriptions } = await supabaseAdmin
+    .from(SUBSCRIPTIONS_TABLE)
+    .select("id, endpoint, p256dh, auth_key")
+    .eq("tenant_id", message.tenant_id)
+    .eq("user_type", "client");
+
+  if (!subscriptions || subscriptions.length === 0) {
+    await markSent(supabaseAdmin, "admin_client_message", messageId, "broadcast");
+    return json(res, 200, { ok: true, sent: 0, message: "No client push subscriptions for this tenant." });
+  }
+
+  const bodyText = String(message.message_body || "").slice(0, 140);
+
+  const payload = JSON.stringify({
+    title: "New message from UNGANI",
+    body: bodyText,
+    url: "/my-chat.html",
+    tag: "admin-chat-" + message.id
+  });
+
+  const results = await sendToSubscriptions(supabaseAdmin, subscriptions, payload);
+  await markSent(supabaseAdmin, "admin_client_message", messageId, "broadcast");
+
+  return json(res, 200, { ok: true, sent: results.filter((r) => r.ok).length, results });
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
@@ -341,6 +480,14 @@ export default async function handler(req, res) {
 
     if (eventType === "support_response") {
       return await handleSupportResponse(req, supabaseAdmin, relatedId, res);
+    }
+
+    if (eventType === "team_chat_message") {
+      return await handleTeamChatMessage(req, supabaseAdmin, relatedId, res);
+    }
+
+    if (eventType === "admin_client_message") {
+      return await handleAdminClientMessage(req, supabaseAdmin, relatedId, res);
     }
 
     return json(res, 400, { ok: false, message: "Unknown eventType." });

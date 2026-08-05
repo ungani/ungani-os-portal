@@ -3479,7 +3479,9 @@
       if (!text) return;
 
       var now = new Date().toISOString();
+      var messageId = crypto.randomUUID();
       var payload = {
+        id: messageId,
         tenant_id: chatThreadSelectedTenantId,
         sender_id: currentAdminId,
         sender_name: currentAdminName,
@@ -3496,8 +3498,30 @@
         return;
       }
 
+      triggerAdminClientMessagePushNow(messageId);
+
       textEl.value = '';
       await loadChatPreview();
+    }
+
+    async function triggerAdminClientMessagePushNow(messageId) {
+      if (!messageId) return;
+
+      try {
+        var sessionRes = await supabaseClient.auth.getSession();
+        var token = sessionRes && sessionRes.data && sessionRes.data.session && sessionRes.data.session.access_token;
+
+        if (!token) return;
+
+        await fetch('/api/send-event-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ eventType: 'admin_client_message', relatedId: messageId }),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn('Could not trigger admin-to-client message push:', error.message);
+      }
     }
 
     async function markAllNotificationsRead() {

@@ -1403,6 +1403,18 @@
       el.textContent = count > 99 ? "99+" : String(count);
       el.classList.toggle("show", count > 0);
     });
+
+    // OS-level app icon badge (WhatsApp/Facebook-style) - reuses this
+    // same total rather than a separate query. Feature-detected inside
+    // UnganiPush.setAppBadgeCount(); silently a no-op on platforms
+    // without the Badging API (notably Android Chrome).
+    if (window.UnganiPush && typeof window.UnganiPush.setAppBadgeCount === "function") {
+      const total = Object.keys(counts || {}).reduce(function (sum, key) {
+        return sum + (Number(counts[key]) || 0);
+      }, 0);
+
+      window.UnganiPush.setAppBadgeCount(total);
+    }
   }
 
   async function loadAdminSidebarBadgeCounts() {
@@ -1443,6 +1455,11 @@
       }
 
       loadAdminSidebarBadgeCounts();
+
+      // Keeps the OS app-icon badge (and the in-nav badges) fresh while
+      // the tab stays open. requireAdmin()'s onReady branch only ever
+      // fires once per successful admin auth, so a single interval.
+      setInterval(loadAdminSidebarBadgeCounts, 60000);
 
       return admin;
     } catch (error) {
@@ -1525,6 +1542,13 @@
     const client = getSupabaseClient();
     await logAuditEvent("logout", { entityType: "session" });
     await client.auth.signOut();
+
+    // Avoid leaving a stale badge number on the OS icon for whoever
+    // opens the app next (a shared device, or the next login).
+    if (window.UnganiPush && typeof window.UnganiPush.clearAppBadgeNow === "function") {
+      window.UnganiPush.clearAppBadgeNow();
+    }
+
     window.location.href = "admin-home.html";
   }
 

@@ -1652,6 +1652,12 @@
       loadNotificationBadge();
       loadSidebarBadgeCounts();
 
+      // Keeps the OS app-icon badge (and the in-nav badges) fresh while
+      // the tab stays open, matching the existing notification-engine's
+      // own 60s cadence elsewhere in this file. Runs once per page load
+      // (this init flow only ever executes once), so a single interval.
+      setInterval(loadSidebarBadgeCounts, 60000);
+
       if (window.UnganiTeamChat) {
         UnganiTeamChat.init(function () {
           return {
@@ -2626,6 +2632,22 @@
       console.warn("Sidebar badge (team chat) skipped:", error.message);
     }
 
+    try {
+      // Mirrors my-chat.html's markAdminMessagesRead() filter exactly -
+      // unread messages sent by admin (not the client's own sent
+      // messages) for this tenant.
+      const adminChatResponse = await state.supabaseClient
+        .from("admin_client_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", state.tenantId)
+        .neq("sender_role", "client")
+        .eq("is_read", false);
+
+      if (!adminChatResponse.error) counts["admin-chat"] = adminChatResponse.count || 0;
+    } catch (error) {
+      console.warn("Sidebar badge (admin chat) skipped:", error.message);
+    }
+
     return counts;
   }
 
@@ -2638,6 +2660,18 @@
       el.textContent = count > 99 ? "99+" : String(count);
       el.classList.toggle("show", count > 0);
     });
+
+    // OS-level app icon badge (WhatsApp/Facebook-style) - reuses this
+    // same total rather than a separate query. Feature-detected inside
+    // UnganiPush.setAppBadgeCount(); silently a no-op on platforms
+    // without the Badging API (notably Android Chrome).
+    if (window.UnganiPush && typeof window.UnganiPush.setAppBadgeCount === "function") {
+      const total = Object.keys(counts || {}).reduce(function (sum, key) {
+        return sum + (Number(counts[key]) || 0);
+      }, 0);
+
+      window.UnganiPush.setAppBadgeCount(total);
+    }
   }
 
   async function loadSidebarBadgeCounts() {
@@ -3370,6 +3404,12 @@
       }
     } catch (error) {
       console.warn("Logout warning:", error.message);
+    }
+
+    // Avoid leaving a stale badge number on the OS icon for whoever
+    // opens the app next (a shared device, or the next login).
+    if (window.UnganiPush && typeof window.UnganiPush.clearAppBadgeNow === "function") {
+      window.UnganiPush.clearAppBadgeNow();
     }
 
     window.location.href = "client.html";

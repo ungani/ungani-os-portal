@@ -1149,7 +1149,9 @@
       if (!text) return;
 
       var now = new Date().toISOString();
+      var messageId = crypto.randomUUID();
       var payload = {
+        id: messageId,
         tenant_id: chatThreadSelectedTenantId,
         sender_id: UnganiAdminShared.getCurrentAdminId(),
         sender_name: (currentAdmin && currentAdmin.full_name) || "UNGANI Admin",
@@ -1165,6 +1167,8 @@
         alert(res.error.message);
         return;
       }
+
+      triggerAdminClientMessagePushNow(messageId);
 
       textEl.value = "";
       await loadChatPreview();
@@ -1506,6 +1510,26 @@
         });
       } catch (error) {
         console.warn("Could not trigger immediate approval email send:", error.message);
+      }
+    }
+
+    async function triggerAdminClientMessagePushNow(messageId) {
+      if (!messageId) return;
+
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+
+        if (!token) return;
+
+        await fetch("/api/send-event-push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ eventType: "admin_client_message", relatedId: messageId }),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Could not trigger admin-to-client message push:", error.message);
       }
     }
 
