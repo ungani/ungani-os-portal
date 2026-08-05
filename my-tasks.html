@@ -66,6 +66,7 @@
     let myStaffAccess = null;
     let assignableTeamMembers = [];
     let editingTaskOriginalAssignee = { teamMemberId: null, isOwner: false };
+    let editingTaskOriginalStatus = "";
 
     // See my-money.html for the full rationale: taskSummaryRows covers every
     // row in the current tenant/section/status/priority/search scope with
@@ -645,6 +646,98 @@
               grid-column: span 1;
             }
           }
+
+          /* Ungani Connect Phase 2's discussion panel (Timeline/
+             Attachments) reuses my-items.html's exact same local
+             .timeline-item/.document-link-row visual language - copied
+             here since these classes live in each page's own <style>,
+             not a shared stylesheet. */
+          .timeline-list {
+            display: grid;
+            gap: 10px;
+          }
+
+          .timeline-item {
+            position: relative;
+            display: grid;
+            grid-template-columns: 36px minmax(0, 1fr);
+            gap: 12px;
+            align-items: center;
+            padding: 12px 12px 12px 14px;
+            border: 1px solid var(--ungani-border, rgba(6,28,61,0.1));
+            background: var(--ungani-soft, rgba(6,28,61,0.03));
+            border-radius: 14px;
+            border-left: 3px solid var(--accent, var(--ungani-muted, #64748B));
+          }
+
+          .timeline-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            background: var(--ungani-card, #FFFFFF);
+          }
+
+          .timeline-item strong {
+            display: block;
+            font-size: 13.5px;
+          }
+
+          .timeline-item p {
+            margin: 2px 0 0;
+            color: var(--ungani-muted, #6B7280);
+            font-size: 12px;
+            line-height: 1.4;
+          }
+
+          .timeline-time {
+            grid-column: 2;
+            justify-self: start;
+            white-space: nowrap;
+          }
+
+          .document-link-list {
+            display: grid;
+            gap: 10px;
+          }
+
+          .document-link-row {
+            display: grid;
+            grid-template-columns: 36px minmax(0, 1fr);
+            gap: 12px;
+            align-items: center;
+            padding: 12px 12px 12px 14px;
+            border: 1px solid var(--ungani-border, rgba(6,28,61,0.1));
+            background: var(--ungani-soft, rgba(6,28,61,0.03));
+            border-radius: 14px;
+            text-decoration: none;
+            color: inherit;
+            transition: 0.18s ease;
+          }
+
+          .document-link-row:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ungani-shadow, rgba(6,28,61,0.1));
+          }
+
+          .document-link-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            background: var(--ungani-card, #FFFFFF);
+          }
+
+          .document-link-body strong {
+            display: block;
+            font-size: 13.5px;
+          }
         </style>
 
         <section class="ungani-card ungani-hero">
@@ -947,6 +1040,7 @@
                 <th>Due Date</th>
                 <th>Priority</th>
                 <th>Status</th>
+                <th></th>
               </tr>
             </thead>
 
@@ -976,6 +1070,9 @@
                     <td>${UnganiClientShared.safe(due ? UnganiClientShared.formatDate(due) : "No date")}</td>
                     <td>${priorityBadge(priority)}</td>
                     <td>${statusBadge(status, due)}</td>
+                    <td>
+                      <button class="ungani-btn small dark" type="button" onclick="event.stopPropagation(); openTaskDiscussionPanel('${UnganiClientShared.attr(row.id)}')" title="Discussion, activity, and attachments for this task">💬 Discuss</button>
+                    </td>
                   </tr>
                 `;
               }).join("")}
@@ -1193,6 +1290,8 @@
         isOwner: row ? !!UnganiClientShared.getValue(row, ["assigned_to_is_owner"], false) : false
       };
 
+      editingTaskOriginalStatus = row ? String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase() : "";
+
       const currentStatus = row ? String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase() : "";
       const showMarkDone = row && currentStatus !== "completed";
 
@@ -1282,6 +1381,7 @@
           <div class="ungani-button-row" style="margin-top:16px;">
             <button class="ungani-btn gold" type="submit">${row ? "Update Task" : "Save Task"}</button>
             ${showMarkDone ? `<button class="ungani-btn blue" type="button" onclick="markTaskCompleted('${UnganiClientShared.attr(row.id)}', this)">Done</button>` : ""}
+            ${row ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal(); openTaskDiscussionPanel('${UnganiClientShared.attr(row.id)}')">💬 Discussion</button>` : ""}
             ${row ? `<button class="ungani-btn red" type="button" onclick="deleteTaskRecord('${UnganiClientShared.attr(row.id)}', this)">Delete</button>` : ""}
             <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
           </div>
@@ -1394,9 +1494,25 @@
           assignee.isOwner !== editingTaskOriginalAssignee.isOwner ||
           assignee.teamMemberId !== editingTaskOriginalAssignee.teamMemberId;
 
+        const savedForActivity = savedTaskId || (response.data && response.data.id);
+
         if (assigneeChanged && (assignee.isOwner || assignee.teamMemberId)) {
-          const notifyTaskId = savedTaskId || (response.data && response.data.id);
-          notifyTaskAssignment(notifyTaskId, assignee);
+          notifyTaskAssignment(savedForActivity, assignee);
+        }
+
+        // Ungani Connect Phase 2: real Timeline entries on the events a
+        // teammate actually cares about - created, status changed,
+        // reassigned - not on every unrelated field edit (notes, due
+        // date, etc.), same "only log what changed" judgment as the
+        // existing assignment-notification check above.
+        if (!editingTaskId) {
+          logTaskActivity(savedForActivity, "created", "Task created.");
+        } else if (payload.status !== editingTaskOriginalStatus) {
+          logTaskActivity(savedForActivity, "status_changed", "Status changed from " + toTitle(editingTaskOriginalStatus || "pending") + " to " + toTitle(payload.status) + ".");
+        }
+
+        if (assigneeChanged && (assignee.isOwner || assignee.teamMemberId)) {
+          logTaskActivity(savedForActivity, "assigned", "Assigned to " + (assignee.displayName || "a team member") + ".");
         }
 
         UnganiClientShared.showToast(editingTaskId ? "Task updated ✓" : "Task added ✓");
@@ -1404,6 +1520,309 @@
         UnganiClientShared.closeModal();
         await loadTaskRows();
       });
+    }
+
+    async function logTaskActivity(taskId, eventType, description) {
+      if (!taskId) return;
+
+      try {
+        await currentContext.supabaseClient.rpc("log_ungani_record_activity", {
+          p_record_table: "tasks",
+          p_record_id: taskId,
+          p_event_type: eventType,
+          p_description: description
+        });
+      } catch (error) {
+        console.warn("Could not log task activity:", error.message);
+      }
+    }
+
+    // Ungani Connect Phase 2: Discussion + Timeline + Attachments panel,
+    // the first record-type mount of the Phase 0 foundation
+    // (ungani_record_comments/ungani_record_activity/can_access_ungani_record).
+    // Reuses the existing openSidePanel()/closeSidePanel() component
+    // (shipped for my-items.html's profile panel) rather than a new UI
+    // pattern - this is an ADDITIONAL affordance alongside the existing
+    // edit modal, not a replacement for it (my-tasks.html's modal-based
+    // edit flow was explicitly kept out of the earlier side-panel
+    // conversion work).
+    let currentPanelTaskId = null;
+
+    function openTaskDiscussionPanel(id) {
+      currentPanelTaskId = id;
+
+      UnganiClientShared.openSidePanel({
+        title: "Task Discussion",
+        bodyHtml: UnganiClientShared.loadingCard("Loading discussion...")
+      });
+
+      loadTaskDiscussionPanel(id);
+    }
+
+    function loadTaskDiscussionPanel(id) {
+      const row = taskRows.find(function (item) { return String(item.id) === String(id); });
+
+      if (!row) {
+        document.getElementById("unganiPanelBody").innerHTML = UnganiClientShared.errorCard(
+          "Task not found",
+          "This task may have been deleted, or it does not belong to your business."
+        );
+        return;
+      }
+
+      const status = UnganiClientShared.getValue(row, ["status"], "pending");
+      const due = UnganiClientShared.getValue(row, ["due_date"], "");
+
+      document.getElementById("unganiPanelTitle").innerText = getTaskTitle(row);
+
+      document.getElementById("unganiPanelBody").innerHTML = `
+        <div class="ungani-card">
+          <p class="ungani-small">${UnganiClientShared.safe(getTaskType(row))} · ${statusBadge(status, due)}</p>
+        </div>
+
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Discussion</h3>
+              <p class="ungani-small">Comments visible to anyone who can see this task.</p>
+            </div>
+          </div>
+
+          <div id="taskDiscussionList" class="timeline-list">
+            <p class="ungani-small">Loading comments...</p>
+          </div>
+
+          <form onsubmit="postTaskComment(event, '${UnganiClientShared.attr(id)}')" style="margin-top:12px;display:flex;gap:8px;align-items:flex-end;">
+            <textarea id="taskCommentInput" rows="2" placeholder="Write a comment..." style="flex:1;" required></textarea>
+            <button class="ungani-btn gold" type="submit">Post</button>
+          </form>
+        </div>
+
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Attachments</h3>
+              <p class="ungani-small">Documents linked to this task.</p>
+            </div>
+            <a class="ungani-btn small gold" href="${UnganiClientShared.attr("my-documents.html?action=add&linkedTaskId=" + encodeURIComponent(id))}">Attach Document</a>
+          </div>
+
+          <div id="taskAttachmentsList" class="document-link-list">
+            <p class="ungani-small">Loading documents...</p>
+          </div>
+        </div>
+
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Activity Timeline</h3>
+              <p class="ungani-small">Everything logged against this task, newest first.</p>
+            </div>
+          </div>
+
+          <div id="taskTimelineList" class="timeline-list">
+            <p class="ungani-small">Loading activity...</p>
+          </div>
+        </div>
+      `;
+
+      loadTaskComments(id);
+      loadTaskAttachments(id);
+      loadTaskTimeline(id);
+    }
+
+    async function loadTaskComments(taskId) {
+      const container = document.getElementById("taskDiscussionList");
+      if (!container) return;
+
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("ungani_record_comments")
+          .select("id, author_name, body, created_at")
+          .eq("record_table", "tasks")
+          .eq("record_id", taskId)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: true });
+      } catch (error) {
+        container.innerHTML = `<p class="ungani-small">Could not load comments.</p>`;
+        return;
+      }
+
+      if (response.error) {
+        container.innerHTML = `<p class="ungani-small">Could not load comments.</p>`;
+        return;
+      }
+
+      renderTaskComments(response.data || []);
+    }
+
+    function renderTaskComments(rows) {
+      const container = document.getElementById("taskDiscussionList");
+      if (!container) return;
+
+      if (!rows.length) {
+        container.innerHTML = `<p class="ungani-small">No comments yet - start the discussion below.</p>`;
+        return;
+      }
+
+      container.innerHTML = rows.map(function (row) {
+        return `
+          <div class="timeline-item">
+            <div class="timeline-icon">💬</div>
+            <div>
+              <strong>${UnganiClientShared.safe(row.author_name || "Someone")}</strong>
+              <p style="white-space:pre-wrap;">${UnganiClientShared.safe(row.body)}</p>
+            </div>
+            <span class="ungani-small timeline-time">${UnganiClientShared.safe(UnganiClientShared.formatDateTime(row.created_at))}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function postTaskComment(event, taskId) {
+      event.preventDefault();
+
+      const input = document.getElementById("taskCommentInput");
+      const body = input ? String(input.value || "").trim() : "";
+      if (!body) return;
+
+      const submitBtn = event.submitter || (event.target.querySelector && event.target.querySelector('button[type="submit"]'));
+
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        let response;
+
+        try {
+          response = await currentContext.supabaseClient.rpc("add_ungani_record_comment", {
+            p_record_table: "tasks",
+            p_record_id: taskId,
+            p_body: body
+          });
+        } catch (error) {
+          UnganiClientShared.showToast("Could not post comment: " + (error.message || "Network error. Please check your connection."));
+          return;
+        }
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast((response.data && response.data.message) || (response.error && response.error.message) || "Could not post comment.");
+          return;
+        }
+
+        if (input) input.value = "";
+        await loadTaskComments(taskId);
+        await loadTaskTimeline(taskId);
+      });
+    }
+
+    async function loadTaskAttachments(taskId) {
+      const container = document.getElementById("taskAttachmentsList");
+      if (!container) return;
+
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("documents")
+          .select("id, document_title, document_type, document_date, file_url")
+          .eq("linked_task_id", taskId)
+          .eq("tenant_id", currentContext.tenantId)
+          .order("document_date", { ascending: false });
+      } catch (error) {
+        container.innerHTML = `<p class="ungani-small">Could not load documents.</p>`;
+        return;
+      }
+
+      if (response.error) {
+        container.innerHTML = `<p class="ungani-small">Could not load documents.</p>`;
+        return;
+      }
+
+      renderTaskAttachments(response.data || []);
+    }
+
+    function renderTaskAttachments(rows) {
+      const container = document.getElementById("taskAttachmentsList");
+      if (!container) return;
+
+      if (!rows.length) {
+        container.innerHTML = `<p class="ungani-small">No documents linked yet - use "Attach Document" above to add one.</p>`;
+        return;
+      }
+
+      container.innerHTML = rows.map(function (row) {
+        const title = UnganiClientShared.getValue(row, ["document_title"], "Document");
+        const docType = UnganiClientShared.getValue(row, ["document_type"], "Document");
+        const editHref = "my-documents.html?highlight=" + encodeURIComponent(row.id);
+
+        return `
+          <a class="document-link-row" href="${UnganiClientShared.attr(row.file_url || editHref)}"${row.file_url ? ' target="_blank" rel="noopener noreferrer"' : ""}>
+            <span class="document-link-icon">📄</span>
+            <span class="document-link-body">
+              <strong>${UnganiClientShared.safe(title)}</strong>
+              <span class="ungani-small">${UnganiClientShared.safe(toTitle(docType))} · ${UnganiClientShared.safe(UnganiClientShared.formatDate(row.document_date))}</span>
+            </span>
+          </a>
+        `;
+      }).join("");
+    }
+
+    async function loadTaskTimeline(taskId) {
+      const container = document.getElementById("taskTimelineList");
+      if (!container) return;
+
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("ungani_record_activity")
+          .select("id, event_type, description, actor_name, created_at")
+          .eq("record_table", "tasks")
+          .eq("record_id", taskId)
+          .order("created_at", { ascending: false })
+          .limit(30);
+      } catch (error) {
+        container.innerHTML = `<p class="ungani-small">Could not load activity history.</p>`;
+        return;
+      }
+
+      if (response.error) {
+        container.innerHTML = `<p class="ungani-small">Could not load activity history.</p>`;
+        return;
+      }
+
+      renderTaskTimeline(response.data || []);
+    }
+
+    const TASK_TIMELINE_ICONS = {
+      created: "✨",
+      status_changed: "🔄",
+      assigned: "👤",
+      commented: "💬"
+    };
+
+    function renderTaskTimeline(rows) {
+      const container = document.getElementById("taskTimelineList");
+      if (!container) return;
+
+      if (!rows.length) {
+        container.innerHTML = `<p class="ungani-small">No activity logged yet - creating, commenting on, or updating this task will show up here.</p>`;
+        return;
+      }
+
+      container.innerHTML = rows.map(function (row) {
+        const icon = TASK_TIMELINE_ICONS[row.event_type] || "•";
+
+        return `
+          <div class="timeline-item">
+            <div class="timeline-icon">${icon}</div>
+            <div>
+              <p>${UnganiClientShared.safe(row.description || "")}${row.actor_name ? " · " + UnganiClientShared.safe(row.actor_name) : ""}</p>
+            </div>
+            <span class="ungani-small timeline-time">${UnganiClientShared.safe(UnganiClientShared.formatDateTime(row.created_at))}</span>
+          </div>
+        `;
+      }).join("");
     }
 
     function resolveAssigneeFromPickerValue(value) {
@@ -1461,6 +1880,8 @@
           return;
         }
 
+        logTaskActivity(id, "status_changed", "Marked as Completed.");
+
         UnganiClientShared.showToast("Task marked completed ✓");
         editingTaskId = null;
         UnganiClientShared.closeModal();
@@ -1515,6 +1936,10 @@
 
     function getTaskTitle(row) {
       return UnganiClientShared.getValue(row, ["task_title", "title", "name"], "Task");
+    }
+
+    function toTitle(value) {
+      return String(value || "").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
     }
 
     function statusBadge(status, dueDate) {
