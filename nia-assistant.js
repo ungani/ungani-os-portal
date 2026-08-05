@@ -18,6 +18,20 @@
 
   const SEEN_KEY = "ungani_nia_seen";
 
+  // Distinguishes "fresh session" (time-based greeting, can say "Welcome
+  // back") from "same continuous session" (neutral, no repeated greeting) -
+  // see resolveSessionFreshnessOnce() below for how this is used. Uses
+  // sessionStorage (not localStorage) specifically because it survives full
+  // page navigations within one tab (this app reloads the page on every
+  // sidebar click, unlike a SPA) but is cleared on tab/browser close - a
+  // genuine new session, matching the "logged out and back in" case for
+  // free. The 30-minute gap check on top of that also catches "away for a
+  // while but never actually closed the tab", using the same idle-session
+  // boundary session-inactivity-guard.js already uses elsewhere in the app
+  // (IDLE_TIMEOUT_MS), so "session" means the same thing in both places.
+  const SESSION_ACTIVITY_KEY = "ungani_nia_last_active_ts";
+  const SESSION_GAP_MS = 30 * 60 * 1000;
+
   const NAV_ITEMS = [
     { key: "dashboard", href: "client.html", icon: "🏠", label: "Dashboard", aliases: ["home", "dashboard", "main page"] },
     { key: "money", href: "my-money.html", icon: "💰", label: "Money", aliases: ["money", "finance", "finances", "transactions", "expenses", "expense", "income", "payments", "payment", "invoices", "invoice", "petty cash"] },
@@ -1238,8 +1252,13 @@
 
     if (!state.messages.length) {
       renderShell();
+      resolveSessionFreshnessOnce(); // defensive - boot()/init() already do this, but never leave freshness undefined
 
       if (!hasSeenNia()) {
+        // First-ever open, for this browser - always the distinct proper
+        // welcome, regardless of session freshness (a brand-new client's
+        // very first login IS by definition a fresh session too, so this
+        // never conflicts with the fresh/continuous logic below).
         addNiaMessage(buildFirstTimeGreeting());
         markSeenNia();
 
@@ -1253,7 +1272,12 @@
         } else {
           showQuickActions();
         }
-      } else if (state.surface !== "admin" && state.supabaseClient && state.tenantId && !hasSeenTodayBriefing()) {
+      } else if (state.isFreshSession && state.surface !== "admin" && state.supabaseClient && state.tenantId && !hasSeenTodayBriefing()) {
+        // Fresh session, first open today - richer once-a-day briefing
+        // instead of a plain greeting. Still gated on freshness so a
+        // continuous same-day session that already saw today's briefing on
+        // its first open doesn't fall back into repeating the plain
+        // "Welcome back" greeting either - it goes neutral below.
         showTypingIndicator();
 
         try {
@@ -1262,13 +1286,31 @@
           addNiaMessage(briefingHtml);
         } catch (error) {
           removeTypingIndicator();
-          addNiaMessage(personalizeGreeting(getPageConfig().greeting));
+          addNiaMessage(buildGreetingLine(getPageConfig().greeting, true));
         }
 
         markSeenTodayBriefing();
         showQuickActions();
       } else {
-        addNiaMessage(personalizeGreeting(getPageConfig().greeting));
+        // Fresh session but already had today's briefing (or admin surface,
+        // which has no briefing) -> time-based "Welcome back". Continuous
+        // session -> neutral, no repeated greeting.
+        addNiaMessage(buildGreetingLine(getPageConfig().greeting, state.isFreshSession));
+
+        if (state.surface === "admin" && state.isFreshSession && !hasSeenTodayAdminHealthNote()) {
+          const weak = peekWeakAdminHealthScore();
+          if (weak) {
+            replyWithDelay(function () {
+              addNiaMessage(
+                "By the way, the Platform Health Score is " + weak.score + "/100 right now" +
+                (weak.label ? " — mostly due to " + safe(weak.label) : "") +
+                ". Ask me \"why is my platform health low?\" any time for details."
+              );
+            });
+          }
+          markSeenTodayAdminHealthNote();
+        }
+
         showQuickActions();
       }
 
@@ -2031,6 +2073,13 @@
         return runPayrollQueryIntent(text);
       }
 
+      // Health score diagnosis - works on BOTH surfaces (client Business
+      // Health Score, admin Platform Health Score), unlike the asset/
+      // payroll checks above which are client-only.
+      if (isHealthScoreQueryPhrase(text)) {
+        return runHealthScoreQueryIntent();
+      }
+
       // "print this for me" / "give me a report" - checked ahead of the
       // generic summary phrase below, since a print request should always
       // win over a conversational one even if both phrase lists could
@@ -2570,6 +2619,300 @@
     };
   }
 
+  // ---- Business/Platform Health Score diagnosis ----
+  // Reuses the exact same factor math as client.html's
+  // computeGenericHealthScore/computePropertyHealthScore (client surface,
+  // duplicated here with an "nia" prefix since those functions only exist
+  // on client.html's own page, not everywhere nia-assistant.js loads) and
+  // admin-home.html's computeExpandedPlatformHealthScore (admin surface -
+  // called directly as a global, since admin-home.html is the ONLY admin
+  // page nia-assistant.js shares, so there's no page-scoping problem to
+  // work around there). Diagnoses and links to the relevant page only -
+  // never changes anything itself, per the explicit scope boundary set
+  // for Nia everywhere else (payroll, assets, etc.).
+  function isHealthScoreQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    const mentionsHealthTopic = lower.indexOf("health score") !== -1 || lower.indexOf("business health") !== -1 ||
+      lower.indexOf("platform health") !== -1 || (lower.indexOf("health") !== -1 && lower.indexOf("score") !== -1);
+    if (!mentionsHealthTopic) return false;
+
+    return [
+      "why", "low", "what's wrong", "whats wrong", "improve", "fix", "explain",
+      "affecting", "reason", "doing", "bad", "dropped", "down", "how do i", "how can i"
+    ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  function niaTierScore(count, tiers) {
+    const n = Number(count) || 0;
+    for (let i = 0; i < tiers.length; i++) {
+      if (n <= tiers[i][0]) return tiers[i][1];
+    }
+    return tiers[tiers.length - 1][1];
+  }
+
+  function niaWeightedHealthScore(factors) {
+    const applicable = factors.filter(function (f) { return f.applicable !== false; });
+    const totalWeight = applicable.reduce(function (sum, f) { return sum + f.weight; }, 0);
+    if (totalWeight <= 0) return null;
+    const weighted = applicable.reduce(function (sum, f) { return sum + (f.score * f.weight); }, 0);
+    return Math.max(0, Math.min(100, Math.round(weighted / totalWeight)));
+  }
+
+  function niaStatusText(row) {
+    return String(pickField(row, ["status", "account_status", "client_status"], "")).toLowerCase();
+  }
+
+  function niaIsRentalIncome(row) {
+    const category = String(pickField(row, ["category", "category_name"], "")).toLowerCase();
+    const type = String(pickField(row, ["transaction_type", "type"], "")).toLowerCase();
+    return niaIsIncomeRow(row) && (category.indexOf("rent") !== -1 || type.indexOf("rent") !== -1);
+  }
+
+  // Mirrors loadDashboardData()'s own set of 8 tables so Nia's score
+  // matches what the dashboard gauge shows exactly, instead of a
+  // simplified approximation that could confuse someone with a different
+  // number than what they see on screen.
+  async function fetchNiaHealthScoreData() {
+    const results = await Promise.all([
+      state.supabaseClient.from("transactions").select("id, amount, amount_kes, category, category_name, transaction_type, type, status, related_person_id, transaction_date, created_at").eq("tenant_id", state.tenantId).limit(1000),
+      state.supabaseClient.from("business_items").select("id, item_status, property_status, status, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
+      state.supabaseClient.from("client_people").select("id, linked_item_id, lease_end_date, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
+      state.supabaseClient.from("business_records").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
+      state.supabaseClient.from("tasks").select("id, status, due_date, task_type, type, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
+      state.supabaseClient.from("documents").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
+      state.supabaseClient.from("business_events").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
+      state.supabaseClient.from("support_issues").select("id, status, priority, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000)
+    ]);
+
+    results.forEach(function (r) { if (r.error) throw new Error(r.error.message); });
+
+    return {
+      transactions: results[0].data || [], items: results[1].data || [], people: results[2].data || [],
+      records: results[3].data || [], tasks: results[4].data || [], documents: results[5].data || [],
+      events: results[6].data || [], support: results[7].data || []
+    };
+  }
+
+  function niaCountRecentActivity(data) {
+    const cutoff = Date.now() - (14 * 24 * 3600 * 1000);
+    let count = 0;
+    ["tasks", "transactions", "records", "events", "documents", "items"].forEach(function (key) {
+      (data[key] || []).forEach(function (row) {
+        const stamp = pickField(row, ["updated_at", "created_at"], "");
+        const t = stamp ? new Date(stamp).getTime() : NaN;
+        if (!isNaN(t) && t >= cutoff) count++;
+      });
+    });
+    return count;
+  }
+
+  function buildNiaGenericHealthEntries(data) {
+    const today = new Date().toISOString().slice(0, 10);
+    let taskPending = 0, taskCompleted = 0, taskOverdue = 0;
+    (data.tasks || []).forEach(function (row) {
+      const status = niaStatusText(row);
+      const due = String(pickField(row, ["due_date"], "")).slice(0, 10);
+      if (status.indexOf("completed") !== -1) taskCompleted++;
+      else if (status.indexOf("cancelled") === -1) taskPending++;
+      if (due && due < today && status.indexOf("completed") === -1 && status.indexOf("cancelled") === -1) taskOverdue++;
+    });
+
+    let income = 0, pending = 0;
+    (data.transactions || []).forEach(function (row) {
+      const amount = Number(pickField(row, ["amount_kes", "amount"], 0)) || 0;
+      const status = niaStatusText(row);
+      if (niaIsIncomeRow(row)) income += amount;
+      if (status.indexOf("pending") !== -1) pending += amount;
+    });
+
+    const supportTotal = (data.support || []).length;
+    let supportOpen = 0;
+    (data.support || []).forEach(function (row) {
+      const status = niaStatusText(row);
+      if (status.indexOf("resolved") === -1 && status.indexOf("closed") === -1) supportOpen++;
+    });
+
+    const hasTaskData = (taskPending + taskCompleted) > 0;
+    const hasSupportData = supportTotal > 0;
+    const hasMoneyData = income > 0 || pending > 0;
+    const recentCount = niaCountRecentActivity(data);
+
+    const tasksScore = niaTierScore(taskOverdue, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
+    const pendingRatio = pending / Math.max(income, 1);
+    const paymentScore = pendingRatio <= 0.05 ? 100 : pendingRatio <= 0.15 ? 80 : pendingRatio <= 0.30 ? 55 : 30;
+    const supportScore = niaTierScore(supportOpen, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
+    const activityScore = niaTierScore(recentCount, [[0, 45], [2, 70], [6, 90], [Infinity, 100]]);
+
+    return [
+      { key: "tasks", weight: 35, score: tasksScore, label: "overdue tasks", applicable: hasTaskData, href: "my-tasks.html", text: taskOverdue === 1 ? "1 overdue task needs attention." : taskOverdue + " overdue tasks need attention." },
+      { key: "payments", weight: 30, score: paymentScore, label: "pending payments", applicable: hasMoneyData, href: "my-money.html", text: "Outstanding pending payments are affecting your collection health." },
+      { key: "support", weight: 20, score: supportScore, label: "open support issues", applicable: hasSupportData, href: "my-support.html", text: supportOpen === 1 ? "1 open support issue is waiting on a response." : supportOpen + " open support issues are waiting on a response." },
+      { key: "activity", weight: 15, score: activityScore, label: "recent activity", applicable: true, href: null, text: "It's been quiet — log some activity to keep your records current." }
+    ];
+  }
+
+  function buildNiaPropertyHealthEntries(data) {
+    const today = new Date().toISOString().slice(0, 10);
+    const sevenDays = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const monthKey = new Date().toISOString().slice(0, 7);
+
+    const linkedTenants = (data.people || []).filter(function (p) { return !!pickField(p, ["linked_item_id"], ""); });
+    const overdueRent = linkedTenants.filter(function (person) {
+      const paidThisMonth = (data.transactions || []).some(function (t) {
+        const relatedId = pickField(t, ["related_person_id"], "");
+        const date = String(pickField(t, ["transaction_date", "created_at"], "")).slice(0, 7);
+        return String(relatedId) === String(person.id) && date === monthKey && niaIsRentalIncome(t);
+      });
+      return !paidThisMonth;
+    });
+
+    const totalUnits = (data.items || []).length;
+    const occupiedUnits = (data.items || []).filter(function (item) {
+      const status = String(pickField(item, ["property_status", "item_status", "status"], "")).toLowerCase();
+      return status.indexOf("rented") !== -1 || status.indexOf("sold") !== -1;
+    }).length;
+
+    const maintenanceOpen = (data.tasks || []).filter(function (task) {
+      const type = String(pickField(task, ["task_type", "type"], "")).toLowerCase();
+      const status = niaStatusText(task);
+      return type.indexOf("maintenance") !== -1 && status.indexOf("completed") === -1 && status.indexOf("cancelled") === -1;
+    });
+
+    const leasesExpiring = (data.people || []).filter(function (person) {
+      const leaseEnd = String(pickField(person, ["lease_end_date"], "")).slice(0, 10);
+      return leaseEnd && leaseEnd >= today && leaseEnd <= sevenDays;
+    });
+
+    const linkedCount = linkedTenants.length;
+    const hasTaskData = (data.tasks || []).length > 0;
+
+    const rentScore = linkedCount > 0 ? Math.round(((linkedCount - overdueRent.length) / linkedCount) * 100) : 0;
+    const occupancyScore = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+    const maintenanceScore = niaTierScore(maintenanceOpen.length, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
+    const leaseScore = niaTierScore(leasesExpiring.length, [[0, 100], [1, 80], [3, 55], [Infinity, 30]]);
+
+    return [
+      { key: "rent", weight: 40, score: rentScore, label: "unpaid rent", applicable: linkedCount > 0, href: "my-people.html", text: overdueRent.length === 1 ? "1 tenant has unpaid rent this month." : overdueRent.length + " tenants have unpaid rent this month." },
+      { key: "occupancy", weight: 30, score: occupancyScore, label: "occupancy", applicable: totalUnits > 0, href: "my-items.html", text: "Occupancy is lower than it could be — " + occupiedUnits + " of " + totalUnits + " units filled." },
+      { key: "maintenance", weight: 20, score: maintenanceScore, label: "open maintenance", applicable: hasTaskData, href: "my-tasks.html", text: maintenanceOpen.length + " open maintenance request(s) need attention." },
+      { key: "lease", weight: 10, score: leaseScore, label: "expiring leases", applicable: linkedCount > 0, href: "my-people.html", text: leasesExpiring.length + " lease(s) expiring within 7 days — plan renewals now." }
+    ];
+  }
+
+  async function runHealthScoreQueryIntent() {
+    if (state.surface === "admin") {
+      return runPlatformHealthQueryIntent();
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking what's affecting your Business Health Score...");
+
+    let data;
+    try {
+      data = await fetchNiaHealthScoreData();
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const entries = isRealEstateBusiness() ? buildNiaPropertyHealthEntries(data) : buildNiaGenericHealthEntries(data);
+    const score = niaWeightedHealthScore(entries);
+
+    if (score === null) {
+      addNiaMessage("Your Business Health Score hasn't appeared yet — it needs a bit more activity logged first (tasks, payments, or support/records) before there's enough to score.");
+      return { spoken: "Not enough data yet for a health score." };
+    }
+
+    const weak = entries.filter(function (e) { return e.applicable !== false && e.score < 65; }).sort(function (a, b) { return a.score - b.score; });
+    const band = score >= 85 ? "Thriving" : score >= 65 ? "Steady" : score >= 45 ? "Needs Attention" : "At Risk";
+
+    if (!weak.length) {
+      addNiaMessage("Your Business Health Score is " + score + "/100 (" + band + ") — everything I track is in good shape right now. Nothing specific is dragging it down.");
+      return { spoken: "Your Business Health Score is " + score + " out of 100, and everything is in good shape." };
+    }
+
+    const listHtml = weak.slice(0, 4).map(function (e) {
+      const linkHtml = e.href ? ` <a class="nia-link-btn" style="margin-top:0;" href="${attr(e.href)}">Fix this →</a>` : "";
+      return `<div style="margin-top:8px;">🔻 <strong>${safe(e.label)}</strong> — ${safe(e.text)}${linkHtml}</div>`;
+    }).join("");
+
+    addNiaMessage(
+      "Your Business Health Score is <strong>" + score + "/100</strong> (" + band + "). Here's what's bringing it down:" + listHtml +
+      `<div style="margin-top:10px;opacity:0.85;">I can point you to the right page, but you'll need to make the actual changes — I won't do this part for you.</div>`
+    );
+
+    return { spoken: "Your Business Health Score is " + score + " out of 100. The biggest factor is " + weak[0].label + ": " + weak[0].text };
+  }
+
+  // Admin equivalent of the block above. Deliberately NOT a self-contained
+  // fetch+recompute like the client path - admin-home.html is the only
+  // page nia-assistant.js shares with computeExpandedPlatformHealthScore,
+  // healthSnapshot, and businessHealthExtras (all real globals on that
+  // page, since its inline <script> isn't wrapped in an IIFE), and those
+  // are already loaded automatically on page load - reusing them directly
+  // instead of re-running the RPCs/queries the widget itself already ran.
+  var ADMIN_HEALTH_FACTOR_HREFS = {
+    support: "support.html", registrations: "admin.html", warnings: "admin-smart-checks.html",
+    revenue: "admin-billing.html", cashflow: "admin-billing.html", outstanding: "admin-billing.html",
+    growth: "admin.html", overdueTasks: "admin-tasks.html", inventory: "admin-items.html",
+    staff: "admin-audit-logs.html", email: "admin-email-queue.html", notifications: "admin-notifications.html"
+  };
+
+  async function runPlatformHealthQueryIntent() {
+    if (typeof window.computeExpandedPlatformHealthScore !== "function" || !window.healthSnapshot || !window.businessHealthExtras) {
+      addNiaMessage("The Platform Health widget is still loading — please give it a few seconds and ask again.");
+      return { spoken: "The Platform Health widget is still loading." };
+    }
+
+    addNiaMessage("Checking what's affecting your Platform Health Score...");
+
+    let result;
+    try {
+      const snapshotFailed = !!window.healthSnapshot.__failed;
+      const extras = window.businessHealthExtras;
+      const nothingUsable = snapshotFailed && !extras.billingOk && !extras.itemsOk && !extras.tasksOk && !extras.auditOk && !extras.tenantsOk;
+
+      if (nothingUsable) {
+        addNiaMessage("The Platform Health snapshot is unavailable right now — the backend checks are failing. Try again shortly.");
+        return { spoken: "The Platform Health snapshot is unavailable right now." };
+      }
+
+      const summary = window.healthSnapshot.summary || {};
+      const flags = window.healthSnapshot.status_flags || {};
+      result = window.computeExpandedPlatformHealthScore(summary, flags, extras, snapshotFailed);
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (result.score === null || result.score === undefined) {
+      addNiaMessage("The Platform Health Score hasn't got enough data to show yet.");
+      return { spoken: "Not enough data yet for a platform health score." };
+    }
+
+    const weak = (result.entries || []).filter(function (e) { return e.applicable !== false && e.score < 65; }).sort(function (a, b) { return a.score - b.score; });
+    const band = result.score >= 85 ? "Thriving" : result.score >= 65 ? "Steady" : result.score >= 45 ? "Needs Attention" : "At Risk";
+
+    if (!weak.length) {
+      addNiaMessage("The Platform Health Score is " + result.score + "/100 (" + band + ") — everything tracked is in good shape right now.");
+      return { spoken: "The Platform Health Score is " + result.score + " out of 100, and everything is in good shape." };
+    }
+
+    const listHtml = weak.slice(0, 4).map(function (e) {
+      const href = ADMIN_HEALTH_FACTOR_HREFS[e.key];
+      const linkHtml = href ? ` <a class="nia-link-btn" style="margin-top:0;" href="${attr(href)}">Open →</a>` : "";
+      return `<div style="margin-top:8px;">🔻 <strong>${safe(e.label)}</strong> — ${safe(e.problemText)}<div style="margin-top:2px;opacity:0.85;">${safe(e.recommendation)}</div>${linkHtml}</div>`;
+    }).join("");
+
+    addNiaMessage("The Platform Health Score is <strong>" + result.score + "/100</strong> (" + band + "). Here's what's bringing it down:" + listHtml);
+
+    return { spoken: "The Platform Health Score is " + result.score + " out of 100. The biggest factor is " + weak[0].label + "." };
+  }
+
   // ---- Summaries, print-report handoff, and the morning briefing ----
   // Scoped deliberately to money + tasks + the existing asset-attention
   // check: those are the two metrics every business type tracks the same
@@ -2795,6 +3138,11 @@
   // unchanged, since a returning-user daily briefing doesn't make sense
   // for someone who has never used Nia before.
   const BRIEFING_SEEN_KEY = "ungani_nia_last_briefing_date";
+  // Admin has no full daily-briefing mechanism (no per-tenant task/money
+  // data to summarize) - just a once-a-day gentle Platform Health mention,
+  // same day-keyed pattern, separate key so it doesn't interact with the
+  // client briefing gate above.
+  const ADMIN_HEALTH_NOTE_SEEN_KEY = "ungani_nia_last_admin_health_note_date";
 
   function todayDateKey() {
     return new Date().toISOString().slice(0, 10);
@@ -2813,6 +3161,47 @@
       localStorage.setItem(BRIEFING_SEEN_KEY, todayDateKey());
     } catch (error) {
       // Ignore storage failures (private browsing, quota, etc.)
+    }
+  }
+
+  function hasSeenTodayAdminHealthNote() {
+    try {
+      return localStorage.getItem(ADMIN_HEALTH_NOTE_SEEN_KEY) === todayDateKey();
+    } catch (error) {
+      return true;
+    }
+  }
+
+  function markSeenTodayAdminHealthNote() {
+    try {
+      localStorage.setItem(ADMIN_HEALTH_NOTE_SEEN_KEY, todayDateKey());
+    } catch (error) {
+      // Ignore storage failures (private browsing, quota, etc.)
+    }
+  }
+
+  // Best-effort, synchronous read of the admin Platform Health globals -
+  // returns null if the widget hasn't finished loading yet rather than
+  // waiting/retrying, since this only backs an optional greeting nudge.
+  function peekWeakAdminHealthScore() {
+    try {
+      if (typeof window.computeExpandedPlatformHealthScore !== "function" || !window.healthSnapshot || !window.businessHealthExtras) return null;
+
+      const snapshotFailed = !!window.healthSnapshot.__failed;
+      const extras = window.businessHealthExtras;
+      const nothingUsable = snapshotFailed && !extras.billingOk && !extras.itemsOk && !extras.tasksOk && !extras.auditOk && !extras.tenantsOk;
+      if (nothingUsable) return null;
+
+      const summary = window.healthSnapshot.summary || {};
+      const flags = window.healthSnapshot.status_flags || {};
+      const result = window.computeExpandedPlatformHealthScore(summary, flags, extras, snapshotFailed);
+
+      if (result.score === null || result.score === undefined || result.score >= 65) return null;
+
+      const weakest = (result.entries || []).filter(function (e) { return e.applicable !== false && e.score < 65; }).sort(function (a, b) { return a.score - b.score; })[0];
+      return { score: result.score, label: weakest ? weakest.label.toLowerCase() : null };
+    } catch (error) {
+      return null;
     }
   }
 
@@ -2866,11 +3255,13 @@
   async function buildMorningBriefingHtml() {
     const meta = niaDateRangeMeta("week");
     const name = getPersonName();
-    const hi = name ? "Good to see you, " + safe(name) + "!" : "Good to see you!";
+    const timeGreeting = getTimeOfDayGreeting();
+    const hi = name ? timeGreeting + ", " + safe(name) + "! Welcome back." : timeGreeting + "! Welcome back.";
 
     let moneyRows = [];
     let taskRows = [];
     let assetEntries = [];
+    let healthWeak = null;
 
     try {
       const results = await Promise.all([
@@ -2884,6 +3275,20 @@
     } catch (error) {
       // If any of these fail, still show the greeting - a briefing with
       // partial or no data is better than blocking the panel from opening.
+    }
+
+    // Best-effort, separate try/catch - a failed health check shouldn't
+    // remove the rest of an otherwise-working briefing.
+    try {
+      const healthData = await fetchNiaHealthScoreData();
+      const entries = isRealEstateBusiness() ? buildNiaPropertyHealthEntries(healthData) : buildNiaGenericHealthEntries(healthData);
+      const score = niaWeightedHealthScore(entries);
+      if (score !== null && score < 65) {
+        const weakest = entries.filter(function (e) { return e.applicable !== false && e.score < 65; }).sort(function (a, b) { return a.score - b.score; })[0];
+        healthWeak = { score: score, label: weakest ? weakest.label : null };
+      }
+    } catch (error) {
+      // Silent - see comment above.
     }
 
     const money = computeNiaMoneySummary(moneyRows);
@@ -2902,6 +3307,10 @@
 
     const weekLine = `This week so far: ${formatNiaKES(money.income)} in, ${formatNiaKES(money.expenses)} out.`;
 
+    const healthLine = healthWeak
+      ? `<div style="margin-top:8px;">📊 Your Business Health Score is ${healthWeak.score}/100${healthWeak.label ? " — mostly due to " + safe(healthWeak.label) : ""}. Ask me "why is my health score low?" any time for details.</div>`
+      : "";
+
     if (lines.length > 0) {
       persistDailyBriefingNotification(tasks, assetEntries);
     }
@@ -2909,7 +3318,8 @@
     return (
       hi + " Here's your update for today:" +
       `<div style="margin-top:8px;">${lines.length ? lines.join("<br>") : "Nothing urgent — all clear!"}</div>` +
-      `<div style="margin-top:8px;opacity:0.85;">${safe(weekLine)}</div>`
+      `<div style="margin-top:8px;opacity:0.85;">${safe(weekLine)}</div>` +
+      healthLine
     );
   }
 
@@ -3030,6 +3440,7 @@
   function boot() {
     injectStyles();
     loadVoicesOnce();
+    resolveSessionFreshnessOnce();
 
     state.pageKey = detectPageKeyFallback();
     state.surface = "client";
@@ -3082,19 +3493,83 @@
     return state.userName || "";
   }
 
-  // Every PAGE_CONFIGS/ADMIN_PAGE_CONFIGS greeting starts with the exact
-  // literal "Welcome back!" - swap in the person's name there rather than
-  // duplicating every greeting string as a function just to interpolate one
-  // word.
-  function personalizeGreeting(text) {
-    const name = getPersonName();
-    if (!name) return text;
+  function getTimeOfDayGreeting() {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
+  }
 
-    return String(text || "").replace(/^Welcome back!/, "Welcome back, " + safe(name) + "!");
+  // Returns true the first time Nia is asked about session freshness on
+  // this page load AND either sessionStorage has never recorded activity
+  // (new tab/new session - covers logging out and back in) or the last
+  // recorded activity is more than SESSION_GAP_MS ago (a real time gap even
+  // without logging out). Reads the OLD timestamp - callers must read this
+  // before touchNiaSessionActivity() overwrites it, which is why the two
+  // are always called together, in that order, exactly once per page load
+  // (see resolveSessionFreshnessOnce()).
+  function isFreshNiaSession() {
+    try {
+      const last = sessionStorage.getItem(SESSION_ACTIVITY_KEY);
+      if (!last) return true;
+      return (Date.now() - Number(last)) > SESSION_GAP_MS;
+    } catch (error) {
+      return true; // fail open to a fresh greeting rather than silently going neutral forever
+    }
+  }
+
+  function touchNiaSessionActivity() {
+    try {
+      sessionStorage.setItem(SESSION_ACTIVITY_KEY, String(Date.now()));
+    } catch (error) {
+      // ignore storage failures (private browsing, quota, etc.)
+    }
+  }
+
+  // Computes state.isFreshSession exactly once per real page load, not once
+  // per Nia-open - both boot() (the auto-detect path most client pages use)
+  // and init() (the explicit path client.html/admin-home.html use) call
+  // this, and either one may run first or both may run on the same page, so
+  // the guard flag keeps the freshness verdict (and the sessionStorage
+  // touch that would otherwise erase it) from being computed twice. This
+  // also means "continuous session" tracks real navigation between pages,
+  // not just how often the Nia panel itself gets opened - a user who
+  // browses for 45 minutes without ever opening Nia still correctly gets
+  // treated as freshly-active if they open it, because every page load
+  // along the way already re-touched the timestamp.
+  let sessionFreshnessResolved = false;
+
+  function resolveSessionFreshnessOnce() {
+    if (sessionFreshnessResolved) return;
+    sessionFreshnessResolved = true;
+    state.isFreshSession = isFreshNiaSession();
+    touchNiaSessionActivity();
+  }
+
+  // Every PAGE_CONFIGS/ADMIN_PAGE_CONFIGS greeting starts with the exact
+  // literal "Welcome back!" - built around that fixed prefix rather than
+  // duplicating every greeting string as a function, same approach the old
+  // personalizeGreeting() used, extended to also encode session freshness:
+  // fresh session -> time-of-day + name + "Welcome back."; continuous
+  // session -> the "Welcome back!" opener is dropped entirely, leaving just
+  // the neutral, page-specific rest of the sentence (already reads fine on
+  // its own, e.g. "Here's what I can help with on Money.").
+  function buildGreetingLine(text, freshSession) {
+    const rest = String(text || "").replace(/^Welcome back!\s*/, "");
+
+    if (!freshSession) return rest;
+
+    const name = getPersonName();
+    const timeGreeting = getTimeOfDayGreeting();
+    const opener = name ? timeGreeting + ", " + safe(name) + "! Welcome back." : timeGreeting + "! Welcome back.";
+
+    return rest ? opener + " " + rest : opener;
   }
 
   function init(config) {
     const settings = config || {};
+
+    resolveSessionFreshnessOnce();
 
     if (settings.supabaseClient) state.supabaseClient = settings.supabaseClient;
     if (settings.tenantId) state.tenantId = settings.tenantId;
