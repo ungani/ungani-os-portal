@@ -192,7 +192,25 @@
 
     const script = document.createElement("script");
     script.src = baseSrc + "?v=" + UNGANI_BUILD_VERSION;
-    script.defer = true;
+
+    // The `defer` IDL attribute has NO EFFECT on a script element created
+    // and inserted programmatically (via createElement/appendChild, as
+    // here) - per spec/MDN, dynamically-inserted scripts run as soon as
+    // each individually finishes downloading (effectively `async`),
+    // regardless of `.defer`. That meant loadAccessGuards()'s 4 guard
+    // scripts (client-access-guard.js, session-inactivity-guard.js,
+    // staff-permission-guard.js, staff-visibility-filter.js) actually ran
+    // in WHATEVER order their downloads happened to finish, each
+    // independently racing to call auth.getUser()/RPCs via the shared
+    // Supabase client - exactly the class of nondeterministic, concurrent
+    // auth-check race the comment above this function already identified
+    // as "the most likely cause of intermittent 'got logged out' reports"
+    // (that fix solved the multiple-client-instance half of the problem,
+    // not this ordering half). `async = false` is the actual documented
+    // way to make dynamically-inserted scripts execute in insertion
+    // order once loaded - restores the ordering this code always
+    // intended `defer` to provide.
+    script.async = false;
     document.head.appendChild(script);
   }
 })();
