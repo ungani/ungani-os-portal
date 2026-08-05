@@ -57,7 +57,19 @@
           bottom: 0;
           left: 0;
           width: 100%;
+          /* vh is calculated against the layout viewport, which most
+             mobile browsers do NOT shrink when the on-screen keyboard
+             opens - this fixed-position, bottom-anchored panel kept its
+             full "no keyboard" height, pushing the compose input (the
+             last flex child) behind the keyboard - invisible and
+             unreachable while typing, especially on a longer message
+             where the keyboard stays open for a while. dvh (dynamic
+             viewport height) IS recalculated on keyboard open/close in
+             modern mobile browsers; kept as a second declaration so
+             older browsers that don't understand dvh simply ignore it
+             and keep using the vh value above. */
           height: min(80vh, 580px);
+          height: min(80dvh, 580px);
           border-radius: 22px 22px 0 0;
         }
       }
