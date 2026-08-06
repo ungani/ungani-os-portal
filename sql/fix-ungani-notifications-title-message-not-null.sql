@@ -27,13 +27,25 @@
 -- Fix: both functions now write BOTH column pairs with the same values,
 -- so any future code that reads either title/message OR notification_
 -- title/notification_message sees real content.
+--
+-- *** RUN THIS FILE AS THREE SEPARATE EXECUTIONS, NOT ONE PASTE. ***
+-- STEP 1 (PART A + PART B below) redefines both functions - run this
+-- block ALONE first. STEP 2 and STEP 3 (under VERIFICATION) each run
+-- ALONE afterward, in their own separate "Run" action. Do not run all
+-- three in a single paste: STEP 3 contains an explicit begin/rollback
+-- for its safe test insert, and if the SQL editor executes a pasted
+-- script as one continuous session, that rollback silently undoes
+-- everything run earlier in the SAME paste - including STEP 1's
+-- function redefinitions. That is exactly what happened on the first
+-- attempt: no errors were shown, but the rollback reverted the fix.
 
 -- ============================================================
--- PART A: create_ungani_notification() - adds title/message to the
--- INSERT, identical values to notification_title/notification_message.
--- Everything else reproduced verbatim from the current live version
--- (sql/ungani-connect-phase4-smart-notifications.sql). Return type is
--- unchanged (jsonb), so CREATE OR REPLACE works without a DROP first.
+-- STEP 1, PART A: create_ungani_notification() - adds title/message to
+-- the INSERT, identical values to notification_title/notification_
+-- message. Everything else reproduced verbatim from the current live
+-- version (sql/ungani-connect-phase4-smart-notifications.sql). Return
+-- type is unchanged (jsonb), so CREATE OR REPLACE works without a DROP
+-- first. Run PART A and PART B together, alone, nothing else.
 -- ============================================================
 
 create or replace function public.create_ungani_notification(
@@ -98,10 +110,12 @@ end;
 $function$;
 
 -- ============================================================
--- PART B: sync_my_ungani_notifications() - same fix, all 4 insert
--- blocks. Everything else reproduced verbatim from sql/notification-
--- unification.sql (the current live version). Return type unchanged
--- (void), no DROP needed.
+-- STEP 1, PART B: sync_my_ungani_notifications() - same fix, all 4
+-- insert blocks. Everything else reproduced verbatim from sql/
+-- notification-unification.sql (the current live version). Return type
+-- unchanged (void), no DROP needed. Still part of STEP 1 - run together
+-- with PART A above, in the same execution as each other (but separate
+-- from STEP 2 and STEP 3 below).
 -- ============================================================
 
 create or replace function public.sync_my_ungani_notifications()
@@ -263,12 +277,25 @@ end;
 $function$;
 
 -- ============================================================
--- VERIFICATION - proves the fix works before you rely on it, then
--- confirms both function definitions actually changed.
+-- STEP 2 (run ALONE, in its own execution, after STEP 1 has run and
+-- completed): confirms both function definitions actually changed.
+-- No transaction, no risk - safe to run any time.
 -- ============================================================
 
--- 1. Live proof, rolled back so it writes nothing permanent - the exact
--- insert that failed before should now succeed with no error.
+select p.proname, pg_get_functiondef(p.oid) as source
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname in ('create_ungani_notification', 'sync_my_ungani_notifications')
+order by p.proname;
+
+-- ============================================================
+-- STEP 3 (run ALONE, in its own separate execution - never combined
+-- with STEP 1 in the same paste): live proof, rolled back so it writes
+-- nothing permanent. The exact insert that failed before should now
+-- succeed with no error.
+-- ============================================================
+
 begin;
 
 insert into public.ungani_notifications (
@@ -293,11 +320,3 @@ where t.tenant_id = 'a29af055-e4f0-48cf-af97-f99081a9106b'
 limit 1;
 
 rollback;
-
--- 2. Confirm both function definitions now include title/message.
-select p.proname, pg_get_functiondef(p.oid) as source
-from pg_proc p
-join pg_namespace n on n.oid = p.pronamespace
-where n.nspname = 'public'
-  and p.proname in ('create_ungani_notification', 'sync_my_ungani_notifications')
-order by p.proname;
