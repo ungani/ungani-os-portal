@@ -4155,12 +4155,18 @@
   // mention/status types) is a one-shot event: mark-read = gone.
   var STATE_NOTIFICATION_TYPES = ["task_overdue", "support_issue_open"];
 
+  // status is the authoritative read/unread signal for event types, not
+  // is_read - a real, live data check found a batch of historical rows
+  // where is_read=false but status='read' (some legacy write path only
+  // ever updated one of the two columns). Matching client.html's own
+  // dashboard bell, which already got this right by only checking
+  // status - anything not exactly "read" counts as active.
   function isNotificationActive(item) {
     if (STATE_NOTIFICATION_TYPES.indexOf(item.notification_type) !== -1) {
       return !item.resolved_at;
     }
 
-    return item.is_read === false || item.status === "unread";
+    return String(item.status || "").toLowerCase() !== "read";
   }
 
   async function refreshEngineNotificationBadge() {
