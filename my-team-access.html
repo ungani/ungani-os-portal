@@ -1170,6 +1170,42 @@
     // regardless (belt-and-suspenders, RLS is the real control).
     // ============================================================
 
+    // Fire-and-forget, self-contained (this page never loads
+    // client-shared.js, so it can't reuse triggerEventPush()/
+    // triggerEmailSendNow()) - same request shape as the shared
+    // versions.
+    async function triggerRecordCommentPush(commentId) {
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (!token) return;
+
+        await fetch("/api/send-event-push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ eventType: "record_comment", relatedId: commentId }),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Event push trigger warning:", error.message);
+      }
+
+      try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token;
+        if (!token) return;
+
+        await fetch("/api/send-email-queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ limit: 5 }),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Instant email send warning:", error.message);
+      }
+    }
+
     function toTitleMember(value) {
       return String(value || "").replace(/\b\w/g, c => c.toUpperCase());
     }
@@ -1313,12 +1349,41 @@
 
         .mp-compose textarea {
           flex: 1;
+          min-width: 200px;
           border-radius: 10px;
           border: 1px solid var(--border, rgba(6,28,61,0.16));
           padding: 8px 10px;
           font-family: inherit;
           font-size: 13px;
           resize: vertical;
+        }
+
+        .ucp-mention-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .ucp-mention-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          background: rgba(212,166,58,0.16);
+          color: var(--navy, #061C3D);
+          border-radius: 999px;
+          padding: 4px 10px;
+          font-size: 11.5px;
+          font-weight: 700;
+        }
+
+        .ucp-mention-chip button {
+          border: none;
+          background: transparent;
+          color: inherit;
+          cursor: pointer;
+          font-size: 11px;
+          padding: 0;
+          line-height: 1;
         }
       `;
       document.head.appendChild(style);
@@ -1383,8 +1448,10 @@
           <h3>Discussion</h3>
           <p class="mp-small">Comments visible to the owner only (Employees has no staff-facing section yet).</p>
           <div id="mpDiscussionList"><p class="mp-small">Loading comments...</p></div>
-          <form class="mp-compose" onsubmit="postMemberComment(event)">
-            <textarea id="mpCommentInput" rows="2" placeholder="Write a comment..." required></textarea>
+          <div id="mpMentionChips" class="ucp-mention-chips" style="margin-top:8px;"></div>
+          <form class="mp-compose" onsubmit="postMemberComment(event)" style="flex-wrap:wrap;">
+            <textarea id="mpCommentInput" rows="2" placeholder="Write a comment... use + Mention to notify someone directly" required></textarea>
+            <select id="mpMentionPicker" onchange="addMemberMention(this.value); this.value='';" style="border-radius:10px;border:1px solid var(--border,rgba(6,28,61,0.16));padding:8px;font-size:12.5px;background:transparent;color:inherit;"></select>
             <button class="ungani-btn gold" type="submit">Post</button>
           </form>
         </div>
@@ -1407,9 +1474,79 @@
         </div>
       `;
 
+      mpPendingMentions = [];
+      renderMemberMentionPicker();
+      renderMemberMentionChips();
       loadMemberComments(member.id);
       loadMemberAttachments(member.id);
       loadMemberTimeline(member.id);
+    }
+
+    // Ungani Connect Phase 4: mentions for the Employees bespoke panel.
+    // Only other TEAM MEMBERS are mentionable here - the viewer is
+    // always the owner (this panel is owner-only), so there's no reason
+    // to let them mention themselves.
+    let mpPendingMentions = [];
+
+    function memberMentionCandidates() {
+      return members
+        .filter(function (m) { return m.auth_user_id; })
+        .filter(function (m) { return !mpPendingMentions.some(function (p) { return p.id === m.auth_user_id; }); })
+        .map(function (m) { return { id: m.auth_user_id, name: m.full_name || "Staff Member" }; });
+    }
+
+    function addMemberMention(authUserId) {
+      if (!authUserId) return;
+
+      const candidate = memberMentionCandidates().find(function (c) { return c.id === authUserId; });
+      if (!candidate) return;
+
+      mpPendingMentions.push(candidate);
+
+      const input = document.getElementById("mpCommentInput");
+      if (input) {
+        const current = input.value || "";
+        input.value = (current && !/\s$/.test(current) ? current + " " : current) + "@" + candidate.name + " ";
+        input.focus();
+      }
+
+      renderMemberMentionPicker();
+      renderMemberMentionChips();
+    }
+
+    function removeMemberMention(authUserId) {
+      mpPendingMentions = mpPendingMentions.filter(function (p) { return p.id !== authUserId; });
+      renderMemberMentionPicker();
+      renderMemberMentionChips();
+    }
+
+    function renderMemberMentionPicker() {
+      const picker = document.getElementById("mpMentionPicker");
+      if (!picker) return;
+
+      const candidates = memberMentionCandidates();
+
+      picker.innerHTML = `
+        <option value="">+ Mention someone...</option>
+        ${candidates.map(function (c) {
+          return `<option value="${attr(c.id)}">${safe(c.name)}</option>`;
+        }).join("")}
+      `;
+      picker.style.display = candidates.length ? "" : "none";
+    }
+
+    function renderMemberMentionChips() {
+      const container = document.getElementById("mpMentionChips");
+      if (!container) return;
+
+      if (!mpPendingMentions.length) {
+        container.innerHTML = "";
+        return;
+      }
+
+      container.innerHTML = mpPendingMentions.map(function (m) {
+        return `<span class="ucp-mention-chip">@${safe(m.name)} <button type="button" onclick="removeMemberMention('${attr(m.id)}')" aria-label="Remove mention">✕</button></span>`;
+      }).join("");
     }
 
     async function loadMemberComments(memberId) {
@@ -1469,6 +1606,7 @@
       if (!bodyText) return;
 
       const submitBtn = event.submitter || (event.target.querySelector && event.target.querySelector('button[type="submit"]'));
+      const mentionedUserIds = mpPendingMentions.map(function (m) { return m.id; });
 
       await withButtonLoading(submitBtn, async () => {
         let response;
@@ -1477,7 +1615,8 @@
           response = await supabaseClient.rpc("add_ungani_record_comment", {
             p_record_table: "ungani_team_members",
             p_record_id: activeMemberPanelId,
-            p_body: bodyText
+            p_body: bodyText,
+            p_mentioned_user_ids: mentionedUserIds
           });
         } catch (error) {
           alert("Could not post comment: " + (error.message || "Network error. Please check your connection."));
@@ -1490,6 +1629,26 @@
         }
 
         if (input) input.value = "";
+        mpPendingMentions = [];
+        renderMemberMentionPicker();
+        renderMemberMentionChips();
+
+        // Ungani Connect Phase 4: Smart Notification for @mentions -
+        // ungani_team_members has no "relevant party" concept (Phase 0's
+        // finding, unchanged), so this only ever notifies explicit
+        // mentions, never a default recipient.
+        const commentId = response.data.comment_id;
+
+        if (commentId) {
+          try {
+            await supabaseClient.rpc("notify_ungani_record_comment", { p_comment_id: commentId });
+          } catch (error) {
+            console.warn("Could not send comment notification:", error.message);
+          }
+
+          triggerRecordCommentPush(commentId);
+        }
+
         await loadMemberComments(activeMemberPanelId);
         await loadMemberTimeline(activeMemberPanelId);
       });

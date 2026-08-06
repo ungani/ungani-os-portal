@@ -2433,7 +2433,12 @@ const payload = {
       if (wasNewInsert) {
         UnganiConnectPanel.logActivity(currentContext, "transactions", savedMoneyId, "created", "Money record created.");
       } else if (payload.status !== editingMoneyOriginalStatus) {
-        UnganiConnectPanel.logActivity(currentContext, "transactions", savedMoneyId, "status_changed", "Status changed from " + toTitleMoney(editingMoneyOriginalStatus || "completed") + " to " + toTitleMoney(payload.status) + ".");
+        const activityResult = await UnganiConnectPanel.logActivity(currentContext, "transactions", savedMoneyId, "status_changed", "Status changed from " + toTitleMoney(editingMoneyOriginalStatus || "completed") + " to " + toTitleMoney(payload.status) + ".");
+
+        // Ungani Connect Phase 4: Smart Notification - notifies whoever
+        // this record is tagged to (related_team_member_id, the same
+        // payroll-tagging column) when someone else changes its status.
+        UnganiConnectPanel.notifyStatusChange(currentContext, "transactions", savedMoneyId, activityResult && activityResult.activity_id, editingMoneyOriginalStatus, payload.status);
       }
 
       if (wasNewInsert && broadType === "expense" && payload.related_team_member_id) {

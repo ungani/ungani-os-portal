@@ -510,6 +510,244 @@ async function handleClientAdminMessage(req, supabaseAdmin, messageId, res) {
   return json(res, 200, { ok: true, sent: results.filter((r) => r.ok).length, results });
 }
 
+// Ungani Connect Phase 4: mirrors resolve_ungani_record_relevant_party()
+// (the SQL version, used for the in-app/email side) - only Tasks/
+// Transactions have a real assignee-style concept in this schema.
+async function resolveRelevantParty(supabaseAdmin, recordTable, recordId) {
+  if (recordTable === "tasks") {
+    const { data: task } = await supabaseAdmin
+      .from("tasks")
+      .select("tenant_id, assigned_to_is_owner, assigned_to_team_member_id")
+      .eq("id", recordId)
+      .maybeSingle();
+
+    if (!task) return null;
+
+    if (task.assigned_to_is_owner) {
+      const { data: reg } = await supabaseAdmin
+        .from("registrations")
+        .select("auth_user_id")
+        .eq("tenant_id", task.tenant_id)
+        .in("status", ["approved", "active", "trial"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      return reg?.auth_user_id || null;
+    }
+
+    if (task.assigned_to_team_member_id) {
+      const { data: tm } = await supabaseAdmin
+        .from("ungani_team_members")
+        .select("auth_user_id")
+        .eq("id", task.assigned_to_team_member_id)
+        .eq("tenant_id", task.tenant_id)
+        .maybeSingle();
+
+      return tm?.auth_user_id || null;
+    }
+
+    return null;
+  }
+
+  if (recordTable === "transactions") {
+    const { data: txn } = await supabaseAdmin
+      .from("transactions")
+      .select("tenant_id, related_team_member_id")
+      .eq("id", recordId)
+      .maybeSingle();
+
+    if (!txn || !txn.related_team_member_id) return null;
+
+    const { data: tm } = await supabaseAdmin
+      .from("ungani_team_members")
+      .select("auth_user_id")
+      .eq("id", txn.related_team_member_id)
+      .eq("tenant_id", txn.tenant_id)
+      .maybeSingle();
+
+    return tm?.auth_user_id || null;
+  }
+
+  return null;
+}
+
+async function pushToUser(supabaseAdmin, authUserId, eventType, relatedId, recipientScope, payload) {
+  if (await alreadySent(supabaseAdmin, eventType, relatedId, recipientScope)) {
+    return { sent: 0, skipped: "already_sent" };
+  }
+
+  const { data: subscriptions } = await supabaseAdmin
+    .from(SUBSCRIPTIONS_TABLE)
+    .select("id, endpoint, p256dh, auth_key")
+    .eq("auth_user_id", authUserId);
+
+  if (!subscriptions || subscriptions.length === 0) {
+    await markSent(supabaseAdmin, eventType, relatedId, recipientScope);
+    return { sent: 0, skipped: "no_subscriptions" };
+  }
+
+  const results = await sendToSubscriptions(supabaseAdmin, subscriptions, payload);
+  await markSent(supabaseAdmin, eventType, relatedId, recipientScope);
+  return { sent: results.filter((r) => r.ok).length };
+}
+
+// Authenticated, tenant-verified. Re-derives the comment, its mentions,
+// and (for Tasks/Transactions) the record's relevant party entirely
+// server-side - the client only ever tells this endpoint WHICH comment
+// fired, never who to notify or what to say, same discipline as every
+// other handler in this file.
+async function handleRecordComment(req, supabaseAdmin, commentId, res) {
+  const callerTenantId = await resolveCallerTenantId(getBearerToken(req));
+
+  if (!callerTenantId) {
+    return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
+  }
+
+  const { data: comment } = await supabaseAdmin
+    .from("ungani_record_comments")
+    .select("id, tenant_id, record_table, record_id, author_user_id, author_name, body, mentioned_user_ids")
+    .eq("id", commentId)
+    .maybeSingle();
+
+  if (!comment) {
+    return json(res, 200, { ok: true, sent: 0, message: "Comment not found." });
+  }
+
+  if (comment.tenant_id !== callerTenantId) {
+    return json(res, 403, { ok: false, message: "Comment does not belong to your account." });
+  }
+
+  const relevantParty = await resolveRelevantParty(supabaseAdmin, comment.record_table, comment.record_id);
+  const mentioned = Array.isArray(comment.mentioned_user_ids) ? comment.mentioned_user_ids : [];
+
+  const recipients = new Set(mentioned);
+  if (relevantParty) recipients.add(relevantParty);
+  recipients.delete(comment.author_user_id);
+
+  if (recipients.size === 0) {
+    return json(res, 200, { ok: true, sent: 0, message: "No resolvable recipient for this comment." });
+  }
+
+  const bodyText = String(comment.body || "").slice(0, 140);
+  let totalSent = 0;
+
+  for (const recipientUserId of recipients) {
+    const isMention = mentioned.includes(recipientUserId);
+
+    const payload = JSON.stringify({
+      title: isMention ? "You were mentioned" : "New comment",
+      body: (comment.author_name || "Someone") + (isMention ? " mentioned you: " : " commented: ") + bodyText,
+      url: "/my-connect.html",
+      tag: "comment-" + comment.id
+    });
+
+    const result = await pushToUser(supabaseAdmin, recipientUserId, "record_comment", commentId, recipientUserId, payload);
+    totalSent += result.sent || 0;
+  }
+
+  return json(res, 200, { ok: true, sent: totalSent });
+}
+
+// Authenticated, tenant-verified. relatedId is the ungani_record_activity
+// row's own id (log_ungani_record_activity() now returns activity_id) -
+// a real, persisted row, same re-derive-from-source discipline.
+async function handleRecordStatusChange(req, supabaseAdmin, activityId, res) {
+  const callerTenantId = await resolveCallerTenantId(getBearerToken(req));
+
+  if (!callerTenantId) {
+    return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
+  }
+
+  const { data: activity } = await supabaseAdmin
+    .from("ungani_record_activity")
+    .select("id, tenant_id, record_table, record_id, actor_user_id, actor_name, event_type, description")
+    .eq("id", activityId)
+    .maybeSingle();
+
+  if (!activity) {
+    return json(res, 200, { ok: true, sent: 0, message: "Activity entry not found." });
+  }
+
+  if (activity.tenant_id !== callerTenantId) {
+    return json(res, 403, { ok: false, message: "Activity entry does not belong to your account." });
+  }
+
+  if (activity.event_type !== "status_changed") {
+    return json(res, 200, { ok: true, sent: 0, message: "Not a status-change event." });
+  }
+
+  const relevantParty = await resolveRelevantParty(supabaseAdmin, activity.record_table, activity.record_id);
+
+  if (!relevantParty || relevantParty === activity.actor_user_id) {
+    return json(res, 200, { ok: true, sent: 0, message: "No resolvable recipient for this change." });
+  }
+
+  const payload = JSON.stringify({
+    title: "Status updated",
+    body: (activity.actor_name || "Someone") + ": " + String(activity.description || "").slice(0, 140),
+    url: "/my-connect.html",
+    tag: "status-" + activity.id
+  });
+
+  const result = await pushToUser(supabaseAdmin, relevantParty, "record_status_changed", activityId, relevantParty, payload);
+  return json(res, 200, { ok: true, sent: result.sent || 0 });
+}
+
+// Authenticated, tenant-verified. Mirrors notify_ungani_record_attachment()'s
+// SQL twin - only fires when the document is linked to a Task/Transaction
+// (the 2 record types with a resolvable relevant party).
+async function handleRecordAttachment(req, supabaseAdmin, documentId, res) {
+  const callerTenantId = await resolveCallerTenantId(getBearerToken(req));
+
+  if (!callerTenantId) {
+    return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
+  }
+
+  const { data: doc } = await supabaseAdmin
+    .from("documents")
+    .select("id, tenant_id, document_title, linked_task_id, linked_transaction_id")
+    .eq("id", documentId)
+    .maybeSingle();
+
+  if (!doc) {
+    return json(res, 200, { ok: true, sent: 0, message: "Document not found." });
+  }
+
+  if (doc.tenant_id !== callerTenantId) {
+    return json(res, 403, { ok: false, message: "Document does not belong to your account." });
+  }
+
+  let recordTable = null;
+  let recordId = null;
+
+  if (doc.linked_task_id) {
+    recordTable = "tasks";
+    recordId = doc.linked_task_id;
+  } else if (doc.linked_transaction_id) {
+    recordTable = "transactions";
+    recordId = doc.linked_transaction_id;
+  } else {
+    return json(res, 200, { ok: true, sent: 0, message: "Document not linked to a record with a relevant party." });
+  }
+
+  const relevantParty = await resolveRelevantParty(supabaseAdmin, recordTable, recordId);
+
+  if (!relevantParty) {
+    return json(res, 200, { ok: true, sent: 0, message: "No resolvable recipient for this attachment." });
+  }
+
+  const payload = JSON.stringify({
+    title: "New document attached",
+    body: "\"" + (doc.document_title || "A document") + "\" was attached to your " + recordTable.replace("_", " ") + ".",
+    url: "/my-documents.html?highlight=" + doc.id,
+    tag: "attachment-" + doc.id
+  });
+
+  const result = await pushToUser(supabaseAdmin, relevantParty, "record_attachment", documentId, relevantParty, payload);
+  return json(res, 200, { ok: true, sent: result.sent || 0 });
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
@@ -558,6 +796,18 @@ export default async function handler(req, res) {
 
     if (eventType === "client_admin_message") {
       return await handleClientAdminMessage(req, supabaseAdmin, relatedId, res);
+    }
+
+    if (eventType === "record_comment") {
+      return await handleRecordComment(req, supabaseAdmin, relatedId, res);
+    }
+
+    if (eventType === "record_status_changed") {
+      return await handleRecordStatusChange(req, supabaseAdmin, relatedId, res);
+    }
+
+    if (eventType === "record_attachment") {
+      return await handleRecordAttachment(req, supabaseAdmin, relatedId, res);
     }
 
     return json(res, 400, { ok: false, message: "Unknown eventType." });

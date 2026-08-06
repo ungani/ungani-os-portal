@@ -1418,7 +1418,11 @@
         if (!editingTaskId) {
           UnganiConnectPanel.logActivity(currentContext, "tasks", savedForActivity, "created", "Task created.");
         } else if (payload.status !== editingTaskOriginalStatus) {
-          UnganiConnectPanel.logActivity(currentContext, "tasks", savedForActivity, "status_changed", "Status changed from " + toTitle(editingTaskOriginalStatus || "pending") + " to " + toTitle(payload.status) + ".");
+          const activityResult = await UnganiConnectPanel.logActivity(currentContext, "tasks", savedForActivity, "status_changed", "Status changed from " + toTitle(editingTaskOriginalStatus || "pending") + " to " + toTitle(payload.status) + ".");
+
+          // Ungani Connect Phase 4: Smart Notification - notifies the
+          // task's assignee when someone else changes its status.
+          UnganiConnectPanel.notifyStatusChange(currentContext, "tasks", savedForActivity, activityResult && activityResult.activity_id, editingTaskOriginalStatus, payload.status);
         }
 
         if (assigneeChanged && (assignee.isOwner || assignee.teamMemberId)) {
@@ -1495,6 +1499,9 @@
     }
 
     async function markTaskCompleted(id, buttonEl) {
+      const originalRow = taskRows.find(function (item) { return String(item.id) === String(id); });
+      const originalStatus = originalRow ? UnganiClientShared.getValue(originalRow, ["status"], "pending") : "pending";
+
       await UnganiClientShared.withButtonLoading(buttonEl, async () => {
         let response;
 
@@ -1514,7 +1521,8 @@
           return;
         }
 
-        UnganiConnectPanel.logActivity(currentContext, "tasks", id, "status_changed", "Marked as Completed.");
+        const activityResult = await UnganiConnectPanel.logActivity(currentContext, "tasks", id, "status_changed", "Marked as Completed.");
+        UnganiConnectPanel.notifyStatusChange(currentContext, "tasks", id, activityResult && activityResult.activity_id, originalStatus, "completed");
 
         UnganiClientShared.showToast("Task marked completed ✓");
         editingTaskId = null;

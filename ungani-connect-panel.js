@@ -23,6 +23,14 @@
 (function () {
   let activeCtx = null;
   let activeOptions = null;
+  // Ungani Connect Phase 4: mentions. Roster reuses the same
+  // get_my_ungani_team_members_for_assignment() RPC already established
+  // as the canonical reusable roster source (team-chat-shared.js,
+  // my-documents.html's Staff Member linking). pendingMentions holds
+  // {id (auth_user_id), name} for the CURRENT draft comment only -
+  // cleared after a successful post or when the panel re-opens.
+  let roster = { owner: null, members: [] };
+  let pendingMentions = [];
 
   function injectStylesOnce() {
     if (document.getElementById("unganiConnectPanelStyles")) return;
@@ -100,6 +108,34 @@
         display: block;
         font-size: 13.5px;
       }
+
+      .ucp-mention-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .ucp-mention-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: rgba(212,166,58,0.16);
+        color: var(--ungani-navy, #061C3D);
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 11.5px;
+        font-weight: 700;
+      }
+
+      .ucp-mention-chip button {
+        border: none;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        font-size: 11px;
+        padding: 0;
+        line-height: 1;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -111,6 +147,7 @@
   async function open(context, options) {
     activeCtx = context;
     activeOptions = options;
+    pendingMentions = [];
 
     injectStylesOnce();
 
@@ -119,7 +156,91 @@
       bodyHtml: UnganiClientShared.loadingCard("Loading discussion...")
     });
 
+    await loadRoster();
     render();
+  }
+
+  async function loadRoster() {
+    try {
+      const response = await activeCtx.supabaseClient.rpc("get_my_ungani_team_members_for_assignment");
+      if (!response.error && response.data && response.data.ok === true) {
+        roster = { owner: response.data.owner || null, members: response.data.members || [] };
+      }
+    } catch (error) {
+      console.warn("Could not load roster for mentions:", error.message);
+    }
+  }
+
+  function mentionCandidates() {
+    const candidates = [];
+    const myAuthId = activeCtx && activeCtx.authUser ? activeCtx.authUser.id : null;
+
+    if (roster.owner && roster.owner.auth_user_id && roster.owner.auth_user_id !== myAuthId) {
+      candidates.push({ id: roster.owner.auth_user_id, name: (roster.owner.full_name || "Owner") + " (Owner)" });
+    }
+
+    roster.members.forEach(function (m) {
+      if (!m.auth_user_id || m.auth_user_id === myAuthId) return;
+      candidates.push({ id: m.auth_user_id, name: m.full_name + (m.role_key ? " (" + m.role_key + ")" : "") });
+    });
+
+    return candidates.filter(function (c) {
+      return !pendingMentions.some(function (p) { return p.id === c.id; });
+    });
+  }
+
+  function addMention(authUserId) {
+    if (!authUserId) return;
+
+    const candidate = mentionCandidates().find(function (c) { return c.id === authUserId; });
+    if (!candidate) return;
+
+    pendingMentions.push({ id: candidate.id, name: candidate.name.replace(/\s*\([^)]*\)\s*$/, "") });
+
+    const input = document.getElementById("ucpCommentInput");
+    if (input) {
+      const current = input.value || "";
+      input.value = (current && !/\s$/.test(current) ? current + " " : current) + "@" + pendingMentions[pendingMentions.length - 1].name + " ";
+      input.focus();
+    }
+
+    renderMentionPicker();
+    renderMentionChips();
+  }
+
+  function removeMention(authUserId) {
+    pendingMentions = pendingMentions.filter(function (p) { return p.id !== authUserId; });
+    renderMentionPicker();
+    renderMentionChips();
+  }
+
+  function renderMentionPicker() {
+    const picker = document.getElementById("ucpMentionPicker");
+    if (!picker) return;
+
+    const candidates = mentionCandidates();
+
+    picker.innerHTML = `
+      <option value="">+ Mention someone...</option>
+      ${candidates.map(function (c) {
+        return `<option value="${UnganiClientShared.attr(c.id)}">${UnganiClientShared.safe(c.name)}</option>`;
+      }).join("")}
+    `;
+    picker.style.display = candidates.length ? "" : "none";
+  }
+
+  function renderMentionChips() {
+    const container = document.getElementById("ucpMentionChips");
+    if (!container) return;
+
+    if (!pendingMentions.length) {
+      container.innerHTML = "";
+      return;
+    }
+
+    container.innerHTML = pendingMentions.map(function (m) {
+      return `<span class="ucp-mention-chip">@${UnganiClientShared.safe(m.name)} <button type="button" onclick="UnganiConnectPanel.removeMention('${UnganiClientShared.attr(m.id)}')" aria-label="Remove mention">✕</button></span>`;
+    }).join("");
   }
 
   function render() {
@@ -142,8 +263,11 @@
           <p class="ungani-small">Loading comments...</p>
         </div>
 
-        <form onsubmit="UnganiConnectPanel.postComment(event)" style="margin-top:12px;display:flex;gap:8px;align-items:flex-end;">
-          <textarea id="ucpCommentInput" rows="2" placeholder="Write a comment..." style="flex:1;" required></textarea>
+        <div id="ucpMentionChips" class="ucp-mention-chips" style="margin-top:8px;"></div>
+
+        <form onsubmit="UnganiConnectPanel.postComment(event)" style="margin-top:8px;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+          <textarea id="ucpCommentInput" rows="2" placeholder="Write a comment... use + Mention to notify someone directly" style="flex:1;min-width:200px;" required></textarea>
+          <select id="ucpMentionPicker" onchange="UnganiConnectPanel.addMention(this.value); this.value='';" style="border-radius:10px;border:1px solid var(--ungani-border,rgba(6,28,61,0.16));padding:8px;font-size:12.5px;"></select>
           <button class="ungani-btn gold" type="submit">Post</button>
         </form>
       </div>
@@ -181,6 +305,8 @@
     loadComments();
     if (options.attachments) loadAttachments();
     loadTimeline();
+    renderMentionPicker();
+    renderMentionChips();
   }
 
   async function loadComments() {
@@ -242,6 +368,8 @@
 
     const submitBtn = event.submitter || (event.target.querySelector && event.target.querySelector('button[type="submit"]'));
 
+    const mentionedUserIds = pendingMentions.map(function (m) { return m.id; });
+
     await UnganiClientShared.withButtonLoading(submitBtn, async () => {
       let response;
 
@@ -249,7 +377,8 @@
         response = await activeCtx.supabaseClient.rpc("add_ungani_record_comment", {
           p_record_table: activeOptions.recordTable,
           p_record_id: activeOptions.recordId,
-          p_body: body
+          p_body: body,
+          p_mentioned_user_ids: mentionedUserIds
         });
       } catch (error) {
         UnganiClientShared.showToast("Could not post comment: " + (error.message || "Network error. Please check your connection."));
@@ -262,6 +391,29 @@
       }
 
       if (input) input.value = "";
+      pendingMentions = [];
+      renderMentionPicker();
+      renderMentionChips();
+
+      // Ungani Connect Phase 4: Smart Notifications - best-effort,
+      // non-blocking, same "the real action already succeeded, this is
+      // additive" pattern as notifyTaskAssignment(). The RPC re-derives
+      // the recipient set (mentions + the record's relevant party, if
+      // any) server-side from the real comment row - nothing here is
+      // trusted client-side content.
+      const commentId = response.data.comment_id;
+
+      if (commentId) {
+        try {
+          await activeCtx.supabaseClient.rpc("notify_ungani_record_comment", { p_comment_id: commentId });
+        } catch (error) {
+          console.warn("Could not send comment notification:", error.message);
+        }
+
+        UnganiClientShared.triggerEmailSendNow();
+        UnganiClientShared.triggerEventPush("record_comment", commentId);
+      }
+
       await loadComments();
       await loadTimeline();
     });
@@ -384,24 +536,72 @@
   // Best-effort, non-blocking helper for host pages to log a real
   // Timeline event from their own save paths (created/status changed/
   // reassigned) - mirrors my-tasks.html's logTaskActivity(), generalized.
+  // Returns the RPC's response data (now includes activity_id, Phase 4)
+  // so callers can chain a Smart Notification off a real, persisted row.
   async function logActivity(context, recordTable, recordId, eventType, description) {
-    if (!recordId) return;
+    if (!recordId) return null;
 
     try {
-      await context.supabaseClient.rpc("log_ungani_record_activity", {
+      const response = await context.supabaseClient.rpc("log_ungani_record_activity", {
         p_record_table: recordTable,
         p_record_id: recordId,
         p_event_type: eventType,
         p_description: description
       });
+      return response.data || null;
     } catch (error) {
       console.warn("Could not log activity:", error.message);
+      return null;
     }
+  }
+
+  // Ungani Connect Phase 4: Smart Notification for a status change -
+  // call AFTER logActivity() with event_type "status_changed" succeeds.
+  // Best-effort/non-blocking, same pattern as notifyTaskAssignment().
+  // The RPC itself decides whether anyone needs notifying (only Tasks/
+  // Transactions resolve a real relevant party today) - callers don't
+  // need to know or care which record types qualify.
+  async function notifyStatusChange(context, recordTable, recordId, activityId, oldStatus, newStatus) {
+    try {
+      await context.supabaseClient.rpc("notify_ungani_record_status_change", {
+        p_record_table: recordTable,
+        p_record_id: recordId,
+        p_old_status: oldStatus,
+        p_new_status: newStatus
+      });
+    } catch (error) {
+      console.warn("Could not send status-change notification:", error.message);
+    }
+
+    context.supabaseClient && UnganiClientShared.triggerEmailSendNow();
+    if (activityId) UnganiClientShared.triggerEventPush("record_status_changed", activityId);
+  }
+
+  // Ungani Connect Phase 4: Smart Notification for a document getting
+  // linked to a Task/Transaction - call after a successful document
+  // save in my-documents.html when linked_task_id/linked_transaction_id
+  // was set. Same best-effort pattern; the RPC no-ops for record types
+  // with no relevant party (People/Employees/an unlinked document).
+  async function notifyAttachment(context, documentId) {
+    if (!documentId) return;
+
+    try {
+      await context.supabaseClient.rpc("notify_ungani_record_attachment", { p_document_id: documentId });
+    } catch (error) {
+      console.warn("Could not send attachment notification:", error.message);
+    }
+
+    UnganiClientShared.triggerEmailSendNow();
+    UnganiClientShared.triggerEventPush("record_attachment", documentId);
   }
 
   window.UnganiConnectPanel = {
     open: open,
     postComment: postComment,
-    logActivity: logActivity
+    addMention: addMention,
+    removeMention: removeMention,
+    logActivity: logActivity,
+    notifyStatusChange: notifyStatusChange,
+    notifyAttachment: notifyAttachment
   };
 })();
