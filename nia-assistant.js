@@ -845,6 +845,24 @@
         box-shadow: 0 18px 42px rgba(6,28,61,0.42);
       }
 
+      /* Applied while a bottom-anchored chat/panel surface (Team Chat
+         popup, an Ungani Connect discussion panel, the Employees
+         discussion panel) is open, so the FAB and tagline don't sit on
+         top of that surface's reply/input area - see syncNiaObstruction(). */
+      .nia-fab.nia-obstructed,
+      .nia-tagline.nia-obstructed {
+        opacity: 0;
+        pointer-events: none;
+        transform: scale(0.85);
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
+        .nia-fab,
+        .nia-tagline {
+          transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+        }
+      }
+
       .nia-fab-dot {
         position: absolute;
         top: 4px;
@@ -1211,6 +1229,63 @@
     panel.id = "niaPanel";
     panel.className = "nia-panel";
     document.body.appendChild(panel);
+
+    watchForObstructingPanels();
+  }
+
+  // Several bottom-anchored floating surfaces share screen real estate
+  // with the Nia FAB (which is always bottom:20px/right:20px, or
+  // bottom:16px/right:16px on mobile): the Team Chat popup
+  // (#unganiTeamChatPanel, bottom:18px/right:18px), an Ungani Connect
+  // discussion side panel (#unganiPanelBackdrop.open, full-height on the
+  // right), and the bespoke Employees discussion panel
+  // (#unganiMemberPanelBackdrop, also full-height on the right). None of
+  // those modules know Nia exists (and shouldn't need to), so Nia
+  // detects them itself and steps out of the way rather than sitting on
+  // top of their reply/input area.
+  function isObstructingPanelOpen() {
+    const teamChat = document.getElementById("unganiTeamChatPanel");
+    if (teamChat && teamChat.style.display === "flex") return true;
+
+    const connectPanel = document.getElementById("unganiPanelBackdrop");
+    if (connectPanel && connectPanel.classList.contains("open")) return true;
+
+    if (document.getElementById("unganiMemberPanelBackdrop")) return true;
+
+    return false;
+  }
+
+  function syncNiaObstruction() {
+    const obstructed = isObstructingPanelOpen();
+    const fab = document.getElementById("niaFabBtn");
+    const tagline = document.getElementById("niaTagline");
+
+    if (fab) fab.classList.toggle("nia-obstructed", obstructed);
+    if (tagline) tagline.classList.toggle("nia-obstructed", obstructed);
+
+    // Nia's own panel sits at a higher z-index than any of these
+    // surfaces, so if it's already open when one of them opens on top,
+    // close it rather than leave two floating chat surfaces stacked.
+    if (obstructed && state.open) closeNia();
+  }
+
+  let obstructionObserver = null;
+
+  function watchForObstructingPanels() {
+    if (obstructionObserver) return;
+
+    obstructionObserver = new MutationObserver(function () {
+      syncNiaObstruction();
+    });
+
+    obstructionObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["style", "class"],
+      childList: true,
+      subtree: true
+    });
+
+    syncNiaObstruction();
   }
 
   function hasSeenNia() {
