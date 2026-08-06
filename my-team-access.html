@@ -1023,6 +1023,7 @@
 
             <div class="actions" style="justify-content:flex-start;">
               ${isOwnerViewer ? `<button class="ungani-btn small dark" type="button" onclick="openMemberDiscussionPanel('${attr(member.id)}')">💬 Discuss</button>` : ""}
+              <button class="ungani-btn small light" type="button" onclick="resetMemberToRoleDefaults('${attr(member.id)}', '${attr(member.role_key || "staff")}', this)">Reset to ${safe(toTitleMember(member.role_key || "staff"))} Defaults</button>
               <button class="ungani-btn small red" type="button" onclick="disableMember('${attr(member.id)}', this)">Disable Staff</button>
             </div>
           </div>
@@ -1129,6 +1130,40 @@
         entityId: String(memberId),
         description: "Updated " + sectionKey + " permissions",
         metadata: { sectionKey: sectionKey, canView: canView, canCreate: canCreate, canEdit: canEdit, canDelete: canDelete }
+      });
+    }
+
+    // Staff Role Presets: lets the owner retrofit a role's default
+    // permissions onto an already-existing member on demand (new members
+    // already get this automatically from owner_upsert_ungani_team_member
+    // - this covers members added before the preset existed, or whose
+    // permissions have drifted and the owner just wants a clean reset).
+    async function resetMemberToRoleDefaults(memberId, roleKey, buttonEl) {
+      if (!confirm("Reset this member's permissions to the standard " + toTitleMember(roleKey) + " defaults? This replaces their current per-section permissions.")) return;
+
+      await withButtonLoading(buttonEl, async () => {
+        const response = await supabaseClient.rpc("owner_apply_ungani_staff_role_preset", {
+          p_team_member_id: memberId,
+          p_role_key: roleKey
+        });
+
+        if (response.error) {
+          alert("Could not reset permissions: " + response.error.message);
+          return;
+        }
+
+        if (!response.data || response.data.ok !== true) {
+          alert(getValue(response.data, ["message"], "Could not reset permissions."));
+          return;
+        }
+
+        logAuditEvent("staff_permission_changed", {
+          entityType: "team_member",
+          entityId: String(memberId),
+          description: "Reset permissions to " + roleKey + " role defaults"
+        });
+
+        await loadTeamMembers();
       });
     }
 
