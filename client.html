@@ -4059,7 +4059,39 @@
       updateLastUpdatedIndicator();
     }
 
+    // task_overdue/support_issue_open rows are maintained by
+    // sync_my_ungani_notifications() (idempotent, called automatically
+    // inside get_my_ungani_notifications()). This dashboard reads the
+    // table directly instead of that RPC (its render code already expects
+    // the raw column names), so it triggers the same sync explicitly here
+    // first - keeps this page's bell in step with every other page's.
+    async function syncNotificationsBeforeLoad() {
+      try {
+        await supabaseClient.rpc("sync_my_ungani_notifications");
+      } catch (error) {
+        console.warn("notification sync", error.message);
+      }
+    }
+
+    // State-based rows (overdue tasks, open support issues) are persistent
+    // status indicators, not one-time events - they stay "unread" for as
+    // long as resolved_at is null, even after being marked read, since the
+    // underlying condition is still true. Everything else is one-shot.
+    const STATE_NOTIFICATION_TYPES = new Set(["task_overdue", "support_issue_open"]);
+
+    function isNotificationUnread(row) {
+      const type = getValue(row, ["notification_type"], "");
+
+      if (STATE_NOTIFICATION_TYPES.has(type)) {
+        return !getValue(row, ["resolved_at"], null);
+      }
+
+      return String(getValue(row, ["status"], "")).toLowerCase() !== "read";
+    }
+
     async function loadNotifications() {
+      await syncNotificationsBeforeLoad();
+
       try {
         const response = await supabaseClient
           .from("ungani_notifications")
@@ -4136,9 +4168,7 @@
     }
 
     function updateNotificationCounts() {
-      const unread = notifications.filter(row => {
-        return String(getValue(row, ["status"], "")).toLowerCase() !== "read";
-      }).length;
+      const unread = notifications.filter(isNotificationUnread).length;
 
       const mobileCount = document.getElementById("mobileNotificationCount");
       const desktopCount = document.getElementById("desktopNotificationCount");
@@ -4212,8 +4242,12 @@
       }
 
       box.innerHTML = notifications.map(row => {
-        const isUnread = String(getValue(row, ["status"], "")).toLowerCase() !== "read";
-        const rawActionUrl = getValue(row, ["action_url"], "");
+        const isUnread = isNotificationUnread(row);
+        // Real ungani_notifications columns are notification_title/
+        // notification_message/link_url (confirmed against every real
+        // insert path) - title/message/action_url were never real column
+        // names on this table, kept here as harmless fallbacks only.
+        const rawActionUrl = getValue(row, ["link_url", "action_url"], "");
         const actionUrl = rawActionUrl ? safeNotificationActionUrl(rawActionUrl, getValue(row, ["notification_type"], "")) : "";
         const actionLabel = getValue(row, ["action_label"], "Open");
         const priority = String(getValue(row, ["priority"], "normal")).toLowerCase();
@@ -4221,10 +4255,10 @@
         return `
           <div class="notification-item ${isUnread ? "unread" : ""}">
             <div class="notification-meta">
-              <strong>${safe(getValue(row, ["title"], "Notification"))}</strong>
+              <strong>${safe(getValue(row, ["notification_title", "title"], "Notification"))}</strong>
               ${priorityBadge(priority)}
             </div>
-            <p>${safe(getValue(row, ["message"], ""))}</p>
+            <p>${safe(getValue(row, ["notification_message", "message"], ""))}</p>
             <div class="notification-meta">
               <p>${safe(formatDate(getValue(row, ["created_at"], "")))}</p>
               <div class="top-actions">

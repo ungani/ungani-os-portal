@@ -1662,18 +1662,17 @@
       await loadSavedSettings();
 
       renderShell(config);
-      loadNotificationBadge();
+      refreshNotificationBadgeSafe();
       loadSidebarBadgeCounts();
 
-      // Keeps the OS app-icon badge (and the in-nav badges) fresh while
-      // the tab stays open, matching the existing notification-engine's
-      // own 60s cadence elsewhere in this file. Runs once per page load
-      // (this init flow only ever executes once), so a single interval.
+      // Keeps the OS app-icon badge (in-nav badges) fresh while the tab
+      // stays open. The notification bell has its own 60s interval
+      // (installed alongside get_my_ungani_notifications() further down
+      // this file), so only the sidebar counts need one here.
       setInterval(loadSidebarBadgeCounts, 60000);
-      setInterval(loadNotificationBadge, 60000);
 
-      // Real bug: both badge loaders above only ever ran once, at initial
-      // page load. Mobile browsers commonly restore a page from the
+      // Real bug: badge loaders above only ever ran once, at initial page
+      // load. Mobile browsers commonly restore a page from the
       // back-forward cache (bfcache) when the user navigates to another
       // page and back - that restore does NOT re-run this init flow (no
       // network requests, no JS re-execution), so the badge kept showing
@@ -1683,7 +1682,7 @@
       // freshly loaded - re-fetch both counts when that happens.
       window.addEventListener("pageshow", function (event) {
         if (event.persisted) {
-          loadNotificationBadge();
+          refreshNotificationBadgeSafe();
           loadSidebarBadgeCounts();
         }
       });
@@ -2628,26 +2627,23 @@
     }
   }
 
-  async function loadNotificationBadge() {
-    const countEl = document.getElementById("unganiBellCount");
-
-    if (!countEl || !state.supabaseClient || !state.tenantId) return;
-
-    const items = await getNotificationItems();
-    const count = items.length;
-
-    countEl.textContent = String(count);
-    countEl.style.display = count > 0 ? "inline-flex" : "none";
+  // The real notification bell (unganiBellCount/unganiNotificationPanel) is
+  // owned by the notification engine further down this file, which reads
+  // get_my_ungani_notifications() directly and installs itself onto
+  // UnganiClientShared.refreshNotificationBadge/toggleNotifications once
+  // ready. This thin wrapper lets bfcache/init call sites here trigger a
+  // refresh without needing to know about that other closure's internals.
+  function refreshNotificationBadgeSafe() {
+    if (window.UnganiClientShared && typeof window.UnganiClientShared.refreshNotificationBadge === "function") {
+      window.UnganiClientShared.refreshNotificationBadge();
+    }
   }
 
   // Sidebar item badges (Tasks/Support Issues/Notifications/Team Chat) -
   // one batched round of lightweight queries per page load, not one query
-  // per nav item. Tasks reuses the exact same "overdue" definition as
-  // getNotificationItems() (status doesn't contain completed/cancelled) so
-  // the two counts never disagree, but fetches only the `status` column
-  // instead of select("*") and isn't capped at getNotificationItems()'s
-  // .slice(0, 20) merge-across-categories limit, which would otherwise
-  // undercount a single category once the combined total crosses 20.
+  // per nav item. Deliberately separate from the notification bell/engine
+  // below: these are per-nav-item counts (their own "overdue"/"open"
+  // definitions), not the unified ungani_notifications feed.
   async function getSidebarBadgeCounts() {
     if (!state.supabaseClient || !state.tenantId) return {};
 
@@ -2758,158 +2754,15 @@
     applySidebarBadgeCounts(counts);
   }
 
-  async function toggleNotifications() {
+  // toggleNotifications/getNotificationItems (the old tasks/support_issues/
+  // client_notices/admin_client_messages heuristic) retired - the
+  // notification engine further down this file (reading
+  // get_my_ungani_notifications() directly) is now the single source of
+  // truth for the bell, and overwrites the stub below almost immediately
+  // after this object is exposed.
+  function toggleNotifications() {
     const panel = document.getElementById("unganiNotificationPanel");
-
-    if (!panel) return;
-
-    closeGlobalSearch();
-    closeQuickAdd();
-    if (window.UnganiTeamChat) UnganiTeamChat.close();
-
-    if (panel.style.display === "block") {
-      panel.style.display = "none";
-      return;
-    }
-
-    panel.style.display = "block";
-    panel.innerHTML = `
-      <div class="ungani-panel-head">
-        <strong>Notifications</strong>
-        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.toggleNotifications()">Close</button>
-      </div>
-      <div class="ungani-panel-body">${loadingCard("Loading notifications...")}</div>
-    `;
-
-    const items = await getNotificationItems();
-
-    panel.innerHTML = `
-      <div class="ungani-panel-head">
-        <strong>Notifications</strong>
-        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.toggleNotifications()">Close</button>
-      </div>
-
-      <div class="ungani-panel-body">
-        ${items.length === 0 ? `
-          <div class="ungani-empty">
-            <h3>No urgent alerts</h3>
-            <p>Task reminders, unread notices, support items, and UNGANI replies will appear here.</p>
-          </div>
-        ` : items.map(function (item) {
-          return `
-            <a class="ungani-alert-row" href="${attr(item.href)}">
-              <span class="ungani-badge ${attr(item.color)}">${safe(item.type)}</span>
-              <h3 style="font-size:15px;margin:8px 0 4px;">${safe(item.title)}</h3>
-              <p class="ungani-small" style="margin:0;">${safe(item.detail)}</p>
-            </a>
-          `;
-        }).join("")}
-      </div>
-    `;
-  }
-
-  async function getNotificationItems() {
-    const items = [];
-    const today = todayISO();
-
-    try {
-      const tasks = await state.supabaseClient
-        .from("tasks")
-        .select("*")
-        .eq("tenant_id", state.tenantId)
-        .lte("due_date", today)
-        .limit(10);
-
-      if (!tasks.error) {
-        (tasks.data || []).forEach(function (row) {
-          const status = String(getValue(row, ["status"], "")).toLowerCase();
-
-          if (!status.includes("completed") && !status.includes("cancelled")) {
-            items.push({
-              type: "Task Due",
-              color: "red",
-              title: getValue(row, ["task_title", "title", "name"], "Task due"),
-              detail: "Due " + formatDate(getValue(row, ["due_date"], "")),
-              href: "my-tasks.html"
-            });
-          }
-        });
-      }
-    } catch (error) {
-      console.warn("Task notifications skipped:", error.message);
-    }
-
-    try {
-      const support = await state.supabaseClient
-        .from("support_issues")
-        .select("*")
-        .eq("tenant_id", state.tenantId)
-        .in("status", ["open", "in progress"])
-        .limit(10);
-
-      if (!support.error) {
-        (support.data || []).forEach(function (row) {
-          items.push({
-            type: "Support",
-            color: "gold",
-            title: getValue(row, ["issue_title", "subject"], "Open support issue"),
-            detail: getValue(row, ["priority"], "normal") + " priority",
-            href: "my-support.html"
-          });
-        });
-      }
-    } catch (error) {
-      console.warn("Support notifications skipped:", error.message);
-    }
-
-    try {
-      const notices = await state.supabaseClient
-        .from("client_notices")
-        .select("*")
-        .eq("tenant_id", state.tenantId)
-        .eq("status", "unread")
-        .limit(10);
-
-      if (!notices.error) {
-        (notices.data || []).forEach(function (row) {
-          items.push({
-            type: "Notice",
-            color: "gold",
-            title: getValue(row, ["notice_title", "title"], "Unread notice"),
-            detail: getValue(row, ["message", "description"], "Unread client notice"),
-            href: "my-notices.html"
-          });
-        });
-      }
-    } catch (error) {
-      console.warn("Notice notifications skipped:", error.message);
-    }
-
-    try {
-      const chat = await state.supabaseClient
-        .from("admin_client_messages")
-        .select("*")
-        .eq("tenant_id", state.tenantId)
-        .neq("sender_role", "client")
-        .eq("is_read", false)
-        .limit(10);
-
-      if (!chat.error) {
-        (chat.data || []).forEach(function (row) {
-          items.push({
-            type: "UNGANI Reply",
-            color: "green",
-            title: "New message from UNGANI",
-            detail: shortText(getValue(row, ["message_body", "message", "body"], ""), 80),
-            href: "my-chat.html"
-          });
-        });
-      }
-    } catch (error) {
-      console.warn("Chat notifications skipped:", error.message);
-    }
-
-    return items.slice(0, 20);
+    if (panel) panel.style.display = panel.style.display === "block" ? "none" : "block";
   }
 
   function openQuickAdd() {
@@ -3207,7 +3060,7 @@
 
     closeQuickAdd();
     showToast("Quick add saved ✓");
-    loadNotificationBadge();
+    refreshNotificationBadgeSafe();
 
     setTimeout(function () {
       window.location.reload();
@@ -4294,6 +4147,22 @@
     }
   }
 
+  // task_overdue/support_issue_open are persistent status indicators, not
+  // one-time events - they stay "active" for as long as resolved_at is
+  // null, regardless of is_read/status, so marking one read (acknowledging
+  // it) doesn't make it disappear from the count while it's still true.
+  // Everything else (notice_posted, admin_reply_unread, existing Connect
+  // mention/status types) is a one-shot event: mark-read = gone.
+  var STATE_NOTIFICATION_TYPES = ["task_overdue", "support_issue_open"];
+
+  function isNotificationActive(item) {
+    if (STATE_NOTIFICATION_TYPES.indexOf(item.notification_type) !== -1) {
+      return !item.resolved_at;
+    }
+
+    return item.is_read === false || item.status === "unread";
+  }
+
   async function refreshEngineNotificationBadge() {
     const countEl = document.getElementById("unganiBellCount");
 
@@ -4302,9 +4171,7 @@
     }
 
     const items = await getEngineNotifications();
-    const unread = items.filter(function (item) {
-      return item.is_read === false || item.status === "unread";
-    });
+    const unread = items.filter(isNotificationActive);
 
     countEl.textContent = String(unread.length);
     countEl.style.display = unread.length > 0 ? "inline-flex" : "none";
@@ -4376,12 +4243,13 @@
           const type = item.notification_type || "system";
           const href = item.link_url || "#";
           const created = formatNotificationDate(item.created_at);
-          const readClass = item.is_read ? "read" : "unread";
+          const active = isNotificationActive(item);
+          const readClass = active ? "unread" : "read";
 
           return `
             <a class="ungani-alert-row ungani-engine-notification ${readClass}" href="${safeAttr(href)}" onclick="UnganiNotificationEngine.markRead('${safeAttr(item.id)}')">
               <span class="ungani-badge ${safeAttr(color)}">${safe(type)}</span>
-              ${item.is_read ? "" : `<span class="ungani-badge red">New</span>`}
+              ${active ? `<span class="ungani-badge red">New</span>` : ""}
               <h3 style="font-size:15px;margin:8px 0 4px;">${safe(title)}</h3>
               <p class="ungani-small" style="margin:0;">${safe(message)}</p>
               <p class="ungani-small" style="margin:6px 0 0;">${safe(created)}</p>
@@ -4421,7 +4289,10 @@
     const type = String(item.notification_type || "").toLowerCase();
 
     if (priority === "urgent" || priority === "high") return "red";
+    if (type.includes("overdue")) return "red";
     if (type.includes("support")) return "gold";
+    if (type.includes("notice")) return "gold";
+    if (type.includes("reply") || type.includes("chat")) return "green";
     if (type.includes("task")) return "blue";
     if (type.includes("payment") || type.includes("billing")) return "green";
     if (type.includes("stock")) return "red";
