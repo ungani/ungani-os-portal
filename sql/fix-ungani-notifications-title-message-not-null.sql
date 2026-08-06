@@ -110,6 +110,109 @@ end;
 $function$;
 
 -- ============================================================
+-- STEP 1, PART C: create_ungani_notification() - the OLDER 10-arg
+-- overload (no p_user_id), a genuinely separate function from PART A's
+-- 11-arg version, not previously fixed. Confirmed real and live: Nia's
+-- daily briefing (persistDailyBriefingNotification() in nia-assistant.js)
+-- calls it via the safe create_my_ungani_notification() wrapper (sql/
+-- fix-notification-cross-tenant-vulnerability.sql), so it has been
+-- silently failing the same way. Source reproduced verbatim from the
+-- real pg_get_functiondef() output pulled just now, plus title/message
+-- added to the INSERT. Everything else - including the lack of
+-- target_type/user_id columns in the INSERT, which this overload never
+-- set - left exactly as-is; target_type still gets its table default
+-- ('client') either way. Still part of STEP 1 - run together with PART
+-- A and PART B above, in the same execution as each other.
+-- ============================================================
+
+create or replace function public.create_ungani_notification(p_tenant_id uuid, p_title text, p_message text, p_notification_type text DEFAULT 'system'::text, p_source_table text DEFAULT NULL::text, p_source_record_id uuid DEFAULT NULL::uuid, p_link_url text DEFAULT NULL::text, p_priority text DEFAULT 'normal'::text, p_metadata jsonb DEFAULT '{}'::jsonb, p_email_enabled boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_notification_id uuid;
+  v_title text;
+  v_message text;
+  v_type text;
+  v_priority text;
+begin
+  if p_tenant_id is null then
+    return jsonb_build_object(
+      'ok', false,
+      'message', 'Tenant ID is required.'
+    );
+  end if;
+
+  v_title := nullif(trim(coalesce(p_title, '')), '');
+  v_message := nullif(trim(coalesce(p_message, '')), '');
+  v_type := lower(coalesce(nullif(trim(p_notification_type), ''), 'system'));
+  v_priority := lower(coalesce(nullif(trim(p_priority), ''), 'normal'));
+
+  if v_title is null then
+    v_title := 'UNGANI Notification';
+  end if;
+
+  if v_message is null then
+    v_message := v_title;
+  end if;
+
+  insert into public.ungani_notifications (
+    tenant_id,
+    title,
+    message,
+    notification_title,
+    notification_message,
+    notification_type,
+    source_table,
+    source_record_id,
+    link_url,
+    priority,
+    status,
+    is_read,
+    email_enabled,
+    email_queued,
+    metadata,
+    created_at,
+    updated_at
+  )
+  values (
+    p_tenant_id,
+    v_title,
+    v_message,
+    v_title,
+    v_message,
+    v_type,
+    p_source_table,
+    p_source_record_id,
+    p_link_url,
+    v_priority,
+    'unread',
+    false,
+    coalesce(p_email_enabled, false),
+    false,
+    coalesce(p_metadata, '{}'::jsonb),
+    now(),
+    now()
+  )
+  returning id into v_notification_id;
+
+  return jsonb_build_object(
+    'ok', true,
+    'message', 'Notification created.',
+    'notification_id', v_notification_id
+  );
+exception
+  when others then
+    return jsonb_build_object(
+      'ok', false,
+      'message', sqlerrm
+    );
+end;
+$function$;
+
+-- ============================================================
 -- STEP 1, PART B: sync_my_ungani_notifications() - same fix, all 4
 -- insert blocks. Everything else reproduced verbatim from sql/
 -- notification-unification.sql (the current live version). Return type
