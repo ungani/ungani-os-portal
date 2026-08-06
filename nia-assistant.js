@@ -2156,6 +2156,18 @@
         return runHealthScoreQueryIntent();
       }
 
+      // Ungani Connect digest ("what's new", "any mentions") - live-data
+      // query like the checks above, client-only (Connect has no admin
+      // surface today).
+      if (isCollaborationDigestPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Ungani Connect isn't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runCollaborationDigestIntent();
+      }
+
       // "print this for me" / "give me a report" - checked ahead of the
       // generic summary phrase below, since a print request should always
       // win over a conversational one even if both phrase lists could
@@ -2718,6 +2730,20 @@
     ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
   }
 
+  // Ungani Connect ("what's new"/"catch me up"/"any mentions") - checked
+  // ahead of isSummaryRequestPhrase since "catch me up"/"what's new" would
+  // otherwise partially overlap with that intent's own "give me an update"
+  // phrase, and this is the more specific match when the topic is clearly
+  // comments/mentions/updates on records rather than business financials.
+  function isCollaborationDigestPhrase(text) {
+    const lower = text.toLowerCase();
+    return [
+      "mention", "mentioned", "who mentioned", "catch me up", "what's new", "whats new",
+      "anything i missed", "did i miss anything", "unread comment", "new comment",
+      "any updates", "ungani connect", "any activity"
+    ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
   function niaTierScore(count, tiers) {
     const n = Number(count) || 0;
     for (let i = 0; i < tiers.length; i++) {
@@ -2922,6 +2948,113 @@
     );
 
     return { spoken: "Your Business Health Score is " + score + " out of 100. The biggest factor is " + weak[0].label + ": " + weak[0].text };
+  }
+
+  // ---- Ungani Connect structured digest ----
+  // Structured, rule-based summary of unread Ungani Connect activity
+  // (comments/mentions/status changes/attachments) - no LLM prose, per
+  // the agreed scope for Nia's collaboration role (matches the boundary
+  // set at Phase 0: real summarization stays structured, not generated
+  // text). Reuses get_my_ungani_notifications() as-is - it already
+  // returns exactly this data (Phase 4's 3 notify RPCs write through
+  // create_ungani_notification with these notification_type values and
+  // a real p_user_id), so no new SQL was needed for this feature.
+  var CONNECT_NOTIFICATION_TYPES = ["record_comment", "record_status_changed", "record_attachment"];
+
+  var CONNECT_RECORD_PAGES = {
+    tasks: { page: "my-tasks.html", label: "Task", highlight: true },
+    transactions: { page: "my-money.html", label: "Payment", highlight: true },
+    documents: { page: "my-documents.html", label: "Document", highlight: true },
+    client_people: { page: "my-people.html", label: "Person", highlight: true },
+    ungani_team_members: { page: "my-team-access.html", label: "Staff record", highlight: false }
+  };
+
+  function groupConnectNotifications(rows) {
+    var groups = {};
+
+    rows.forEach(function (row) {
+      var key = row.source_table + "|" + row.source_record_id;
+      if (!groups[key]) {
+        groups[key] = {
+          recordTable: row.source_table, recordId: row.source_record_id,
+          comments: 0, mentions: 0, statusChanges: 0, attachments: 0, latest: row.created_at
+        };
+      }
+
+      var g = groups[key];
+      if (row.notification_type === "record_comment") {
+        if (row.metadata && row.metadata.is_mention) g.mentions++; else g.comments++;
+      } else if (row.notification_type === "record_status_changed") {
+        g.statusChanges++;
+      } else if (row.notification_type === "record_attachment") {
+        g.attachments++;
+      }
+
+      if (row.created_at > g.latest) g.latest = row.created_at;
+    });
+
+    return Object.keys(groups).map(function (key) { return groups[key]; })
+      .sort(function (a, b) { return a.latest < b.latest ? 1 : -1; });
+  }
+
+  function buildConnectDigestHtml(groups, totalCount) {
+    var shown = groups.slice(0, 8);
+
+    var rowsHtml = shown.map(function (g) {
+      var pageInfo = CONNECT_RECORD_PAGES[g.recordTable] || { page: "my-connect.html", label: "Record", highlight: false };
+      var parts = [];
+      if (g.mentions > 0) parts.push(g.mentions + " mention" + (g.mentions === 1 ? "" : "s"));
+      if (g.comments > 0) parts.push(g.comments + " comment" + (g.comments === 1 ? "" : "s"));
+      if (g.statusChanges > 0) parts.push(g.statusChanges + " status update" + (g.statusChanges === 1 ? "" : "s"));
+      if (g.attachments > 0) parts.push(g.attachments + " attachment" + (g.attachments === 1 ? "" : "s"));
+
+      var href = pageInfo.highlight ? pageInfo.page + "?highlight=" + encodeURIComponent(g.recordId) : pageInfo.page;
+
+      return `<div style="margin-top:8px;">🔔 <strong>${safe(pageInfo.label)}</strong> — ${safe(parts.join(", "))} ` +
+        `<a class="nia-link-btn" style="margin-top:0;" href="${attr(href)}">Open →</a></div>`;
+    }).join("");
+
+    var moreCount = groups.length - shown.length;
+    var moreLine = moreCount > 0
+      ? `<div style="margin-top:8px;opacity:0.85;">+ ${moreCount} more record${moreCount === 1 ? "" : "s"} with updates.</div>`
+      : "";
+
+    return `<strong>${totalCount} new update${totalCount === 1 ? "" : "s"} in Ungani Connect</strong>` + rowsHtml + moreLine;
+  }
+
+  async function fetchUnreadConnectNotifications() {
+    var response = await state.supabaseClient.rpc("get_my_ungani_notifications", { p_limit: 50 });
+    if (response.error) throw new Error(response.error.message);
+
+    return (response.data || []).filter(function (row) {
+      return CONNECT_NOTIFICATION_TYPES.indexOf(row.notification_type) !== -1 && row.is_read === false;
+    });
+  }
+
+  async function runCollaborationDigestIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking Ungani Connect for anything new...");
+
+    var rows;
+    try {
+      rows = await fetchUnreadConnectNotifications();
+    } catch (error) {
+      addNiaMessage("I couldn't check Ungani Connect updates just now — please try again in a moment.");
+      return { spoken: "I couldn't check that just now." };
+    }
+
+    if (!rows.length) {
+      addNiaMessage("You're all caught up — no new comments, mentions, or updates in Ungani Connect.");
+      return { spoken: "You're all caught up in Ungani Connect." };
+    }
+
+    var groups = groupConnectNotifications(rows);
+    addNiaMessage(buildConnectDigestHtml(groups, rows.length));
+    return { spoken: rows.length + " new update" + (rows.length === 1 ? "" : "s") + " in Ungani Connect." };
   }
 
   // Admin equivalent of the block above. Deliberately NOT a self-contained
@@ -3338,6 +3471,7 @@
     let taskRows = [];
     let assetEntries = [];
     let healthWeak = null;
+    let connectCount = 0;
 
     try {
       const results = await Promise.all([
@@ -3367,6 +3501,14 @@
       // Silent - see comment above.
     }
 
+    // Best-effort, separate try/catch - same isolation reasoning as the
+    // health check above.
+    try {
+      connectCount = (await fetchUnreadConnectNotifications()).length;
+    } catch (error) {
+      // Silent - see comment above.
+    }
+
     const money = computeNiaMoneySummary(moneyRows);
     const tasks = summarizeNiaTasks(taskRows, meta.cutoffISO);
 
@@ -3387,6 +3529,10 @@
       ? `<div style="margin-top:8px;">📊 Your Business Health Score is ${healthWeak.score}/100${healthWeak.label ? " — mostly due to " + safe(healthWeak.label) : ""}. Ask me "why is my health score low?" any time for details.</div>`
       : "";
 
+    const connectLine = connectCount > 0
+      ? `<div style="margin-top:8px;">🔔 ${connectCount} new update${connectCount === 1 ? "" : "s"} in Ungani Connect (comments, mentions, or status changes). Ask me "what's new" for details.</div>`
+      : "";
+
     if (lines.length > 0) {
       persistDailyBriefingNotification(tasks, assetEntries);
     }
@@ -3395,7 +3541,8 @@
       hi + " Here's your update for today:" +
       `<div style="margin-top:8px;">${lines.length ? lines.join("<br>") : "Nothing urgent — all clear!"}</div>` +
       `<div style="margin-top:8px;opacity:0.85;">${safe(weekLine)}</div>` +
-      healthLine
+      healthLine +
+      connectLine
     );
   }
 
