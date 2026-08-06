@@ -184,6 +184,7 @@
     let isOwner = false;
     let activeKey = "team";
     let refreshTimer = null;
+    let sharedFiles = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -200,10 +201,99 @@
 
     async function startConnectPage(context) {
       currentContext = context;
-      await Promise.all([loadRoster(), loadChannels()]);
+      await Promise.all([loadRoster(), loadChannels(), loadSharedFiles(true)]);
       await loadMessages();
 
       refreshTimer = setInterval(function () { loadMessages(true); }, 20000);
+    }
+
+    // Phase 6: Shared Files - surfaces the existing documents table (and,
+    // via file_url, whatever's already linked to Google Drive) inside
+    // Ungani Connect. No new storage - a read-only, tenant-wide list over
+    // the same table my-documents.html manages, same RLS.
+    async function loadSharedFiles(silent) {
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("documents")
+          .select("id, document_title, document_type, document_date, file_name, file_url, linked_task_id, linked_transaction_id, linked_person_id, linked_team_member_id, created_at")
+          .eq("tenant_id", currentContext.tenantId)
+          .order("created_at", { ascending: false })
+          .limit(100);
+      } catch (error) {
+        console.warn("Could not load shared files:", error.message);
+        return;
+      }
+
+      if (response.error) {
+        console.warn("Could not load shared files:", response.error.message);
+        return;
+      }
+
+      sharedFiles = response.data || [];
+      if (!silent) renderConnectPage();
+    }
+
+    function isDriveFile(fileUrl) {
+      return !!fileUrl && String(fileUrl).indexOf("drive.google.com") !== -1;
+    }
+
+    var CONNECT_FILE_LINKED_RECORD = [
+      { column: "linked_task_id", page: "my-tasks.html", label: "Task", highlight: true },
+      { column: "linked_transaction_id", page: "my-money.html", label: "Payment", highlight: true },
+      { column: "linked_person_id", page: "my-people.html", label: "Person", highlight: true },
+      { column: "linked_team_member_id", page: "my-team-access.html", label: "Staff record", highlight: false }
+    ];
+
+    function linkedRecordChip(row) {
+      const match = CONNECT_FILE_LINKED_RECORD.find(function (entry) { return row[entry.column]; });
+      if (!match) return "";
+
+      const href = match.highlight ? match.page + "?highlight=" + encodeURIComponent(row[match.column]) : match.page;
+      return ` <a class="ungani-badge" style="text-decoration:none;" href="${UnganiClientShared.attr(href)}">Linked to ${UnganiClientShared.safe(match.label)} →</a>`;
+    }
+
+    function renderFilesList() {
+      if (!sharedFiles.length) {
+        return `
+          <div class="ungani-empty">
+            <h3>No shared documents yet</h3>
+            <p>Documents added on the Documents page will show up here automatically.</p>
+          </div>
+        `;
+      }
+
+      return sharedFiles.map(function (row) {
+        const drive = isDriveFile(row.file_url);
+        // Only show a dedicated "Open" action when there's a real file_url
+        // to open externally - with no file at all, the "View in
+        // Documents" link below is already the only meaningful action, so
+        // showing a second, identical link for that case would just be a
+        // redundant duplicate button.
+        const openButtonHtml = row.file_url
+          ? `<a class="ungani-btn small dark" target="_blank" rel="noopener" href="${UnganiClientShared.attr(row.file_url)}">${drive ? "Open in Drive ↗" : "Open file ↗"}</a>`
+          : "";
+
+        return `
+          <div class="ungani-card" style="box-shadow:none;border-left:5px solid ${drive ? "#0F9D58" : "#061C3D"};margin:0 0 10px;">
+            <div class="ungani-section-title">
+              <div>
+                <h3>${UnganiClientShared.safe(row.document_title || row.file_name || "Untitled document")}</h3>
+                <p class="ungani-small">
+                  ${UnganiClientShared.safe(row.document_type || "Document")} · ${UnganiClientShared.safe(UnganiClientShared.formatDate(row.document_date || row.created_at))}
+                  ${drive ? ' · <span class="ungani-badge green">📁 Google Drive</span>' : ""}
+                </p>
+              </div>
+            </div>
+            <div class="ungani-button-row" style="margin-top:8px;">
+              ${openButtonHtml}
+              <a class="ungani-btn small light" href="my-documents.html?highlight=${UnganiClientShared.attr(row.id)}">View in Documents →</a>
+              ${linkedRecordChip(row)}
+            </div>
+          </div>
+        `;
+      }).join("");
     }
 
     async function loadRoster() {
@@ -309,7 +399,7 @@
       messages = response.data || [];
 
       const buckets = conversationsByKey();
-      if (!buckets[activeKey]) activeKey = "team";
+      if (!buckets[activeKey] && activeKey !== "files") activeKey = "team";
 
       await markActiveConversationRead(buckets);
       renderConnectPage();
@@ -495,23 +585,48 @@
                 </select>
               ` : ""}
             </div>
+
+            <div class="connect-nav-group">
+              <p class="connect-nav-label">Shared Files</p>
+              ${navItem("files", "📁 Documents", 0)}
+            </div>
           </div>
 
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <div>
-                <h3>${UnganiClientShared.safe(activeConversationLabel(buckets))}</h3>
-                <p class="ungani-small">Messages refresh automatically every 20 seconds.</p>
+          ${activeKey === "files" ? `
+            <div class="ungani-card">
+              <div class="ungani-section-title">
+                <div>
+                  <h3>Shared Files</h3>
+                  <p class="ungani-small">Every document your team has added, including anything linked to Google Drive. No files are stored here separately - this is the same Documents list, surfaced for your team.</p>
+                </div>
+                <button class="ungani-btn green" onclick="loadSharedFiles()">Refresh</button>
               </div>
-              <button class="ungani-btn green" onclick="loadMessages()">Refresh</button>
-            </div>
 
-            <div id="connectMessages" class="connect-messages">
-              ${renderMessageList(buckets[activeKey] || [])}
-            </div>
+              <div id="connectFiles">
+                ${renderFilesList()}
+              </div>
 
-            ${renderComposer()}
-          </div>
+              <p class="ungani-small" style="margin-top:10px;">
+                <a href="my-documents.html">Open the full Documents page →</a>
+              </p>
+            </div>
+          ` : `
+            <div class="ungani-card">
+              <div class="ungani-section-title">
+                <div>
+                  <h3>${UnganiClientShared.safe(activeConversationLabel(buckets))}</h3>
+                  <p class="ungani-small">Messages refresh automatically every 20 seconds.</p>
+                </div>
+                <button class="ungani-btn green" onclick="loadMessages()">Refresh</button>
+              </div>
+
+              <div id="connectMessages" class="connect-messages">
+                ${renderMessageList(buckets[activeKey] || [])}
+              </div>
+
+              ${renderComposer()}
+            </div>
+          `}
         </section>
 
         <p class="ungani-small">

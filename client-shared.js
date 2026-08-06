@@ -2496,7 +2496,56 @@
       }
     }
 
+    try {
+      results.push.apply(results, await searchUnganiConnectComments(queryLower));
+    } catch (error) {
+      console.warn("Search skipped: ungani_record_comments", error.message);
+    }
+
     return results.slice(0, 12);
+  }
+
+  // ungani_record_comments is polymorphic (record_table/record_id), so each
+  // matching comment needs its own label/href resolved from its real
+  // record_table rather than one fixed config entry - handled separately
+  // from the generic table loop above. Deep-links via the existing
+  // ?highlight=<id> param already supported on all 4 mapped pages (Phase 4/5
+  // built this same pattern for Ungani Connect notifications).
+  var CONNECT_COMMENT_RECORD_PAGES = {
+    tasks: { page: "my-tasks.html", label: "Task", highlight: true },
+    transactions: { page: "my-money.html", label: "Payment", highlight: true },
+    documents: { page: "my-documents.html", label: "Document", highlight: true },
+    client_people: { page: "my-people.html", label: "Person", highlight: true },
+    ungani_team_members: { page: "my-team-access.html", label: "Staff record", highlight: false }
+  };
+
+  async function searchUnganiConnectComments(queryLower) {
+    const response = await state.supabaseClient
+      .from("ungani_record_comments")
+      .select("id, record_table, record_id, author_name, body, created_at")
+      .eq("tenant_id", state.tenantId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (response.error) return [];
+
+    return (response.data || [])
+      .filter(function (row) {
+        const haystack = (String(row.body || "") + " " + String(row.author_name || "")).toLowerCase();
+        return haystack.includes(queryLower);
+      })
+      .map(function (row) {
+        const pageInfo = CONNECT_COMMENT_RECORD_PAGES[row.record_table] || { page: "my-connect.html", label: "Record", highlight: false };
+        const href = pageInfo.highlight ? pageInfo.page + "?highlight=" + encodeURIComponent(row.record_id) : pageInfo.page;
+
+        return {
+          label: "Comment on " + pageInfo.label,
+          href: href,
+          title: String(row.body || "").slice(0, 90),
+          detail: "by " + (row.author_name || "Someone") + " · " + formatDate(row.created_at)
+        };
+      });
   }
 
   function renderGlobalSearchResults(query, results) {
