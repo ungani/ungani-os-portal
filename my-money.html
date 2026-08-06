@@ -1626,7 +1626,12 @@
       let pending = 0;
 
       rows.forEach(function (row) {
-        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+        // Prefers amount_kes over amount for multi-currency tenants, same
+        // pattern already used by calculateTaxSummary() below and by
+        // client.html's own copy of this function - a mix of KES/USD
+        // rows must roll up into one real KES total, not a raw sum
+        // across different currencies.
+        const amount = Number(UnganiClientShared.getValue(row, ["amount_kes", "amount"], 0) || 0);
         const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
 
         if (isIncomeRow(row)) {
@@ -1738,7 +1743,7 @@
         <section class="category-tiles">
           ${MONEY_CATEGORIES.map(function (category) {
             const matchingRows = moneySummaryRows.filter(category.match);
-            const sum = matchingRows.reduce(function (total, row) { return total + Number(row.amount || 0); }, 0);
+            const sum = matchingRows.reduce(function (total, row) { return total + Number(row.amount_kes != null ? row.amount_kes : (row.amount || 0)); }, 0);
             const active = category.key === activeMoneyCategory ? " active" : "";
 
             return `

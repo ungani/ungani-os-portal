@@ -194,7 +194,11 @@
     const map = {};
 
     (transactions || []).forEach(function (row) {
-      const amount = Number(safeGet(row, ["amount"], 0) || 0);
+      // Prefers amount_kes over amount for multi-currency tenants, same
+      // pattern as calculateMoneySummary() in my-money.html/reports.html/
+      // client.html - this module is shared, so fixing it here covers
+      // every consumer's trend chart at once.
+      const amount = Number(safeGet(row, ["amount_kes", "amount"], 0) || 0);
       const type = String(safeGet(row, ["transaction_type", "type"], "")).toLowerCase();
       const rawDate = safeGet(row, ["transaction_date", "created_at"], "");
 
@@ -252,7 +256,9 @@
     const map = {};
 
     (transactions || []).forEach(function (row) {
-      const amount = Number(safeGet(row, ["amount"], 0) || 0);
+      // Same amount_kes-first pattern as calculateIncomeExpenseTrend()
+      // above.
+      const amount = Number(safeGet(row, ["amount_kes", "amount"], 0) || 0);
       const type = String(safeGet(row, ["transaction_type", "type"], "")).toLowerCase();
 
       if (!isExpenseType(type)) return;

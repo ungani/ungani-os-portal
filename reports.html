@@ -726,7 +726,10 @@
       let pending = 0;
 
       (rows || []).forEach(function (row) {
-        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+        // Prefers amount_kes over amount for multi-currency tenants, same
+        // pattern already used by calculateTaxSummary() below and by
+        // client.html's own copy of this function.
+        const amount = Number(UnganiClientShared.getValue(row, ["amount_kes", "amount"], 0) || 0);
         const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
 
         if (isIncomeRow(row)) income += amount;
@@ -917,7 +920,10 @@
       const map = {};
 
       (rows || []).forEach(function (row) {
-        const amount = Number(UnganiClientShared.getValue(row, ["amount"], 0) || 0);
+        // Same amount_kes-first pattern as calculateMoneySummary() above -
+        // this is a cross-row aggregate (grouped by category), so it must
+        // not mix raw amounts across different currencies either.
+        const amount = Number(UnganiClientShared.getValue(row, ["amount_kes", "amount"], 0) || 0);
 
         if (mode === "income" && !isIncomeRow(row)) return;
         if (mode === "expense" && !isExpenseRow(row)) return;
