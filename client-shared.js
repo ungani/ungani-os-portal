@@ -1076,6 +1076,19 @@
         color: white;
       }
 
+      /* The base (no color variant) badge was missing from the dark-theme
+         override above - its light-mode background (rgba(6,28,61,0.08), a
+         faint NAVY tint) and navy text both silently assume a light page
+         background. On the app's navy dark theme that's a near-invisible
+         badge with navy-on-navy text - same contrast-bug class as
+         tonight's other theme fixes, just never hit until Ungani Connect's
+         Shared Files "Linked to X" chips (and my-integrations.html's "Not
+         Connected" badge) used the bare class for the first time. */
+      html[data-ungani-theme="dark"] .ungani-badge {
+        background: rgba(255,255,255,0.14);
+        color: #FFFFFF;
+      }
+
       .ungani-empty {
         border: 1px dashed var(--ungani-border);
         border-radius: 20px;

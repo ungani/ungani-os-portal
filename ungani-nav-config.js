@@ -72,7 +72,7 @@
         defaultExpanded: true,
         items: [
           ["support", "my-support.html", "🛟", "Support Issues"],
-          ["notices", "my-notices.html", "🔔", "Notices"],
+          ["notices", "my-notices.html", "📢", "Notices"],
           ["chat", "my-chat.html", "💬", "Chat with UNGANI"],
           ["team-chat", "my-team-chat.html", "👨‍👩‍👧‍👦", "Team Chat"]
         ]
@@ -106,7 +106,7 @@
         collapsible: true,
         defaultExpanded: false,
         items: [
-          ["support-access", "my-support-access.html", "🛟", "Support Access"]
+          ["support-access", "my-support-access.html", "🔓", "Support Access"]
         ]
       },
       {

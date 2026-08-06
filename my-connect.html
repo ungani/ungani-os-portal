@@ -40,171 +40,35 @@
     })();
   </script>
   <script src="nia-assistant.js"></script>
-
-  <style>
-    /* Ungani Connect's own two-pane layout - a nav rail (Team / Channels
-       / DMs) plus the active conversation. Reuses the app's existing
-       .ungani-card/.ungani-two-col shell for visual consistency (per the
-       UI/UX master spec) rather than a bespoke look. */
-    .connect-layout {
-      display: grid;
-      grid-template-columns: 280px 1fr;
-      gap: 18px;
-      align-items: start;
-    }
-
-    @media (max-width: 860px) {
-      .connect-layout { grid-template-columns: 1fr; }
-    }
-
-    .connect-nav-group {
-      margin-bottom: 16px;
-    }
-
-    .connect-nav-group:last-child { margin-bottom: 0; }
-
-    .connect-nav-label {
-      font-size: 11px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: rgba(6,28,61,0.5);
-      margin: 0 0 8px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    body[data-theme="dark"] .connect-nav-label { color: rgba(255,255,255,0.5); }
-
-    .connect-nav-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      width: 100%;
-      text-align: left;
-      border: none;
-      background: transparent;
-      color: inherit;
-      padding: 9px 10px;
-      border-radius: 10px;
-      font-size: 13.5px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-bottom: 2px;
-    }
-
-    .connect-nav-item:hover { background: rgba(6,28,61,0.05); }
-    body[data-theme="dark"] .connect-nav-item:hover { background: rgba(255,255,255,0.06); }
-
-    .connect-nav-item.active {
-      background: #061C3D;
-      color: #FFFFFF;
-    }
-
-    .connect-nav-dot {
-      display: inline-block;
-      min-width: 18px;
-      height: 18px;
-      padding: 0 5px;
-      border-radius: 999px;
-      background: #DC2626;
-      color: #fff;
-      font-size: 10.5px;
-      font-weight: 800;
-      text-align: center;
-      line-height: 18px;
-    }
-
-    .connect-new-channel-btn {
-      border: 1px dashed rgba(6,28,61,0.3);
-      background: transparent;
-      color: inherit;
-      border-radius: 8px;
-      padding: 3px 9px;
-      font-size: 11px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    body[data-theme="dark"] .connect-new-channel-btn { border-color: rgba(255,255,255,0.3); }
-
-    .connect-new-channel-form {
-      display: none;
-      flex-direction: column;
-      gap: 8px;
-      padding: 10px;
-      margin-bottom: 8px;
-      border: 1px solid rgba(6,28,61,0.12);
-      border-radius: 10px;
-    }
-
-    body[data-theme="dark"] .connect-new-channel-form { border-color: rgba(255,255,255,0.14); }
-
-    .connect-new-channel-form.show { display: flex; }
-
-    .connect-new-channel-form input {
-      border-radius: 8px;
-      border: 1px solid rgba(6,28,61,0.16);
-      padding: 7px 10px;
-      font-size: 12.5px;
-      background: transparent;
-      color: inherit;
-    }
-
-    .connect-archive-btn {
-      border: none;
-      background: transparent;
-      color: rgba(6,28,61,0.4);
-      cursor: pointer;
-      font-size: 13px;
-      padding: 2px 4px;
-    }
-
-    .connect-nav-item.active .connect-archive-btn { color: rgba(255,255,255,0.6); }
-
-    .connect-messages {
-      max-height: 520px;
-      overflow-y: auto;
-      padding-right: 6px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-  </style>
 </head>
 
 <body>
   <script>
+    // Ungani Connect used to duplicate the Team Chat popup's own General
+    // Team Chat / Department Channels / Direct Messages views as a full
+    // page - same underlying team_chat_messages data, just rendered
+    // twice. That was confusing (two different-looking UIs for the exact
+    // same conversations), so Connect is now scoped to the thing the
+    // popup doesn't have: Shared Files (Phase 6) and, later, unified
+    // Search (Phase 7). Chat itself is one tap away via the existing
+    // popup (UnganiTeamChat.toggle(), already loaded via
+    // team-chat-shared.js above) rather than re-rendered here.
     let currentContext = null;
-    let channels = [];
-    let messages = [];
-    let roster = { owner: null, members: [] };
-    let isOwner = false;
-    let activeKey = "team";
-    let refreshTimer = null;
     let sharedFiles = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "connect",
         pageTitle: "Ungani Connect",
-        pageSubtitle: "Your team's shared workspace: company-wide chat, department channels, and private messages.",
+        pageSubtitle: "Your team's shared workspace: files everyone's working with, all in one place.",
         onReady: startConnectPage
       });
     });
 
-    window.addEventListener("beforeunload", function () {
-      if (refreshTimer) clearInterval(refreshTimer);
-    });
-
     async function startConnectPage(context) {
       currentContext = context;
-      await Promise.all([loadRoster(), loadChannels(), loadSharedFiles(true)]);
-      await loadMessages();
-
-      refreshTimer = setInterval(function () { loadMessages(true); }, 20000);
+      await loadSharedFiles(true);
+      renderConnectPage();
     }
 
     // Phase 6: Shared Files - surfaces the existing documents table (and,
@@ -296,484 +160,43 @@
       }).join("");
     }
 
-    async function loadRoster() {
-      try {
-        const response = await currentContext.supabaseClient.rpc("get_my_ungani_team_members_for_assignment");
-        if (!response.error && response.data && response.data.ok === true) {
-          roster = { owner: response.data.owner || null, members: response.data.members || [] };
-        }
-      } catch (error) {
-        console.warn("Could not load team roster:", error.message);
-      }
-    }
-
-    async function loadChannels(silent) {
-      try {
-        const response = await currentContext.supabaseClient.rpc("get_my_ungani_chat_channels");
-        if (!response.error && response.data && response.data.ok === true) {
-          channels = response.data.channels || [];
-          isOwner = !!response.data.is_owner;
-        }
-      } catch (error) {
-        console.warn("Could not load channels:", error.message);
-      }
-
-      if (!silent) return;
-      renderConnectPage();
-    }
-
-    function isMe(authUserId) {
-      return authUserId && currentContext.authUser && authUserId === currentContext.authUser.id;
-    }
-
-    // Same bucketing rule as team-chat-shared.js's peerKeyForRow, extended
-    // with channel_id taking priority - a channel message is never also a
-    // DM/broadcast.
-    function keyForRow(row) {
-      if (row.channel_id) return "ch:" + row.channel_id;
-
-      const recipientTeamMemberId = UnganiClientShared.getValue(row, ["recipient_team_member_id"], "");
-      const recipientIsOwner = !!UnganiClientShared.getValue(row, ["recipient_is_owner"], false);
-
-      if (!recipientTeamMemberId && !recipientIsOwner) return "team";
-
-      const senderId = String(UnganiClientShared.getValue(row, ["sender_user_id"], ""));
-      const iSent = isMe(senderId);
-
-      if (iSent) {
-        return recipientIsOwner ? "owner" : "tm:" + recipientTeamMemberId;
-      }
-
-      if (roster.owner && senderId === String(roster.owner.auth_user_id)) return "owner";
-
-      const senderMember = roster.members.find(function (m) { return String(m.auth_user_id) === senderId; });
-      if (senderMember) return "tm:" + senderMember.id;
-
-      return "uid:" + senderId;
-    }
-
-    function conversationsByKey() {
-      const buckets = { team: [] };
-      messages.forEach(function (row) {
-        const key = keyForRow(row);
-        if (!buckets[key]) buckets[key] = [];
-        buckets[key].push(row);
-      });
-      return buckets;
-    }
-
-    function unreadCountFor(rows) {
-      if (!rows) return 0;
-      return rows.filter(function (r) {
-        return String(UnganiClientShared.getValue(r, ["sender_user_id"], "")) !== String(currentContext.authUser.id) && !r.is_read;
-      }).length;
-    }
-
-    async function loadMessages(silent) {
-      if (!silent) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading Ungani Connect...");
-      }
-
-      let response;
-
-      try {
-        response = await currentContext.supabaseClient
-          .from("team_chat_messages")
-          .select("*")
-          .eq("tenant_id", currentContext.tenantId)
-          .order("created_at", { ascending: true });
-      } catch (error) {
-        if (!silent) {
-          currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load Ungani Connect", error.message || "Network error. Please check your connection.");
-        }
-        return;
-      }
-
-      if (response.error) {
-        if (!silent) {
-          currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load Ungani Connect", response.error.message);
-        }
-        return;
-      }
-
-      messages = response.data || [];
-
-      const buckets = conversationsByKey();
-      if (!buckets[activeKey] && activeKey !== "files") activeKey = "team";
-
-      await markActiveConversationRead(buckets);
-      renderConnectPage();
-    }
-
-    async function markActiveConversationRead(buckets) {
-      const rows = buckets[activeKey] || [];
-      const unreadIds = rows
-        .filter(function (r) { return String(UnganiClientShared.getValue(r, ["sender_user_id"], "")) !== String(currentContext.authUser.id) && !r.is_read; })
-        .map(function (r) { return r.id; });
-
-      if (!unreadIds.length) return;
-
-      try {
-        await currentContext.supabaseClient
-          .from("team_chat_messages")
-          .update({ is_read: true, updated_at: new Date().toISOString() })
-          .in("id", unreadIds);
-
-        messages.forEach(function (m) { if (unreadIds.indexOf(m.id) !== -1) m.is_read = true; });
-      } catch (error) {
-        console.warn("Could not mark Connect messages as read:", error.message);
-      }
-    }
-
-    function selectConversation(key) {
-      activeKey = key;
-      const buckets = conversationsByKey();
-      markActiveConversationRead(buckets).then(renderConnectPage);
-      renderConnectPage();
-    }
-
-    function toggleNewChannelForm() {
-      const form = document.getElementById("connectNewChannelForm");
-      if (form) form.classList.toggle("show");
-    }
-
-    async function createChannel(event) {
-      event.preventDefault();
-
-      const name = UnganiClientShared.value("connectChannelName");
-      const description = UnganiClientShared.value("connectChannelDescription");
-
-      if (!name) {
-        alert("Please enter a channel name.");
-        return;
-      }
-
-      let response;
-      try {
-        response = await currentContext.supabaseClient.rpc("owner_upsert_ungani_chat_channel", {
-          p_channel_id: null,
-          p_name: name,
-          p_description: description || null
-        });
-      } catch (error) {
-        alert(error.message || "Could not create the channel.");
-        return;
-      }
-
-      if (response.error || !response.data || response.data.ok !== true) {
-        alert((response.data && response.data.message) || (response.error && response.error.message) || "Could not create the channel.");
-        return;
-      }
-
-      document.getElementById("connectChannelName").value = "";
-      document.getElementById("connectChannelDescription").value = "";
-      toggleNewChannelForm();
-      UnganiClientShared.showToast("Channel created ✓");
-
-      await loadChannels();
-      activeKey = "ch:" + response.data.channel_id;
-      await loadMessages(true);
-    }
-
-    async function archiveChannel(channelId, channelName) {
-      if (!confirm('Archive "' + channelName + '"? Its message history stays visible, but no one can post new messages to it.')) return;
-
-      let response;
-      try {
-        response = await currentContext.supabaseClient.rpc("owner_archive_ungani_chat_channel", { p_channel_id: channelId });
-      } catch (error) {
-        alert(error.message || "Could not archive the channel.");
-        return;
-      }
-
-      if (response.error || !response.data || response.data.ok !== true) {
-        alert((response.data && response.data.message) || (response.error && response.error.message) || "Could not archive the channel.");
-        return;
-      }
-
-      UnganiClientShared.showToast("Channel archived ✓");
-      if (activeKey === "ch:" + channelId) activeKey = "team";
-      await loadChannels();
-      renderConnectPage();
-    }
-
-    function availableDmTargets() {
-      const targets = [];
-      if (roster.owner && !isMe(roster.owner.auth_user_id)) {
-        targets.push({ key: "owner", label: (roster.owner.full_name || "Owner") + " (Owner)" });
-      }
-      roster.members.forEach(function (m) {
-        if (isMe(m.auth_user_id)) return;
-        targets.push({ key: "tm:" + m.id, label: m.full_name + (m.role_key ? " (" + m.role_key + ")" : "") });
-      });
-      return targets;
-    }
-
-    function dmLabelForKey(key, buckets) {
-      if (key === "owner") return (roster.owner && roster.owner.full_name) || "Owner";
-      if (key.indexOf("tm:") === 0) {
-        const member = roster.members.find(function (m) { return m.id === key.slice(3); });
-        if (member) return member.full_name;
-      }
-      const rows = buckets[key] || [];
-      return UnganiClientShared.getValue(rows[rows.length - 1], ["sender_name"], "Team Member");
-    }
-
     function renderConnectPage() {
-      const buckets = conversationsByKey();
       const tenantName = UnganiClientShared.getTenantName(currentContext.tenant);
-
-      const dmKeys = Object.keys(buckets).filter(function (k) { return k !== "team" && k.indexOf("ch:") !== 0; });
-      dmKeys.sort(function (a, b) {
-        const aLast = buckets[a][buckets[a].length - 1];
-        const bLast = buckets[b][buckets[b].length - 1];
-        return new Date(UnganiClientShared.getValue(bLast, ["created_at"], 0)).getTime() - new Date(UnganiClientShared.getValue(aLast, ["created_at"], 0)).getTime();
-      });
-
-      const dmTargets = availableDmTargets();
-      const existingDmKeySet = {};
-      dmKeys.forEach(function (k) { existingDmKeySet[k] = true; });
 
       UnganiClientShared.setContent(`
         <section class="ungani-card ungani-hero">
           <h2>Ungani Connect</h2>
           <p>
-            One place for company-wide chat, department channels, and private messages inside ${UnganiClientShared.safe(tenantName)}.
+            Your team's shared workspace inside ${UnganiClientShared.safe(tenantName)}. Chat lives in the
+            💬 Team Chat popup (top bar, available on every page) - this is where shared files live.
+          </p>
+          <div class="ungani-button-row" style="margin-top:12px;">
+            <button class="ungani-btn green" type="button" onclick="UnganiTeamChat.toggle()">💬 Open Team Chat</button>
+          </div>
+        </section>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Shared Files</h3>
+              <p class="ungani-small">Every document your team has added, including anything linked to Google Drive. No files are stored here separately - this is the same Documents list, surfaced for your team.</p>
+            </div>
+            <button class="ungani-btn green" onclick="loadSharedFiles()">Refresh</button>
+          </div>
+
+          <div id="connectFiles">
+            ${renderFilesList()}
+          </div>
+
+          <p class="ungani-small" style="margin-top:10px;">
+            <a href="my-documents.html">Open the full Documents page →</a>
           </p>
         </section>
 
-        <section class="connect-layout">
-          <div class="ungani-card">
-            <div class="connect-nav-group">
-              <p class="connect-nav-label">Company-Wide</p>
-              ${navItem("team", "General Team Chat", unreadCountFor(buckets.team))}
-            </div>
-
-            <div class="connect-nav-group">
-              <p class="connect-nav-label">
-                Department Channels
-                ${isOwner ? `<button class="connect-new-channel-btn" type="button" onclick="toggleNewChannelForm()">+ New</button>` : ""}
-              </p>
-
-              ${isOwner ? `
-                <form id="connectNewChannelForm" class="connect-new-channel-form" onsubmit="createChannel(event)">
-                  <input id="connectChannelName" type="text" placeholder="Channel name (e.g. Sales)" required maxlength="60" />
-                  <input id="connectChannelDescription" type="text" placeholder="What's this channel for? (optional)" maxlength="200" />
-                  <button class="ungani-btn green" type="submit" style="padding:7px 12px;font-size:12px;">Create Channel</button>
-                </form>
-              ` : ""}
-
-              ${channels.length ? channels.map(function (c) {
-                const key = "ch:" + c.id;
-                return navItem(key, "# " + c.name, unreadCountFor(buckets[key]), isOwner ? archiveButton(c.id, c.name) : "");
-              }).join("") : `<p class="ungani-small" style="padding:0 10px;">${isOwner ? "No channels yet - create one above." : "Your business owner hasn't created any department channels yet."}</p>`}
-            </div>
-
-            <div class="connect-nav-group">
-              <p class="connect-nav-label">Direct Messages</p>
-
-              ${dmKeys.map(function (key) {
-                return navItem(key, dmLabelForKey(key, buckets), unreadCountFor(buckets[key]));
-              }).join("")}
-
-              ${dmTargets.filter(function (t) { return !existingDmKeySet[t.key]; }).length ? `
-                <select id="connectStartDmSelect" style="width:100%;margin-top:6px;border-radius:8px;padding:7px 8px;font-size:12.5px;" onchange="if(this.value){selectConversation(this.value);this.value='';}">
-                  <option value="">+ Start a private message...</option>
-                  ${dmTargets.filter(function (t) { return !existingDmKeySet[t.key]; }).map(function (t) {
-                    return `<option value="${UnganiClientShared.attr(t.key)}">${UnganiClientShared.safe(t.label)}</option>`;
-                  }).join("")}
-                </select>
-              ` : ""}
-            </div>
-
-            <div class="connect-nav-group">
-              <p class="connect-nav-label">Shared Files</p>
-              ${navItem("files", "📁 Documents", 0)}
-            </div>
-          </div>
-
-          ${activeKey === "files" ? `
-            <div class="ungani-card">
-              <div class="ungani-section-title">
-                <div>
-                  <h3>Shared Files</h3>
-                  <p class="ungani-small">Every document your team has added, including anything linked to Google Drive. No files are stored here separately - this is the same Documents list, surfaced for your team.</p>
-                </div>
-                <button class="ungani-btn green" onclick="loadSharedFiles()">Refresh</button>
-              </div>
-
-              <div id="connectFiles">
-                ${renderFilesList()}
-              </div>
-
-              <p class="ungani-small" style="margin-top:10px;">
-                <a href="my-documents.html">Open the full Documents page →</a>
-              </p>
-            </div>
-          ` : `
-            <div class="ungani-card">
-              <div class="ungani-section-title">
-                <div>
-                  <h3>${UnganiClientShared.safe(activeConversationLabel(buckets))}</h3>
-                  <p class="ungani-small">Messages refresh automatically every 20 seconds.</p>
-                </div>
-                <button class="ungani-btn green" onclick="loadMessages()">Refresh</button>
-              </div>
-
-              <div id="connectMessages" class="connect-messages">
-                ${renderMessageList(buckets[activeKey] || [])}
-              </div>
-
-              ${renderComposer()}
-            </div>
-          `}
-        </section>
-
         <p class="ungani-small">
-          Ungani Connect · Phase 1 (Team Chat + Department Channels + DMs) · ungani.com · info@ungani.com
+          Ungani Connect · ungani.com · info@ungani.com
         </p>
       `);
-
-      scrollConnectToBottom();
-    }
-
-    function navItem(key, label, unread, trailing) {
-      const active = key === activeKey;
-      return `
-        <button class="connect-nav-item${active ? " active" : ""}" type="button" onclick="selectConversation('${UnganiClientShared.attr(key)}')">
-          <span>${UnganiClientShared.safe(label)}</span>
-          <span style="display:flex;align-items:center;gap:6px;">
-            ${unread > 0 ? `<span class="connect-nav-dot">${unread > 99 ? "99+" : unread}</span>` : ""}
-            ${trailing || ""}
-          </span>
-        </button>
-      `;
-    }
-
-    function archiveButton(channelId, channelName) {
-      return `<span class="connect-archive-btn" title="Archive channel" onclick="event.stopPropagation();archiveChannel('${UnganiClientShared.attr(channelId)}','${UnganiClientShared.attr(channelName)}')">🗄️</span>`;
-    }
-
-    function activeConversationLabel(buckets) {
-      if (activeKey === "team") return "General Team Chat";
-      if (activeKey.indexOf("ch:") === 0) {
-        const channel = channels.find(function (c) { return c.id === activeKey.slice(3); });
-        return channel ? "# " + channel.name : "Channel";
-      }
-      return dmLabelForKey(activeKey, buckets) + " (private)";
-    }
-
-    function renderMessageList(rows) {
-      if (!rows.length) {
-        return `
-          <div class="ungani-empty">
-            <h3>No messages yet</h3>
-            <p>Send the first message below to get this conversation started.</p>
-          </div>
-        `;
-      }
-
-      return rows.map(renderMessageCard).join("");
-    }
-
-    function renderMessageCard(row) {
-      const senderId = String(UnganiClientShared.getValue(row, ["sender_user_id"], ""));
-      const mine = isMe(senderId);
-      const senderName = UnganiClientShared.getValue(row, ["sender_name"], mine ? "You" : "Team Member");
-      const body = UnganiClientShared.getValue(row, ["message_body", "message", "body"], "");
-      const created = UnganiClientShared.getValue(row, ["created_at"], "");
-      const read = UnganiClientShared.getValue(row, ["is_read"], false);
-
-      const bg = mine ? "rgba(6,28,61,0.05)" : "rgba(212,166,58,0.14)";
-      const border = mine ? "#061C3D" : "#D4A63A";
-
-      return `
-        <div class="ungani-card" style="box-shadow:none;border-left:5px solid ${border};background:${bg};margin:0;">
-          <div class="ungani-section-title">
-            <div>
-              <h3>${UnganiClientShared.safe(mine ? "You" : senderName)}</h3>
-              <p class="ungani-small">${UnganiClientShared.safe(UnganiClientShared.formatDate(created))}</p>
-            </div>
-            ${mine ? `<span class="ungani-badge ${read ? "green" : "orange"}">${read ? "read" : "sent"}</span>` : ""}
-          </div>
-          <p style="white-space:pre-wrap;margin:0;">${UnganiClientShared.safe(body)}</p>
-        </div>
-      `;
-    }
-
-    function renderComposer() {
-      const placeholder = activeKey === "team"
-        ? "Message your whole team..."
-        : (activeKey.indexOf("ch:") === 0 ? "Post in this channel..." : "Send a private message...");
-
-      return `
-        <form id="connectComposeForm" class="ungani-button-row" style="margin-top:12px;gap:8px;" onsubmit="sendMessage(event)">
-          <input id="connectComposeInput" type="text" placeholder="${placeholder}" autocomplete="off" style="flex:1;border-radius:999px;border:1px solid rgba(6,28,61,0.16);padding:10px 16px;font-size:13px;background:transparent;color:inherit;" />
-          <button class="ungani-btn green" type="submit">Send</button>
-        </form>
-      `;
-    }
-
-    async function sendMessage(event) {
-      event.preventDefault();
-
-      const input = document.getElementById("connectComposeInput");
-      const body = input ? String(input.value || "").trim() : "";
-      if (!body) return;
-
-      const profile = currentContext.userProfile || {};
-      const senderName = UnganiClientShared.getValue(profile, ["full_name", "name", "email"], "") ||
-        UnganiClientShared.getValue(currentContext.authUser, ["email"], "Team Member");
-
-      const payload = {
-        tenant_id: currentContext.tenantId,
-        sender_user_id: currentContext.authUser.id,
-        sender_name: senderName,
-        sender_role: "team",
-        message_type: "message",
-        message_body: body,
-        message: body,
-        body: body,
-        is_read: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      if (activeKey === "owner") {
-        payload.recipient_is_owner = true;
-      } else if (activeKey.indexOf("tm:") === 0) {
-        payload.recipient_team_member_id = activeKey.slice(3);
-      } else if (activeKey.indexOf("ch:") === 0) {
-        payload.channel_id = activeKey.slice(3);
-      }
-
-      input.value = "";
-
-      let response;
-      try {
-        response = await currentContext.supabaseClient.from("team_chat_messages").insert(payload);
-      } catch (error) {
-        alert(error.message || "Could not send message. Please check your connection.");
-        return;
-      }
-
-      if (response.error) {
-        alert(response.error.message);
-        return;
-      }
-
-      UnganiClientShared.showToast("Sent ✓");
-      await loadMessages(true);
-    }
-
-    function scrollConnectToBottom() {
-      setTimeout(function () {
-        const box = document.getElementById("connectMessages");
-        if (box) box.scrollTop = box.scrollHeight;
-
-        const input = document.getElementById("connectComposeInput");
-        if (input) input.focus();
-      }, 100);
     }
   </script>
 </body>
