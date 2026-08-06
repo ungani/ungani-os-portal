@@ -707,6 +707,14 @@
             </div>
 
             <div class="field">
+              <label>Billing Cycle</label>
+              <select id="billingCycle" onchange="handlePackageChange()">
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly (15% off)</option>
+              </select>
+            </div>
+
+            <div class="field">
               <label>Amount</label>
               <input id="amount" type="number" min="0" step="1" value="5000" />
             </div>
@@ -849,10 +857,10 @@
     let billingRecords = [];
     let paymentProofs = [];
     let packages = [
-      { package_key: "starter", package_name: "Starter", monthly_price: 5000, currency: "KES", user_limit: 2, is_custom: false },
-      { package_key: "growth", package_name: "Growth", monthly_price: 8500, currency: "KES", user_limit: 5, is_custom: false },
-      { package_key: "business", package_name: "Business", monthly_price: 14000, currency: "KES", user_limit: 10, is_custom: false },
-      { package_key: "custom", package_name: "Custom", monthly_price: null, currency: "KES", user_limit: null, is_custom: true }
+      { package_key: "starter", package_name: "Starter", monthly_price_ksh: 5000, yearly_price_ksh: 51000, user_limit: 2, is_custom: false },
+      { package_key: "growth", package_name: "Growth", monthly_price_ksh: 8500, yearly_price_ksh: 86700, user_limit: 5, is_custom: false },
+      { package_key: "business", package_name: "Business", monthly_price_ksh: 14000, yearly_price_ksh: 142800, user_limit: 10, is_custom: false },
+      { package_key: "custom", package_name: "Custom", monthly_price_ksh: null, yearly_price_ksh: null, user_limit: null, is_custom: true }
     ];
 
     let activeFilter = "all";
@@ -1044,7 +1052,12 @@
     }
 
     async function loadPackageCatalog() {
-      const { data, error } = await supabaseClient.rpc("get_ungani_package_catalog");
+      // Points at the real, authoritative ungani_packages table (see
+      // sql/fix-package-catalog-wrong-table-and-yearly-pricing.sql) -
+      // the older get_ungani_package_catalog() RPC read from a second,
+      // stale table (ungani_package_catalog) that nothing else in the
+      // app uses, and has been replaced here.
+      const { data, error } = await supabaseClient.rpc("get_admin_ungani_package_catalog");
 
       if (!error && data && data.ok === true && Array.isArray(data.packages)) {
         packages = data.packages;
@@ -1063,7 +1076,7 @@
         const option = document.createElement("option");
         option.value = pkg.package_key;
         option.textContent = pkg.package_name + (
-          pkg.monthly_price ? " · " + money(pkg.monthly_price, pkg.currency || "KES") : " · Custom"
+          pkg.monthly_price_ksh ? " · " + money(pkg.monthly_price_ksh) : " · Custom"
         );
         select.appendChild(option);
       });
@@ -1072,15 +1085,38 @@
       handlePackageChange();
     }
 
+    function oneYearMinusOneDay(startDateString) {
+      const date = new Date(startDateString);
+      date.setFullYear(date.getFullYear() + 1);
+      date.setDate(date.getDate() - 1);
+      return date.toISOString().slice(0, 10);
+    }
+
     function handlePackageChange() {
       const key = byId("packageKey").value;
+      const cycle = byId("billingCycle").value;
       const pkg = packages.find((item) => item.package_key === key);
 
       if (!pkg) return;
 
-      if (!pkg.is_custom && pkg.monthly_price !== null && pkg.monthly_price !== undefined) {
-        byId("amount").value = Number(pkg.monthly_price || 0);
-        byId("currency").value = pkg.currency || "KES";
+      if (!pkg.is_custom) {
+        const price = cycle === "yearly" ? pkg.yearly_price_ksh : pkg.monthly_price_ksh;
+
+        if (price !== null && price !== undefined) {
+          byId("amount").value = Number(price || 0);
+        }
+      }
+
+      byId("currency").value = "KES";
+
+      const start = byId("billingStart").value || today();
+
+      if (cycle === "yearly") {
+        byId("billingStart").value = start;
+        byId("billingEnd").value = oneYearMinusOneDay(start);
+      } else {
+        byId("billingStart").value = firstDayOfMonth();
+        byId("billingEnd").value = lastDayOfMonth();
       }
     }
 
