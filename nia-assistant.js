@@ -3235,7 +3235,11 @@
     let expenses = 0;
 
     rows.forEach(function (row) {
-      const amount = Number(pickField(row, ["amount"], 0)) || 0;
+      // Prefers amount_kes over amount for multi-currency tenants, same
+      // pattern used by calculateMoneySummary() in client.html/my-money.html/
+      // reports.html - Nia's spoken/displayed figures must not mix raw
+      // amounts across currencies either.
+      const amount = Number(pickField(row, ["amount_kes", "amount"], 0)) || 0;
       if (niaIsIncomeRow(row)) income += amount;
       else if (niaIsExpenseRow(row)) expenses += amount;
     });
