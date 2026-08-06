@@ -120,11 +120,23 @@
         align-items: center;
         gap: 5px;
         background: rgba(212,166,58,0.16);
-        color: var(--ungani-navy, #061C3D);
+        color: var(--ungani-text, #061C3D);
         border-radius: 999px;
         padding: 4px 10px;
         font-size: 11.5px;
         font-weight: 700;
+      }
+
+      /* This panel is injected into host pages that use three different
+         dark-mode attribute conventions (html[data-theme],
+         body[data-theme], html[data-ungani-theme]) - --ungani-text only
+         reliably flips under the last one, so this covers all three
+         defensively rather than depending on which system the host
+         page happens to use. */
+      html[data-theme="dark"] .ucp-mention-chip,
+      body[data-theme="dark"] .ucp-mention-chip,
+      html[data-ungani-theme="dark"] .ucp-mention-chip {
+        color: #F5F5F3;
       }
 
       .ucp-mention-chip button {
