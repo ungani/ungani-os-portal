@@ -614,7 +614,21 @@
               <option value="manager">Manager</option>
               <option value="staff" selected>Staff</option>
               <option value="viewer">Viewer</option>
+              <option value="accountant">Accountant</option>
+              <option value="frontdesk">Front Desk</option>
             </select>
+          </label>
+
+          <label id="branchAssignField" style="display:none;">
+            Branch
+            <select id="branchId">
+              <option value="">No specific branch</option>
+            </select>
+          </label>
+
+          <label id="crossBranchField" class="check" style="display:none;">
+            <input id="canAccessAllBranches" type="checkbox" />
+            Full access to all branches (overrides branch restriction)
           </label>
 
           <label>
@@ -717,6 +731,8 @@
 
     let currentUser = null;
     let members = [];
+    let branches = [];
+    let multiBranchEnabled = false;
     let currentTenantId = null;
     let currentTenant = null;
     let staffPaymentsByMember = {};
@@ -850,8 +866,51 @@
         isOwnerViewer = false;
       }
 
+      await loadBranches();
       await loadTeamMembers();
       await loadStaffPayments();
+    }
+
+    // Multi-branch restriction Phase A: staff assignment lives on the
+    // same Add/Update Staff form as role, mirroring how permissions
+    // already work - a branch dropdown that's simply hidden (not
+    // removed) when multi-branch isn't enabled for this tenant, so
+    // nothing changes for the vast majority of single-location clients.
+    async function loadBranches() {
+      try {
+        const response = await supabaseClient.rpc("get_my_ungani_multi_branch_status");
+        if (response.error) return;
+
+        const status = response.data || {};
+        multiBranchEnabled = status.multi_branch_enabled === true;
+        branches = Array.isArray(status.branches) ? status.branches.filter(b => (b.status || "active") === "active") : [];
+
+        const branchField = document.getElementById("branchAssignField");
+        const crossField = document.getElementById("crossBranchField");
+        const select = document.getElementById("branchId");
+
+        if (!multiBranchEnabled || !branches.length) {
+          if (branchField) branchField.style.display = "none";
+          if (crossField) crossField.style.display = "none";
+          return;
+        }
+
+        if (select) {
+          select.innerHTML = '<option value="">No specific branch</option>' +
+            branches.map(b => `<option value="${attr(b.id)}">${safe(b.branch_name || "Branch")}</option>`).join("");
+        }
+
+        if (branchField) branchField.style.display = "";
+        if (crossField) crossField.style.display = "";
+      } catch (error) {
+        console.warn("loadBranches error:", error.message);
+      }
+    }
+
+    function branchNameById(branchId) {
+      if (!branchId) return "";
+      const match = branches.find(b => b.id === branchId);
+      return match ? (match.branch_name || "Branch") : "";
     }
 
     // Payroll/staff-payment tracking: sums this-calendar-month expense
@@ -1039,6 +1098,9 @@
       await withButtonLoading(submitBtn, async () => {
         const salaryValue = document.getElementById("monthlySalary").value;
 
+        const branchSelect = document.getElementById("branchId");
+        const crossBranchCheckbox = document.getElementById("canAccessAllBranches");
+
         const payload = {
           p_full_name: document.getElementById("fullName").value,
           p_email: document.getElementById("email").value,
@@ -1046,7 +1108,9 @@
           p_role_key: document.getElementById("roleKey").value,
           p_status: document.getElementById("status").value,
           p_monthly_salary: salaryValue ? Number(salaryValue) : null,
-          p_pay_frequency: document.getElementById("payFrequency").value
+          p_pay_frequency: document.getElementById("payFrequency").value,
+          p_branch_id: (branchSelect && branchSelect.value) ? branchSelect.value : null,
+          p_can_access_all_branches: !!(crossBranchCheckbox && crossBranchCheckbox.checked)
         };
 
         // This form has no editingMemberId concept - it upserts by email
@@ -1092,6 +1156,8 @@
         document.getElementById("status").value = "active";
         document.getElementById("monthlySalary").value = "";
         document.getElementById("payFrequency").value = "monthly";
+        if (branchSelect) branchSelect.value = "";
+        if (crossBranchCheckbox) crossBranchCheckbox.checked = false;
 
         await loadTeamMembers();
         await loadStaffPayments();

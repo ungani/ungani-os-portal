@@ -48,7 +48,7 @@
     { key: "notifications", href: "client-notifications.html", icon: "🔔", label: "Notifications", aliases: ["notifications", "notification center", "my notifications", "unread"] },
     { key: "notices", href: "my-notices.html", icon: "📢", label: "Notices", aliases: ["notices", "notice", "announcements"] },
     { key: "team-chat", href: "my-team-chat.html", icon: "👨‍👩‍👧‍👦", label: "Team Chat", aliases: ["team chat", "chat with my team"] },
-    { key: "connect", href: "my-connect.html", icon: "🔗", label: "Ungani Connect", aliases: ["ungani connect", "connect", "shared files", "team documents"] },
+    { key: "connect", href: "my-connect.html", icon: "🔗", label: "Shared Files", aliases: ["ungani connect", "connect", "shared files", "team documents"] },
     { key: "profile", href: "my-profile.html", icon: "🏢", label: "Business Profile", aliases: ["business profile", "company profile"] },
     { key: "my-settings", href: "my-settings.html", icon: "🔧", label: "My Settings", aliases: ["settings", "account", "account settings", "preferences", "theme", "language", "business sections", "manage sections", "business settings", "quick settings"] },
     { key: "support", href: "my-support.html", icon: "🛟", label: "Contact Support", aliases: ["support", "contact support", "help desk", "get help"] },

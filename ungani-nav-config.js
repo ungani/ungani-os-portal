@@ -53,7 +53,7 @@
         items: [
           ["dashboard", "client.html", "🏠", "Dashboard"],
           ["overview", "my-overview.html", "📌", "Overview"],
-          ["connect", "my-connect.html", "🔗", "Ungani Connect"],
+          ["connect", "my-connect.html", "🔗", "Shared Files"],
           ["notifications", "client-notifications.html", "🔔", "Notifications"],
           ["activity", "my-activity.html", "🕒", "Activity Feed"],
           ["charts", "my-charts.html", "📊", "Charts"]
