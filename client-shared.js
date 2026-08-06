@@ -1657,6 +1657,23 @@
       // own 60s cadence elsewhere in this file. Runs once per page load
       // (this init flow only ever executes once), so a single interval.
       setInterval(loadSidebarBadgeCounts, 60000);
+      setInterval(loadNotificationBadge, 60000);
+
+      // Real bug: both badge loaders above only ever ran once, at initial
+      // page load. Mobile browsers commonly restore a page from the
+      // back-forward cache (bfcache) when the user navigates to another
+      // page and back - that restore does NOT re-run this init flow (no
+      // network requests, no JS re-execution), so the badge kept showing
+      // whatever was true at the ORIGINAL load, stale by however long the
+      // user was away. pageshow with event.persisted===true is the
+      // standard signal a page was just restored from bfcache rather than
+      // freshly loaded - re-fetch both counts when that happens.
+      window.addEventListener("pageshow", function (event) {
+        if (event.persisted) {
+          loadNotificationBadge();
+          loadSidebarBadgeCounts();
+        }
+      });
 
       if (window.UnganiTeamChat) {
         UnganiTeamChat.init(function () {

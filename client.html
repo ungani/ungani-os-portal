@@ -3591,6 +3591,26 @@
         });
       }
       setInterval(updateLastUpdatedIndicator, 30000);
+
+      // Real bug: loadNotifications()/loadClientSidebarBadgeCounts() only
+      // ever ran once, at initial page load - this dashboard has no
+      // periodic refresh for either. Mobile browsers commonly restore a
+      // page from the back-forward cache (bfcache) when the user
+      // navigates to another page (e.g. Chat) and back - that restore
+      // does NOT re-run this init flow, so the bell badge kept showing
+      // whatever was true at the ORIGINAL load, stale by however long the
+      // user was away. pageshow with event.persisted===true is the
+      // standard signal a page was just restored from bfcache rather than
+      // freshly loaded. Also add a 60s periodic refresh (matching the
+      // cadence client-shared.js's sidebar badges already use) so the
+      // count self-heals even without a navigation round-trip.
+      setInterval(loadNotifications, 60000);
+      window.addEventListener("pageshow", function (event) {
+        if (event.persisted) {
+          loadNotifications();
+          loadClientSidebarBadgeCounts();
+        }
+      });
     }
 
     // Trial-warning and read-only banners. client.html doesn't load
