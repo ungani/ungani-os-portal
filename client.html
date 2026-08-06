@@ -4067,7 +4067,14 @@
     // first - keeps this page's bell in step with every other page's.
     async function syncNotificationsBeforeLoad() {
       try {
-        await supabaseClient.rpc("sync_my_ungani_notifications");
+        const response = await supabaseClient.rpc("sync_my_ungani_notifications");
+
+        // Supabase resolves (doesn't throw) on a query-level failure - a
+        // silent RPC error here would otherwise leave the bell wrong with
+        // zero visibility into why. Log it loudly enough to actually see.
+        if (response && response.error) {
+          console.error("notification sync RPC error:", response.error.message, response.error);
+        }
       } catch (error) {
         console.warn("notification sync", error.message);
       }
