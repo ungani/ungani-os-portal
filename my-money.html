@@ -58,6 +58,7 @@
     let isRealEstate = false;
     let personOptions = [];
     let teamMemberOptions = [];
+    let payeeOptions = [];
     let sectionOptions = [];
     let currentSectionFilter = "";
     let activeMoneyCategory = "all";
@@ -265,7 +266,8 @@
       const loaders = [
         loadCategorySuggestions(),
         loadRecurringRows(),
-        loadTeamMemberOptions()
+        loadTeamMemberOptions(),
+        loadPayeeOptions()
       ];
 
       if (isRealEstate) {
@@ -381,6 +383,79 @@
       });
 
       return member ? member.full_name : "";
+    }
+
+    // Payee tracking: for people the business pays who don't need (and
+    // shouldn't need) a system login - a driver, cleaner, waiter, etc.
+    // Separate from teamMemberOptions above, which is the login/role
+    // table whose active rows count toward the package's user limit.
+    async function loadPayeeOptions() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_payees");
+        payeeOptions = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.payees || [])
+          : [];
+      } catch (error) {
+        console.warn("Payee options skipped:", error.message);
+        payeeOptions = [];
+      }
+    }
+
+    function getPayeeLabel(id) {
+      const payee = payeeOptions.find(function (row) {
+        return String(row.id) === String(id);
+      });
+
+      return payee ? payee.full_name : "";
+    }
+
+    // Payee option values are prefixed "payee:" to disambiguate from a
+    // team member's raw id in the combined dropdown.
+    function paidToOptionsHtml() {
+      const staffHtml = teamMemberOptions.map(function (member) {
+        return `<option value="${UnganiClientShared.attr(member.id)}">${UnganiClientShared.safe(member.full_name)}${member.role_key ? " (" + UnganiClientShared.safe(member.role_key) + ")" : ""}</option>`;
+      }).join("");
+
+      const payeeHtml = payeeOptions.map(function (payee) {
+        return `<option value="payee:${UnganiClientShared.attr(payee.id)}">${UnganiClientShared.safe(payee.full_name)}${payee.job_title ? " (" + UnganiClientShared.safe(payee.job_title) + ")" : ""}</option>`;
+      }).join("");
+
+      return `
+        <option value="">Not linked to anyone</option>
+        ${staffHtml ? `<optgroup label="Staff (system users)">${staffHtml}</optgroup>` : ""}
+        ${payeeHtml ? `<optgroup label="Payees (no login)">${payeeHtml}</optgroup>` : ""}
+        <option value="__add_payee__">+ Add new payee...</option>
+      `;
+    }
+
+    async function handlePaidToChange() {
+      const select = document.getElementById("moneyPaidTo");
+      if (!select || select.value !== "__add_payee__") return;
+
+      const name = (prompt("Payee's full name (e.g. a driver, cleaner, or waiter who doesn't need a login):") || "").trim();
+
+      if (!name) {
+        select.value = "";
+        return;
+      }
+
+      const jobTitle = (prompt("Job title / role (optional):") || "").trim();
+
+      const response = await currentContext.supabaseClient.rpc("owner_upsert_ungani_payee", {
+        p_full_name: name,
+        p_job_title: jobTitle || null
+      });
+
+      if (response.error || !response.data || response.data.ok !== true) {
+        UnganiClientShared.showToast("Could not add payee: " + (response.error ? response.error.message : ((response.data && response.data.message) || "Unknown error")));
+        select.value = "";
+        return;
+      }
+
+      await loadPayeeOptions();
+      select.innerHTML = paidToOptionsHtml();
+      select.value = "payee:" + response.data.payee_id;
+      UnganiClientShared.showToast("Payee added ✓");
     }
 
     function getPersonLabel(id) {
@@ -1579,6 +1654,8 @@
                 const relatedPersonLabel = relatedPersonId ? getPersonLabel(relatedPersonId) : "";
                 const relatedTeamMemberId = UnganiClientShared.getValue(row, ["related_team_member_id"], "");
                 const relatedTeamMemberLabel = relatedTeamMemberId ? getTeamMemberLabel(relatedTeamMemberId) : "";
+                const relatedPayeeId = UnganiClientShared.getValue(row, ["related_payee_id"], "");
+                const relatedPayeeLabel = relatedPayeeId ? getPayeeLabel(relatedPayeeId) : "";
                 const sectionLabel = UnganiClientShared.getValue(row, ["section_label"], "");
 
                 return `
@@ -1597,7 +1674,7 @@
                     </td>
                     <td>${UnganiClientShared.safe(method || "—")}</td>
                     <td>${statusBadge(status)}</td>
-                    <td>${UnganiClientShared.safe(notes || (relatedPersonLabel ? "Tenant: " + relatedPersonLabel : (relatedTeamMemberLabel ? "Staff: " + relatedTeamMemberLabel : "—")))}</td>
+                    <td>${UnganiClientShared.safe(notes || (relatedPersonLabel ? "Tenant: " + relatedPersonLabel : (relatedTeamMemberLabel ? "Staff: " + relatedTeamMemberLabel : (relatedPayeeLabel ? "Payee: " + relatedPayeeLabel : "—"))))}</td>
                     <td>
                       <button class="ungani-btn small dark" type="button" onclick="event.stopPropagation(); openMoneyDiscussionPanel('${UnganiClientShared.attr(row.id)}')" title="Discussion, activity, and attachments for this record">💬 Discuss</button>
                     </td>
@@ -1916,12 +1993,9 @@
             ` : ""}
 
             <div id="moneyTeamMemberWrap">
-              <label for="moneyTeamMember">Team Member (optional)</label>
-              <select id="moneyTeamMember">
-                <option value="">Not linked to a team member</option>
-                ${teamMemberOptions.map(function (member) {
-                  return `<option value="${UnganiClientShared.attr(member.id)}">${UnganiClientShared.safe(member.full_name)}${member.role_key ? " (" + UnganiClientShared.safe(member.role_key) + ")" : ""}</option>`;
-                }).join("")}
+              <label for="moneyPaidTo">Paid To (optional)</label>
+              <select id="moneyPaidTo" onchange="handlePaidToChange()">
+                ${paidToOptionsHtml()}
               </select>
             </div>
 
@@ -2036,8 +2110,10 @@
             document.getElementById("moneyRelatedPerson").value = row ? UnganiClientShared.getValue(row, ["related_person_id"], "") : "";
           }
 
-          if (document.getElementById("moneyTeamMember")) {
-            document.getElementById("moneyTeamMember").value = row ? UnganiClientShared.getValue(row, ["related_team_member_id"], "") : "";
+          if (document.getElementById("moneyPaidTo")) {
+            const existingTeamMemberId = row ? UnganiClientShared.getValue(row, ["related_team_member_id"], "") : "";
+            const existingPayeeId = row ? UnganiClientShared.getValue(row, ["related_payee_id"], "") : "";
+            document.getElementById("moneyPaidTo").value = existingPayeeId ? ("payee:" + existingPayeeId) : (existingTeamMemberId || "");
           }
 
           if (sectionOptions.length > 1 && document.getElementById("moneySection")) {
@@ -2365,7 +2441,9 @@ const payload = {
         payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
       }
 
-      payload.related_team_member_id = broadType === "expense" ? (UnganiClientShared.value("moneyTeamMember") || null) : null;
+      const paidToValue = broadType === "expense" ? (UnganiClientShared.value("moneyPaidTo") || "") : "";
+      payload.related_team_member_id = paidToValue.indexOf("payee:") !== 0 ? (paidToValue || null) : null;
+      payload.related_payee_id = paidToValue.indexOf("payee:") === 0 ? paidToValue.slice(6) : null;
 
       if (sectionOptions.length > 1) {
         payload.section_label = UnganiClientShared.value("moneySection") || null;

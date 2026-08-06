@@ -672,6 +672,29 @@
           <div class="loading">Loading team members...</div>
         </div>
       </div>
+
+      <div class="card">
+        <h2>Payees (No Login)</h2>
+        <p>People the business pays who don't need a system login - a driver, cleaner, waiter, or other casual worker. Adding them here doesn't count toward your package's user limit.</p>
+
+        <form class="form" onsubmit="savePayee(event)" style="margin-bottom:16px;">
+          <label>
+            Name
+            <input id="payeeName" type="text" placeholder="Example: John Mwangi" required />
+          </label>
+
+          <label>
+            Job Title (optional)
+            <input id="payeeJobTitle" type="text" placeholder="Example: Driver" />
+          </label>
+
+          <button class="ungani-btn gold" type="submit" id="savePayeeBtn">Add Payee</button>
+        </form>
+
+        <div id="payeesBox" class="member-list">
+          <div class="loading">Loading payees...</div>
+        </div>
+      </div>
     </section>
 
     <p class="footer">UNGANI OS Team Access · ungani.com · info@ungani.com</p>
@@ -731,6 +754,8 @@
 
     let currentUser = null;
     let members = [];
+    let payees = [];
+    let payeePaymentsByPayee = {};
     let branches = [];
     let multiBranchEnabled = false;
     let currentTenantId = null;
@@ -941,10 +966,10 @@
 
         const response = await supabaseClient
           .from("transactions")
-          .select("amount, amount_kes, related_team_member_id, transaction_date, type")
+          .select("amount, amount_kes, related_team_member_id, related_payee_id, transaction_date, type")
           .eq("tenant_id", tenantId)
           .eq("type", "expense")
-          .not("related_team_member_id", "is", null)
+          .or("related_team_member_id.not.is.null,related_payee_id.not.is.null")
           .gte("transaction_date", monthStart);
 
         if (response.error) {
@@ -954,20 +979,28 @@
 
         const rows = response.data || [];
         const byMember = {};
+        const byPayee = {};
         let total = 0;
 
         rows.forEach(row => {
           const amount = Number(row.amount_kes != null ? row.amount_kes : (row.amount || 0));
-          const memberId = row.related_team_member_id;
-          byMember[memberId] = (byMember[memberId] || 0) + amount;
+
+          if (row.related_payee_id) {
+            byPayee[row.related_payee_id] = (byPayee[row.related_payee_id] || 0) + amount;
+          } else if (row.related_team_member_id) {
+            byMember[row.related_team_member_id] = (byMember[row.related_team_member_id] || 0) + amount;
+          }
+
           total += amount;
         });
 
         staffPaymentsByMember = byMember;
+        payeePaymentsByPayee = byPayee;
         staffPaymentsTotal = total;
 
         renderStaffPaymentsSummary();
         renderMembers();
+        await loadPayees();
       } catch (error) {
         console.warn("loadStaffPayments error:", error.message);
       }
@@ -977,7 +1010,7 @@
       const box = document.getElementById("staffPaymentsSummary");
       if (!box) return;
 
-      const paidCount = Object.keys(staffPaymentsByMember).length;
+      const paidCount = Object.keys(staffPaymentsByMember).length + Object.keys(payeePaymentsByPayee).length;
 
       if (!paidCount) {
         box.innerHTML = "";
@@ -988,13 +1021,109 @@
         <div class="member-card" style="margin-bottom:4px;">
           <div class="member-head">
             <div>
-              <strong>Paid to staff this month</strong>
-              <small>${paidCount} staff member(s) paid so far, based on tagged Money records</small>
+              <strong>Paid to staff & payees this month</strong>
+              <small>${paidCount} person/people paid so far, based on tagged Money records</small>
             </div>
             <span class="badge">${safe(formatMoney(staffPaymentsTotal))}</span>
           </div>
         </div>
       `;
+    }
+
+    async function loadPayees() {
+      try {
+        const response = await supabaseClient.rpc("get_my_ungani_payees");
+        payees = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.payees || [])
+          : [];
+      } catch (error) {
+        console.warn("loadPayees error:", error.message);
+        payees = [];
+      }
+
+      renderPayees();
+    }
+
+    function renderPayees() {
+      const box = document.getElementById("payeesBox");
+      if (!box) return;
+
+      if (!payees.length) {
+        box.innerHTML = `<div class="empty">No payees yet. Add someone above - e.g. a driver, cleaner, or waiter who doesn't need a login.</div>`;
+        return;
+      }
+
+      box.innerHTML = payees.map(payee => {
+        const paidThisMonth = payeePaymentsByPayee[payee.id] || 0;
+
+        return `
+          <div class="member-card">
+            <div class="member-head">
+              <div>
+                <strong>${safe(payee.full_name || "Unnamed Payee")}</strong>
+                <small>${safe(payee.job_title || "No job title")}</small>
+                <small>Paid this month: ${safe(formatMoney(paidThisMonth))}</small>
+              </div>
+              <button class="ungani-btn small red" type="button" onclick="disablePayee('${attr(payee.id)}', this)">Deactivate</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function savePayee(event) {
+      event.preventDefault();
+
+      const submitBtn = document.getElementById("savePayeeBtn");
+
+      await withButtonLoading(submitBtn, async () => {
+        const name = document.getElementById("payeeName").value.trim();
+        const jobTitle = document.getElementById("payeeJobTitle").value.trim();
+
+        if (!name) {
+          alert("Payee name is required.");
+          return;
+        }
+
+        const response = await supabaseClient.rpc("owner_upsert_ungani_payee", {
+          p_full_name: name,
+          p_job_title: jobTitle || null
+        });
+
+        if (response.error) {
+          alert("Could not add payee: " + response.error.message);
+          return;
+        }
+
+        if (!response.data || response.data.ok !== true) {
+          alert((response.data && response.data.message) || "Could not add payee.");
+          return;
+        }
+
+        document.getElementById("payeeName").value = "";
+        document.getElementById("payeeJobTitle").value = "";
+
+        await loadPayees();
+      });
+    }
+
+    async function disablePayee(payeeId, buttonEl) {
+      const confirmed = confirm("Deactivate this payee? Past Money records tagged to them stay unchanged.");
+      if (!confirmed) return;
+
+      await withButtonLoading(buttonEl, async () => {
+        const response = await supabaseClient.rpc("owner_set_ungani_payee_status", {
+          p_payee_id: payeeId,
+          p_status: "inactive"
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          alert("Could not deactivate payee: " + (response.error ? response.error.message : "Unknown error"));
+          return;
+        }
+
+        await loadPayees();
+      });
     }
 
     async function loadTeamMembers() {
