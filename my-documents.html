@@ -1494,6 +1494,28 @@
         msgSpan.className = "ungani-small";
       }
 
+      // Real bug: the Picker's file browser renders inside a
+      // cross-origin iframe, so none of the clicks/scrolls the user
+      // makes while browsing Drive ever reach this page's own
+      // mousedown/click/scroll listeners. session-inactivity-guard.js
+      // only sees "activity" through those listeners, so a user who
+      // opens the picker already close to the 30-minute idle mark - or
+      // who simply takes a while browsing/deciding once it's open -
+      // could get silently signed out mid-pick, wiping this whole open
+      // form before they ever reach Save. Pausing for the entire
+      // function (not just around the picker itself) closes the race
+      // too: the two network round-trips just to open the picker are
+      // themselves enough idle time to matter if the user was already
+      // near the limit when they clicked.
+      let guardPaused = true;
+      if (window.UnganiSessionGuard) window.UnganiSessionGuard.pause();
+
+      function resumeGuardOnce() {
+        if (!guardPaused) return;
+        guardPaused = false;
+        if (window.UnganiSessionGuard) window.UnganiSessionGuard.resume();
+      }
+
       try {
         const { data: sessionData } = await currentContext.supabaseClient.auth.getSession();
         const accessToken = sessionData && sessionData.session ? sessionData.session.access_token : null;
@@ -1515,6 +1537,7 @@
             if (msgSpan) {
               msgSpan.innerHTML = 'Google Drive isn\'t connected yet. <a href="my-settings.html" style="color:var(--gold);font-weight:800;">Connect it in Settings</a>, then come back here.';
             }
+            resumeGuardOnce();
             return;
           }
           throw new Error((tokenBody && tokenBody.message) || "Could not access Google Drive.");
@@ -1537,6 +1560,10 @@
             // for both outcomes, or the overlay is left stuck on screen.
             if (data.action === google.picker.Action.PICKED || data.action === google.picker.Action.CANCEL) {
               picker.setVisible(false);
+            }
+
+            if (data.action === google.picker.Action.PICKED || data.action === google.picker.Action.CANCEL) {
+              resumeGuardOnce();
             }
 
             if (data.action !== google.picker.Action.PICKED) return;
@@ -1563,6 +1590,8 @@
 
         if (msgSpan) msgSpan.textContent = "";
       } catch (error) {
+        if (guardPaused && window.UnganiSessionGuard) window.UnganiSessionGuard.resume();
+
         if (msgSpan) {
           msgSpan.textContent = error.message || "Could not open Google Drive.";
           msgSpan.className = "ungani-small";

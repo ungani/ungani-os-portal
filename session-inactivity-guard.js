@@ -14,6 +14,7 @@
   let tickTimer = null;
   let warningEl = null;
   let countdownTimer = null;
+  let pauseCount = 0;
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
@@ -81,6 +82,15 @@
   }
 
   function checkIdle() {
+    // A caller can pause the countdown for a genuinely active task this
+    // page can't see activity for (e.g. the Google Drive Picker, which
+    // renders its file browser in a cross-origin iframe - none of the
+    // user's clicks/scrolls in there ever reach this page's window-level
+    // listeners, so a long real pick could silently run out the clock
+    // and sign the user out mid-task, wiping whatever form they had
+    // open). See window.UnganiSessionGuard.pause()/resume() below.
+    if (pauseCount > 0) return;
+
     const idleFor = Date.now() - getLastActivity();
 
     if (idleFor >= IDLE_TIMEOUT_MS) {
@@ -217,4 +227,21 @@
     const mode = window.location.pathname.toLowerCase().includes("admin") ? "admin" : "client";
     window.location.href = "login.html?mode=" + mode + "&reason=" + reason;
   }
+
+  // Public hook for a page to say "the user is genuinely busy with
+  // something this guard can't see activity for" (e.g. my-documents.html
+  // wraps the Google Drive Picker with this). pause()/resume() are
+  // reference-counted so overlapping callers can't accidentally
+  // re-arm the countdown out from under each other.
+  window.UnganiSessionGuard = {
+    pause: function () {
+      pauseCount += 1;
+      hideWarning();
+    },
+    resume: function () {
+      pauseCount = Math.max(0, pauseCount - 1);
+      if (pauseCount === 0) recordActivity();
+    },
+    recordActivity: recordActivity
+  };
 })();
