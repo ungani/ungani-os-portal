@@ -1613,6 +1613,41 @@
     return String(value || "N/A").replaceAll("_", " ");
   }
 
+  // Real bug: push-notifications.js (window.UnganiPush, used below by
+  // applySidebarBadgeCounts() to keep the OS app-icon badge current) was
+  // only ever <script>-tagged on my-settings.html/admin-settings.html -
+  // every other client page silently skipped the setAppBadgeCount() call
+  // (window.UnganiPush undefined), so the badge stayed frozen at
+  // whatever value was last set while the user happened to be on
+  // Settings, even across logout/login to a different account. Loading
+  // it here, once, means every page that calls initPage() gets a
+  // genuinely current badge instead of only Settings.
+  let pushScriptLoadPromise = null;
+
+  function ensurePushScriptLoaded() {
+    if (window.UnganiPush) return Promise.resolve();
+
+    if (!pushScriptLoadPromise) {
+      pushScriptLoadPromise = new Promise(function (resolve) {
+        const existing = document.querySelector('script[src="push-notifications.js"]');
+
+        if (existing) {
+          existing.addEventListener("load", resolve);
+          existing.addEventListener("error", resolve);
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.src = "push-notifications.js";
+        script.onload = resolve;
+        script.onerror = resolve;
+        document.head.appendChild(script);
+      });
+    }
+
+    return pushScriptLoadPromise;
+  }
+
   async function initPage(config) {
     state.currentPageKey = config.pageKey || "";
     state.currentPageTitle = config.pageTitle || "UNGANI OS";
@@ -1620,6 +1655,7 @@
 
     applyTheme(state.currentTheme);
     showPreloader("Loading UNGANI OS...");
+    ensurePushScriptLoaded();
 
     try {
       if (!window.supabase || !window.supabase.createClient) {
@@ -1663,6 +1699,7 @@
 
       renderShell(config);
       refreshNotificationBadgeSafe();
+      await ensurePushScriptLoaded();
       loadSidebarBadgeCounts();
 
       // Keeps the OS app-icon badge (in-nav badges) fresh while the tab

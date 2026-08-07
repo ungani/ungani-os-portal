@@ -1422,8 +1422,41 @@
     applyAdminSidebarBadgeCounts(counts);
   }
 
+  // Real bug (same as client-shared.js): push-notifications.js
+  // (window.UnganiPush) was only ever <script>-tagged on
+  // admin-settings.html, so applyAdminSidebarBadgeCounts()'s
+  // setAppBadgeCount() call silently no-opped on every other admin
+  // page, leaving the OS app-icon badge frozen at whatever value was
+  // last set while an admin happened to be on Settings.
+  let adminPushScriptLoadPromise = null;
+
+  function ensureAdminPushScriptLoaded() {
+    if (window.UnganiPush) return Promise.resolve();
+
+    if (!adminPushScriptLoadPromise) {
+      adminPushScriptLoadPromise = new Promise(function (resolve) {
+        const existing = document.querySelector('script[src="push-notifications.js"]');
+
+        if (existing) {
+          existing.addEventListener("load", resolve);
+          existing.addEventListener("error", resolve);
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.src = "push-notifications.js";
+        script.onload = resolve;
+        script.onerror = resolve;
+        document.head.appendChild(script);
+      });
+    }
+
+    return adminPushScriptLoadPromise;
+  }
+
   async function requireAdmin(options) {
     injectBaseStyles();
+    ensureAdminPushScriptLoaded();
 
     const savedTheme = localStorage.getItem("ungani_theme");
 
@@ -1454,6 +1487,7 @@
         options.onReady(admin, getSupabaseClient());
       }
 
+      await ensureAdminPushScriptLoaded();
       loadAdminSidebarBadgeCounts();
 
       // Keeps the OS app-icon badge (and the in-nav badges) fresh while

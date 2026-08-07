@@ -677,6 +677,11 @@
       background: rgba(212, 166, 58, 0.08);
     }
 
+    .tier-compare-card.is-selected {
+      border-color: var(--gold);
+      border-width: 2px;
+    }
+
     .tier-recommended-badge {
       position: absolute;
       top: -12px;
@@ -1972,6 +1977,7 @@
     }
 
     let billingCycle = "monthly"; // "monthly" | "yearly" - toggle state for the comparison grid, independent of the client's own currentPackageKey.
+    let selectedTierKey = null; // Real bug: only the Recommended card ever showed a gold border - clicking "Select this package" on any OTHER card gave zero visual confirmation. This tracks which card was last clicked so every tier can show the same gold highlight when actively selected.
 
     function escapeHtmlPkg(value) {
       return String(value === null || value === undefined ? "" : value)
@@ -2037,8 +2043,10 @@
           ? '<div class="tier-compare-inherits">Everything in ' + escapeHtmlPkg(packageTierInfo[info.inheritsFrom].name) + ', plus:</div>'
           : '';
 
+        const isSelected = selectedTierKey === key;
+
         return (
-          '<div class="tier-compare-card' + (isRecommended ? ' is-recommended' : '') + (isCurrent ? ' is-current' : '') + '">' +
+          '<div class="tier-compare-card' + (isRecommended ? ' is-recommended' : '') + (isCurrent ? ' is-current' : '') + (isSelected ? ' is-selected' : '') + '">' +
             (isRecommended ? '<span class="tier-recommended-badge">Recommended</span>' : '') +
             (isCurrent ? '<span class="tier-current-tag">Your Current Plan</span>' : '') +
             '<div class="tier-compare-name">' + escapeHtmlPkg(info.name) + '</div>' +
@@ -2065,6 +2073,9 @@
       const reasonBox = document.getElementById("upgradeReason");
 
       if (select) select.value = packageKey;
+
+      selectedTierKey = packageKey;
+      renderFeatures(currentPackageKey);
 
       const aside = document.getElementById("requestedPackage");
       if (aside) {

@@ -72,7 +72,20 @@
     // every 20s (loadMessages(true) on refreshTimer) and after every send -
     // rebuilding the widget from this state on each render is what keeps
     // it from silently resetting mid-conversation.
-    let niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null };
+    let niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null, composePrompt: null };
+
+    // Small conversational touch: a fresh greeting each time the widget
+    // resets, rather than the identical line every single visit -
+    // stays put for the rest of the session so it doesn't shuffle mid-
+    // conversation on re-render. Real content is unchanged, just less
+    // robotic to encounter repeatedly.
+    const NIA_GREETINGS = [
+      "Hi! What can I help you with today?",
+      "Hey there - what's going on?",
+      "Welcome to UNGANI! How can I help you today?",
+      "Hi again - what do you need a hand with?"
+    ];
+    const niaGreeting = NIA_GREETINGS[Math.floor(Math.random() * NIA_GREETINGS.length)];
 
     // guidanceKey maps to a real NiaAssistant.getGuidanceHtml() key (from
     // HELP_TOPICS or HOW_TO_TOPICS in nia-assistant.js) - reusing Nia's
@@ -277,12 +290,21 @@
     function renderNiaWidget() {
       const parts = [];
 
-      parts.push(niaBubble("Welcome to UNGANI! How can I help you today?"));
+      parts.push(niaBubble(niaGreeting));
 
       if (niaWidgetState.stage === "categories") {
+        parts.push(niaBubble("Pick whatever's closest, or just tell me in your own words below."));
         parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">${CHAT_CATEGORIES.map(function (c) {
           return niaChip(c.label, "selectNiaCategory('" + c.key + "')");
         }).join("")}</div>`);
+        parts.push(`
+          <form onsubmit="submitNiaFreeStart(event)" style="margin-bottom:16px;">
+            <textarea id="niaFreeStartInput" placeholder="...or just type your question here" style="min-height:60px;"></textarea>
+            <div class="ungani-button-row" style="margin-top:10px;">
+              <button class="ungani-btn light" type="submit">Send</button>
+            </div>
+          </form>
+        `);
 
         return `<section class="ungani-card">${parts.join("")}</section>`;
       }
@@ -297,6 +319,16 @@
           ${niaChip("Yes, thanks!", "niaFeedback(true)")}
           ${niaChip("No, I still need help", "niaFeedback(false)")}
         </div>`);
+      } else if (niaWidgetState.stage === "composing") {
+        parts.push(niaBubble(niaWidgetState.composePrompt || "Go ahead and tell me what's going on."));
+        parts.push(`
+          <form onsubmit="submitNiaCompose(event)" style="margin-bottom:16px;">
+            <textarea id="niaComposeInput" required placeholder="Type your question or message here..." style="min-height:90px;"></textarea>
+            <div class="ungani-button-row" style="margin-top:10px;">
+              <button class="ungani-btn gold" type="submit">Send to UNGANI</button>
+            </div>
+          </form>
+        `);
       } else if (niaWidgetState.stage === "resolved") {
         parts.push(niaBubble("Glad I could help! If anything else comes up, I'm right here."));
         parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">${niaChip("Ask something else", "resetNiaWidget()")}</div>`);
@@ -309,7 +341,7 @@
     }
 
     function resetNiaWidget() {
-      niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null };
+      niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null, composePrompt: null };
       renderChatPage();
     }
 
@@ -324,7 +356,14 @@
       niaWidgetState.categoryKey = key;
       niaWidgetState.answerHtml = guidance ? guidance.html : null;
 
-      if (category.alwaysEscalate) {
+      if (category.alwaysEscalate && !guidance) {
+        // Real bug: "Something else" (and any future no-guidance category)
+        // escalated immediately with zero client-typed content - admin
+        // just saw "client selected: Something else." with nothing to go
+        // on. Let them actually say what's going on first.
+        niaWidgetState.stage = "composing";
+        niaWidgetState.composePrompt = "Sure - what's going on? I'll pass this straight to the UNGANI team.";
+      } else if (category.alwaysEscalate) {
         escalateToAdmin(category, guidance ? guidance.spoken : null);
         niaWidgetState.stage = "escalated";
       } else {
@@ -341,9 +380,46 @@
         return;
       }
 
-      const category = CHAT_CATEGORIES.find(function (c) { return c.key === niaWidgetState.categoryKey; });
-      escalateToAdmin(category, niaWidgetState.answerHtml ? "Nia's suggested answer didn't resolve it." : null);
+      // Same fix as "Something else" - rather than escalate with only a
+      // generic "didn't help" note, let the client say what's actually
+      // still wrong so admin has real content to act on.
+      niaWidgetState.stage = "composing";
+      niaWidgetState.composePrompt = "Sorry that didn't help - what's still going on? I'll make sure the team sees it.";
+      renderChatPage();
+    }
+
+    // Same escape hatch as submitNiaCompose, but reachable straight from
+    // the very first screen - a client shouldn't have to click through a
+    // category first just to type what's actually on their mind.
+    async function submitNiaFreeStart(event) {
+      event.preventDefault();
+
+      const textarea = document.getElementById("niaFreeStartInput");
+      const text = textarea ? textarea.value.trim() : "";
+      if (!text) return;
+
+      await escalateToAdmin(null, null, text);
+
       niaWidgetState.stage = "escalated";
+      renderChatPage();
+    }
+
+    async function submitNiaCompose(event) {
+      event.preventDefault();
+
+      const textarea = document.getElementById("niaComposeInput");
+      const text = textarea ? textarea.value.trim() : "";
+
+      if (!text) {
+        if (textarea) textarea.focus();
+        return;
+      }
+
+      const category = CHAT_CATEGORIES.find(function (c) { return c.key === niaWidgetState.categoryKey; }) || null;
+      await escalateToAdmin(category, null, text);
+
+      niaWidgetState.stage = "escalated";
+      niaWidgetState.composePrompt = null;
       renderChatPage();
     }
 
@@ -354,10 +430,15 @@
     // the client seeing the acknowledgment (set by the caller regardless),
     // since the actual chat form is always right there as a fallback if
     // this silently doesn't land.
-    async function escalateToAdmin(category, note) {
+    async function escalateToAdmin(category, note, clientMessage) {
       const label = category ? category.label : "General inquiry";
       let body = "Nia chat routing - client selected: " + label + ".";
-      if (note) body += " " + note;
+
+      if (clientMessage) {
+        body += "\n\nClient's message: " + clientMessage;
+      } else if (note) {
+        body += " " + note;
+      }
 
       const messageId = crypto.randomUUID();
 
