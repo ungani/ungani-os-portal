@@ -2270,6 +2270,29 @@
     return null;
   }
 
+  // Free-text FAQ/how-to matching with zero DOM/navigation side effects -
+  // safe to call from a surface that isn't the floating panel (e.g.
+  // my-chat.html's "Chat with UNGANI" widget), unlike interpretMessage()
+  // above, which drives the panel directly (addNiaMessage, live
+  // navigation, walkthrough triggers, Supabase queries) and would throw
+  // or silently no-op against a page that never calls NiaAssistant.init()
+  // or has no #niaMessages-equivalent container. Matches the same
+  // HOW_TO_TOPICS/HELP_TOPICS content getGuidanceHtml() already serves
+  // from category chips - just reached by typed text instead of a known
+  // key. Returns null if nothing matches, so callers can fall back to
+  // their own human-escalation path.
+  function matchFreeTextGuidance(text) {
+    if (!text) return null;
+
+    const howTo = findHowTo(text);
+    if (howTo) return { html: buildHowToHtml(howTo), matchedKey: howTo.key };
+
+    const helpTopic = findHelpTopic(text);
+    if (helpTopic) return { html: buildHelpTopicHtml(helpTopic), matchedKey: helpTopic.key };
+
+    return null;
+  }
+
   function navigateTo(key) {
     const item = getNavByKey()[key];
 
@@ -3842,7 +3865,8 @@
     close: closeNia,
     toggle: toggleNia,
     debugVoiceInfo: debugVoiceInfo,
-    getGuidanceHtml: getGuidanceHtml
+    getGuidanceHtml: getGuidanceHtml,
+    matchFreeTextGuidance: matchFreeTextGuidance
   };
 
   if (document.readyState === "loading") {

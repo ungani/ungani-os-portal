@@ -72,7 +72,7 @@
     // every 20s (loadMessages(true) on refreshTimer) and after every send -
     // rebuilding the widget from this state on each render is what keeps
     // it from silently resetting mid-conversation.
-    let niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null, composePrompt: null };
+    let niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null, composePrompt: null, userText: null };
 
     // Small conversational touch: a fresh greeting each time the widget
     // resets, rather than the identical line every single visit -
@@ -310,7 +310,11 @@
       }
 
       const category = CHAT_CATEGORIES.find(function (c) { return c.key === niaWidgetState.categoryKey; });
-      if (category) parts.push(clientChoiceBubble(category.label));
+      if (category) {
+        parts.push(clientChoiceBubble(category.label));
+      } else if (niaWidgetState.userText) {
+        parts.push(clientChoiceBubble(niaWidgetState.userText));
+      }
       if (niaWidgetState.answerHtml) parts.push(niaBubble(niaWidgetState.answerHtml));
 
       if (niaWidgetState.stage === "answered") {
@@ -341,7 +345,7 @@
     }
 
     function resetNiaWidget() {
-      niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null, composePrompt: null };
+      niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null, composePrompt: null, userText: null };
       renderChatPage();
     }
 
@@ -354,6 +358,7 @@
         : null;
 
       niaWidgetState.categoryKey = key;
+      niaWidgetState.userText = null;
       niaWidgetState.answerHtml = guidance ? guidance.html : null;
 
       if (category.alwaysEscalate && !guidance) {
@@ -388,6 +393,22 @@
       renderChatPage();
     }
 
+    // Real content instead of a guaranteed human hand-off: nia-assistant.js
+    // already has 35 FAQ/how-to answers (the same ones getGuidanceHtml()
+    // serves to category chips) and a pure, side-effect-free matcher for
+    // them (matchFreeTextGuidance) - typed text tries that FIRST, and only
+    // falls through to escalation if nothing matches. Deliberately not
+    // using nia-assistant.js's fuller interpretMessage() cascade here -
+    // that one drives the floating panel directly (DOM appends,
+    // navigation, live Supabase queries) and this page never calls
+    // NiaAssistant.init(), so it has no panel/container for those side
+    // effects to land in.
+    function tryFreeTextGuidance(text) {
+      return window.NiaAssistant && typeof window.NiaAssistant.matchFreeTextGuidance === "function"
+        ? window.NiaAssistant.matchFreeTextGuidance(text)
+        : null;
+    }
+
     // Same escape hatch as submitNiaCompose, but reachable straight from
     // the very first screen - a client shouldn't have to click through a
     // category first just to type what's actually on their mind.
@@ -397,6 +418,18 @@
       const textarea = document.getElementById("niaFreeStartInput");
       const text = textarea ? textarea.value.trim() : "";
       if (!text) return;
+
+      const match = tryFreeTextGuidance(text);
+
+      niaWidgetState.categoryKey = null;
+      niaWidgetState.userText = text;
+
+      if (match) {
+        niaWidgetState.answerHtml = match.html;
+        niaWidgetState.stage = "answered";
+        renderChatPage();
+        return;
+      }
 
       await escalateToAdmin(null, null, text);
 
@@ -415,8 +448,24 @@
         return;
       }
 
+      const match = tryFreeTextGuidance(text);
+
+      if (match) {
+        niaWidgetState.userText = text;
+        niaWidgetState.answerHtml = match.html;
+        niaWidgetState.stage = "answered";
+        niaWidgetState.composePrompt = null;
+        renderChatPage();
+        return;
+      }
+
+      // If an answer was already showing before this compose box appeared
+      // (the "No, I still need help" path), let admin know Nia already
+      // tried, rather than making them re-derive that from a blank slate.
+      const note = niaWidgetState.answerHtml ? "Nia had already suggested an answer, but the client says it didn't resolve this." : null;
       const category = CHAT_CATEGORIES.find(function (c) { return c.key === niaWidgetState.categoryKey; }) || null;
-      await escalateToAdmin(category, null, text);
+
+      await escalateToAdmin(category, note, text);
 
       niaWidgetState.stage = "escalated";
       niaWidgetState.composePrompt = null;
@@ -434,10 +483,12 @@
       const label = category ? category.label : "General inquiry";
       let body = "Nia chat routing - client selected: " + label + ".";
 
+      if (note) {
+        body += " " + note;
+      }
+
       if (clientMessage) {
         body += "\n\nClient's message: " + clientMessage;
-      } else if (note) {
-        body += " " + note;
       }
 
       const messageId = crypto.randomUUID();
