@@ -1670,6 +1670,104 @@
     applyLanguage();
   }
 
+  // Mirrors client-shared.js's exportRowsToCsv() - kept as its own small
+  // copy here rather than a cross-module dependency, matching how these
+  // two shared shells are already independent siblings elsewhere in the
+  // app (e.g. push-notifications.js is loaded by both separately).
+  const CSV_EXPORT_COLUMN_BLOCKLIST = ["tenant_id"];
+
+  function csvEscape(value) {
+    const str = String(value);
+    return /[",\r\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+  }
+
+  function csvFormatValue(value) {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  }
+
+  function buildCsvFromRows(rows) {
+    if (!rows.length) return "";
+
+    const knownColumns = [];
+    const customFieldColumns = [];
+    const seenKnown = new Set();
+    const seenCustom = new Set();
+
+    rows.forEach(function (row) {
+      Object.keys(row).forEach(function (key) {
+        if (CSV_EXPORT_COLUMN_BLOCKLIST.includes(key) || key === "custom_fields") return;
+        if (!seenKnown.has(key)) { seenKnown.add(key); knownColumns.push(key); }
+      });
+
+      if (row.custom_fields && typeof row.custom_fields === "object") {
+        Object.keys(row.custom_fields).forEach(function (key) {
+          const col = "custom_fields." + key;
+          if (!seenCustom.has(col)) { seenCustom.add(col); customFieldColumns.push(col); }
+        });
+      }
+    });
+
+    knownColumns.sort(function (a, b) {
+      if (a === "id") return -1;
+      if (b === "id") return 1;
+      return a.localeCompare(b);
+    });
+    customFieldColumns.sort();
+
+    const columns = knownColumns.concat(customFieldColumns);
+    const lines = [columns.map(csvEscape).join(",")];
+
+    rows.forEach(function (row) {
+      const line = columns.map(function (col) {
+        const value = col.indexOf("custom_fields.") === 0
+          ? (row.custom_fields ? row.custom_fields[col.slice("custom_fields.".length)] : "")
+          : row[col];
+        return csvEscape(csvFormatValue(value));
+      });
+      lines.push(line.join(","));
+    });
+
+    return lines.join("\r\n");
+  }
+
+  function buildCsvExportFilename(prefix) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return (prefix || "export") + "-" + y + "-" + m + "-" + d + ".csv";
+  }
+
+  function downloadCsvFile(csvContent, filename) {
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  // For pages that already hold their full filtered dataset in memory
+  // (admin-money.html loads every tenant's transactions up front and
+  // filters client-side) - serializes what's already loaded rather than
+  // re-fetching anything.
+  function exportRowsToCsv(rows, filenamePrefix) {
+    const list = Array.isArray(rows) ? rows : [];
+
+    if (!list.length) {
+      showToast("Nothing to export - no records match the current filters.");
+      return;
+    }
+
+    downloadCsvFile(buildCsvFromRows(list), buildCsvExportFilename(filenamePrefix));
+    showToast("Exported " + list.length + " record(s) ✓");
+  }
+
   window.UnganiAdminShared = {
     config: UNGANI_CONFIG,
     getSupabaseClient,
@@ -1690,6 +1788,7 @@
     logoutAdmin,
     logAuditEvent,
     describeAdminWriteError,
+    exportRowsToCsv,
     showToast,
     openModal,
     closeModal,

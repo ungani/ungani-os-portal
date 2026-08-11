@@ -95,6 +95,27 @@
       color: var(--ungani-muted);
     }
 
+    .ungani-integration-category {
+      margin: 0 0 2px;
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ungani-gold);
+    }
+
+    .ungani-integration-reference-note {
+      margin: 6px 0 0;
+      font-size: 12px;
+      font-style: italic;
+      color: var(--ungani-muted);
+      line-height: 1.5;
+    }
+
+    .ungani-integration-card-soon {
+      opacity: 0.72;
+    }
+
     .ungani-wizard-step {
       display: none;
     }
@@ -140,38 +161,100 @@
 <body>
   <script>
     let currentContext = null;
-    let integrationRows = { gps: null, cctv: null };
-    let eligibleForIntegrations = false;
+    let tenantIntegrationRows = { gps: null, cctv: null };
+    let cardStatusCache = {};
     let businessTypeLabel = "";
+    let resolvedBusinessKey = "";
 
-    // Phase 1 eligibility, per the GPS/CCTV Integrations spec: Logistics,
-    // Property/Real Estate, and Warehouse are the primary business types
-    // this feature was designed for (fleet GPS, premises/unit CCTV).
-    // Hospitality/Construction/Security/Cleaning/Healthcare are explicitly
-    // "optional or later" in the spec, so they're left out of Phase 1
-    // rather than half-supported. This is a UI-only gate (same as the
-    // existing per-business-type "Sections" nav group) - RLS below still
-    // scopes every read/write to the caller's own tenant regardless.
-    const ELIGIBLE_BUSINESS_TYPE_KEYS = ["logistics", "real_estate", "warehouse"];
-
-    const INTEGRATION_DEFS = {
-      gps: {
+    // A registry, not per-integration page logic - adding a real M-Pesa/
+    // eTIMS/POS/Accounting integration later means adding one entry here
+    // and pointing it at that integration's own status source, not
+    // restructuring this page. Each integration keeps its own source of
+    // truth (Google Drive's own locked-down RPC, GPS/CCTV's own
+    // self-reported table) - this registry only unifies how their status
+    // is DISPLAYED, never how their credentials are stored. See the
+    // Integrations technical plan for the full security rationale.
+    const INTEGRATIONS_REGISTRY = [
+      {
+        key: "google_drive",
+        label: "Google Drive",
+        icon: "📁",
+        category: "Storage",
+        live: true,
+        description: "Link your Google Drive so you can pick real files straight into Documents - no more pasting links by hand.",
+        manageHref: "my-settings.html#googleDriveIntegrationPanel"
+      },
+      {
+        key: "gps",
         label: "GPS Tracking",
         icon: "🛰️",
-        description: "Connect the GPS/fleet-tracking provider you already use to keep vehicle and trip data visible from one place."
+        category: "Operations",
+        // Phase 1 eligibility, per the GPS/CCTV Integrations spec:
+        // Logistics, Property/Real Estate, and Warehouse are the primary
+        // business types this feature was designed for (fleet GPS,
+        // premises/unit CCTV). This is a UI-only gate - RLS still scopes
+        // every read/write to the caller's own tenant regardless.
+        eligibleTypes: ["logistics", "real_estate", "warehouse"],
+        description: "Connect the GPS/fleet-tracking provider you already use to keep vehicle and trip data visible from one place.",
+        referenceOnlyNote: "This reflects information you entered - UNGANI doesn't yet receive live data from this provider."
       },
-      cctv: {
+      {
+        key: "cctv",
         label: "CCTV Monitoring",
         icon: "📹",
-        description: "Connect the CCTV/security camera provider you already use for premises or site monitoring."
+        category: "Operations",
+        eligibleTypes: ["logistics", "real_estate", "warehouse"],
+        description: "Connect the CCTV/security camera provider you already use for premises or site monitoring.",
+        referenceOnlyNote: "This reflects information you entered - UNGANI doesn't yet receive live data from this provider."
+      },
+      {
+        key: "mpesa",
+        label: "M-Pesa",
+        icon: "📲",
+        category: "Payments",
+        comingSoon: true,
+        description: "Automatically record business payments as they come in."
+      },
+      {
+        key: "etims",
+        label: "KRA eTIMS",
+        icon: "🧾",
+        category: "Compliance",
+        comingSoon: true,
+        description: "Report invoices to KRA directly from UNGANI."
+      },
+      {
+        key: "pos",
+        label: "POS Systems",
+        icon: "🛒",
+        category: "Sales",
+        comingSoon: true,
+        description: "Pull sales and inventory from the POS system you already use."
+      },
+      {
+        key: "accounting",
+        label: "Accounting",
+        icon: "📚",
+        category: "Finance",
+        comingSoon: true,
+        description: "Send your UNGANI transactions to your accounting software."
       }
-    };
+    ];
+
+    function getRegistryDef(key) {
+      return INTEGRATIONS_REGISTRY.filter(function (def) { return def.key === key; })[0] || null;
+    }
+
+    function isEligible(def) {
+      if (!def.eligibleTypes) return true;
+      return def.eligibleTypes.indexOf(resolvedBusinessKey) !== -1;
+    }
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
         pageKey: "integrations",
         pageTitle: "Integrations",
-        pageSubtitle: "Connect the GPS and CCTV providers you already use.",
+        pageSubtitle: "See what's connected to your business, and connect the tools you already use.",
         onReady: startIntegrationsPage
       });
     });
@@ -184,44 +267,15 @@
         : null;
 
       businessTypeLabel = resolvedType ? resolvedType.name : "";
-      eligibleForIntegrations = !!(resolvedType && ELIGIBLE_BUSINESS_TYPE_KEYS.indexOf(resolvedType.key) !== -1);
-
-      if (!eligibleForIntegrations) {
-        renderNotEligible();
-        return;
-      }
+      resolvedBusinessKey = resolvedType ? resolvedType.key : "";
 
       await loadIntegrations();
-    }
-
-    function renderNotEligible() {
-      UnganiClientShared.setContent(`
-        <section class="ungani-card ungani-hero">
-          <h2>Integrations</h2>
-          <p>
-            GPS and CCTV integrations are being rolled out first for Logistics, Property Management, and
-            Warehouse businesses, since that's where fleet tracking and premises monitoring matter most day to day.
-          </p>
-        </section>
-
-        <section class="ungani-card">
-          <div class="ungani-section-title">
-            <div>
-              <h3>Not available for your business type yet</h3>
-              <p class="ungani-small">
-                ${businessTypeLabel ? `Your business is set up as <strong>${UnganiClientShared.safe(businessTypeLabel)}</strong>. ` : ""}
-                This feature isn't open to your business type yet, but it's on our roadmap to expand. If you'd like early access, please
-                <a href="my-support.html">contact UNGANI Support</a>.
-              </p>
-            </div>
-          </div>
-        </section>
-      `);
     }
 
     async function loadIntegrations() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading your integrations...");
 
+      // GPS/CCTV share one table - one query covers both cards.
       let response;
 
       try {
@@ -239,38 +293,99 @@
         return;
       }
 
-      integrationRows = { gps: null, cctv: null };
+      tenantIntegrationRows = { gps: null, cctv: null };
 
       (response.data || []).forEach(function (row) {
         if (row.integration_type === "gps" || row.integration_type === "cctv") {
-          integrationRows[row.integration_type] = row;
+          tenantIntegrationRows[row.integration_type] = row;
         }
       });
+
+      // Google Drive owns its own locked-down status RPC (see
+      // sql/google-drive-integration.sql) - fetched alongside the
+      // GPS/CCTV table, not instead of it. A failure here just means the
+      // card shows "Not Connected"; it never blocks the rest of the page.
+      let driveStatus = { connected: false };
+
+      try {
+        const driveResponse = await currentContext.supabaseClient.rpc("get_my_ungani_google_drive_status");
+        if (!driveResponse.error && driveResponse.data) {
+          driveStatus = driveResponse.data;
+        }
+      } catch (error) {
+        // Non-fatal.
+      }
+
+      cardStatusCache = { google_drive: driveStatus };
 
       renderIntegrationsPage();
     }
 
-    function isConnected(row) {
-      return !!(row && row.status === "connected");
-    }
+    function renderIntegrationCard(def) {
+      if (def.comingSoon) {
+        return `
+          <div class="ungani-card ungani-integration-card ungani-integration-card-soon">
+            <div class="ungani-integration-card-head">
+              <div class="ungani-integration-icon">${def.icon}</div>
+              <span class="ungani-badge">Coming Soon</span>
+            </div>
+            <div>
+              <p class="ungani-integration-category">${UnganiClientShared.safe(def.category)}</p>
+              <h3 style="margin:0 0 6px;">${UnganiClientShared.safe(def.label)}</h3>
+              <p class="ungani-integration-detail">${UnganiClientShared.safe(def.description)}</p>
+            </div>
+          </div>
+        `;
+      }
 
-    function renderIntegrationCard(type) {
-      const def = INTEGRATION_DEFS[type];
-      const row = integrationRows[type];
-      const connected = isConnected(row);
+      if (def.key === "google_drive") {
+        const status = cardStatusCache.google_drive || { connected: false };
+        const connected = !!status.connected;
+
+        const statusBadge = connected
+          ? `<span class="ungani-badge green">Connected</span>`
+          : `<span class="ungani-badge">Not Connected</span>`;
+
+        const detail = connected
+          ? `<p class="ungani-integration-detail"><strong>${UnganiClientShared.safe(status.connected_email || "Connected")}</strong></p>
+             <p class="ungani-integration-meta">${status.connected_at ? "Connected " + UnganiClientShared.formatDate(status.connected_at) : ""}</p>`
+          : `<p class="ungani-integration-detail">${UnganiClientShared.safe(def.description)}</p>`;
+
+        return `
+          <div class="ungani-card ungani-integration-card">
+            <div class="ungani-integration-card-head">
+              <div class="ungani-integration-icon">${def.icon}</div>
+              ${statusBadge}
+            </div>
+            <div>
+              <p class="ungani-integration-category">${UnganiClientShared.safe(def.category)}</p>
+              <h3 style="margin:0 0 6px;">${UnganiClientShared.safe(def.label)}</h3>
+              ${detail}
+            </div>
+            <a class="ungani-btn dark" href="${UnganiClientShared.attr(def.manageHref)}">${connected ? "Manage" : "Connect"}</a>
+          </div>
+        `;
+      }
+
+      // GPS/CCTV - reference-only, self-reported connections. The badge
+      // deliberately does NOT say "Connected" - that would imply a live,
+      // verified data feed which does not exist yet.
+      const row = tenantIntegrationRows[def.key];
+      const connected = !!(row && row.status === "connected");
 
       const statusBadge = connected
-        ? `<span class="ungani-badge green">Connected</span>`
+        ? `<span class="ungani-badge gold">Reference Saved</span>`
         : `<span class="ungani-badge">Not Connected</span>`;
 
       const detail = connected
         ? `<p class="ungani-integration-detail"><strong>${UnganiClientShared.safe(row.provider_name)}</strong></p>
-           <p class="ungani-integration-meta">Connected ${UnganiClientShared.formatDate(row.connected_at)}</p>`
+           <p class="ungani-integration-meta">Saved ${UnganiClientShared.formatDate(row.connected_at)}</p>
+           <p class="ungani-integration-reference-note">${UnganiClientShared.safe(def.referenceOnlyNote)}</p>`
         : `<p class="ungani-integration-detail">${UnganiClientShared.safe(def.description)}</p>`;
 
       const actionButton = connected
-        ? `<button class="ungani-btn dark" type="button" onclick="openManageIntegration('${type}')">Manage</button>`
-        : `<button class="ungani-btn gold" type="button" onclick="openConnectWizard('${type}')">Connect</button>`;
+        ? `<button class="ungani-btn dark" type="button" onclick="openManageIntegration('${def.key}')">Manage</button>`
+        : `<button class="ungani-btn gold" type="button" onclick="openConnectWizard('${def.key}')">Connect</button>`;
 
       return `
         <div class="ungani-card ungani-integration-card">
@@ -279,6 +394,7 @@
             ${statusBadge}
           </div>
           <div>
+            <p class="ungani-integration-category">${UnganiClientShared.safe(def.category)}</p>
             <h3 style="margin:0 0 6px;">${UnganiClientShared.safe(def.label)}</h3>
             ${detail}
           </div>
@@ -288,19 +404,19 @@
     }
 
     function renderIntegrationsPage() {
+      const eligibleCards = INTEGRATIONS_REGISTRY.filter(isEligible);
+
       UnganiClientShared.setContent(`
         <section class="ungani-card ungani-hero">
           <h2>Integrations</h2>
           <p>
-            Connect the GPS and CCTV providers you already use. UNGANI OS doesn't sell or provide tracking
-            hardware - this links your existing accounts so their status shows up alongside the rest of your
-            business data.
+            See what's connected to your business in one place, and connect the tools you already use.
+            UNGANI OS doesn't sell or provide any of these systems - it links to what you already have.
           </p>
         </section>
 
         <section class="ungani-integration-grid">
-          ${renderIntegrationCard("gps")}
-          ${renderIntegrationCard("cctv")}
+          ${eligibleCards.map(renderIntegrationCard).join("")}
         </section>
       `);
     }
@@ -313,7 +429,7 @@
       wizardState = { type: type, step: 1, providerName: "", accountReference: "", contactPerson: "", notes: "" };
 
       UnganiClientShared.openModal({
-        title: "Connect " + INTEGRATION_DEFS[type].label,
+        title: "Connect " + getRegistryDef(type).label,
         bodyHtml: buildWizardHtml(type)
       });
 
@@ -321,7 +437,7 @@
     }
 
     function buildWizardHtml(type) {
-      const def = INTEGRATION_DEFS[type];
+      const def = getRegistryDef(type);
 
       return `
         <div class="ungani-wizard-progress">
@@ -332,6 +448,9 @@
 
         <div id="wizardStep1" class="ungani-wizard-step">
           <p class="ungani-small">Step 1 of 3 - Which ${UnganiClientShared.safe(def.label)} provider do you use?</p>
+          <p class="ungani-integration-reference-note" style="margin-bottom:14px;">
+            This saves your provider's details for your own reference. UNGANI doesn't verify or connect to this provider automatically yet.
+          </p>
           <div class="ungani-form-grid">
             <div style="grid-column: 1 / -1;">
               <label for="wizardProviderName">Provider Name</label>
@@ -404,7 +523,7 @@
     }
 
     function renderWizardSummary() {
-      const def = INTEGRATION_DEFS[wizardState.type];
+      const def = getRegistryDef(wizardState.type);
 
       document.getElementById("wizardSummary").innerHTML = `
         <div><strong>Integration:</strong> ${UnganiClientShared.safe(def.label)}</div>
@@ -481,8 +600,8 @@
     // ---- Manage / disconnect ----
 
     function openManageIntegration(type) {
-      const def = INTEGRATION_DEFS[type];
-      const row = integrationRows[type];
+      const def = getRegistryDef(type);
+      const row = tenantIntegrationRows[type];
 
       if (!row) return;
 

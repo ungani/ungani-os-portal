@@ -140,8 +140,21 @@
       }
     }
 
+    // Set on every render so exportReportMoneyCsv() always exports
+    // exactly what's currently on screen (respects the active
+    // date/search filters), without threading it through as a param.
+    let currentFilteredTransactions = [];
+
+    // Reports already holds the full filtered dataset in memory (unlike
+    // my-money.html's paginated view), so this serializes what's already
+    // loaded instead of re-fetching by id over the network.
+    function exportReportMoneyCsv() {
+      UnganiClientShared.exportRowsToCsv(currentFilteredTransactions, "financial-report");
+    }
+
     function renderReportsPage() {
       const filtered = getFilteredData();
+      currentFilteredTransactions = filtered.transactions;
 
       const tenantName = UnganiClientShared.getTenantName(currentContext.tenant);
       const money = calculateMoneySummary(filtered.transactions);
@@ -498,7 +511,10 @@
                 <h3>Money Movement</h3>
                 <p class="ungani-small">Income, expenses, and balance trend for this report period.</p>
               </div>
-              <a class="ungani-btn green" href="my-money.html">Money</a>
+              <div class="ungani-button-row" style="margin:0;">
+                <button class="ungani-btn dark" type="button" onclick="exportReportMoneyCsv()">Export CSV</button>
+                <a class="ungani-btn green" href="my-money.html">Money</a>
+              </div>
             </div>
 
             ${trend.length ? '<div class="ungani-chart-canvas-wrap"><canvas id="reportMoneyTrend"></canvas></div>' : UnganiAnalytics.emptyChart("Add dated income and expense records to show money movement.")}

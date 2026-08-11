@@ -3361,6 +3361,22 @@
     }
   }
 
+  // For pages that already hold their full filtered dataset in memory
+  // (reports.html loads all 8 tables up front, unlike my-money.html's
+  // paginated view) - just serializes what's already loaded instead of
+  // re-fetching by id over the network like exportRecordsToCsv above.
+  function exportRowsToCsv(rows, filenamePrefix) {
+    const list = Array.isArray(rows) ? rows : [];
+
+    if (!list.length) {
+      showToast("Nothing to export - no records match the current filters.");
+      return;
+    }
+
+    downloadCsvFile(buildCsvFromRows(list), buildCsvExportFilename(filenamePrefix));
+    showToast("Exported " + list.length + " record(s) ✓");
+  }
+
   async function logout() {
     try {
       if (!state.supabaseClient && window.supabase) {
@@ -3635,6 +3651,7 @@
       triggerEmailSendNow,
       triggerEventPush,
       exportRecordsToCsv,
+      exportRowsToCsv,
       signInFromForm,
       getTenantName,
       getBusinessTypeLabel,
