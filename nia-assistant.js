@@ -874,6 +874,45 @@
         border: 2px solid ${BRAND.white};
       }
 
+      /* Permanent (not one-shot, not localStorage-gated) re-trigger for
+         the guided walkthrough - separate from nia-fab-dot, which only
+         ever shows once per browser. Sits just above/left of the main
+         bubble so it never overlaps it. Client-only, same as the
+         walkthrough itself (see shouldOfferWalkthrough()). */
+      .nia-help-btn {
+        position: fixed;
+        right: 86px;
+        bottom: 34px;
+        z-index: 99997;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 2px solid ${BRAND.white};
+        background: ${BRAND.navy};
+        color: ${BRAND.white};
+        font-size: 15px;
+        font-weight: 800;
+        line-height: 1;
+        padding: 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 8px 20px rgba(6,28,61,0.3);
+        transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+      }
+
+      .nia-help-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 26px rgba(6,28,61,0.38);
+      }
+
+      .nia-help-btn.nia-obstructed {
+        opacity: 0;
+        pointer-events: none;
+        transform: scale(0.85);
+      }
+
       .nia-tagline {
         position: fixed;
         right: 88px;
@@ -1199,6 +1238,14 @@
           right: 16px;
           bottom: 16px;
         }
+
+        .nia-help-btn {
+          right: 82px;
+          bottom: 28px;
+          width: 30px;
+          height: 30px;
+          font-size: 13px;
+        }
       }
     `;
 
@@ -1225,12 +1272,62 @@
     tagline.addEventListener("click", toggleNia);
     document.body.appendChild(tagline);
 
+    // Permanent, always-visible re-trigger for the guided walkthrough -
+    // unlike nia-fab-dot (one-shot, gone forever after the first ever
+    // panel open), this never disappears, so a client who missed or
+    // skipped the tour can always find it again. Client-only, same
+    // constraint as the walkthrough itself (shouldOfferWalkthrough()).
+    if (state.surface !== "admin") {
+      const helpBtn = document.createElement("button");
+      helpBtn.id = "niaHelpBtn";
+      helpBtn.className = "nia-help-btn";
+      helpBtn.type = "button";
+      helpBtn.title = "Take a guided tour of UNGANI OS";
+      helpBtn.setAttribute("aria-label", "Take a guided tour of UNGANI OS");
+      helpBtn.textContent = "?";
+      helpBtn.addEventListener("click", openNiaAndStartTour);
+      document.body.appendChild(helpBtn);
+    }
+
     const panel = document.createElement("div");
     panel.id = "niaPanel";
     panel.className = "nia-panel";
     document.body.appendChild(panel);
 
     watchForObstructingPanels();
+  }
+
+  // Dedicated entry point for the permanent help button - always opens
+  // the panel and jumps straight into the walkthrough, no offer chips
+  // (clicking a button labeled "take a tour" already IS the yes). Kept
+  // separate from openNia() rather than reusing its async first-open
+  // branching, which would otherwise show the offer chips and then
+  // immediately fight them with a forced walkthrough start.
+  async function openNiaAndStartTour() {
+    const panel = document.getElementById("niaPanel");
+    if (!panel) return;
+
+    state.open = true;
+    panel.classList.add("open");
+    panel.setAttribute("data-theme", isDarkMode() ? "dark" : "light");
+
+    const dot = document.querySelector(".nia-fab-dot");
+    if (dot) dot.remove();
+
+    const tagline = document.getElementById("niaTagline");
+    if (tagline) tagline.style.display = "none";
+
+    if (!state.messages.length) {
+      renderShell();
+      resolveSessionFreshnessOnce();
+
+      if (!hasSeenNia()) {
+        addNiaMessage(buildFirstTimeGreeting());
+        markSeenNia();
+      }
+    }
+
+    beginWalkthrough();
   }
 
   // Several bottom-anchored floating surfaces share screen real estate
@@ -1259,9 +1356,11 @@
     const obstructed = isObstructingPanelOpen();
     const fab = document.getElementById("niaFabBtn");
     const tagline = document.getElementById("niaTagline");
+    const helpBtn = document.getElementById("niaHelpBtn");
 
     if (fab) fab.classList.toggle("nia-obstructed", obstructed);
     if (tagline) tagline.classList.toggle("nia-obstructed", obstructed);
+    if (helpBtn) helpBtn.classList.toggle("nia-obstructed", obstructed);
 
     // Nia's own panel sits at a higher z-index than any of these
     // surfaces, so if it's already open when one of them opens on top,
@@ -1704,7 +1803,7 @@
       },
       {
         title: "3. Tasks & Documents",
-        html: "<strong>Tasks</strong> keeps track of follow-ups and reminders so nothing slips through. <strong>Documents</strong> is where you keep important files for easy reference.<br>" +
+        html: "<strong>Tasks</strong> keeps track of follow-ups and reminders so nothing slips through. <strong>Documents</strong> is where you keep important files for easy reference — upload a file directly, paste a link, or connect Google Drive in Settings to pick files straight from there.<br>" +
           (tasks ? goldLink(tasks.href, "Open Tasks →") : "") + (tasks && documents ? " · " : "") + (documents ? goldLink(documents.href, "Open Documents →") : "")
       }
     ];
