@@ -3551,6 +3551,13 @@
       await resolveTenant();
 
       if (!currentTenantId) {
+        const pendingMessage = await checkPendingApproval();
+
+        if (pendingMessage) {
+          showAccessMessage("Approval Required", pendingMessage);
+          return;
+        }
+
         showAccessMessage("Business account not found.", "Your login is active, but no business profile was found for this user.");
         return;
       }
@@ -3878,6 +3885,30 @@
           dismissClientTrialWarningForToday();
           banner.remove();
         });
+      }
+    }
+
+    // Distinguishes "you're just waiting for admin approval" (normal,
+    // expected, not an error) from a genuinely broken account link -
+    // mirrors client-shared.js's identical helper (client.html has its
+    // own bespoke init and deliberately doesn't load client-shared.js,
+    // see the comment near the sidebar-groups code further down).
+    async function checkPendingApproval() {
+      try {
+        const response = await supabaseClient.rpc("get_my_ungani_approval_status");
+
+        if (response.error || !response.data) return null;
+
+        const approval = response.data;
+
+        if (approval.can_access !== true) {
+          return approval.message || "Your UNGANI OS workspace is not open yet because your account is still waiting for approval. We'll email you as soon as it's ready.";
+        }
+
+        return null;
+      } catch (error) {
+        console.warn("Approval status check failed:", error.message);
+        return null;
       }
     }
 

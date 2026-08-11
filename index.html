@@ -687,9 +687,14 @@
             </select>
           </div>
 
+          <div class="field full" id="otherBusinessTypeField" style="display:none;">
+            <label for="otherBusinessType">Please describe your business type</label>
+            <input id="otherBusinessType" type="text" placeholder="e.g., Event photography, Import/export brokerage..." />
+          </div>
+
           <div class="field full">
             <div id="subSectionsContainer" class="sub-section-box">
-              <p>Select what your business handles:</p>
+              <p>Select what your business handles - this customizes your dashboard's sections. You can change this later in Settings.</p>
               <div id="subSectionsOptions"></div>
             </div>
           </div>
@@ -724,7 +729,7 @@
       </div>
 
       <div class="mini-link-row">
-        <a class="btn navy" href="login.html?mode=client">Already approved? Login</a>
+        <a class="btn navy" href="login.html?mode=client">Already have an account? Log in</a>
         <a class="btn light" href="login.html?mode=admin">Admin Login</a>
         <div class="mini-note">New users register here. Approved users log in separately.</div>
       </div>
@@ -786,6 +791,13 @@
       const optionsBox = document.getElementById("subSectionsOptions");
       const selectedOption = select.options[select.selectedIndex];
       const key = selectedOption ? selectedOption.dataset.key : "";
+
+      const otherField = document.getElementById("otherBusinessTypeField");
+      const otherInput = document.getElementById("otherBusinessType");
+      const isOther = select.value === "Other";
+      otherField.style.display = isOther ? "block" : "none";
+      otherInput.required = isOther;
+      if (!isOther) otherInput.value = "";
 
       optionsBox.innerHTML = "";
       container.classList.remove("show");
@@ -852,13 +864,28 @@
       const email = value("email");
       const password = value("password");
       const confirmPassword = value("confirmPassword");
-      const businessType = value("businessType");
+      let businessType = value("businessType");
       const notes = value("notes");
       const selectedSections = getSelectedSubSections();
 
       if (!businessName || !contactName || !phone || !email || !password || !confirmPassword || !businessType) {
         showStatus("Please fill in all required fields.", "error");
         return;
+      }
+
+      if (businessType === "Other") {
+        const otherDescription = value("otherBusinessType");
+
+        if (!otherDescription) {
+          showStatus("Please describe your business type.", "error");
+          return;
+        }
+
+        // Store the real description as the business type itself rather
+        // than the literal word "Other" - everywhere business_type is
+        // already displayed (admin's registration review, business_type_key
+        // derivation) picks this up automatically with no further changes.
+        businessType = otherDescription;
       }
 
       if (!document.getElementById("agreeTerms").checked) {

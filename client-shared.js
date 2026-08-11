@@ -1678,6 +1678,13 @@
       state.tenantId = await resolveTenantId(session.user, state.userProfile);
 
       if (!state.tenantId) {
+        const pendingMessage = await checkPendingApproval();
+
+        if (pendingMessage) {
+          renderLoginProblem("Approval Required", pendingMessage);
+          return;
+        }
+
         renderLoginProblem(
           "Your account is signed in, but no business workspace was found.",
           "Please contact UNGANI so your user can be connected to the correct business."
@@ -2155,6 +2162,35 @@
       email: authUser.email,
       auth_user_id: authUser.id
     };
+  }
+
+  // Distinguishes "you're just waiting for admin approval" (normal,
+  // expected, not an error) from a genuinely broken account link. Without
+  // this, a real not-yet-approved user hit the same generic "no business
+  // workspace found... contact UNGANI" message as an actually-broken
+  // account, which reads as something being wrong when nothing is -
+  // registration hasn't been reviewed yet. Uses the same
+  // get_my_ungani_approval_status RPC client-access-guard.js already
+  // relies on for this exact distinction. Returns a message string when
+  // genuinely pending, or null when it's fine to fall through to the
+  // existing generic message (RPC error, or can_access already true).
+  async function checkPendingApproval() {
+    try {
+      const response = await state.supabaseClient.rpc("get_my_ungani_approval_status");
+
+      if (response.error || !response.data) return null;
+
+      const approval = response.data;
+
+      if (approval.can_access !== true) {
+        return approval.message || "Your UNGANI OS workspace is not open yet because your account is still waiting for approval. We'll email you as soon as it's ready.";
+      }
+
+      return null;
+    } catch (error) {
+      console.warn("Approval status check failed:", error.message);
+      return null;
+    }
   }
 
   async function resolveTenantId(authUser, profile) {
