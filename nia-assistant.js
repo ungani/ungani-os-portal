@@ -3153,15 +3153,31 @@
   // full, everything-included report (items/records/documents/etc.) is
   // print-report.html's job, not a chat bubble's.
 
+  // Real calendar boundaries, not rolling windows - "month" means the 1st
+  // of the current calendar month, "week" means Monday of the current
+  // week, "year" means January 1st. The previous version used rolling
+  // windows (e.g. "month" = last 30 days) which silently drifts from
+  // what a calendar month actually means and had no "year" concept at
+  // all - a request for "this year" fell through to the "week" default
+  // with no indication anything had gone wrong. print-report.html's
+  // getRangeCutoffISO() uses this exact same math, so the chat summary
+  // and the printable report it links to never silently disagree.
   function niaDateRangeMeta(rangeKey) {
     const now = new Date();
     const to = new Date(now);
     const from = new Date(now);
 
-    if (rangeKey === "month") {
-      from.setDate(from.getDate() - 30);
+    if (rangeKey === "year") {
+      from.setMonth(0, 1);
+      from.setHours(0, 0, 0, 0);
+    } else if (rangeKey === "month") {
+      from.setDate(1);
+      from.setHours(0, 0, 0, 0);
     } else if (rangeKey === "week") {
-      from.setDate(from.getDate() - 7);
+      const day = from.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      from.setDate(from.getDate() - diffToMonday);
+      from.setHours(0, 0, 0, 0);
     } else {
       from.setHours(0, 0, 0, 0);
     }
@@ -3170,28 +3186,56 @@
       return d.toLocaleDateString("en-KE", { month: "short", day: "numeric" });
     };
 
+    const labels = { year: "This Year", month: "This Month", week: "This Week", day: "Today" };
+
     return {
       cutoffISO: from.toISOString(),
-      label: rangeKey === "month" ? "This Month" : rangeKey === "week" ? "This Week" : "Today",
+      label: labels[rangeKey] || "This Week",
       rangeText: rangeKey === "day" ? fmt(to) : fmt(from) + " – " + fmt(to)
     };
   }
 
+  // "Year" is checked first (and is a genuinely new capability - the
+  // previous version had no year concept at all, so "yearly summary"
+  // silently computed and labeled a WEEK's data instead). Word-boundary
+  // regex, not raw substring indexOf, so e.g. "month" doesn't accidentally
+  // match inside an unrelated word.
   function detectSummaryRangeFromText(text) {
     const lower = text.toLowerCase();
-    if (lower.indexOf("month") !== -1) return "month";
-    if (lower.indexOf("today") !== -1 || lower.indexOf("day") !== -1) return "day";
+    if (/\b(year|yearly|annual|annually)\b/.test(lower)) return "year";
+    if (/\b(month|monthly)\b/.test(lower)) return "month";
+    if (/\b(today|day|daily)\b/.test(lower)) return "day";
+    if (/\b(week|weekly)\b/.test(lower)) return "week";
     return "week";
   }
 
+  // Broadened after live testing found several completely natural
+  // phrasings a real business owner would type - "how did I do today",
+  // "how much did I make this week", "show me this month's performance" -
+  // matched NOTHING in the original fixed phrase list and fell through to
+  // the generic "I don't understand" fallback. The regex at the end
+  // catches the general "how [did/am/have] I/we do/doing/made ..." shape
+  // that no fixed phrase list can fully enumerate; the fixed list above it
+  // still handles common exact phrasings quickly.
   function isSummaryRequestPhrase(text) {
     const lower = text.toLowerCase();
-    return [
+
+    const phrases = [
       "summary", "how's business", "hows business", "how is business",
       "how did this week go", "how did this month go", "how did today go",
+      "how's it going", "hows it going", "how is it going",
       "recap", "business update", "give me an update", "weekly report",
-      "monthly report", "daily report", "how are we doing", "give me a summary"
-    ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+      "monthly report", "daily report", "yearly report", "annual report",
+      "how are we doing", "give me a summary", "performance",
+      "how much did i make", "how much did we make",
+      "how much have i made", "how much have we made"
+    ];
+
+    if (phrases.some(function (phrase) { return lower.indexOf(phrase) !== -1; })) {
+      return true;
+    }
+
+    return /\bhow\b.*\b(did|am|have|has|are)\b.*\b(i|we)\b.*\b(do|doing|done|make|made|making)\b/.test(lower);
   }
 
   // Word-presence rather than exact-phrase matching, deliberately - checked
