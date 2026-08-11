@@ -22,6 +22,31 @@
       font-size: 12px;
       text-decoration: none;
     }
+
+    /* Brief "thinking" beat before Nia's reply appears - matches
+       nia-assistant.js's showTypingIndicator()/replyWithDelay() on the
+       floating panel, so this widget doesn't feel robotic by comparison. */
+    .nia-typing-dots span {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #D4A63A;
+      margin-right: 5px;
+      animation: niaChatTypingBounce 1s infinite ease-in-out;
+    }
+
+    .nia-typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .nia-typing-dots span:nth-child(3) { animation-delay: 0.3s; margin-right: 0; }
+
+    @keyframes niaChatTypingBounce {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .nia-typing-dots span { animation: none; }
+    }
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -72,7 +97,21 @@
     // every 20s (loadMessages(true) on refreshTimer) and after every send -
     // rebuilding the widget from this state on each render is what keeps
     // it from silently resetting mid-conversation.
-    let niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null, composePrompt: null, userText: null };
+    //
+    // Phase 2 (append-only transcript): niaTranscript is a growing list of
+    // {from: "nia"|"user", html} turns, pushed to and never overwritten -
+    // the full back-and-forth (question, answer, "didn't help", follow-up,
+    // escalation ack) all stay visible at once instead of each stage
+    // replacing the last. niaStage/niaPendingCategoryKey/niaHadShownAnswer
+    // are small pieces of *control* state (what live input to show next,
+    // and context needed by escalateToAdmin) - deliberately kept separate
+    // from the transcript itself, which is pure display history.
+    let niaTranscript = [];
+    let niaStage = "categories";
+    let niaThinking = false;
+    let niaPendingCategoryKey = null;
+    let niaHadShownAnswer = false;
+    const NIA_CHAT_THINK_DELAY_MS = 320; // matches nia-assistant.js's replyWithDelay()
 
     // Small conversational touch: a fresh greeting each time the widget
     // resets, rather than the identical line every single visit -
@@ -287,65 +326,106 @@
       return `<button type="button" class="ungani-btn small gold" onclick="${onclick}">${UnganiClientShared.safe(label)}</button>`;
     }
 
+    // Bare three-dot "thinking" indicator, styled like a Nia bubble but
+    // with no text - shown for NIA_CHAT_THINK_DELAY_MS before her actual
+    // reply is appended, so responses don't feel instant/robotic.
+    function niaTypingBubble() {
+      return `
+        <div class="ungani-card" style="box-shadow:none;border-left:5px solid #D4A63A;background:rgba(212,166,58,0.14);margin-bottom:12px;">
+          <div class="ungani-section-title">
+            <div><h3>Nia</h3></div>
+          </div>
+          <div class="nia-typing-dots"><span></span><span></span><span></span></div>
+        </div>
+      `;
+    }
+
+    // The one place a user action turns into a transcript update: appends
+    // the user's turn immediately (no delay - their own message should
+    // never feel laggy), shows the typing indicator, waits
+    // NIA_CHAT_THINK_DELAY_MS, then runs buildNiaReply (which pushes
+    // Nia's turn(s) onto niaTranscript and sets niaStage) before the final
+    // render. buildNiaReply may be async (escalateToAdmin does a real DB
+    // insert) - awaited so the "escalated" acknowledgment only appears
+    // once the message has actually been routed, same ordering guarantee
+    // the original single-stage version had.
+    async function appendUserTurnThenNiaReply(userLabel, buildNiaReply) {
+      niaTranscript.push({ from: "user", html: userLabel });
+      niaThinking = true;
+      renderChatPage();
+
+      await new Promise(function (resolve) { setTimeout(resolve, NIA_CHAT_THINK_DELAY_MS); });
+
+      niaThinking = false;
+      await buildNiaReply();
+      renderChatPage();
+    }
+
     function renderNiaWidget() {
-      const parts = [];
+      // Seed once per conversation (transcript starts empty on load and
+      // after "Ask something else") - never re-added on subsequent
+      // renders, since renderChatPage() re-runs this on every 20s poll
+      // and after every action.
+      if (niaTranscript.length === 0) {
+        niaTranscript.push({ from: "nia", html: niaGreeting });
+        niaTranscript.push({ from: "nia", html: "Type your question below, or pick a quick option if that's easier." });
+      }
 
-      parts.push(niaBubble(niaGreeting));
+      const parts = niaTranscript.map(function (turn) {
+        return turn.from === "nia" ? niaBubble(turn.html) : clientChoiceBubble(turn.html);
+      });
 
-      if (niaWidgetState.stage === "categories") {
-        parts.push(niaBubble("Pick whatever's closest, or just tell me in your own words below."));
-        parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">${CHAT_CATEGORIES.map(function (c) {
-          return niaChip(c.label, "selectNiaCategory('" + c.key + "')");
-        }).join("")}</div>`);
-        parts.push(`
-          <form onsubmit="submitNiaFreeStart(event)" style="margin-bottom:16px;">
-            <textarea id="niaFreeStartInput" placeholder="...or just type your question here" style="min-height:60px;"></textarea>
-            <div class="ungani-button-row" style="margin-top:10px;">
-              <button class="ungani-btn light" type="submit">Send</button>
-            </div>
-          </form>
-        `);
-
+      if (niaThinking) {
+        parts.push(niaTypingBubble());
         return `<section class="ungani-card">${parts.join("")}</section>`;
       }
 
-      const category = CHAT_CATEGORIES.find(function (c) { return c.key === niaWidgetState.categoryKey; });
-      if (category) {
-        parts.push(clientChoiceBubble(category.label));
-      } else if (niaWidgetState.userText) {
-        parts.push(clientChoiceBubble(niaWidgetState.userText));
-      }
-      if (niaWidgetState.answerHtml) parts.push(niaBubble(niaWidgetState.answerHtml));
-
-      if (niaWidgetState.stage === "answered") {
-        parts.push(niaBubble("Did this solve it?"));
-        parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">
+      // Phase 3 (hierarchy inversion): free text is the primary, most
+      // prominent input - category chips are a secondary "quick option"
+      // row underneath, not the leading action. Reversed from the
+      // original chips-first layout now that Phase 1 proved free-text
+      // matching (matchFreeTextGuidance) works well on real questions.
+      if (niaStage === "categories") {
+        parts.push(`
+          <form onsubmit="submitNiaFreeStart(event)" style="margin-bottom:14px;">
+            <label for="niaFreeStartInput" style="display:block;font-weight:800;margin-bottom:6px;">Type your question</label>
+            <textarea id="niaFreeStartInput" placeholder="e.g. How do I upload a document?" style="min-height:70px;"></textarea>
+            <div class="ungani-button-row" style="margin-top:10px;">
+              <button class="ungani-btn gold" type="submit">Send</button>
+            </div>
+          </form>
+          <p class="ungani-small" style="margin:0 0 8px;color:#64748B;">Or pick a quick option:</p>
+          <div class="ungani-button-row" style="margin-bottom:4px;">${CHAT_CATEGORIES.map(function (c) {
+            return niaChip(c.label, "selectNiaCategory('" + c.key + "')");
+          }).join("")}</div>
+        `);
+      } else if (niaStage === "answered") {
+        parts.push(`<div class="ungani-button-row" style="margin-bottom:4px;">
           ${niaChip("Yes, thanks!", "niaFeedback(true)")}
           ${niaChip("No, I still need help", "niaFeedback(false)")}
         </div>`);
-      } else if (niaWidgetState.stage === "composing") {
-        parts.push(niaBubble(niaWidgetState.composePrompt || "Go ahead and tell me what's going on."));
+      } else if (niaStage === "composing") {
         parts.push(`
-          <form onsubmit="submitNiaCompose(event)" style="margin-bottom:16px;">
+          <form onsubmit="submitNiaCompose(event)" style="margin-bottom:4px;">
             <textarea id="niaComposeInput" required placeholder="Type your question or message here..." style="min-height:90px;"></textarea>
             <div class="ungani-button-row" style="margin-top:10px;">
               <button class="ungani-btn gold" type="submit">Send to UNGANI</button>
             </div>
           </form>
         `);
-      } else if (niaWidgetState.stage === "resolved") {
-        parts.push(niaBubble("Glad I could help! If anything else comes up, I'm right here."));
-        parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">${niaChip("Ask something else", "resetNiaWidget()")}</div>`);
-      } else if (niaWidgetState.stage === "escalated") {
-        parts.push(niaBubble("Thanks for reaching out - I've noted your message and our team will respond to you shortly."));
-        parts.push(`<div class="ungani-button-row" style="margin-bottom:16px;">${niaChip("Ask something else", "resetNiaWidget()")}</div>`);
+      } else if (niaStage === "resolved" || niaStage === "escalated") {
+        parts.push(`<div class="ungani-button-row" style="margin-bottom:4px;">${niaChip("Ask something else", "resetNiaWidget()")}</div>`);
       }
 
       return `<section class="ungani-card">${parts.join("")}</section>`;
     }
 
     function resetNiaWidget() {
-      niaWidgetState = { stage: "categories", categoryKey: null, answerHtml: null, composePrompt: null, userText: null };
+      niaTranscript = [];
+      niaStage = "categories";
+      niaThinking = false;
+      niaPendingCategoryKey = null;
+      niaHadShownAnswer = false;
       renderChatPage();
     }
 
@@ -353,44 +433,55 @@
       const category = CHAT_CATEGORIES.find(function (c) { return c.key === key; });
       if (!category) return;
 
-      const guidance = category.guidanceKey && window.NiaAssistant && typeof window.NiaAssistant.getGuidanceHtml === "function"
-        ? window.NiaAssistant.getGuidanceHtml(category.guidanceKey)
-        : null;
+      appendUserTurnThenNiaReply(category.label, function () {
+        const guidance = category.guidanceKey && window.NiaAssistant && typeof window.NiaAssistant.getGuidanceHtml === "function"
+          ? window.NiaAssistant.getGuidanceHtml(category.guidanceKey)
+          : null;
 
-      niaWidgetState.categoryKey = key;
-      niaWidgetState.userText = null;
-      niaWidgetState.answerHtml = guidance ? guidance.html : null;
+        niaPendingCategoryKey = key;
 
-      if (category.alwaysEscalate && !guidance) {
-        // Real bug: "Something else" (and any future no-guidance category)
-        // escalated immediately with zero client-typed content - admin
-        // just saw "client selected: Something else." with nothing to go
-        // on. Let them actually say what's going on first.
-        niaWidgetState.stage = "composing";
-        niaWidgetState.composePrompt = "Sure - what's going on? I'll pass this straight to the UNGANI team.";
-      } else if (category.alwaysEscalate) {
-        escalateToAdmin(category, guidance ? guidance.spoken : null);
-        niaWidgetState.stage = "escalated";
-      } else {
-        niaWidgetState.stage = "answered";
-      }
+        if (category.alwaysEscalate && !guidance) {
+          // Real bug (pre-existing, unrelated to this redesign): "Something
+          // else" (and any future no-guidance category) escalated
+          // immediately with zero client-typed content - admin just saw
+          // "client selected: Something else." with nothing to go on. Let
+          // them actually say what's going on first.
+          niaHadShownAnswer = false;
+          niaTranscript.push({ from: "nia", html: "Sure - what's going on? I'll pass this straight to the UNGANI team." });
+          niaStage = "composing";
+          return;
+        }
 
-      renderChatPage();
+        if (category.alwaysEscalate) {
+          if (guidance) niaTranscript.push({ from: "nia", html: guidance.html });
+          niaTranscript.push({ from: "nia", html: "Thanks for reaching out - I've noted your message and our team will respond to you shortly." });
+          niaStage = "escalated";
+          return escalateToAdmin(category, guidance ? guidance.spoken : null);
+        }
+
+        niaHadShownAnswer = true;
+        niaTranscript.push({ from: "nia", html: guidance.html });
+        niaTranscript.push({ from: "nia", html: "Did this solve it?" });
+        niaStage = "answered";
+      });
     }
 
     function niaFeedback(helped) {
-      if (helped) {
-        niaWidgetState.stage = "resolved";
-        renderChatPage();
-        return;
-      }
+      const label = helped ? "Yes, thanks!" : "No, I still need help";
 
-      // Same fix as "Something else" - rather than escalate with only a
-      // generic "didn't help" note, let the client say what's actually
-      // still wrong so admin has real content to act on.
-      niaWidgetState.stage = "composing";
-      niaWidgetState.composePrompt = "Sorry that didn't help - what's still going on? I'll make sure the team sees it.";
-      renderChatPage();
+      appendUserTurnThenNiaReply(label, function () {
+        if (helped) {
+          niaTranscript.push({ from: "nia", html: "Glad I could help! If anything else comes up, I'm right here." });
+          niaStage = "resolved";
+          return;
+        }
+
+        // Same fix as "Something else" - rather than escalate with only a
+        // generic "didn't help" note, let the client say what's actually
+        // still wrong so admin has real content to act on.
+        niaTranscript.push({ from: "nia", html: "Sorry that didn't help - what's still going on? I'll make sure the team sees it." });
+        niaStage = "composing";
+      });
     }
 
     // Real content instead of a guaranteed human hand-off: nia-assistant.js
@@ -419,22 +510,24 @@
       const text = textarea ? textarea.value.trim() : "";
       if (!text) return;
 
-      const match = tryFreeTextGuidance(text);
+      await appendUserTurnThenNiaReply(text, function () {
+        const match = tryFreeTextGuidance(text);
 
-      niaWidgetState.categoryKey = null;
-      niaWidgetState.userText = text;
+        niaPendingCategoryKey = null;
 
-      if (match) {
-        niaWidgetState.answerHtml = match.html;
-        niaWidgetState.stage = "answered";
-        renderChatPage();
-        return;
-      }
+        if (match) {
+          niaHadShownAnswer = true;
+          niaTranscript.push({ from: "nia", html: match.html });
+          niaTranscript.push({ from: "nia", html: "Did this solve it?" });
+          niaStage = "answered";
+          return;
+        }
 
-      await escalateToAdmin(null, null, text);
-
-      niaWidgetState.stage = "escalated";
-      renderChatPage();
+        niaHadShownAnswer = false;
+        niaTranscript.push({ from: "nia", html: "Thanks for reaching out - I've noted your message and our team will respond to you shortly." });
+        niaStage = "escalated";
+        return escalateToAdmin(null, null, text);
+      });
     }
 
     async function submitNiaCompose(event) {
@@ -448,28 +541,28 @@
         return;
       }
 
-      const match = tryFreeTextGuidance(text);
+      await appendUserTurnThenNiaReply(text, function () {
+        const match = tryFreeTextGuidance(text);
 
-      if (match) {
-        niaWidgetState.userText = text;
-        niaWidgetState.answerHtml = match.html;
-        niaWidgetState.stage = "answered";
-        niaWidgetState.composePrompt = null;
-        renderChatPage();
-        return;
-      }
+        if (match) {
+          niaHadShownAnswer = true;
+          niaTranscript.push({ from: "nia", html: match.html });
+          niaTranscript.push({ from: "nia", html: "Did this solve it?" });
+          niaStage = "answered";
+          return;
+        }
 
-      // If an answer was already showing before this compose box appeared
-      // (the "No, I still need help" path), let admin know Nia already
-      // tried, rather than making them re-derive that from a blank slate.
-      const note = niaWidgetState.answerHtml ? "Nia had already suggested an answer, but the client says it didn't resolve this." : null;
-      const category = CHAT_CATEGORIES.find(function (c) { return c.key === niaWidgetState.categoryKey; }) || null;
+        // If an answer was already showing before this compose box
+        // appeared (the "No, I still need help" path), let admin know
+        // Nia already tried, rather than making them re-derive that from
+        // a blank slate.
+        const note = niaHadShownAnswer ? "Nia had already suggested an answer, but the client says it didn't resolve this." : null;
+        const category = niaPendingCategoryKey ? CHAT_CATEGORIES.find(function (c) { return c.key === niaPendingCategoryKey; }) : null;
 
-      await escalateToAdmin(category, note, text);
-
-      niaWidgetState.stage = "escalated";
-      niaWidgetState.composePrompt = null;
-      renderChatPage();
+        niaTranscript.push({ from: "nia", html: "Thanks for reaching out - I've noted your message and our team will respond to you shortly." });
+        niaStage = "escalated";
+        return escalateToAdmin(category, note, text);
+      });
     }
 
     // Routes an unresolved Nia conversation into the same admin_client_
