@@ -1018,6 +1018,17 @@
       return UnganiClientShared.getValue(row, ["person_type", "type"], "Contact");
     }
 
+    // Trimmed + case-insensitive - a record saved with stray whitespace or
+    // different casing than the current preset string (e.g. from an older
+    // save path, a CSV import, or a preset wording tweak over time) should
+    // still land in its real category tile instead of silently falling
+    // into "Other" over a formatting difference that isn't a real
+    // category mismatch. This does NOT change what's stored or displayed
+    // - only how two type strings are compared for tile counting.
+    function normalizeTypeForMatch(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
     function buildPersonCategories() {
       const knownTypes = businessPreset.peopleTypes || [];
 
@@ -1026,19 +1037,23 @@
       ];
 
       knownTypes.forEach(function (type, index) {
+        const normalizedType = normalizeTypeForMatch(type);
+
         categories.push({
           key: "type-" + index,
           label: type,
           accent: TILE_PALETTE[index % TILE_PALETTE.length],
-          match: function (row) { return getPersonType(row) === type; }
+          match: function (row) { return normalizeTypeForMatch(getPersonType(row)) === normalizedType; }
         });
       });
+
+      const normalizedKnownTypes = knownTypes.map(normalizeTypeForMatch);
 
       categories.push({
         key: "other",
         label: "Other",
         accent: "#64748B",
-        match: function (row) { return knownTypes.indexOf(getPersonType(row)) === -1; }
+        match: function (row) { return normalizedKnownTypes.indexOf(normalizeTypeForMatch(getPersonType(row))) === -1; }
       });
 
       return categories;
