@@ -186,11 +186,15 @@ async function resolveCallerIsAdmin(bearerToken) {
 // notification content is re-derived server-side from the real
 // registrations row, and only ever sent to admin-type subscriptions.
 async function handleNewRegistration(supabaseAdmin, registrationId, res) {
-  const { data: registration } = await supabaseAdmin
+  const { data: registration, error: registrationError } = await supabaseAdmin
     .from("registrations")
     .select("id, business_name, business_type, created_at")
     .eq("id", registrationId)
     .maybeSingle();
+
+  if (registrationError) {
+    return json(res, 500, { ok: false, message: "Registration lookup failed: " + registrationError.message });
+  }
 
   if (!registration) {
     return json(res, 200, { ok: true, sent: 0, message: "Registration not found." });
@@ -244,11 +248,15 @@ async function handleTaskAssignment(req, supabaseAdmin, taskId, res) {
     return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
   }
 
-  const { data: task } = await supabaseAdmin
+  const { data: task, error: taskError } = await supabaseAdmin
     .from("tasks")
     .select("id, tenant_id, task_title, due_date, assigned_to_team_member_id, assigned_to_is_owner")
     .eq("id", taskId)
     .maybeSingle();
+
+  if (taskError) {
+    return json(res, 500, { ok: false, message: "Task lookup failed: " + taskError.message });
+  }
 
   if (!task) {
     return json(res, 200, { ok: true, sent: 0, message: "Task not found." });
@@ -319,11 +327,15 @@ async function handleSupportResponse(req, supabaseAdmin, issueId, res) {
     return json(res, 401, { ok: false, message: "Only UNGANI admin can trigger this." });
   }
 
-  const { data: issue } = await supabaseAdmin
+  const { data: issue, error: issueError } = await supabaseAdmin
     .from("support_issues")
     .select("id, tenant_id, issue_title, admin_response")
     .eq("id", issueId)
     .maybeSingle();
+
+  if (issueError) {
+    return json(res, 500, { ok: false, message: "Support issue lookup failed: " + issueError.message });
+  }
 
   if (!issue) {
     return json(res, 200, { ok: true, sent: 0, message: "Support issue not found." });
@@ -377,11 +389,15 @@ async function handleTeamChatMessage(req, supabaseAdmin, messageId, res) {
     return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
   }
 
-  const { data: message } = await supabaseAdmin
+  const { data: message, error: messageError } = await supabaseAdmin
     .from("team_chat_messages")
     .select("id, tenant_id, sender_user_id, sender_name, message_body, recipient_is_owner, recipient_team_member_id")
     .eq("id", messageId)
     .maybeSingle();
+
+  if (messageError) {
+    return json(res, 500, { ok: false, message: "Message lookup failed: " + messageError.message });
+  }
 
   if (!message) {
     return json(res, 200, { ok: true, sent: 0, message: "Message not found." });
@@ -450,11 +466,15 @@ async function handleAdminClientMessage(req, supabaseAdmin, messageId, res) {
     return json(res, 401, { ok: false, message: "Only UNGANI admin can trigger this." });
   }
 
-  const { data: message } = await supabaseAdmin
+  const { data: message, error: messageError } = await supabaseAdmin
     .from("admin_client_messages")
     .select("id, tenant_id, sender_name, message_body")
     .eq("id", messageId)
     .maybeSingle();
+
+  if (messageError) {
+    return json(res, 500, { ok: false, message: "Message lookup failed: " + messageError.message });
+  }
 
   if (!message) {
     return json(res, 200, { ok: true, sent: 0, message: "Message not found." });
@@ -503,11 +523,15 @@ async function handleClientAdminMessage(req, supabaseAdmin, messageId, res) {
     return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
   }
 
-  const { data: message } = await supabaseAdmin
+  const { data: message, error: messageError } = await supabaseAdmin
     .from("admin_client_messages")
     .select("id, tenant_id, sender_role, message_body")
     .eq("id", messageId)
     .maybeSingle();
+
+  if (messageError) {
+    return json(res, 500, { ok: false, message: "Message lookup failed: " + messageError.message });
+  }
 
   if (!message) {
     return json(res, 200, { ok: true, sent: 0, message: "Message not found." });
@@ -641,11 +665,15 @@ async function handleRecordComment(req, supabaseAdmin, commentId, res) {
     return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
   }
 
-  const { data: comment } = await supabaseAdmin
+  const { data: comment, error: commentError } = await supabaseAdmin
     .from("ungani_record_comments")
     .select("id, tenant_id, record_table, record_id, author_user_id, author_name, body, mentioned_user_ids")
     .eq("id", commentId)
     .maybeSingle();
+
+  if (commentError) {
+    return json(res, 500, { ok: false, message: "Comment lookup failed: " + commentError.message });
+  }
 
   if (!comment) {
     return json(res, 200, { ok: true, sent: 0, message: "Comment not found." });
@@ -696,11 +724,15 @@ async function handleRecordStatusChange(req, supabaseAdmin, activityId, res) {
     return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
   }
 
-  const { data: activity } = await supabaseAdmin
+  const { data: activity, error: activityError } = await supabaseAdmin
     .from("ungani_record_activity")
     .select("id, tenant_id, record_table, record_id, actor_user_id, actor_name, event_type, description")
     .eq("id", activityId)
     .maybeSingle();
+
+  if (activityError) {
+    return json(res, 500, { ok: false, message: "Activity lookup failed: " + activityError.message });
+  }
 
   if (!activity) {
     return json(res, 200, { ok: true, sent: 0, message: "Activity entry not found." });
@@ -741,11 +773,15 @@ async function handleRecordAttachment(req, supabaseAdmin, documentId, res) {
     return json(res, 401, { ok: false, message: "Not authenticated or no active tenant access." });
   }
 
-  const { data: doc } = await supabaseAdmin
+  const { data: doc, error: docError } = await supabaseAdmin
     .from("documents")
     .select("id, tenant_id, document_title, linked_task_id, linked_transaction_id")
     .eq("id", documentId)
     .maybeSingle();
+
+  if (docError) {
+    return json(res, 500, { ok: false, message: "Document lookup failed: " + docError.message });
+  }
 
   if (!doc) {
     return json(res, 200, { ok: true, sent: 0, message: "Document not found." });
