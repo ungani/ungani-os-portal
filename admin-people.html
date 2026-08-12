@@ -10,6 +10,8 @@
   <script src="pwa-register.js"></script>
   <script src="admin-shared.js"></script>
   <script src="ungani-admin-nav-config.js"></script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-presets.js"></script>
 
   <style>
     .page-grid {
@@ -544,6 +546,16 @@
       return String(getField(row, ["person_type", "type"], "staff")).toLowerCase();
     }
 
+    // Unlike getPersonType() (which lowercases for this page's own generic
+    // 8-value category-tile/badge matching, unchanged below), this preserves
+    // the real stored casing - needed so the business-type-aware dropdown
+    // (see populatePersonTypeSelect()) can correctly re-select an existing
+    // value like "Buyer" against ungani-business-config.js's real,
+    // case-sensitive peopleTypes list.
+    function getRawPersonType(row) {
+      return String(getField(row, ["person_type", "type"], "")).trim();
+    }
+
     function getPersonStatus(row) {
       return String(getField(row, ["relationship_status", "status"], "active")).toLowerCase();
     }
@@ -956,6 +968,49 @@
       if (paginationBox) paginationBox.innerHTML = UnganiAdminShared.buildPaginationHtml(peopleCurrentPage, totalPages, "goToPeoplePage");
     }
 
+    // Real bug fix: this dropdown used to be one hardcoded, business-type-
+    // agnostic list (staff/manager/driver/contact/supplier/customer/
+    // partner/other) for every tenant regardless of business type - a
+    // person entered here for a real-estate client could never actually
+    // be saved as "Buyer" (real estate's real category), so it silently
+    // fell into that tenant's own my-people.html "Other" bucket and threw
+    // off every category-count tile there. Now mirrors the exact same
+    // UnganiPresets.getPreset(tenant).peopleTypes list my-people.html
+    // itself uses, resolved per the SELECTED client, not a fixed list.
+    function getPersonTypeOptionsForTenant(tenantId) {
+      const tenant = tenants.find(row => String(row.id) === String(tenantId));
+      if (!tenant || !window.UnganiPresets) return [];
+
+      return UnganiPresets.getPreset(tenant).peopleTypes || [];
+    }
+
+    function populatePersonTypeSelect(tenantId, currentValue) {
+      const select = document.getElementById("editPersonType");
+      if (!select) return;
+
+      const types = getPersonTypeOptionsForTenant(tenantId);
+
+      if (!types.length) {
+        select.innerHTML = `<option value="">Select a client first</option>`;
+        select.disabled = true;
+        return;
+      }
+
+      select.disabled = false;
+
+      // Keep the record's existing value selectable even if it's not in
+      // this tenant's real list - e.g. an old pre-fix generic value, or
+      // (rare) the client was just reassigned to a different business
+      // type. Never silently discard/blank out existing data on open.
+      const options = types.slice();
+      if (currentValue && options.indexOf(currentValue) === -1) {
+        options.push(currentValue);
+      }
+
+      select.innerHTML = options.map(type => `<option value="${safe(type)}">${safe(type)}</option>`).join("");
+      select.value = currentValue && options.indexOf(currentValue) !== -1 ? currentValue : types[0];
+    }
+
     function openPersonModal(index) {
       const row = index === null || index === undefined ? null : lastRenderedPeople[index];
       openPersonModalForRow(row);
@@ -977,7 +1032,7 @@
         <div class="modal-form-grid">
           <div>
             <label for="editTenantId">Client</label>
-            <select id="editTenantId">
+            <select id="editTenantId" onchange="populatePersonTypeSelect(this.value, null)">
               <option value="">Select Client</option>
               ${tenants.map(tenant => `<option value="${safe(tenant.id)}">${safe(getTenantName(tenant))}</option>`).join("")}
             </select>
@@ -986,14 +1041,7 @@
           <div>
             <label for="editPersonType">Person Type</label>
             <select id="editPersonType">
-              <option value="staff">Staff</option>
-              <option value="manager">Manager</option>
-              <option value="driver">Driver</option>
-              <option value="contact">Contact Person</option>
-              <option value="supplier">Supplier</option>
-              <option value="customer">Customer</option>
-              <option value="partner">Partner</option>
-              <option value="other">Other</option>
+              <option value="">Select a client first</option>
             </select>
           </div>
 
@@ -1059,8 +1107,9 @@
         title: isNew ? "Add Person" : getPersonName(row),
         bodyHtml: bodyHtml,
         onOpen: function () {
-          document.getElementById("editTenantId").value = row ? (row.tenant_id || "") : "";
-          document.getElementById("editPersonType").value = row ? getPersonType(row) : "staff";
+          const tenantId = row ? (row.tenant_id || "") : "";
+          document.getElementById("editTenantId").value = tenantId;
+          populatePersonTypeSelect(tenantId, row ? getRawPersonType(row) : null);
           document.getElementById("editRelationshipStatus").value = row ? getPersonStatus(row) : "active";
         }
       });
@@ -1085,6 +1134,11 @@
 
       if (!fullName) {
         alert("Please enter the full name.");
+        return;
+      }
+
+      if (!personType) {
+        alert("Please select a person type.");
         return;
       }
 
@@ -1169,6 +1223,11 @@
 
       if (!fullName) {
         alert("Please enter the full name.");
+        return;
+      }
+
+      if (!personType) {
+        alert("Please select a person type.");
         return;
       }
 
