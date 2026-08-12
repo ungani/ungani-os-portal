@@ -46,6 +46,37 @@ async function markSent(supabaseAdmin, eventType, relatedId, recipientScope) {
   });
 }
 
+// Single shared resolver for "find this tenant's owner's auth_user_id" -
+// calls resolve_ungani_tenant_owner_auth_user_id (sql/add-resolve-
+// tenant-owner-auth-user-id.sql), which mirrors notify_ungani_task_
+// assignment()'s already-correct, staleness-checked logic exactly
+// (coalesce(status, registration_status), verify against auth.users,
+// email fallback). Previously this file had THREE independent inline
+// copies (handleTaskAssignment, handleTeamChatMessage,
+// resolveRelevantParty), all with the OLD pre-fix logic - a plain
+// `status` column check with no fallback, which returned zero rows for
+// at least one real tenant and silently dropped the push (the "no
+// resolvable assignee" branch below is the one exit path that never
+// calls markSent(), which is why ungani_push_sent_log stayed empty for
+// a real owner-assigned task despite the in-app notification - built by
+// the already-correct RPC - working fine). Sharing one resolver instead
+// of three copies is the actual fix for the class of bug, not just this
+// one instance of it.
+async function resolveTenantOwnerAuthUserId(supabaseAdmin, tenantId) {
+  if (!tenantId) return null;
+
+  try {
+    const { data, error } = await supabaseAdmin.rpc("resolve_ungani_tenant_owner_auth_user_id", {
+      p_tenant_id: tenantId
+    });
+
+    if (error) return null;
+    return data || null;
+  } catch (error) {
+    return null;
+  }
+}
+
 // Matches the client's real unread definition closely enough for a
 // badge number (client.html's isNotificationUnread() additionally keeps
 // task_overdue/support_issue_open rows "unread" until resolved_at is
@@ -230,16 +261,7 @@ async function handleTaskAssignment(req, supabaseAdmin, taskId, res) {
   let assigneeUserId = null;
 
   if (task.assigned_to_is_owner) {
-    const { data: reg } = await supabaseAdmin
-      .from("registrations")
-      .select("auth_user_id")
-      .eq("tenant_id", task.tenant_id)
-      .in("status", ["approved", "active", "trial"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    assigneeUserId = reg?.auth_user_id || null;
+    assigneeUserId = await resolveTenantOwnerAuthUserId(supabaseAdmin, task.tenant_id);
   } else if (task.assigned_to_team_member_id) {
     const { data: tm } = await supabaseAdmin
       .from("ungani_team_members")
@@ -372,16 +394,7 @@ async function handleTeamChatMessage(req, supabaseAdmin, messageId, res) {
   let recipientUserId = null;
 
   if (message.recipient_is_owner) {
-    const { data: reg } = await supabaseAdmin
-      .from("registrations")
-      .select("auth_user_id")
-      .eq("tenant_id", message.tenant_id)
-      .in("status", ["approved", "active", "trial"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    recipientUserId = reg?.auth_user_id || null;
+    recipientUserId = await resolveTenantOwnerAuthUserId(supabaseAdmin, message.tenant_id);
   } else if (message.recipient_team_member_id) {
     const { data: tm } = await supabaseAdmin
       .from("ungani_team_members")
@@ -557,16 +570,7 @@ async function resolveRelevantParty(supabaseAdmin, recordTable, recordId) {
     if (!task) return null;
 
     if (task.assigned_to_is_owner) {
-      const { data: reg } = await supabaseAdmin
-        .from("registrations")
-        .select("auth_user_id")
-        .eq("tenant_id", task.tenant_id)
-        .in("status", ["approved", "active", "trial"])
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      return reg?.auth_user_id || null;
+      return await resolveTenantOwnerAuthUserId(supabaseAdmin, task.tenant_id);
     }
 
     if (task.assigned_to_team_member_id) {
