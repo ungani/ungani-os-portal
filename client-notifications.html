@@ -1455,7 +1455,29 @@
       }
     }
 
+    // Calls window.UnganiPush.subscribe() synchronously (no await before
+    // it) whenever UnganiPush is already loaded - the overwhelmingly
+    // common case, since push-notifications.js sets window.UnganiPush at
+    // parse time, well before any click is possible. subscribe() itself
+    // must call Notification.requestPermission() as the first thing it
+    // does, inside the same user-gesture call stack as this onclick, or
+    // iOS Safari silently withholds the native permission prompt - even
+    // a single microtask `await` on an already-resolved promise (like the
+    // old `await waitForUnganiPush()` here used to do every time) can be
+    // enough to lose that gesture context on WebKit. Only falls back to
+    // the polling wait in the rare case the script genuinely hasn't
+    // finished loading yet.
     async function enablePushNotifications() {
+      if (window.UnganiPush) {
+        const msg = document.getElementById("pushMessage");
+        if (msg) msg.textContent = "Requesting permission...";
+
+        const result = await window.UnganiPush.subscribe();
+        if (msg) msg.textContent = result.message || "";
+        await refreshPushStatus();
+        return;
+      }
+
       const push = await waitForUnganiPush();
       if (!push) return;
 
