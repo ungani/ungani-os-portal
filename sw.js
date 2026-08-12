@@ -57,7 +57,30 @@ self.addEventListener("push", (event) => {
     renotify: Boolean(payload.tag)
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  // App icon badge (Badging API) - separate from `options.badge` above,
+  // which is only the small monochrome icon shown inside the
+  // notification itself. self.navigator.setAppBadge()/clearAppBadge()
+  // (the Navigator mixin, also exposed on ServiceWorkerGlobalScope) lets
+  // the OS-level icon badge update even while the app is fully closed,
+  // not just the next time a page happens to load - previously the badge
+  // only ever updated via client-shared.js's applySidebarBadgeCounts()
+  // on page load, so a push arriving while the app was closed never
+  // touched it. Feature-detected; a no-op where unsupported (notably
+  // Android Chrome, which has no Badging API at all on any version).
+  const badgeTask = (function () {
+    if (payload.badgeCount === undefined || payload.badgeCount === null) return Promise.resolve();
+    if (!self.navigator || typeof self.navigator.setAppBadge !== "function") return Promise.resolve();
+
+    const count = Math.max(0, Number(payload.badgeCount) || 0);
+
+    return (count > 0 ? self.navigator.setAppBadge(count) : self.navigator.clearAppBadge())
+      .catch(function (error) { console.warn("UNGANI SW badge update skipped:", error.message); });
+  })();
+
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(title, options),
+    badgeTask
+  ]));
 });
 
 // Focuses an already-open tab on the target URL instead of always opening

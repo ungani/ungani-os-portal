@@ -74,10 +74,29 @@ export default async function handler(req, res) {
 
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
+    // Same real unread count the automatic event pushes now carry (see
+    // api/send-event-push.js's computeUnreadBadgeCount) - kept in sync so
+    // the test-push button also exercises the app-icon badge, not just
+    // the notification pop-up.
+    let badgeCount = 0;
+
+    try {
+      const { count } = await supabaseAdmin
+        .from("ungani_notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", callerId)
+        .neq("status", "read");
+
+      badgeCount = count || 0;
+    } catch (badgeError) {
+      badgeCount = 0;
+    }
+
     const payload = JSON.stringify({
       title: req.body?.title || "UNGANI OS test push",
       body: req.body?.body || "If you can see this, push notifications are working on this device.",
-      url: req.body?.url || "/"
+      url: req.body?.url || "/",
+      badgeCount: badgeCount
     });
 
     const results = [];
