@@ -489,7 +489,7 @@
             <td style="width:50%;"><input type="text" placeholder="Description" value="${UnganiClientShared.attr(item.description)}" oninput="updateInvoiceItemField(${index}, 'description', this.value)" ${isLocked ? "disabled" : ""} /></td>
             <td style="width:15%;"><input type="number" min="0" step="0.01" placeholder="Qty" value="${item.quantity}" oninput="updateInvoiceItemField(${index}, 'quantity', this.value)" ${isLocked ? "disabled" : ""} /></td>
             <td style="width:20%;"><input type="number" min="0" step="0.01" placeholder="Unit price" value="${item.unit_price}" oninput="updateInvoiceItemField(${index}, 'unit_price', this.value)" ${isLocked ? "disabled" : ""} /></td>
-            <td style="width:10%;text-align:right;">${UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}</td>
+            <td style="width:10%;text-align:right;" class="invoice-item-line-total" data-row="${index}">${UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}</td>
             <td style="width:5%;">${isLocked ? "" : `<button type="button" class="ungani-btn red" style="padding:4px 8px;min-height:auto;" onclick="removeInvoiceItemRow(${index})">✕</button>`}</td>
           </tr>
         `;
@@ -511,8 +511,20 @@
 
     function updateInvoiceItemField(index, field, value) {
       if (!editingInvoiceItems[index]) return;
+
+      // Update state and just this row's computed total in place - do NOT
+      // call renderInvoiceItemsTable() here. Rebuilding the table's
+      // innerHTML on every keystroke destroys and recreates the input the
+      // user is actively typing in, which drops focus/cursor position
+      // after every character (a real bug found in live testing).
       editingInvoiceItems[index][field] = field === "description" ? value : Number(value) || 0;
-      renderInvoiceItemsTable();
+
+      const item = editingInvoiceItems[index];
+      const lineTotalCell = document.querySelector('.invoice-item-line-total[data-row="' + index + '"]');
+      if (lineTotalCell) {
+        lineTotalCell.textContent = UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0));
+      }
+
       handleInvoiceTotalsChange();
     }
 
