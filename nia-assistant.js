@@ -262,6 +262,22 @@
       answer: "After you register, UNGANI reviews it and you'll get an email once it's approved - this usually doesn't take long, but it isn't instant. You can check exactly where things stand any time on Account Status. If it's been a while or something looks stuck, this is worth flagging to our team directly since registration status is something only they can check and fix on their end.",
       href: "my-account-status.html",
       linkLabel: "Open Account Status"
+    },
+    {
+      key: "customer-invoicing-explained",
+      match: ["what is customer invoicing", "how do invoices work", "invoice a customer", "bill a customer", "customer invoice feature", "invoice numbering", "partial payment on invoice"],
+      question: "How does customer invoicing work?",
+      answer: "Customer Invoices lets you bill your own customers directly from UNGANI OS - add line items, apply VAT the same way Money does, set payment terms, and track the status (Draft, Sent, Partially Paid, Paid, Overdue, Cancelled). Each invoice gets its own sequential number automatically. You can record partial payments against an invoice and it updates the status for you. Every invoice prints with your business's own logo and details from Branding in Settings, with a small \"Powered by UNGANI OS\" line at the bottom - this is separate from your own UNGANI OS subscription invoice.",
+      href: "my-customer-invoices.html",
+      linkLabel: "Open Customer Invoices"
+    },
+    {
+      key: "branding-explained",
+      match: ["business branding", "add my logo", "company logo", "kra pin on invoice", "my business name on documents", "white label"],
+      question: "How do I put my own logo on documents?",
+      answer: "Open Settings and find the Branding section - set your company logo, contact details, and KRA PIN there once. Every printable document (Customer Invoices, the printable Business Report) picks it up automatically from then on, with your details in place of the generic UNGANI OS header. UNGANI OS still appears as a small \"Powered by\" line - your account name is used automatically if you haven't set branding yet.",
+      href: "my-settings.html",
+      linkLabel: "Open Settings"
     }
   ];
 
@@ -486,6 +502,7 @@
     { key: "createEmployee", match: ["create employee", "add employee", "new employee", "add staff", "create staff"], href: "my-people.html", params: { action: "add" }, confirm: "Opening People with a new person ready to fill in." },
     { key: "createProperty", match: ["create property", "add property", "new property", "add item", "create item", "new item"], href: "my-items.html", params: { action: "add" }, confirm: "Opening Items with a new item ready to fill in." },
     { key: "createRecord", match: ["create record", "add record", "new record", "log a record"], href: "my-records.html", params: { action: "add" }, confirm: "Opening Records with a new record ready to fill in." },
+    { key: "createInvoice", match: ["create invoice", "add invoice", "new invoice", "bill a customer", "invoice a customer"], href: "my-customer-invoices.html", params: { action: "add" }, confirm: "Opening Customer Invoices with a new invoice ready to fill in." },
     { key: "uploadDocument", match: ["upload document", "upload a document", "add document"], href: "my-documents.html", params: { action: "add" }, confirm: "Opening Documents with a new document ready to fill in." },
     { key: "openCalendar", match: ["open calendar"], href: "my-calendar.html", params: {}, confirm: "Opening Calendar." },
     { key: "openReports", match: ["open reports"], href: "reports.html", params: {}, confirm: "Opening Reports." },
@@ -2248,6 +2265,17 @@
         return runPayrollQueryIntent(text);
       }
 
+      // Live-data customer invoicing question ("who owes me", "overdue
+      // invoices") - same reasoning as payroll above.
+      if (isInvoiceQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Customer invoicing isn't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runInvoiceQueryIntent();
+      }
+
       // Health score diagnosis - works on BOTH surfaces (client Business
       // Health Score, admin Platform Health Score), unlike the asset/
       // payroll checks above which are client-only.
@@ -2826,6 +2854,90 @@
     return {
       spoken: "Paid to staff this month: " + formatNiaKES(totalThisMonth) + " across " + staffCount +
         " staff member" + (staffCount === 1 ? "" : "s") + "." + (lastPaidText ? " " + lastPaidText : "")
+    };
+  }
+
+  // ---- Customer invoicing live-data query ("who owes me", "overdue
+  // invoices", "how much have I invoiced") - same shape as the payroll
+  // check above: a live query via the same RPC the Customer Invoices
+  // page itself uses (get_my_ungani_customer_invoices), not a canned
+  // answer. Client-only, matching the payroll/asset checks - invoicing
+  // has no admin surface.
+  function isInvoiceQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    const mentionsInvoiceTopic = ["invoice", "invoices", "invoicing"].some(function (word) { return lower.indexOf(word) !== -1; })
+      || (lower.indexOf("owe") !== -1 && (lower.indexOf("customer") !== -1 || lower.indexOf("client") !== -1));
+
+    if (!mentionsInvoiceTopic) return false;
+
+    return [
+      "how much", "who owes", "overdue", "unpaid", "outstanding", "status",
+      "how many", "this month", "this week", "last invoice", "total"
+    ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  async function runInvoiceQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your customer invoices...");
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_customer_invoices");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const invoices = (response && !response.error && response.data && response.data.ok === true)
+      ? (response.data.invoices || [])
+      : [];
+
+    if (!invoices.length) {
+      addNiaMessage(
+        "No customer invoices yet. Create one from " + goldLink("my-customer-invoices.html", "Customer Invoices") + "."
+      );
+      return { spoken: "No customer invoices yet." };
+    }
+
+    let outstandingTotal = 0;
+    let overdueCount = 0;
+    let overdueTotal = 0;
+
+    invoices.forEach(function (invoice) {
+      const total = Number(pickField(invoice, ["total_amount"], 0)) || 0;
+      const paid = Number(pickField(invoice, ["amount_paid"], 0)) || 0;
+      const balance = total - paid;
+      const effectiveStatus = pickField(invoice, ["effective_status"], "");
+
+      if (effectiveStatus !== "paid" && effectiveStatus !== "cancelled" && effectiveStatus !== "draft") {
+        outstandingTotal += balance;
+      }
+
+      if (effectiveStatus === "overdue") {
+        overdueCount += 1;
+        overdueTotal += balance;
+      }
+    });
+
+    const overdueText = overdueCount > 0
+      ? overdueCount + " overdue invoice" + (overdueCount === 1 ? "" : "s") + " totaling " + formatNiaKES(overdueTotal)
+      : "No overdue invoices";
+
+    const html =
+      `<strong>Customer Invoices</strong>` +
+      `<div style="margin-top:8px;">💰 Outstanding: ${safe(formatNiaKES(outstandingTotal))} across ${invoices.length} invoice${invoices.length === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:4px;${overdueCount > 0 ? "color:#B91C1C;" : "opacity:0.85;"}">${overdueCount > 0 ? "⚠️" : "✅"} ${safe(overdueText)}</div>` +
+      `<div style="margin-top:8px;">${goldLink("my-customer-invoices.html", "See all invoices →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: "Outstanding: " + formatNiaKES(outstandingTotal) + " across " + invoices.length +
+        " invoice" + (invoices.length === 1 ? "" : "s") + ". " + overdueText + "."
     };
   }
 
