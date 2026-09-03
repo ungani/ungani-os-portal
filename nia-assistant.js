@@ -3029,7 +3029,7 @@
       state.supabaseClient.from("business_items").select("id, item_status, property_status, status, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
       state.supabaseClient.from("client_people").select("id, linked_item_id, lease_end_date, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
       state.supabaseClient.from("business_records").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
-      state.supabaseClient.from("tasks").select("id, status, due_date, task_type, type, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
+      state.supabaseClient.from("tasks").select("id, status, due_date, task_type, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
       state.supabaseClient.from("documents").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
       state.supabaseClient.from("business_events").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
       state.supabaseClient.from("support_issues").select("id, status, priority, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000)
@@ -3094,11 +3094,16 @@
     const supportScore = niaTierScore(supportOpen, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
     const activityScore = niaTierScore(recentCount, [[0, 45], [2, 70], [6, 90], [Infinity, 100]]);
 
+    // actionLabel strings are kept identical to client.html's clickable
+    // Business Health Score panel (computeGenericHealthScore's entries) so
+    // Nia's chat answer and the dashboard's click-through panel always
+    // describe the same fix the same way - not two independently-worded
+    // answers to the same question.
     return [
-      { key: "tasks", weight: 35, score: tasksScore, label: "overdue tasks", applicable: hasTaskData, href: "my-tasks.html", text: taskOverdue === 1 ? "1 overdue task needs attention." : taskOverdue + " overdue tasks need attention." },
-      { key: "payments", weight: 30, score: paymentScore, label: "pending payments", applicable: hasMoneyData, href: "my-money.html", text: "Outstanding pending payments are affecting your collection health." },
-      { key: "support", weight: 20, score: supportScore, label: "open support issues", applicable: hasSupportData, href: "my-support.html", text: supportOpen === 1 ? "1 open support issue is waiting on a response." : supportOpen + " open support issues are waiting on a response." },
-      { key: "activity", weight: 15, score: activityScore, label: "recent activity", applicable: true, href: null, text: "It's been quiet — log some activity to keep your records current." }
+      { key: "tasks", weight: 35, score: tasksScore, label: "overdue tasks", applicable: hasTaskData, href: "my-tasks.html", actionLabel: "Follow up on overdue tasks", text: taskOverdue === 1 ? "1 overdue task needs attention." : taskOverdue + " overdue tasks need attention." },
+      { key: "payments", weight: 30, score: paymentScore, label: "pending payments", applicable: hasMoneyData, href: "my-money.html", actionLabel: "Record or chase pending payments", text: "Outstanding pending payments are affecting your collection health." },
+      { key: "support", weight: 20, score: supportScore, label: "open support issues", applicable: hasSupportData, href: "my-support.html", actionLabel: "Respond to open support issues", text: supportOpen === 1 ? "1 open support issue is waiting on a response." : supportOpen + " open support issues are waiting on a response." },
+      { key: "activity", weight: 15, score: activityScore, label: "recent activity", applicable: true, href: "my-tasks.html", actionLabel: "Log some recent activity", text: "It's been quiet — log some activity to keep your records current." }
     ];
   }
 
@@ -3142,11 +3147,15 @@
     const maintenanceScore = niaTierScore(maintenanceOpen.length, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
     const leaseScore = niaTierScore(leasesExpiring.length, [[0, 100], [1, 80], [3, 55], [Infinity, 30]]);
 
+    // actionLabel strings are kept identical to client.html's clickable
+    // Business Health Score panel (computePropertyHealthScore's entries)
+    // so Nia's chat answer and the dashboard's click-through panel always
+    // describe the same fix the same way.
     return [
-      { key: "rent", weight: 40, score: rentScore, label: "unpaid rent", applicable: linkedCount > 0, href: "my-people.html", text: overdueRent.length === 1 ? "1 tenant has unpaid rent this month." : overdueRent.length + " tenants have unpaid rent this month." },
-      { key: "occupancy", weight: 30, score: occupancyScore, label: "occupancy", applicable: totalUnits > 0, href: "my-items.html", text: "Occupancy is lower than it could be — " + occupiedUnits + " of " + totalUnits + " units filled." },
-      { key: "maintenance", weight: 20, score: maintenanceScore, label: "open maintenance", applicable: hasTaskData, href: "my-tasks.html", text: maintenanceOpen.length + " open maintenance request(s) need attention." },
-      { key: "lease", weight: 10, score: leaseScore, label: "expiring leases", applicable: linkedCount > 0, href: "my-people.html", text: leasesExpiring.length + " lease(s) expiring within 7 days — plan renewals now." }
+      { key: "rent", weight: 40, score: rentScore, label: "unpaid rent", applicable: linkedCount > 0, href: "my-people.html", actionLabel: "Follow up on unpaid rent", text: overdueRent.length === 1 ? "1 tenant has unpaid rent this month." : overdueRent.length + " tenants have unpaid rent this month." },
+      { key: "occupancy", weight: 30, score: occupancyScore, label: "occupancy", applicable: totalUnits > 0, href: "my-items.html", actionLabel: "List your remaining units", text: "Occupancy is lower than it could be — " + occupiedUnits + " of " + totalUnits + " units filled." },
+      { key: "maintenance", weight: 20, score: maintenanceScore, label: "open maintenance", applicable: hasTaskData, href: "my-tasks.html", actionLabel: "Review open maintenance requests", text: maintenanceOpen.length + " open maintenance request(s) need attention." },
+      { key: "lease", weight: 10, score: leaseScore, label: "expiring leases", applicable: linkedCount > 0, href: "my-people.html", actionLabel: "Plan lease renewals", text: leasesExpiring.length + " lease(s) expiring within 7 days — plan renewals now." }
     ];
   }
 
@@ -3187,7 +3196,7 @@
     }
 
     const listHtml = weak.slice(0, 4).map(function (e) {
-      const linkHtml = e.href ? ` <a class="nia-link-btn" style="margin-top:0;" href="${attr(e.href)}">Fix this →</a>` : "";
+      const linkHtml = e.href ? ` <a class="nia-link-btn" style="margin-top:0;" href="${attr(e.href)}">${safe(e.actionLabel || "Fix this")} →</a>` : "";
       return `<div style="margin-top:8px;">🔻 <strong>${safe(e.label)}</strong> — ${safe(e.text)}${linkHtml}</div>`;
     }).join("");
 
