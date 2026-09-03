@@ -706,6 +706,29 @@
 
     // ---- Print view ----
 
+    // The detail RPC returns the stored status only (no "overdue" derivation
+    // - that logic lives in get_my_ungani_customer_invoices()'s SQL). Mirror
+    // it here client-side so the print view's status chip matches the list.
+    function computeInvoicePrintStatus(invoice) {
+      if ((invoice.status === "sent" || invoice.status === "partially_paid") && invoice.due_date) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        if (invoice.due_date < todayStr) return "overdue";
+      }
+      return invoice.status;
+    }
+
+    function invoiceStatusMeta(status) {
+      const map = {
+        draft: { label: "Draft", bg: "#F3F4F6", fg: "#6B7280" },
+        sent: { label: "Sent", bg: "#DBEAFE", fg: "#1D4ED8" },
+        partially_paid: { label: "Partially Paid", bg: "#FDF0D5", fg: "#92600E" },
+        paid: { label: "Paid", bg: "#DCFCE7", fg: "#15803D" },
+        overdue: { label: "Overdue", bg: "#FEE2E2", fg: "#B91C1C" },
+        cancelled: { label: "Cancelled", bg: "#F3F4F6", fg: "#6B7280" }
+      };
+      return map[status] || map.draft;
+    }
+
     async function renderPrintView(id) {
       printModeActive = true;
 
@@ -720,21 +743,89 @@
       const items = response.data.items || [];
       const payments = response.data.payments || [];
       const balance = Number(invoice.total_amount) - Number(invoice.amount_paid);
+      const grossSubtotal = Number(invoice.subtotal) + Number(invoice.discount_amount || 0);
+      const statusMeta = invoiceStatusMeta(computeInvoicePrintStatus(invoice));
       const tenant = currentContext.tenant;
 
       UnganiClientShared.setContent(`
         <style>
-          .invoice-print-shell { max-width: 820px; margin: 0 auto; background: #FFFFFF; color: #111827; border-radius: 18px; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+          .invoice-print-shell {
+            max-width: 820px; margin: 0 auto; background: #FFFFFF; color: #111827;
+            border-radius: 18px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            border: 1px solid #E5E7EB;
+          }
+          .invoice-print-shell, .invoice-print-shell * {
+            -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact;
+          }
           .invoice-print-toolbar { max-width: 820px; margin: 0 auto 16px; display: flex; justify-content: flex-end; gap: 10px; }
-          .invoice-print-table { width: 100%; border-collapse: collapse; margin-top: 18px; }
-          .invoice-print-table th, .invoice-print-table td { padding: 10px; border-bottom: 1px solid #E5E7EB; text-align: left; font-size: 14px; }
-          .invoice-print-table th { text-transform: uppercase; font-size: 11px; letter-spacing: 0.4px; color: #6B7280; }
-          .invoice-print-totals { display: flex; justify-content: flex-end; margin-top: 14px; }
-          .invoice-print-totals table { min-width: 260px; }
-          .invoice-print-totals td { padding: 5px 8px; font-size: 14px; }
+          .invoice-print-topbar { height: 8px; background: linear-gradient(90deg, #061C3D, #D4A63A); }
+          .invoice-print-body { padding: 36px; }
+
+          .invoice-print-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+
+          .invoice-meta-box { min-width: 230px; background: #061C3D; color: #FFFFFF; border-radius: 14px; padding: 18px 20px; }
+          .invoice-meta-title { font-size: 22px; font-weight: 900; letter-spacing: 1.2px; }
+          .invoice-meta-sub { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 2px; letter-spacing: 0.4px; }
+          .invoice-meta-table { width: 100%; margin-top: 14px; border-collapse: collapse; }
+          .invoice-meta-table td { padding: 3px 0; font-size: 13px; }
+          .invoice-meta-table td:first-child { color: rgba(255,255,255,0.55); }
+          .invoice-meta-table td:last-child { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+          .invoice-status-chip { display: inline-block; margin-top: 12px; padding: 5px 14px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; }
+
+          .invoice-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 30px; }
+          .invoice-party-box { border: 1px solid #E5E7EB; border-left: 3px solid #D4A63A; border-radius: 10px; padding: 14px 16px; background: #FAFAFA; }
+          .invoice-party-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #061C3D; font-weight: 800; }
+          .invoice-party-body { margin-top: 8px; line-height: 1.6; font-size: 13.5px; }
+
+          .invoice-print-table { width: 100%; border-collapse: collapse; margin-top: 30px; border: 1px solid #E5E7EB; border-radius: 10px; overflow: hidden; }
+          .invoice-print-table thead th { background: #061C3D; color: #FFFFFF; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+          .invoice-print-table tbody td { padding: 11px 12px; border-bottom: 1px solid #EEF0F3; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+          .invoice-print-table tbody tr:nth-child(even) { background: #FAFAFA; }
+          .invoice-print-table tbody tr:last-child td { border-bottom: none; }
+
+          .invoice-print-totals { display: flex; justify-content: flex-end; margin-top: 18px; }
+          .invoice-print-totals table { min-width: 280px; border-collapse: collapse; }
+          .invoice-print-totals td { padding: 6px 4px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+          .invoice-total-due td { padding-top: 12px; border-top: 2px solid #061C3D; font-size: 19px; font-weight: 900; color: #061C3D; }
+
+          .invoice-payment-box { margin-top: 26px; border: 1px solid #EADDB8; background: #FBF6E9; border-radius: 12px; padding: 16px 18px; }
+          .invoice-payment-box-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #92600E; font-weight: 800; margin-bottom: 8px; }
+          .invoice-payment-row { font-size: 13.5px; line-height: 1.6; }
+          .invoice-payment-row + .invoice-payment-row { margin-top: 6px; }
+
           @media print {
-            .invoice-print-toolbar { display: none !important; }
-            .invoice-print-shell { box-shadow: none !important; border-radius: 0 !important; }
+            @page { size: A4; margin: 12mm; }
+
+            body { background: #FFFFFF !important; }
+
+            .no-print,
+            .ungani-sidebar,
+            .ungani-mobile-bottom,
+            .ungani-mobile-nav,
+            .ungani-topbar,
+            .ungani-toast,
+            .invoice-print-toolbar,
+            #niaFabBtn,
+            #niaTagline,
+            #niaHelpBtn,
+            #unganiPushBanner,
+            .nia-fab,
+            .nia-tagline,
+            .ungani-push-banner {
+              display: none !important;
+            }
+
+            .ungani-app-shell,
+            .ungani-main,
+            .ungani-content {
+              display: block !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              max-width: none !important;
+            }
+
+            .invoice-print-shell { box-shadow: none !important; border-radius: 0 !important; border: none !important; }
           }
         </style>
 
@@ -744,68 +835,77 @@
         </div>
 
         <div class="invoice-print-shell">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;">
-            ${UnganiPrintBranding.renderHeaderBlock(tenant).replace(/color:#B8C3D6/g, "color:#6B7280")}
-            <div style="text-align:right;">
-              <div style="font-size:24px;font-weight:900;letter-spacing:0.6px;color:#D4A63A;">INVOICE</div>
-              <div style="font-weight:800;">${UnganiClientShared.safe(invoice.invoice_number)}</div>
-              <div style="font-size:13px;color:#6B7280;">Issued: ${UnganiClientShared.formatDate(invoice.issue_date)}</div>
-              ${invoice.due_date ? `<div style="font-size:13px;color:#6B7280;">Due: ${UnganiClientShared.formatDate(invoice.due_date)}</div>` : ""}
-            </div>
-          </div>
+          <div class="invoice-print-topbar"></div>
+          <div class="invoice-print-body">
 
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px;">
-            <div>
-              <div style="font-size:11px;text-transform:uppercase;color:#D4A63A;font-weight:800;">Bill To</div>
-              <div style="margin-top:6px;line-height:1.6;">
-                <strong>${UnganiClientShared.safe(invoice.customer_name)}</strong><br />
-                ${invoice.customer_address ? UnganiClientShared.safe(invoice.customer_address).replace(/\n/g, "<br />") + "<br />" : ""}
-                ${invoice.customer_contact ? UnganiClientShared.safe(invoice.customer_contact) : ""}
+            <div class="invoice-print-header">
+              ${UnganiPrintBranding.renderHeaderBlock(tenant, { logoSize: 74, contactColor: "#6B7280", nameColor: "#061C3D" })}
+
+              <div class="invoice-meta-box">
+                <div class="invoice-meta-title">INVOICE</div>
+                <div class="invoice-meta-sub">${UnganiClientShared.safe(invoice.invoice_number)}</div>
+                <table class="invoice-meta-table">
+                  <tr><td>Issue date</td><td>${UnganiClientShared.formatDate(invoice.issue_date)}</td></tr>
+                  ${invoice.due_date ? `<tr><td>Due date</td><td>${UnganiClientShared.formatDate(invoice.due_date)}</td></tr>` : ""}
+                </table>
+                <div class="invoice-status-chip" style="background:${statusMeta.bg};color:${statusMeta.fg};">${statusMeta.label}</div>
               </div>
             </div>
 
-            ${invoice.delivery_address || invoice.delivery_date ? `
-              <div>
-                <div style="font-size:11px;text-transform:uppercase;color:#D4A63A;font-weight:800;">Delivery</div>
-                <div style="margin-top:6px;line-height:1.6;">
-                  ${invoice.delivery_address ? UnganiClientShared.safe(invoice.delivery_address) + "<br />" : ""}
-                  ${invoice.delivery_date ? UnganiClientShared.formatDate(invoice.delivery_date) : ""}
+            <div class="invoice-parties">
+              <div class="invoice-party-box">
+                <div class="invoice-party-label">Bill To</div>
+                <div class="invoice-party-body">
+                  <strong>${UnganiClientShared.safe(invoice.customer_name)}</strong><br />
+                  ${invoice.customer_address ? UnganiClientShared.safe(invoice.customer_address).replace(/\n/g, "<br />") + "<br />" : ""}
+                  ${invoice.customer_contact ? UnganiClientShared.safe(invoice.customer_contact) : ""}
                 </div>
               </div>
-            ` : ""}
-          </div>
 
-          <table class="invoice-print-table">
-            <thead>
-              <tr><th>Description</th><th>Qty</th><th>Unit Price</th><th style="text-align:right;">Amount</th></tr>
-            </thead>
-            <tbody>
-              ${items.map(function (item) {
-                return `<tr><td>${UnganiClientShared.safe(item.description)}</td><td>${item.quantity}</td><td>${UnganiClientShared.formatKES(item.unit_price)}</td><td style="text-align:right;">${UnganiClientShared.formatKES(item.line_subtotal)}</td></tr>`;
-              }).join("")}
-            </tbody>
-          </table>
-
-          <div class="invoice-print-totals">
-            <table>
-              <tr><td>Subtotal</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.subtotal)}</td></tr>
-              ${invoice.vat_applicable ? `<tr><td>VAT</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.vat_amount)}</td></tr>` : ""}
-              ${Number(invoice.discount_amount) > 0 ? `<tr><td>Discount</td><td style="text-align:right;">-${UnganiClientShared.formatKES(invoice.discount_amount)}</td></tr>` : ""}
-              <tr style="font-weight:900;font-size:16px;border-top:1px solid #D4A63A;"><td>Total</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.total_amount)}</td></tr>
-              ${Number(invoice.amount_paid) > 0 ? `<tr><td>Paid</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.amount_paid)}</td></tr><tr style="font-weight:800;"><td>Balance Due</td><td style="text-align:right;">${UnganiClientShared.formatKES(balance)}</td></tr>` : ""}
-            </table>
-          </div>
-
-          ${invoice.payment_terms || invoice.payment_details ? `
-            <div style="margin-top:20px;padding:14px;background:#F9FAFB;border-radius:12px;font-size:13px;">
-              ${invoice.payment_terms ? `<div><strong>Payment terms:</strong> ${UnganiClientShared.safe(invoice.payment_terms)}</div>` : ""}
-              ${invoice.payment_details ? `<div style="margin-top:6px;"><strong>Payment details:</strong> ${UnganiClientShared.safe(invoice.payment_details).replace(/\n/g, "<br />")}</div>` : ""}
+              ${invoice.delivery_address || invoice.delivery_date ? `
+                <div class="invoice-party-box">
+                  <div class="invoice-party-label">Delivery</div>
+                  <div class="invoice-party-body">
+                    ${invoice.delivery_address ? UnganiClientShared.safe(invoice.delivery_address) + "<br />" : ""}
+                    ${invoice.delivery_date ? UnganiClientShared.formatDate(invoice.delivery_date) : ""}
+                  </div>
+                </div>
+              ` : ""}
             </div>
-          ` : ""}
 
-          ${invoice.notes ? `<div style="margin-top:16px;font-size:13px;color:#6B7280;">${UnganiClientShared.safe(invoice.notes)}</div>` : ""}
+            <table class="invoice-print-table">
+              <thead>
+                <tr><th>Description</th><th>Qty</th><th>Unit Price</th><th style="text-align:right;">Amount</th></tr>
+              </thead>
+              <tbody>
+                ${items.map(function (item) {
+                  return `<tr><td>${UnganiClientShared.safe(item.description)}</td><td>${item.quantity}</td><td>${UnganiClientShared.formatKES(item.unit_price)}</td><td style="text-align:right;">${UnganiClientShared.formatKES(item.line_subtotal)}</td></tr>`;
+                }).join("")}
+              </tbody>
+            </table>
 
-          ${UnganiPrintBranding.renderPoweredByFooter()}
+            <div class="invoice-print-totals">
+              <table>
+                <tr><td>Subtotal</td><td style="text-align:right;">${UnganiClientShared.formatKES(grossSubtotal)}</td></tr>
+                ${Number(invoice.discount_amount) > 0 ? `<tr><td>Discount</td><td style="text-align:right;">-${UnganiClientShared.formatKES(invoice.discount_amount)}</td></tr>` : ""}
+                ${invoice.vat_applicable ? `<tr><td>VAT${invoice.vat_pricing_mode === "inclusive" ? " (included)" : ""}</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.vat_amount)}</td></tr>` : ""}
+                ${Number(invoice.amount_paid) > 0 ? `<tr><td>Amount Paid</td><td style="text-align:right;">-${UnganiClientShared.formatKES(invoice.amount_paid)}</td></tr>` : ""}
+                <tr class="invoice-total-due"><td>Total Due</td><td style="text-align:right;">${UnganiClientShared.formatKES(balance)}</td></tr>
+              </table>
+            </div>
+
+            ${invoice.payment_terms || invoice.payment_details ? `
+              <div class="invoice-payment-box">
+                <div class="invoice-payment-box-title">Payment Information</div>
+                ${invoice.payment_terms ? `<div class="invoice-payment-row"><strong>Terms:</strong> ${UnganiClientShared.safe(invoice.payment_terms)}</div>` : ""}
+                ${invoice.payment_details ? `<div class="invoice-payment-row"><strong>Bank / M-Pesa details:</strong> ${UnganiClientShared.safe(invoice.payment_details).replace(/\n/g, "<br />")}</div>` : ""}
+              </div>
+            ` : ""}
+
+            ${invoice.notes ? `<div style="margin-top:16px;font-size:13px;color:#6B7280;">${UnganiClientShared.safe(invoice.notes)}</div>` : ""}
+
+            ${UnganiPrintBranding.renderPoweredByFooter()}
+          </div>
         </div>
       `);
     }
