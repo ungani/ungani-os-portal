@@ -84,14 +84,12 @@
       },
       {
         key: "reports-account",
-        title: "Reports & Account",
+        title: "Reports",
         collapsible: true,
         defaultExpanded: false,
         items: [
           ["reports", "reports.html", "📑", "Reports"],
-          ["print-report", "print-report.html", "🖨️", "Print Report"],
-          ["profile", "my-profile.html", "🏢", "Business Profile"],
-          ["my-settings", "my-settings.html", "🔧", "My Settings"]
+          ["print-report", "print-report.html", "🖨️", "Print Report"]
         ]
       },
       {

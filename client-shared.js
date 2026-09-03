@@ -26,7 +26,7 @@
     currentPageKey: "",
     currentPageTitle: "UNGANI OS",
     currentPageSubtitle: "",
-    currentTheme: localStorage.getItem("ungani_theme") || localStorage.getItem("ungani_client_theme") || "light",
+    currentTheme: (window.UnganiTheme ? window.UnganiTheme.get() : (localStorage.getItem("ungani_theme") || localStorage.getItem("ungani_client_theme") || "light")),
     searchTimer: null,
     subscriptionAccess: null,
     readOnlyNotice: null
@@ -553,7 +553,8 @@
 
       .ungani-global-results,
       .ungani-notification-panel,
-      .ungani-quickadd-panel {
+      .ungani-quickadd-panel,
+      .ungani-profile-panel {
         position: absolute;
         top: calc(100% + 10px);
         right: 0;
@@ -627,6 +628,51 @@
       .ungani-icon-button:hover {
         transform: translateY(-2px);
         box-shadow: 0 14px 32px rgba(6,28,61,0.15);
+      }
+
+      .ungani-topbar-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 15px;
+        border: 1px solid var(--ungani-border);
+        background: var(--ungani-gold);
+        color: #061C3D;
+        font-weight: 900;
+        font-size: 13px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 10px 24px rgba(6,28,61,0.08);
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .ungani-topbar-avatar:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 32px rgba(6,28,61,0.15);
+      }
+
+      .ungani-profile-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 14px;
+        color: var(--ungani-text);
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 700;
+        transition: background 0.18s ease, border-color 0.18s ease;
+        border: 1px solid transparent;
+        background: none;
+        width: 100%;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .ungani-profile-menu-item:hover {
+        background: var(--ungani-soft);
+        border-color: var(--ungani-border);
       }
 
       .ungani-bell-count {
@@ -1234,7 +1280,8 @@
 
         .ungani-global-results,
         .ungani-notification-panel,
-        .ungani-quickadd-panel {
+        .ungani-quickadd-panel,
+        .ungani-profile-panel {
           position: fixed;
           left: 12px;
           right: 12px;
@@ -1911,11 +1958,6 @@
               </div>
             </div>
 
-            <div class="ungani-button-row" style="margin-top:10px;">
-              <button class="ungani-btn gold" type="button" onclick="UnganiClientShared.toggleTheme()">Theme</button>
-              <button class="ungani-btn light" type="button" onclick="UnganiClientShared.logout()">Logout</button>
-            </div>
-
             <p style="font-size:11px;color:rgba(255,255,255,0.52);line-height:1.5;margin:14px 2px 0;">
               Client Shared Version: Step 308A-2 Global UX Fix
             </p>
@@ -1964,6 +2006,13 @@
               <div class="ungani-quickadd-holder">
                 <button class="ungani-btn gold" type="button" onclick="UnganiClientShared.openQuickAdd()">＋ Quick Add</button>
                 <div id="unganiQuickAddPanel" class="ungani-quickadd-panel" style="display:none;"></div>
+              </div>
+
+              <div class="ungani-bell-holder">
+                <button id="unganiProfileBtn" class="ungani-topbar-avatar" type="button" onclick="UnganiClientShared.toggleProfileMenu()" title="Account">
+                  ${safe(initials)}
+                </button>
+                <div id="unganiProfilePanel" class="ungani-profile-panel" style="display:none;"></div>
               </div>
             </div>
           </header>
@@ -2501,6 +2550,7 @@
 
     if (window.UnganiTeamChat) UnganiTeamChat.close();
     closeQuickAdd();
+    closeProfileMenu();
 
     panel.style.display = "block";
     panel.innerHTML = `
@@ -2845,6 +2895,7 @@
 
     closeGlobalSearch();
     if (window.UnganiTeamChat) UnganiTeamChat.close();
+    closeProfileMenu();
 
     const notificationPanel = document.getElementById("unganiNotificationPanel");
 
@@ -2861,6 +2912,55 @@
     const panel = document.getElementById("unganiQuickAddPanel");
 
     document.body.classList.remove("ungani-quickadd-open");
+
+    if (panel) {
+      panel.style.display = "none";
+      panel.innerHTML = "";
+    }
+  }
+
+  function renderProfileMenu() {
+    return `
+      <div class="ungani-panel-head">
+        <strong>Account</strong>
+        <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeProfileMenu()">Close</button>
+      </div>
+      <div class="ungani-panel-body">
+        <a class="ungani-profile-menu-item" href="my-profile.html">🏢 Business Profile</a>
+        <a class="ungani-profile-menu-item" href="my-settings.html#brandingPanel">🎨 Branding</a>
+        <button class="ungani-profile-menu-item" type="button" onclick="UnganiClientShared.toggleTheme()">🌓 Theme</button>
+        <a class="ungani-profile-menu-item" href="my-settings.html#myAccountPanel">👤 My Account</a>
+        <button class="ungani-profile-menu-item" type="button" onclick="UnganiClientShared.logout()">🚪 Logout</button>
+      </div>
+    `;
+  }
+
+  function toggleProfileMenu() {
+    const panel = document.getElementById("unganiProfilePanel");
+
+    if (!panel) return;
+
+    if (panel.style.display === "block") {
+      closeProfileMenu();
+      return;
+    }
+
+    closeGlobalSearch();
+    if (window.UnganiTeamChat) UnganiTeamChat.close();
+    closeQuickAdd();
+
+    const notificationPanel = document.getElementById("unganiNotificationPanel");
+
+    if (notificationPanel) {
+      notificationPanel.style.display = "none";
+    }
+
+    panel.style.display = "block";
+    panel.innerHTML = renderProfileMenu();
+  }
+
+  function closeProfileMenu() {
+    const panel = document.getElementById("unganiProfilePanel");
 
     if (panel) {
       panel.style.display = "none";
@@ -3141,17 +3241,8 @@
   }
 
   function applyTheme(theme) {
-    const cleanTheme = String(theme || "light").toLowerCase().includes("dark") ? "dark" : "light";
-
+    const cleanTheme = window.UnganiTheme ? window.UnganiTheme.apply(theme) : String(theme || "light").toLowerCase().includes("dark") ? "dark" : "light";
     state.currentTheme = cleanTheme;
-    localStorage.setItem("ungani_theme", cleanTheme);
-    localStorage.setItem("ungani_client_theme", cleanTheme);
-
-    document.documentElement.dataset.unganiTheme = cleanTheme;
-
-    if (document.body) {
-      document.body.dataset.unganiTheme = cleanTheme;
-    }
   }
 
   function toggleTheme() {
@@ -3696,6 +3787,8 @@
       toggleNotifications,
       openQuickAdd,
       closeQuickAdd,
+      toggleProfileMenu,
+      closeProfileMenu,
       changeQuickAddType,
       saveQuickAdd,
       openModal,
@@ -4292,6 +4385,13 @@
       typeof window.UnganiClientShared.closeQuickAdd === "function"
     ) {
       window.UnganiClientShared.closeQuickAdd();
+    }
+
+    if (
+      window.UnganiClientShared &&
+      typeof window.UnganiClientShared.closeProfileMenu === "function"
+    ) {
+      window.UnganiClientShared.closeProfileMenu();
     }
 
     if (panel.style.display === "block") {

@@ -9,6 +9,7 @@
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#061C3D" />
 
+  <script src="ungani-theme.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="ungani-business-config.js"></script>
   <script src="ungani-nav-config.js"></script>
@@ -758,7 +759,7 @@
 
     <div id="settingsContent" style="display: none;">
       <section class="grid">
-        <div class="panel">
+        <div class="panel" id="myAccountPanel">
           <div class="panel-head">
             <h2 data-i18n="my_account">My Account</h2>
           </div>
@@ -1839,27 +1840,15 @@
     }
 
     function applyExistingThemeSetting() {
-      const possibleKeys = ["ungani_theme", "unganiTheme", "theme", "color-theme", "mode", "ungani_mode"];
-      let foundTheme = null;
+      UnganiTheme.init();
+    }
 
-      try {
-        for (const key of possibleKeys) {
-          const value = localStorage.getItem(key);
-          if (!value) continue;
-          const clean = String(value).trim().toLowerCase();
-          if (clean === "light" || clean === "white") { foundTheme = "light"; break; }
-          if (clean === "dark" || clean === "navy") { foundTheme = "dark"; break; }
-        }
-      } catch (error) {
-        foundTheme = null;
-      }
+    function scrollToHashPanel() {
+      const hash = window.location.hash;
+      if (!hash) return;
 
-      if (!foundTheme) {
-        const htmlTheme = document.documentElement.getAttribute("data-theme");
-        if (htmlTheme === "light" || htmlTheme === "dark") { foundTheme = htmlTheme; }
-      }
-
-      document.documentElement.setAttribute("data-theme", foundTheme || "dark");
+      const target = document.querySelector(hash);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
     function previewTheme(themeValue) {
@@ -1897,6 +1886,7 @@
         loadingBox.style.display = "none";
         summaryGrid.style.display = "grid";
         settingsContent.style.display = "block";
+        scrollToHashPanel();
       } catch (error) {
         loadingBox.style.display = "none";
         errorBox.style.display = "block";
@@ -1967,7 +1957,7 @@
 
           if (error) throw error;
 
-          localStorage.setItem("ungani_theme", theme);
+          UnganiTheme.apply(theme);
           previewTheme(theme);
 
           currentLang = language;
