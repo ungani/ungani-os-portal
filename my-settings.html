@@ -12,6 +12,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="ungani-business-config.js"></script>
   <script src="ungani-nav-config.js"></script>
+  <script src="ungani-print-branding.js"></script>
 
   <style>
     :root {
@@ -962,6 +963,72 @@
           <div class="form-actions">
             <span id="multiCurrencyMessage" class="action-msg"></span>
             <button type="button" id="btnSaveMultiCurrency" class="ungani-btn gold" onclick="saveMultiCurrency()" data-i18n="save_multi_currency_btn">Save Multi-Currency Setting</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel full" id="brandingPanel">
+        <div class="panel-head">
+          <h2>Branding</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Set your own logo and business details here to have them appear on printable documents
+            you generate - Customer Invoices and the printable Business Report. UNGANI OS still
+            appears as a small "Powered by" line - this doesn't change anything in the dashboard,
+            sidebar, or navigation.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="brandingCompanyName">Company name</label>
+              <input type="text" id="brandingCompanyName" class="form-control" placeholder="Your Business Name" />
+            </div>
+
+            <div class="form-group">
+              <label for="brandingOwnerName">Owner name</label>
+              <input type="text" id="brandingOwnerName" class="form-control" placeholder="Optional" />
+            </div>
+
+            <div class="form-group">
+              <label for="brandingEmail">Business email</label>
+              <input type="email" id="brandingEmail" class="form-control" placeholder="Optional" />
+            </div>
+
+            <div class="form-group">
+              <label for="brandingPhone">Business phone</label>
+              <input type="tel" id="brandingPhone" class="form-control" placeholder="Optional" />
+            </div>
+
+            <div class="form-group">
+              <label for="brandingKraPin">KRA PIN</label>
+              <input type="text" id="brandingKraPin" class="form-control" placeholder="Optional" />
+            </div>
+
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="brandingAddress">Business address</label>
+              <textarea id="brandingAddress" class="form-control" rows="2" placeholder="Optional"></textarea>
+            </div>
+
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="brandingLogoFile">Logo</label>
+              <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                <img id="brandingLogoPreviewImg" src="" alt="Logo preview" style="display: none; width: 64px; height: 64px; object-fit: contain; background: #FFFFFF; border-radius: 14px; padding: 6px; border: 1px solid var(--border);" />
+                <input type="file" id="brandingLogoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml" onchange="handleBrandingLogoSelected(event)" />
+              </div>
+              <span id="brandingLogoMessage" class="action-msg" style="margin-top: 8px; display: block;"></span>
+            </div>
+          </div>
+
+          <div style="margin-top: 4px; padding: 16px; border: 1px dashed var(--border); border-radius: 16px;">
+            <div style="font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px; color: var(--gold); margin-bottom: 10px;">Preview on a printed document</div>
+            <div id="brandingPreviewBox"></div>
+          </div>
+
+          <div class="form-actions">
+            <span id="brandingMessage" class="action-msg"></span>
+            <button type="button" id="btnSaveBranding" class="ungani-btn gold" onclick="saveBranding()">Save Branding</button>
           </div>
         </div>
       </section>
@@ -1956,7 +2023,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -1968,6 +2035,7 @@
       renderSettingsSidebarGroups(tenantRow);
       renderTaxSettingsPanel(tenantRow);
       renderMultiCurrencyPanel(tenantRow);
+      renderBrandingPanel(tenantRow);
 
       const business = data.business || {};
       const pseudoTenant = {
@@ -2134,6 +2202,155 @@
 
           msgSpan.className = "action-msg success";
           msgSpan.textContent = "Multi-currency setting saved.";
+        } catch (err) {
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
+    }
+
+    // Branding - printable documents only (Customer Invoices, printable
+    // Business Report). Deliberately separate from the dashboard/sidebar/
+    // nav UNGANI branding, which this never touches. logo_url is already
+    // an existing tenants column (previously unused); pendingLogoUrl holds
+    // a freshly-uploaded logo until Save Branding is clicked, so a user
+    // can pick a new logo and still back out without it taking effect.
+    let pendingLogoUrl = null;
+
+    function renderBrandingPanel(tenantRow) {
+      const nameEl = document.getElementById("brandingCompanyName");
+      if (!nameEl) return;
+
+      nameEl.value = (tenantRow && tenantRow.company_name) || "";
+      document.getElementById("brandingOwnerName").value = (tenantRow && tenantRow.owner_name) || "";
+      document.getElementById("brandingEmail").value = (tenantRow && tenantRow.branding_email) || "";
+      document.getElementById("brandingPhone").value = (tenantRow && tenantRow.branding_phone) || "";
+      document.getElementById("brandingKraPin").value = (tenantRow && tenantRow.kra_pin) || "";
+      document.getElementById("brandingAddress").value = (tenantRow && tenantRow.branding_address) || "";
+
+      pendingLogoUrl = (tenantRow && tenantRow.logo_url) || null;
+
+      const previewImg = document.getElementById("brandingLogoPreviewImg");
+      if (pendingLogoUrl) {
+        previewImg.src = pendingLogoUrl;
+        previewImg.style.display = "inline-block";
+      }
+
+      ["brandingCompanyName", "brandingOwnerName", "brandingEmail", "brandingPhone", "brandingKraPin", "brandingAddress"].forEach(function (id) {
+        const fieldEl = document.getElementById(id);
+        if (fieldEl && !fieldEl.dataset.brandingPreviewBound) {
+          fieldEl.addEventListener("input", updateBrandingPreview);
+          fieldEl.dataset.brandingPreviewBound = "1";
+        }
+      });
+
+      updateBrandingPreview();
+    }
+
+    function currentBrandingFormValues() {
+      return {
+        company_name: document.getElementById("brandingCompanyName").value.trim(),
+        owner_name: document.getElementById("brandingOwnerName").value.trim(),
+        branding_email: document.getElementById("brandingEmail").value.trim(),
+        branding_phone: document.getElementById("brandingPhone").value.trim(),
+        kra_pin: document.getElementById("brandingKraPin").value.trim(),
+        branding_address: document.getElementById("brandingAddress").value.trim(),
+        logo_url: pendingLogoUrl
+      };
+    }
+
+    function updateBrandingPreview() {
+      const box = document.getElementById("brandingPreviewBox");
+      if (!box || !window.UnganiPrintBranding) return;
+      box.innerHTML = UnganiPrintBranding.renderHeaderBlock(currentBrandingFormValues());
+    }
+
+    async function handleBrandingLogoSelected(event) {
+      const file = event.target.files && event.target.files[0];
+      const msgSpan = document.getElementById("brandingLogoMessage");
+      if (!file) return;
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "Uploading logo...";
+
+      try {
+        const extension = (file.name.split(".").pop() || "png").toLowerCase();
+        const path = currentTenantId + "/logo." + extension;
+
+        const { error: uploadError } = await supabaseClient
+          .storage
+          .from("tenant-branding")
+          .upload(path, file, { upsert: true, contentType: file.type });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabaseClient
+          .storage
+          .from("tenant-branding")
+          .getPublicUrl(path);
+
+        pendingLogoUrl = publicUrlData.publicUrl + "?t=" + Date.now();
+
+        const previewImg = document.getElementById("brandingLogoPreviewImg");
+        previewImg.src = pendingLogoUrl;
+        previewImg.style.display = "inline-block";
+
+        updateBrandingPreview();
+
+        msgSpan.className = "action-msg success";
+        msgSpan.textContent = "Logo uploaded — click Save Branding to apply it.";
+      } catch (err) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Could not upload logo: " + getErrorMessage(err);
+      }
+    }
+
+    async function saveBranding() {
+      const msgSpan = document.getElementById("brandingMessage");
+      const btn = document.getElementById("btnSaveBranding");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const values = currentBrandingFormValues();
+
+      if (!values.company_name) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Company name is required.";
+        return;
+      }
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { error } = await supabaseClient
+            .from("tenants")
+            .update({
+              company_name: values.company_name,
+              owner_name: values.owner_name || null,
+              branding_email: values.branding_email || null,
+              branding_phone: values.branding_phone || null,
+              kra_pin: values.kra_pin || null,
+              branding_address: values.branding_address || null,
+              logo_url: values.logo_url
+            })
+            .eq("id", currentTenantId);
+
+          if (error) throw error;
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = "Branding saved.";
         } catch (err) {
           msgSpan.className = "action-msg error";
           msgSpan.textContent = "Failed to save: " + getErrorMessage(err);

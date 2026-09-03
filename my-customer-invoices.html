@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Customer Invoices</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script src="ungani-print-branding.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let invoiceRows = [];
+    let customerOptions = [];
+    let editingInvoiceId = null;
+    let editingInvoiceItems = [];
+    let printInvoiceId = null;
+    let printModeActive = false;
+
+    window.addEventListener("load", function () {
+      const params = new URLSearchParams(window.location.search);
+      printInvoiceId = params.get("print");
+
+      UnganiClientShared.initPage({
+        pageKey: "customerInvoices",
+        pageTitle: "Customer Invoices",
+        pageSubtitle: "Bill your customers directly and track payments.",
+        onReady: startInvoicesPage
+      });
+    });
+
+    async function startInvoicesPage(context) {
+      currentContext = context;
+
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      const subEl = document.querySelector(".ungani-topbar p");
+      if (titleEl) titleEl.innerText = "Customer Invoices";
+      if (subEl) subEl.innerText = "Bill your customers directly and track payments.";
+
+      await loadCustomerOptions();
+      await loadInvoiceRows();
+
+      if (printInvoiceId) {
+        renderPrintView(printInvoiceId);
+      } else {
+        renderInvoicesPage();
+
+        const applyAction = new URLSearchParams(window.location.search).get("action");
+        if (applyAction === "add") {
+          setTimeout(function () { openInvoiceModal(); }, 250);
+        }
+      }
+    }
+
+    async function loadCustomerOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, person_type, phone, email")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("full_name")
+          .limit(500);
+
+        customerOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load People for customer picker:", error.message);
+        customerOptions = [];
+      }
+    }
+
+    async function loadInvoiceRows() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_customer_invoices");
+        invoiceRows = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.invoices || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load invoices:", error.message);
+        invoiceRows = [];
+      }
+    }
+
+    // ---- List page ----
+
+    function renderInvoicesPage() {
+      const outstandingTotal = invoiceRows
+        .filter(function (row) { return row.effective_status !== "paid" && row.effective_status !== "cancelled" && row.effective_status !== "draft"; })
+        .reduce(function (sum, row) { return sum + (Number(row.total_amount) - Number(row.amount_paid)); }, 0);
+
+      const overdueRows = invoiceRows.filter(function (row) { return row.effective_status === "overdue"; });
+      const overdueTotal = overdueRows.reduce(function (sum, row) { return sum + (Number(row.total_amount) - Number(row.amount_paid)); }, 0);
+
+      const paidThisMonthTotal = invoiceRows
+        .filter(function (row) { return row.status === "paid" && String(row.issue_date || "").slice(0, 7) === new Date().toISOString().slice(0, 7); })
+        .reduce(function (sum, row) { return sum + Number(row.amount_paid); }, 0);
+
+      UnganiClientShared.setContent(`
+        <style>
+          .money-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .money-form-grid .wide {
+            grid-column: span 3;
+          }
+
+          @media (max-width: 720px) {
+            .money-form-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .money-form-grid .wide {
+              grid-column: span 1;
+            }
+          }
+
+          .invoices-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          .invoices-table th, .invoices-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.1)); font-size: 14px; }
+          .invoices-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--ungani-muted, #6B7280); }
+          .invoices-table tr { cursor: pointer; }
+          .invoices-table tr:hover { background: rgba(212,166,58,0.06); }
+          .invoice-status-badge { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+          .invoice-status-draft { background: rgba(107,114,128,0.15); color: #6B7280; }
+          .invoice-status-sent { background: rgba(37,99,235,0.15); color: #2563EB; }
+          .invoice-status-partially_paid { background: rgba(212,166,58,0.2); color: #92600E; }
+          .invoice-status-paid { background: rgba(22,163,74,0.15); color: #16A34A; }
+          .invoice-status-overdue { background: rgba(220,38,38,0.15); color: #DC2626; }
+          .invoice-status-cancelled { background: rgba(107,114,128,0.15); color: #6B7280; text-decoration: line-through; }
+          .invoice-items-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+          .invoice-items-table td { padding: 8px 6px; vertical-align: top; }
+          .invoice-items-table input { width: 100%; }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Customer Invoices</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">Bill your customers directly.</h2>
+          <p>Create invoices with your own branding, track partial payments, and see what's overdue at a glance.</p>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn gold" onclick="openInvoiceModal()">+ New Invoice</button>
+            <button class="ungani-btn green" onclick="refreshInvoicesPage()">Refresh</button>
+          </div>
+        </section>
+
+        <section class="money-kpi-grid" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
+          ${invoiceKpi("Outstanding", UnganiAnalytics.compactMoney(outstandingTotal), invoiceRows.length + " invoice(s) total", "#2563EB")}
+          ${invoiceKpi("Overdue", UnganiAnalytics.compactMoney(overdueTotal), overdueRows.length + " overdue invoice(s)", overdueRows.length > 0 ? "#DC2626" : "#16A34A")}
+          ${invoiceKpi("Paid This Month", UnganiAnalytics.compactMoney(paidThisMonthTotal), "Received this month", "#16A34A")}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>All Invoices</h3>
+              <p class="ungani-small">${invoiceRows.length} invoice(s).</p>
+            </div>
+          </div>
+
+          ${renderInvoicesTable()}
+        </section>
+
+        <p class="ungani-small">Customer Invoices · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    function invoiceKpi(label, value, sub, accent) {
+      return `
+        <div class="ungani-card" style="border-left:4px solid ${accent};box-shadow:none;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ungani-muted,#6B7280);font-weight:800;">${UnganiClientShared.safe(label)}</div>
+          <div style="font-size:26px;font-weight:900;margin:6px 0 2px;">${UnganiClientShared.safe(value)}</div>
+          <div class="ungani-small">${UnganiClientShared.safe(sub)}</div>
+        </div>
+      `;
+    }
+
+    function renderInvoicesTable() {
+      if (!invoiceRows.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No invoices yet. Click "+ New Invoice" to create your first one.</p>`;
+      }
+
+      return `
+        <table class="invoices-table">
+          <thead>
+            <tr>
+              <th>Invoice #</th>
+              <th>Customer</th>
+              <th>Issue Date</th>
+              <th>Due Date</th>
+              <th>Total</th>
+              <th>Balance</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${invoiceRows.map(function (row) {
+              const balance = Number(row.total_amount) - Number(row.amount_paid);
+              return `
+                <tr onclick="openInvoiceModal('${UnganiClientShared.attr(row.id)}')">
+                  <td><strong>${UnganiClientShared.safe(row.invoice_number)}</strong></td>
+                  <td>${UnganiClientShared.safe(row.customer_name)}</td>
+                  <td>${UnganiClientShared.formatDate(row.issue_date)}</td>
+                  <td>${row.due_date ? UnganiClientShared.formatDate(row.due_date) : "—"}</td>
+                  <td>${UnganiClientShared.formatKES(row.total_amount)}</td>
+                  <td>${UnganiClientShared.formatKES(balance)}</td>
+                  <td><span class="invoice-status-badge invoice-status-${UnganiClientShared.attr(row.effective_status)}">${UnganiClientShared.safe((row.effective_status || "").replace("_", " "))}</span></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function refreshInvoicesPage() {
+      await loadInvoiceRows();
+      renderInvoicesPage();
+      UnganiClientShared.showToast("Refreshed ✓");
+    }
+
+    // ---- Add/Edit modal ----
+
+    function customerOptionsHtml(selectedId) {
+      const options = customerOptions.map(function (person) {
+        const suffix = person.person_type ? " (" + person.person_type + ")" : "";
+        const selected = String(person.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(person.id)}"${selected}>${UnganiClientShared.safe(person.full_name)}${UnganiClientShared.safe(suffix)}</option>`;
+      }).join("");
+
+      return `<option value="">— Type customer details manually below —</option>${options}`;
+    }
+
+    function openInvoiceModal(id) {
+      const row = id ? invoiceRows.find(function (item) { return String(item.id) === String(id); }) : null;
+
+      if (id && !row) {
+        UnganiClientShared.showToast("Invoice not found.");
+        return;
+      }
+
+      editingInvoiceId = row ? row.id : null;
+
+      // The list RPC only returns summary fields - for editing, fetch the
+      // full detail (items included) before opening the form.
+      if (editingInvoiceId) {
+        loadInvoiceDetailAndOpenModal(editingInvoiceId);
+        return;
+      }
+
+      editingInvoiceItems = [{ description: "", quantity: 1, unit_price: 0 }];
+      openInvoiceModalForm(null);
+    }
+
+    async function loadInvoiceDetailAndOpenModal(id) {
+      UnganiClientShared.showToast("Loading invoice...");
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_ungani_customer_invoice_detail", { p_invoice_id: id });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not load invoice: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        editingInvoiceItems = (response.data.items || []).map(function (item) {
+          return { description: item.description, quantity: item.quantity, unit_price: item.unit_price };
+        });
+
+        if (!editingInvoiceItems.length) {
+          editingInvoiceItems = [{ description: "", quantity: 1, unit_price: 0 }];
+        }
+
+        openInvoiceModalForm(response.data.invoice, response.data.payments || []);
+      } catch (error) {
+        UnganiClientShared.showToast("Could not load invoice: " + error.message);
+      }
+    }
+
+    function openInvoiceModalForm(invoice, payments) {
+      const isLocked = invoice && !["draft", "sent"].includes(invoice.status);
+      const balance = invoice ? Number(invoice.total_amount) - Number(invoice.amount_paid) : 0;
+
+      const bodyHtml = `
+        <form onsubmit="saveInvoiceRecord(event)">
+          ${isLocked ? `<p class="ungani-small" style="color:#DC2626;margin:0 0 12px;">This invoice has payments recorded against it and can no longer be edited - you can still record more payments or print it.</p>` : ""}
+
+          <div class="money-form-grid">
+            <div>
+              <label for="invoiceCustomerPerson">Customer (from People)</label>
+              <select id="invoiceCustomerPerson" onchange="handleInvoiceCustomerPersonChange()" ${isLocked ? "disabled" : ""}>
+                ${customerOptionsHtml(invoice ? invoice.customer_person_id : "")}
+              </select>
+            </div>
+
+            <div>
+              <label for="invoiceCustomerName">Customer name *</label>
+              <input type="text" id="invoiceCustomerName" value="${invoice ? UnganiClientShared.attr(invoice.customer_name) : ""}" required ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="invoiceCustomerContact">Customer contact</label>
+              <input type="text" id="invoiceCustomerContact" placeholder="Phone or email" value="${invoice ? UnganiClientShared.attr(invoice.customer_contact || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="invoiceDueDate">Due date</label>
+              <input type="date" id="invoiceDueDate" value="${invoice && invoice.due_date ? invoice.due_date : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="invoiceCustomerAddress">Customer address</label>
+              <textarea id="invoiceCustomerAddress" rows="2" ${isLocked ? "disabled" : ""}>${invoice ? UnganiClientShared.safe(invoice.customer_address || "") : ""}</textarea>
+            </div>
+
+            <div>
+              <label for="invoiceDeliveryAddress">Delivery address (optional)</label>
+              <input type="text" id="invoiceDeliveryAddress" value="${invoice ? UnganiClientShared.attr(invoice.delivery_address || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="invoiceDeliveryDate">Delivery date (optional)</label>
+              <input type="date" id="invoiceDeliveryDate" value="${invoice && invoice.delivery_date ? invoice.delivery_date : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="invoicePaymentTerms">Payment terms</label>
+              <input type="text" id="invoicePaymentTerms" placeholder="e.g. Net 30, Due on receipt" value="${invoice ? UnganiClientShared.attr(invoice.payment_terms || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="invoicePaymentDetails">Payment details (bank / M-Pesa)</label>
+              <textarea id="invoicePaymentDetails" rows="2" placeholder="e.g. Paybill 000000, Account: Your Name" ${isLocked ? "disabled" : ""}>${invoice ? UnganiClientShared.safe(invoice.payment_details || "") : ""}</textarea>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <label>Line items</label>
+            <table class="invoice-items-table" id="invoiceItemsTable"></table>
+            ${isLocked ? "" : `<button type="button" class="ungani-btn light" style="margin-top:8px;" onclick="addInvoiceItemRow()">+ Add Line</button>`}
+          </div>
+
+          <div class="money-form-grid" style="margin-top:16px;">
+            <div>
+              <label style="display:flex;align-items:center;gap:10px;">
+                <input type="checkbox" id="invoiceVatApplicable" onchange="handleInvoiceTotalsChange()" ${invoice && invoice.vat_applicable ? "checked" : ""} ${isLocked ? "disabled" : ""} style="width:18px;height:18px;" />
+                VAT applies to this invoice
+              </label>
+            </div>
+
+            <div>
+              <label for="invoiceVatRate">VAT rate (%)</label>
+              <input type="number" id="invoiceVatRate" min="0" max="100" step="0.01" value="${invoice && invoice.vat_rate != null ? invoice.vat_rate : (currentContext.tenant && currentContext.tenant.default_vat_rate) || 16}" oninput="handleInvoiceTotalsChange()" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="invoiceVatPricingMode">VAT pricing</label>
+              <select id="invoiceVatPricingMode" onchange="handleInvoiceTotalsChange()" ${isLocked ? "disabled" : ""}>
+                <option value="inclusive" ${!invoice || invoice.vat_pricing_mode !== "exclusive" ? "selected" : ""}>Amount includes VAT</option>
+                <option value="exclusive" ${invoice && invoice.vat_pricing_mode === "exclusive" ? "selected" : ""}>VAT added on top</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="invoiceDiscountAmount">Discount (Ksh)</label>
+              <input type="number" id="invoiceDiscountAmount" min="0" step="0.01" value="${invoice ? invoice.discount_amount : 0}" oninput="handleInvoiceTotalsChange()" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="invoiceNotes">Notes</label>
+              <textarea id="invoiceNotes" rows="2" ${isLocked ? "disabled" : ""}>${invoice ? UnganiClientShared.safe(invoice.notes || "") : ""}</textarea>
+            </div>
+          </div>
+
+          <div id="invoiceTotalsBox" style="margin-top:14px;padding:14px;border-radius:14px;background:rgba(212,166,58,0.08);"></div>
+
+          ${invoice ? renderInvoicePaymentsSection(invoice, payments || [], balance) : ""}
+
+          <div class="ungani-button-row" style="margin-top:18px;justify-content:space-between;">
+            <div>
+              ${invoice ? `<button type="button" class="ungani-btn light" onclick="printInvoiceFromModal('${UnganiClientShared.attr(invoice.id)}')">Print</button>` : ""}
+              ${invoice && invoice.status === "draft" ? `<button type="button" class="ungani-btn dark" onclick="setInvoiceStatus('${UnganiClientShared.attr(invoice.id)}', 'sent')">Mark as Sent</button>` : ""}
+              ${invoice && invoice.status !== "cancelled" && invoice.status !== "paid" ? `<button type="button" class="ungani-btn red" onclick="setInvoiceStatus('${UnganiClientShared.attr(invoice.id)}', 'cancelled')">Cancel Invoice</button>` : ""}
+              ${invoice ? `<button type="button" class="ungani-btn red" onclick="deleteInvoiceRecord('${UnganiClientShared.attr(invoice.id)}')">Delete</button>` : ""}
+            </div>
+            <div class="ungani-button-row" style="margin:0;">
+              <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Close</button>
+              ${isLocked ? "" : `<button type="submit" class="ungani-btn gold">${invoice ? "Update Invoice" : "Create Invoice"}</button>`}
+            </div>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({
+        title: invoice ? ("Invoice " + invoice.invoice_number) : "New Invoice",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          renderInvoiceItemsTable();
+          handleInvoiceTotalsChange();
+        }
+      });
+    }
+
+    function renderInvoicePaymentsSection(invoice, payments, balance) {
+      return `
+        <div style="margin-top:16px;padding:14px;border:1px solid var(--ungani-border,rgba(6,28,61,0.1));border-radius:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>Payments</strong>
+            <span>Balance due: ${UnganiClientShared.formatKES(balance)}</span>
+          </div>
+
+          ${payments.length ? `
+            <table style="width:100%;margin-top:10px;font-size:13px;">
+              ${payments.map(function (payment) {
+                return `<tr><td>${UnganiClientShared.formatDate(payment.paid_at)}</td><td>${UnganiClientShared.safe(payment.method || "—")}</td><td>${UnganiClientShared.formatKES(payment.amount)}</td></tr>`;
+              }).join("")}
+            </table>
+          ` : `<p class="ungani-small" style="margin:8px 0 0;">No payments recorded yet.</p>`}
+
+          ${invoice.status !== "cancelled" && balance > 0 ? `
+            <div class="ungani-button-row" style="margin-top:12px;">
+              <button type="button" class="ungani-btn green" onclick="recordInvoicePayment('${UnganiClientShared.attr(invoice.id)}', ${balance})">Record Payment</button>
+            </div>
+          ` : ""}
+        </div>
+      `;
+    }
+
+    function handleInvoiceCustomerPersonChange() {
+      const select = document.getElementById("invoiceCustomerPerson");
+      const person = customerOptions.find(function (item) { return String(item.id) === String(select.value); });
+
+      if (person) {
+        document.getElementById("invoiceCustomerName").value = person.full_name || "";
+        document.getElementById("invoiceCustomerContact").value = person.phone || person.email || "";
+      }
+    }
+
+    function renderInvoiceItemsTable() {
+      const table = document.getElementById("invoiceItemsTable");
+      if (!table) return;
+
+      const isLocked = editingInvoiceId && !document.getElementById("invoiceCustomerName") ? false : document.getElementById("invoiceCustomerName").disabled;
+
+      table.innerHTML = editingInvoiceItems.map(function (item, index) {
+        return `
+          <tr>
+            <td style="width:50%;"><input type="text" placeholder="Description" value="${UnganiClientShared.attr(item.description)}" oninput="updateInvoiceItemField(${index}, 'description', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:15%;"><input type="number" min="0" step="0.01" placeholder="Qty" value="${item.quantity}" oninput="updateInvoiceItemField(${index}, 'quantity', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:20%;"><input type="number" min="0" step="0.01" placeholder="Unit price" value="${item.unit_price}" oninput="updateInvoiceItemField(${index}, 'unit_price', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:10%;text-align:right;">${UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}</td>
+            <td style="width:5%;">${isLocked ? "" : `<button type="button" class="ungani-btn red" style="padding:4px 8px;min-height:auto;" onclick="removeInvoiceItemRow(${index})">✕</button>`}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function addInvoiceItemRow() {
+      editingInvoiceItems.push({ description: "", quantity: 1, unit_price: 0 });
+      renderInvoiceItemsTable();
+      handleInvoiceTotalsChange();
+    }
+
+    function removeInvoiceItemRow(index) {
+      editingInvoiceItems.splice(index, 1);
+      if (!editingInvoiceItems.length) editingInvoiceItems.push({ description: "", quantity: 1, unit_price: 0 });
+      renderInvoiceItemsTable();
+      handleInvoiceTotalsChange();
+    }
+
+    function updateInvoiceItemField(index, field, value) {
+      if (!editingInvoiceItems[index]) return;
+      editingInvoiceItems[index][field] = field === "description" ? value : Number(value) || 0;
+      renderInvoiceItemsTable();
+      handleInvoiceTotalsChange();
+    }
+
+    // Client-side preview only, mirrors my-money.html's saveMoneyRecord()
+    // VAT math exactly - the real, authoritative totals are always
+    // recomputed server-side in owner_upsert_ungani_customer_invoice().
+    function handleInvoiceTotalsChange() {
+      const box = document.getElementById("invoiceTotalsBox");
+      if (!box) return;
+
+      let subtotal = editingInvoiceItems.reduce(function (sum, item) {
+        return sum + ((Number(item.quantity) || 0) * (Number(item.unit_price) || 0));
+      }, 0);
+
+      const discount = Number(document.getElementById("invoiceDiscountAmount").value) || 0;
+      subtotal -= discount;
+
+      const vatApplicable = document.getElementById("invoiceVatApplicable").checked;
+      const vatRate = Number(document.getElementById("invoiceVatRate").value) || 0;
+      const vatMode = document.getElementById("invoiceVatPricingMode").value;
+
+      let vatAmount = 0;
+      let total = subtotal;
+
+      if (vatApplicable && vatRate > 0) {
+        if (vatMode === "exclusive") {
+          vatAmount = Math.round((subtotal * vatRate / 100) * 100) / 100;
+          total = subtotal + vatAmount;
+        } else {
+          vatAmount = Math.round((subtotal * vatRate / (100 + vatRate)) * 100) / 100;
+          total = subtotal;
+        }
+      }
+
+      box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Subtotal (after discount)</span><strong>${UnganiClientShared.formatKES(subtotal)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>VAT</span><strong>${UnganiClientShared.formatKES(vatAmount)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0 0;border-top:1px solid rgba(212,166,58,0.3);font-size:18px;"><span>Total</span><strong>${UnganiClientShared.formatKES(total)}</strong></div>
+      `;
+    }
+
+    async function saveInvoiceRecord(event) {
+      event.preventDefault();
+
+      const customerName = UnganiClientShared.value("invoiceCustomerName").trim();
+      if (!customerName) {
+        UnganiClientShared.showToast("Customer name is required.");
+        return;
+      }
+
+      const items = editingInvoiceItems
+        .filter(function (item) { return item.description && item.description.trim(); })
+        .map(function (item) { return { description: item.description.trim(), quantity: Number(item.quantity) || 1, unit_price: Number(item.unit_price) || 0 }; });
+
+      if (!items.length) {
+        UnganiClientShared.showToast("Add at least one line item with a description.");
+        return;
+      }
+
+      const submitBtn = event.target.querySelector("button[type=submit]");
+
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        try {
+          const response = await currentContext.supabaseClient.rpc("owner_upsert_ungani_customer_invoice", {
+            p_invoice_id: editingInvoiceId,
+            p_customer_person_id: UnganiClientShared.value("invoiceCustomerPerson") || null,
+            p_customer_name: customerName,
+            p_customer_address: UnganiClientShared.value("invoiceCustomerAddress") || null,
+            p_customer_contact: UnganiClientShared.value("invoiceCustomerContact") || null,
+            p_due_date: UnganiClientShared.value("invoiceDueDate") || null,
+            p_delivery_address: UnganiClientShared.value("invoiceDeliveryAddress") || null,
+            p_delivery_date: UnganiClientShared.value("invoiceDeliveryDate") || null,
+            p_payment_terms: UnganiClientShared.value("invoicePaymentTerms") || null,
+            p_payment_details: UnganiClientShared.value("invoicePaymentDetails") || null,
+            p_vat_applicable: document.getElementById("invoiceVatApplicable").checked,
+            p_vat_rate: Number(UnganiClientShared.value("invoiceVatRate")) || null,
+            p_vat_pricing_mode: UnganiClientShared.value("invoiceVatPricingMode") || "inclusive",
+            p_discount_amount: Number(UnganiClientShared.value("invoiceDiscountAmount")) || 0,
+            p_currency: "KES",
+            p_notes: UnganiClientShared.value("invoiceNotes") || null,
+            p_items: items
+          });
+
+          if (response.error || !response.data || response.data.ok !== true) {
+            UnganiClientShared.showToast("Could not save invoice: " + (response.error ? response.error.message : (response.data && response.data.message)));
+            return;
+          }
+
+          UnganiClientShared.closeModal();
+          UnganiClientShared.showToast(editingInvoiceId ? "Invoice updated ✓" : "Invoice created ✓");
+          await loadInvoiceRows();
+          renderInvoicesPage();
+        } catch (error) {
+          UnganiClientShared.showToast("Could not save invoice: " + error.message);
+        }
+      });
+    }
+
+    async function setInvoiceStatus(id, status) {
+      if (status === "cancelled" && !confirm("Cancel this invoice? It will stop being counted as outstanding.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("update_ungani_invoice_status", { p_invoice_id: id, p_status: status });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not update status: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Status updated ✓");
+        await loadInvoiceRows();
+        renderInvoicesPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not update status: " + error.message);
+      }
+    }
+
+    async function recordInvoicePayment(id, balance) {
+      const amountStr = prompt("Payment amount (balance due: " + UnganiClientShared.formatKES(balance) + "):", balance);
+      if (!amountStr) return;
+
+      const amount = Number(amountStr);
+      if (!amount || amount <= 0) {
+        UnganiClientShared.showToast("Enter a valid amount greater than zero.");
+        return;
+      }
+
+      const method = prompt("Payment method (e.g. M-Pesa, Bank Transfer, Cash) - optional:") || null;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("record_ungani_invoice_payment", {
+          p_invoice_id: id,
+          p_amount: amount,
+          p_method: method
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not record payment: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Payment recorded ✓");
+        await loadInvoiceRows();
+        renderInvoicesPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not record payment: " + error.message);
+      }
+    }
+
+    async function deleteInvoiceRecord(id) {
+      if (!confirm("Move this invoice to Recently Deleted? You can restore it within 30 days.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+          p_table_name: "ungani_customer_invoices",
+          p_record_id: id,
+          p_delete_reason: "Deleted from Customer Invoices page"
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not delete invoice: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Invoice deleted ✓");
+        await loadInvoiceRows();
+        renderInvoicesPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not delete invoice: " + error.message);
+      }
+    }
+
+    function printInvoiceFromModal(id) {
+      window.open("my-customer-invoices.html?print=" + encodeURIComponent(id), "_blank");
+    }
+
+    // ---- Print view ----
+
+    async function renderPrintView(id) {
+      printModeActive = true;
+
+      const response = await currentContext.supabaseClient.rpc("get_ungani_customer_invoice_detail", { p_invoice_id: id });
+
+      if (response.error || !response.data || response.data.ok !== true) {
+        UnganiClientShared.setContent(`<p style="padding:40px;">Could not load this invoice. ${UnganiClientShared.safe(response.error ? response.error.message : (response.data && response.data.message) || "")}</p>`);
+        return;
+      }
+
+      const invoice = response.data.invoice;
+      const items = response.data.items || [];
+      const payments = response.data.payments || [];
+      const balance = Number(invoice.total_amount) - Number(invoice.amount_paid);
+      const tenant = currentContext.tenant;
+
+      UnganiClientShared.setContent(`
+        <style>
+          .invoice-print-shell { max-width: 820px; margin: 0 auto; background: #FFFFFF; color: #111827; border-radius: 18px; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+          .invoice-print-toolbar { max-width: 820px; margin: 0 auto 16px; display: flex; justify-content: flex-end; gap: 10px; }
+          .invoice-print-table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+          .invoice-print-table th, .invoice-print-table td { padding: 10px; border-bottom: 1px solid #E5E7EB; text-align: left; font-size: 14px; }
+          .invoice-print-table th { text-transform: uppercase; font-size: 11px; letter-spacing: 0.4px; color: #6B7280; }
+          .invoice-print-totals { display: flex; justify-content: flex-end; margin-top: 14px; }
+          .invoice-print-totals table { min-width: 260px; }
+          .invoice-print-totals td { padding: 5px 8px; font-size: 14px; }
+          @media print {
+            .invoice-print-toolbar { display: none !important; }
+            .invoice-print-shell { box-shadow: none !important; border-radius: 0 !important; }
+          }
+        </style>
+
+        <div class="invoice-print-toolbar">
+          <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
+          <a class="ungani-btn light" href="my-customer-invoices.html">Back to Invoices</a>
+        </div>
+
+        <div class="invoice-print-shell">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;">
+            ${UnganiPrintBranding.renderHeaderBlock(tenant).replace(/color:#B8C3D6/g, "color:#6B7280")}
+            <div style="text-align:right;">
+              <div style="font-size:24px;font-weight:900;letter-spacing:0.6px;color:#D4A63A;">INVOICE</div>
+              <div style="font-weight:800;">${UnganiClientShared.safe(invoice.invoice_number)}</div>
+              <div style="font-size:13px;color:#6B7280;">Issued: ${UnganiClientShared.formatDate(invoice.issue_date)}</div>
+              ${invoice.due_date ? `<div style="font-size:13px;color:#6B7280;">Due: ${UnganiClientShared.formatDate(invoice.due_date)}</div>` : ""}
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px;">
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;color:#D4A63A;font-weight:800;">Bill To</div>
+              <div style="margin-top:6px;line-height:1.6;">
+                <strong>${UnganiClientShared.safe(invoice.customer_name)}</strong><br />
+                ${invoice.customer_address ? UnganiClientShared.safe(invoice.customer_address).replace(/\n/g, "<br />") + "<br />" : ""}
+                ${invoice.customer_contact ? UnganiClientShared.safe(invoice.customer_contact) : ""}
+              </div>
+            </div>
+
+            ${invoice.delivery_address || invoice.delivery_date ? `
+              <div>
+                <div style="font-size:11px;text-transform:uppercase;color:#D4A63A;font-weight:800;">Delivery</div>
+                <div style="margin-top:6px;line-height:1.6;">
+                  ${invoice.delivery_address ? UnganiClientShared.safe(invoice.delivery_address) + "<br />" : ""}
+                  ${invoice.delivery_date ? UnganiClientShared.formatDate(invoice.delivery_date) : ""}
+                </div>
+              </div>
+            ` : ""}
+          </div>
+
+          <table class="invoice-print-table">
+            <thead>
+              <tr><th>Description</th><th>Qty</th><th>Unit Price</th><th style="text-align:right;">Amount</th></tr>
+            </thead>
+            <tbody>
+              ${items.map(function (item) {
+                return `<tr><td>${UnganiClientShared.safe(item.description)}</td><td>${item.quantity}</td><td>${UnganiClientShared.formatKES(item.unit_price)}</td><td style="text-align:right;">${UnganiClientShared.formatKES(item.line_subtotal)}</td></tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+
+          <div class="invoice-print-totals">
+            <table>
+              <tr><td>Subtotal</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.subtotal)}</td></tr>
+              ${invoice.vat_applicable ? `<tr><td>VAT</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.vat_amount)}</td></tr>` : ""}
+              ${Number(invoice.discount_amount) > 0 ? `<tr><td>Discount</td><td style="text-align:right;">-${UnganiClientShared.formatKES(invoice.discount_amount)}</td></tr>` : ""}
+              <tr style="font-weight:900;font-size:16px;border-top:1px solid #D4A63A;"><td>Total</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.total_amount)}</td></tr>
+              ${Number(invoice.amount_paid) > 0 ? `<tr><td>Paid</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.amount_paid)}</td></tr><tr style="font-weight:800;"><td>Balance Due</td><td style="text-align:right;">${UnganiClientShared.formatKES(balance)}</td></tr>` : ""}
+            </table>
+          </div>
+
+          ${invoice.payment_terms || invoice.payment_details ? `
+            <div style="margin-top:20px;padding:14px;background:#F9FAFB;border-radius:12px;font-size:13px;">
+              ${invoice.payment_terms ? `<div><strong>Payment terms:</strong> ${UnganiClientShared.safe(invoice.payment_terms)}</div>` : ""}
+              ${invoice.payment_details ? `<div style="margin-top:6px;"><strong>Payment details:</strong> ${UnganiClientShared.safe(invoice.payment_details).replace(/\n/g, "<br />")}</div>` : ""}
+            </div>
+          ` : ""}
+
+          ${invoice.notes ? `<div style="margin-top:16px;font-size:13px;color:#6B7280;">${UnganiClientShared.safe(invoice.notes)}</div>` : ""}
+
+          ${UnganiPrintBranding.renderPoweredByFooter()}
+        </div>
+      `);
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
