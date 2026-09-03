@@ -278,6 +278,14 @@
       answer: "Open Settings and find the Branding section - set your company logo, contact details, and KRA PIN there once. Every printable document (Customer Invoices, the printable Business Report) picks it up automatically from then on, with your details in place of the generic UNGANI OS header. UNGANI OS still appears as a small \"Powered by\" line - your account name is used automatically if you haven't set branding yet.",
       href: "my-settings.html",
       linkLabel: "Open Settings"
+    },
+    {
+      key: "stock-tracking-explained",
+      match: ["what is stock tracking", "how does stock tracking work", "track my stock", "track inventory", "stock movement history", "restock an item", "adjust stock"],
+      question: "How does Stock Tracking work?",
+      answer: "Turn it on in Settings and every restock, sale, waste, and correction gets logged with who did it and when, instead of a single quantity number that just gets overwritten. Once it's on, quantity and reorder level move to the Stock Tracking page - the fields on the item itself become read-only there, so there's only ever one place a quantity can change from. It's off by default and doesn't affect how items work until you switch it on.",
+      href: "my-stock-tracking.html",
+      linkLabel: "Open Stock Tracking"
     }
   ];
 
@@ -2555,7 +2563,7 @@
     return fallback;
   }
 
-  const ASSET_SUMMARY_COLUMNS = "id, status, item_status, property_status, item_name, name, title, property_name, custom_fields";
+  const ASSET_SUMMARY_COLUMNS = "id, status, item_status, property_status, item_name, name, title, property_name, quantity, reorder_level, custom_fields";
 
   function niaDaysUntil(dateStr) {
     const target = new Date(dateStr);
@@ -2613,11 +2621,18 @@
         }
       }
 
-      const stockQty = Number(customFields.stock_quantity);
-      const reorderLevel = Number(customFields.reorder_level);
-      const hasNumericStock = customFields.stock_quantity !== undefined && customFields.stock_quantity !== null && customFields.stock_quantity !== "" &&
-        customFields.reorder_level !== undefined && customFields.reorder_level !== null && customFields.reorder_level !== "" &&
-        !isNaN(stockQty) && !isNaN(reorderLevel);
+      // Once Stock Tracking is enabled, business_items.quantity/reorder_level
+      // (real columns, managed via adjust_ungani_stock) are authoritative
+      // instead of custom_fields - same conditional as my-items.html and
+      // client.html's stock helpers.
+      const stockTrackingEnabled = !!(state.tenant && state.tenant.stock_tracking_enabled === true);
+      const stockQty = stockTrackingEnabled ? Number(row.quantity) : Number(customFields.stock_quantity);
+      const reorderLevel = stockTrackingEnabled ? Number(row.reorder_level) : Number(customFields.reorder_level);
+      const hasNumericStock = stockTrackingEnabled
+        ? (row.quantity !== undefined && row.quantity !== null && row.reorder_level !== undefined && row.reorder_level !== null && !isNaN(stockQty) && !isNaN(reorderLevel))
+        : (customFields.stock_quantity !== undefined && customFields.stock_quantity !== null && customFields.stock_quantity !== "" &&
+           customFields.reorder_level !== undefined && customFields.reorder_level !== null && customFields.reorder_level !== "" &&
+           !isNaN(stockQty) && !isNaN(reorderLevel));
 
       if (hasNumericStock) {
         if (stockQty <= 0) {

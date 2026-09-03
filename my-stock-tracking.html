@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Stock Tracking</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let stockItems = [];
+    let stockMovements = [];
+    let editingAdjustItemId = null;
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "stockTracking",
+        pageTitle: "Stock Tracking",
+        pageSubtitle: "Track quantity with a full history of every restock, sale, and adjustment.",
+        onReady: startStockTrackingPage
+      });
+    });
+
+    async function startStockTrackingPage(context) {
+      currentContext = context;
+
+      if (!context.tenant || context.tenant.stock_tracking_enabled !== true) {
+        UnganiClientShared.setContent(`
+          <section class="ungani-card ungani-hero">
+            <span class="ungani-badge gold">Stock Tracking</span>
+            <h2 style="font-size:clamp(24px,3.6vw,36px);line-height:1.1;margin:16px 0 12px;">Stock tracking isn't turned on yet.</h2>
+            <p>Enable it from My Settings to start tracking quantity with a full movement history.</p>
+            <div class="ungani-button-row">
+              <a class="ungani-btn gold" href="my-settings.html">Go to Settings</a>
+            </div>
+          </section>
+        `);
+        return;
+      }
+
+      await loadStockItems();
+      await loadStockMovements();
+      renderStockTrackingPage();
+    }
+
+    async function loadStockItems() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, title, property_name, quantity, reorder_level")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("item_name", { ascending: true })
+          .limit(1000);
+
+        stockItems = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load items:", error.message);
+        stockItems = [];
+      }
+    }
+
+    async function loadStockMovements() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_stock_movements", { p_limit: 100 });
+        stockMovements = (!response.error && response.data && response.data.ok === true) ? (response.data.movements || []) : [];
+      } catch (error) {
+        console.warn("Could not load stock movements:", error.message);
+        stockMovements = [];
+      }
+    }
+
+    function stockItemName(row) {
+      return UnganiClientShared.getValue(row, ["item_name", "name", "title", "property_name"], "Item");
+    }
+
+    function stockStatus(row) {
+      const qty = Number(row.quantity) || 0;
+      const reorderLevel = row.reorder_level === null || row.reorder_level === undefined ? null : Number(row.reorder_level);
+
+      if (qty <= 0) return { label: "Out of Stock", className: "stock-status-out" };
+      if (reorderLevel !== null && qty <= reorderLevel) return { label: "Low Stock", className: "stock-status-low" };
+      return { label: "In Stock", className: "stock-status-ok" };
+    }
+
+    function renderStockTrackingPage() {
+      const outOfStockCount = stockItems.filter(function (row) { return stockStatus(row).className === "stock-status-out"; }).length;
+      const lowStockCount = stockItems.filter(function (row) { return stockStatus(row).className === "stock-status-low"; }).length;
+
+      UnganiClientShared.setContent(`
+        <style>
+          .stock-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          .stock-table th, .stock-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.1)); font-size: 14px; }
+          .stock-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--ungani-muted, #6B7280); }
+          .stock-status-badge { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+          .stock-status-ok { background: rgba(22,163,74,0.15); color: #16A34A; }
+          .stock-status-low { background: rgba(212,166,58,0.2); color: #92600E; }
+          .stock-status-out { background: rgba(220,38,38,0.15); color: #DC2626; }
+          .stock-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+          @media (max-width: 640px) { .stock-form-grid { grid-template-columns: 1fr; } }
+          .movement-log-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          .movement-log-table td { padding: 8px 6px; border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.08)); font-size: 13px; }
+          .movement-type-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: capitalize; background: rgba(6,28,61,0.08); }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Stock Tracking</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">Know exactly what's in stock.</h2>
+          <p>Every restock, sale, and adjustment is logged - no more guessing why a number changed.</p>
+        </section>
+
+        <section class="money-kpi-grid" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
+          ${stockKpi("Items Tracked", String(stockItems.length), "Total items with stock tracking", "#2563EB")}
+          ${stockKpi("Low Stock", String(lowStockCount), lowStockCount > 0 ? "Item(s) at or below reorder level" : "Nothing running low", lowStockCount > 0 ? "#92600E" : "#16A34A")}
+          ${stockKpi("Out of Stock", String(outOfStockCount), outOfStockCount > 0 ? "Item(s) at zero" : "Nothing out of stock", outOfStockCount > 0 ? "#DC2626" : "#16A34A")}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Items</h3>
+              <p class="ungani-small">${stockItems.length} item(s) with stock tracking.</p>
+            </div>
+          </div>
+
+          ${renderStockItemsTable()}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Recent Stock Movements</h3>
+              <p class="ungani-small">Most recent ${Math.min(stockMovements.length, 20)} of ${stockMovements.length} logged movement(s).</p>
+            </div>
+          </div>
+
+          ${renderMovementLog()}
+        </section>
+
+        <p class="ungani-small">Stock Tracking · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    function stockKpi(label, value, sub, accent) {
+      return `
+        <div class="ungani-card" style="border-left:4px solid ${accent};box-shadow:none;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ungani-muted,#6B7280);font-weight:800;">${UnganiClientShared.safe(label)}</div>
+          <div style="font-size:26px;font-weight:900;margin:6px 0 2px;">${UnganiClientShared.safe(value)}</div>
+          <div class="ungani-small">${UnganiClientShared.safe(sub)}</div>
+        </div>
+      `;
+    }
+
+    function renderStockItemsTable() {
+      if (!stockItems.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No items yet. Add items from the Items page - once created, they'll show up here with quantity tracking.</p>`;
+      }
+
+      return `
+        <table class="stock-table">
+          <thead>
+            <tr><th>Item</th><th>Quantity</th><th>Reorder Level</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${stockItems.map(function (row) {
+              const status = stockStatus(row);
+              return `
+                <tr>
+                  <td><strong>${UnganiClientShared.safe(stockItemName(row))}</strong></td>
+                  <td>${UnganiClientShared.safe(row.quantity === null || row.quantity === undefined ? "0" : String(row.quantity))}</td>
+                  <td>${row.reorder_level === null || row.reorder_level === undefined ? "—" : UnganiClientShared.safe(String(row.reorder_level))}</td>
+                  <td><span class="stock-status-badge ${status.className}">${status.label}</span></td>
+                  <td style="text-align:right;"><button class="ungani-btn light" style="padding:6px 14px;min-height:auto;" onclick="openAdjustStockModal('${UnganiClientShared.attr(row.id)}')">Adjust</button></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderMovementLog() {
+      if (!stockMovements.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No stock movements logged yet. Adjustments you make will show up here.</p>`;
+      }
+
+      return `
+        <table class="movement-log-table">
+          ${stockMovements.slice(0, 20).map(function (m) {
+            const deltaText = (Number(m.quantity_delta) > 0 ? "+" : "") + m.quantity_delta;
+            return `
+              <tr>
+                <td>${UnganiClientShared.formatDateTime(m.created_at)}</td>
+                <td><strong>${UnganiClientShared.safe(m.item_name)}</strong></td>
+                <td><span class="movement-type-pill">${UnganiClientShared.safe(m.movement_type)}</span></td>
+                <td>${UnganiClientShared.safe(deltaText)}</td>
+                <td>${UnganiClientShared.safe(String(m.quantity_after))}</td>
+                <td class="ungani-small">${m.reason ? UnganiClientShared.safe(m.reason) : ""}</td>
+              </tr>
+            `;
+          }).join("")}
+        </table>
+      `;
+    }
+
+    function movementTypeLabelFor(type) {
+      const labels = {
+        restock: "Quantity to add",
+        sale: "Quantity sold",
+        waste: "Quantity wasted / damaged",
+        adjustment: "Correction amount (use - for a decrease)"
+      };
+      return labels[type] || "Quantity";
+    }
+
+    function handleAdjustTypeChange() {
+      const type = document.getElementById("adjustMovementType").value;
+      const label = document.getElementById("adjustQuantityLabel");
+      const input = document.getElementById("adjustQuantityValue");
+      if (label) label.textContent = movementTypeLabelFor(type);
+      if (input) input.min = type === "adjustment" ? "" : "0.01";
+    }
+
+    function openAdjustStockModal(itemId) {
+      const row = stockItems.find(function (item) { return String(item.id) === String(itemId); });
+      if (!row) {
+        UnganiClientShared.showToast("Item not found.");
+        return;
+      }
+
+      editingAdjustItemId = itemId;
+      const status = stockStatus(row);
+
+      const bodyHtml = `
+        <form onsubmit="saveStockAdjustment(event)">
+          <p class="ungani-small" style="margin:0 0 14px;">
+            <strong>${UnganiClientShared.safe(stockItemName(row))}</strong> - current quantity
+            <strong>${UnganiClientShared.safe(row.quantity === null || row.quantity === undefined ? "0" : String(row.quantity))}</strong>
+            (<span class="stock-status-badge ${status.className}">${status.label}</span>)
+          </p>
+
+          <div class="stock-form-grid">
+            <div>
+              <label for="adjustMovementType">Movement type</label>
+              <select id="adjustMovementType" onchange="handleAdjustTypeChange()">
+                <option value="restock">Restock (add stock)</option>
+                <option value="sale">Sale (stock going out)</option>
+                <option value="waste">Waste / Damage</option>
+                <option value="adjustment">Adjustment / Correction</option>
+              </select>
+            </div>
+
+            <div>
+              <label id="adjustQuantityLabel" for="adjustQuantityValue">Quantity to add</label>
+              <input type="number" id="adjustQuantityValue" step="0.01" min="0.01" required />
+            </div>
+
+            <div>
+              <label for="adjustReorderLevel">Reorder level (optional)</label>
+              <input type="number" id="adjustReorderLevel" step="0.01" min="0" placeholder="Leave blank to keep current" value="${row.reorder_level === null || row.reorder_level === undefined ? "" : UnganiClientShared.attr(String(row.reorder_level))}" />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="adjustReason">Reason (optional)</label>
+              <input type="text" id="adjustReason" placeholder="e.g. Weekly delivery, stock count correction" />
+            </div>
+          </div>
+
+          <p class="ungani-small" style="margin:8px 0 0;">Set a reorder level so this item shows up as "Low Stock" once quantity drops to or below it.</p>
+
+          <div class="ungani-button-row" style="margin-top:18px;">
+            <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Cancel</button>
+            <button type="submit" class="ungani-btn gold">Save Adjustment</button>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({
+        title: "Adjust Stock",
+        bodyHtml: bodyHtml,
+        onOpen: function () { handleAdjustTypeChange(); }
+      });
+    }
+
+    async function saveStockAdjustment(event) {
+      event.preventDefault();
+
+      const type = UnganiClientShared.value("adjustMovementType");
+      const rawQuantity = Number(UnganiClientShared.value("adjustQuantityValue"));
+      const reason = UnganiClientShared.value("adjustReason") || null;
+      const reorderLevelRaw = UnganiClientShared.value("adjustReorderLevel");
+      // Blank means "leave it as-is" (null tells the RPC not to touch it);
+      // any typed number, including 0, is an explicit new value.
+      const reorderLevel = reorderLevelRaw === "" ? null : Number(reorderLevelRaw);
+
+      if (!rawQuantity) {
+        UnganiClientShared.showToast("Enter a quantity.");
+        return;
+      }
+
+      let delta = rawQuantity;
+      if (type === "sale" || type === "waste") delta = -Math.abs(rawQuantity);
+      if (type === "restock") delta = Math.abs(rawQuantity);
+      // "adjustment" uses the signed value exactly as entered.
+
+      const submitBtn = event.target.querySelector("button[type=submit]");
+
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        try {
+          const response = await currentContext.supabaseClient.rpc("adjust_ungani_stock", {
+            p_item_id: editingAdjustItemId,
+            p_movement_type: type,
+            p_quantity_delta: delta,
+            p_reason: reason,
+            p_reorder_level: reorderLevel
+          });
+
+          if (response.error || !response.data || response.data.ok !== true) {
+            UnganiClientShared.showToast("Could not adjust stock: " + (response.error ? response.error.message : (response.data && response.data.message)));
+            return;
+          }
+
+          UnganiClientShared.closeModal();
+
+          if (response.data.out_of_stock) {
+            UnganiClientShared.showToast("Stock adjusted - this item is now out of stock.");
+          } else if (response.data.low_stock) {
+            UnganiClientShared.showToast("Stock adjusted - this item is now low on stock.");
+          } else {
+            UnganiClientShared.showToast("Stock adjusted ✓");
+          }
+
+          await loadStockItems();
+          await loadStockMovements();
+          renderStockTrackingPage();
+        } catch (error) {
+          UnganiClientShared.showToast("Could not adjust stock: " + error.message);
+        }
+      });
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>

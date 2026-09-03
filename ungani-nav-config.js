@@ -46,6 +46,10 @@
       operationsItems.push(["integrations", "my-integrations.html", "🛰️", "Integrations"]);
     }
 
+    if (tenant && tenant.stock_tracking_enabled === true) {
+      operationsItems.push(["stock-tracking", "my-stock-tracking.html", "📦", "Stock Tracking"]);
+    }
+
     return [
       {
         key: "main",

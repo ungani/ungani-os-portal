@@ -154,7 +154,7 @@
     const ITEM_SUMMARY_COLUMNS = "id, status, item_status, property_status, listing_type, item_type, type, " +
       "project_name, total_units, units_sold, units_available, project_progress_percent, " +
       "property_price, item_name, name, title, property_name, " +
-      "custom_fields, section_label";
+      "quantity, reorder_level, custom_fields, section_label";
 
     function applyItemCommonFilters(query) {
       query = query.eq("tenant_id", currentContext.tenantId);
@@ -1234,12 +1234,18 @@
         // item's field set; fall back to status text (e.g. a tenant who
         // manually sets status to "Low Stock" on a field set without
         // stock_quantity/reorder_level) so items on any business type still
-        // get flagged, just less precisely.
-        const stockQty = Number(customFields.stock_quantity);
-        const reorderLevel = Number(customFields.reorder_level);
-        const hasNumericStock = customFields.stock_quantity !== undefined && customFields.stock_quantity !== null && customFields.stock_quantity !== "" &&
-          customFields.reorder_level !== undefined && customFields.reorder_level !== null && customFields.reorder_level !== "" &&
-          !isNaN(stockQty) && !isNaN(reorderLevel);
+        // get flagged, just less precisely. Once Stock Tracking is enabled
+        // for the tenant, business_items.quantity/reorder_level (real
+        // columns, managed from my-stock-tracking.html) are the
+        // authoritative source instead of custom_fields.
+        const stockTrackingEnabled = !!(currentContext && currentContext.tenant && currentContext.tenant.stock_tracking_enabled === true);
+        const stockQty = stockTrackingEnabled ? Number(row.quantity) : Number(customFields.stock_quantity);
+        const reorderLevel = stockTrackingEnabled ? Number(row.reorder_level) : Number(customFields.reorder_level);
+        const hasNumericStock = stockTrackingEnabled
+          ? (row.quantity !== undefined && row.quantity !== null && row.reorder_level !== undefined && row.reorder_level !== null && !isNaN(stockQty) && !isNaN(reorderLevel))
+          : (customFields.stock_quantity !== undefined && customFields.stock_quantity !== null && customFields.stock_quantity !== "" &&
+             customFields.reorder_level !== undefined && customFields.reorder_level !== null && customFields.reorder_level !== "" &&
+             !isNaN(stockQty) && !isNaN(reorderLevel));
 
         if (hasNumericStock) {
           if (stockQty <= 0) {
@@ -1415,6 +1421,26 @@
     // only readExtraFieldValue()'s save target differs.
     function renderExtraFieldHtml(field, row) {
       const fieldId = "itemExtra_" + field.id;
+
+      // Once Stock Tracking is enabled, business_items.quantity/reorder_level
+      // (real columns, managed from my-stock-tracking.html) are authoritative
+      // - the item form shows them but can't edit them, so there's never two
+      // places a quantity can be changed from at once.
+      const isStockField = field.id === "stock_quantity" || field.id === "reorder_level";
+      const stockTrackingEnabled = !!(currentContext && currentContext.tenant && currentContext.tenant.stock_tracking_enabled === true);
+
+      if (isStockField && stockTrackingEnabled) {
+        const realColumn = field.id === "stock_quantity" ? "quantity" : "reorder_level";
+        const realValue = row ? UnganiClientShared.getValue(row, [realColumn], "") : "";
+        return `
+          <div>
+            <label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label>
+            <input id="${fieldId}" type="text" value="${UnganiClientShared.attr(realValue === "" ? "0" : realValue)}" disabled />
+            <p class="ungani-small" style="margin:4px 0 0;"><a href="my-stock-tracking.html">Managed from Stock Tracking →</a></p>
+          </div>
+        `;
+      }
+
       const rawValue = field.column
         ? (row ? UnganiClientShared.getValue(row, [field.column], "") : "")
         : (row ? UnganiClientShared.getValue(row.custom_fields || {}, [field.id], "") : "");
@@ -2320,8 +2346,16 @@
         }
 
         const customFields = {};
+        const stockFieldsLocked = !!(currentContext && currentContext.tenant && currentContext.tenant.stock_tracking_enabled === true);
 
         (activeItemFieldSet.fields || []).forEach(function (field) {
+          // Once Stock Tracking is enabled, quantity/reorder_level live in
+          // business_items.quantity/reorder_level (managed only from
+          // my-stock-tracking.html's adjust_ungani_stock RPC) - skip these
+          // two fields here entirely so this save can't overwrite them or
+          // write a second, now-stale copy into custom_fields.
+          if (stockFieldsLocked && (field.id === "stock_quantity" || field.id === "reorder_level")) return;
+
           const fieldValue = readExtraFieldValue(field);
 
           if (field.column) {

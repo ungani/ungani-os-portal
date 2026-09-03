@@ -967,6 +967,36 @@
         </div>
       </section>
 
+      <section class="panel full" id="stockTrackingPanel">
+        <div class="panel-head">
+          <h2>Stock Tracking</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Turn this on to track stock quantity properly - every restock, sale, and adjustment is
+            logged so you can see exactly what changed and when, instead of a single number that's
+            silently overwritten on every item edit. Once on, a Stock Tracking page appears in your
+            sidebar, and the Quantity / Reorder Level fields on each item become read-only there -
+            manage them from Stock Tracking instead.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--border); border-radius: 14px; cursor: pointer;">
+                <input type="checkbox" id="stockTrackingEnabled" style="width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer;" />
+                <span style="color: var(--text);">Track stock quantity with a movement history</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="stockTrackingMessage" class="action-msg"></span>
+            <button type="button" id="btnSaveStockTracking" class="ungani-btn gold" onclick="saveStockTracking()">Save Stock Tracking Setting</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full" id="brandingPanel">
         <div class="panel-head">
           <h2>Branding</h2>
@@ -2023,7 +2053,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -2035,6 +2065,7 @@
       renderSettingsSidebarGroups(tenantRow);
       renderTaxSettingsPanel(tenantRow);
       renderMultiCurrencyPanel(tenantRow);
+      renderStockTrackingPanel(tenantRow);
       renderBrandingPanel(tenantRow);
 
       const business = data.business || {};
@@ -2202,6 +2233,47 @@
 
           msgSpan.className = "action-msg success";
           msgSpan.textContent = "Multi-currency setting saved.";
+        } catch (err) {
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
+    }
+
+    function renderStockTrackingPanel(tenantRow) {
+      const el = document.getElementById("stockTrackingEnabled");
+      if (!el) return;
+      el.checked = !!(tenantRow && tenantRow.stock_tracking_enabled);
+    }
+
+    async function saveStockTracking() {
+      const msgSpan = document.getElementById("stockTrackingMessage");
+      const btn = document.getElementById("btnSaveStockTracking");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const wantsEnabled = document.getElementById("stockTrackingEnabled").checked;
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { data, error } = await supabaseClient.rpc(
+            wantsEnabled ? "enable_ungani_stock_tracking" : "disable_ungani_stock_tracking"
+          );
+
+          if (error) throw error;
+          if (!data || data.ok !== true) throw new Error((data && data.message) || "Could not save.");
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = wantsEnabled
+            ? "Stock tracking enabled" + (data.items_backfilled > 0 ? " - " + data.items_backfilled + " item(s) carried their existing quantity over." : ".")
+            : "Stock tracking disabled.";
         } catch (err) {
           msgSpan.className = "action-msg error";
           msgSpan.textContent = "Failed to save: " + getErrorMessage(err);

@@ -8757,7 +8757,19 @@
     // was only ever written by Real Estate's project-unit fields, so it's
     // kept here purely as a fallback for any legacy row that happens to
     // have it set, not the primary source.
+    //
+    // Once Stock Tracking is enabled for the tenant, business_items.quantity/
+    // reorder_level (real columns, managed via adjust_ungani_stock on
+    // my-stock-tracking.html) become authoritative instead.
     function getStockQuantity(item) {
+      if (currentTenant && currentTenant.stock_tracking_enabled === true) {
+        const trackedQty = getValue(item, ["quantity"], null);
+        if (trackedQty !== null && trackedQty !== "") {
+          const trackedNum = Number(trackedQty);
+          if (!isNaN(trackedNum)) return trackedNum;
+        }
+      }
+
       const customFields = getValue(item, ["custom_fields"], {}) || {};
       const customQty = customFields.stock_quantity;
 
@@ -8773,6 +8785,14 @@
     }
 
     function getReorderLevel(item) {
+      if (currentTenant && currentTenant.stock_tracking_enabled === true) {
+        const trackedLevel = getValue(item, ["reorder_level"], null);
+        if (trackedLevel !== null && trackedLevel !== "") {
+          const trackedNum = Number(trackedLevel);
+          if (!isNaN(trackedNum) && trackedNum > 0) return trackedNum;
+        }
+      }
+
       const customFields = getValue(item, ["custom_fields"], {}) || {};
       const raw = customFields.reorder_level;
 
