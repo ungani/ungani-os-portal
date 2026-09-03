@@ -417,7 +417,8 @@
       }).join("");
 
       const payeeHtml = payeeOptions.map(function (payee) {
-        return `<option value="payee:${UnganiClientShared.attr(payee.id)}">${UnganiClientShared.safe(payee.full_name)}${payee.job_title ? " (" + UnganiClientShared.safe(payee.job_title) + ")" : ""}</option>`;
+        const inactiveSuffix = payee.status === "inactive" ? " (Inactive)" : "";
+        return `<option value="payee:${UnganiClientShared.attr(payee.id)}">${UnganiClientShared.safe(payee.full_name)}${payee.job_title ? " (" + UnganiClientShared.safe(payee.job_title) + ")" : ""}${inactiveSuffix}</option>`;
       }).join("");
 
       return `
@@ -426,6 +427,34 @@
         ${payeeHtml ? `<optgroup label="Payees (no login)">${payeeHtml}</optgroup>` : ""}
         <option value="__add_payee__">+ Add new payee...</option>
       `;
+    }
+
+    // A record can be linked to a payee who has since been deactivated -
+    // get_my_ungani_payees() (used by loadPayeeOptions above) only returns
+    // active payees, so without this the dropdown has no matching option
+    // for that id and silently shows "Not linked to anyone" instead. If
+    // the record is then re-saved without the user noticing, the real
+    // link would be overwritten with null. This looks up that one payee
+    // (any status) and adds it to the in-memory list so it renders
+    // correctly, marked "(Inactive)", and re-saving preserves the link.
+    async function ensurePayeeOptionIncluded(payeeId) {
+      if (!payeeId) return;
+
+      const alreadyPresent = payeeOptions.some(function (row) {
+        return String(row.id) === String(payeeId);
+      });
+
+      if (alreadyPresent) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_ungani_payee_by_id", { p_payee_id: payeeId });
+
+        if (!response.error && response.data && response.data.ok === true && response.data.payee) {
+          payeeOptions = payeeOptions.concat([response.data.payee]);
+        }
+      } catch (error) {
+        console.warn("Could not load linked payee:", error.message);
+      }
     }
 
     async function handlePaidToChange() {
@@ -2094,7 +2123,7 @@
       UnganiClientShared.openModal({
         title: row ? "Edit Money Record" : "Add Money Record",
         bodyHtml: bodyHtml,
-        onOpen: function () {
+        onOpen: async function () {
           document.getElementById("moneyType").value = row ? getRowType(row) : ((presetValues && presetValues.type) || "income");
           updateCategoryOptions();
           updateTeamMemberFieldVisibility();
@@ -2113,6 +2142,12 @@
           if (document.getElementById("moneyPaidTo")) {
             const existingTeamMemberId = row ? UnganiClientShared.getValue(row, ["related_team_member_id"], "") : "";
             const existingPayeeId = row ? UnganiClientShared.getValue(row, ["related_payee_id"], "") : "";
+
+            if (existingPayeeId) {
+              await ensurePayeeOptionIncluded(existingPayeeId);
+              document.getElementById("moneyPaidTo").innerHTML = paidToOptionsHtml();
+            }
+
             document.getElementById("moneyPaidTo").value = existingPayeeId ? ("payee:" + existingPayeeId) : (existingTeamMemberId || "");
           }
 
