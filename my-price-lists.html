@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Price Lists</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let priceListRows = [];
+    let stockItemOptions = [];
+    let editingPriceListId = null;
+    let editingPriceListEntries = [];
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "priceLists",
+        pageTitle: "Price Lists",
+        pageSubtitle: "Named pricing - wholesale, VIP customers, or anything else - that overrides an item's usual price.",
+        onReady: startPriceListsPage
+      });
+    });
+
+    async function startPriceListsPage(context) {
+      currentContext = context;
+
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      const subEl = document.querySelector(".ungani-topbar p");
+      if (titleEl) titleEl.innerText = "Price Lists";
+      if (subEl) subEl.innerText = "Named pricing - wholesale, VIP customers, or anything else - that overrides an item's usual price.";
+
+      await loadStockItemOptions();
+      await loadPriceListRows();
+      renderPriceListsPage();
+
+      const applyAction = new URLSearchParams(window.location.search).get("action");
+      if (applyAction === "add") {
+        setTimeout(function () { openPriceListModal(); }, 250);
+      }
+    }
+
+    async function loadStockItemOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, title, property_name, property_price")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .limit(1000);
+
+        stockItemOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load Items for price list picker:", error.message);
+        stockItemOptions = [];
+      }
+    }
+
+    function stockItemLabel(item) {
+      return item.item_name || item.name || item.title || item.property_name || "Item";
+    }
+
+    async function loadPriceListRows() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_price_lists");
+        priceListRows = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.price_lists || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load price lists:", error.message);
+        priceListRows = [];
+      }
+    }
+
+    // ---- List page ----
+
+    function renderPriceListsPage() {
+      UnganiClientShared.setContent(`
+        <style>
+          .price-list-items-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+          .price-list-items-table td { padding: 8px 6px; vertical-align: top; }
+          .price-list-items-table input, .price-list-items-table select { width: 100%; }
+          .price-lists-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-top: 18px; }
+          .price-list-card { cursor: pointer; }
+          .price-list-card:hover { border-color: rgba(212,166,58,0.5); }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Price Lists</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">Set it once, use it everywhere.</h2>
+          <p>Create named pricing - Wholesale, VIP Customers, anything you like - and pick which one applies when you create a Quotation, Invoice, or Order.</p>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn gold" onclick="openPriceListModal()">+ New Price List</button>
+            <button class="ungani-btn green" onclick="refreshPriceListsPage()">Refresh</button>
+          </div>
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>All Price Lists</h3>
+              <p class="ungani-small">${priceListRows.length} price list(s).</p>
+            </div>
+          </div>
+
+          ${renderPriceListsGrid()}
+        </section>
+
+        <p class="ungani-small">Price Lists · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    function renderPriceListsGrid() {
+      if (!priceListRows.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No price lists yet. Click "+ New Price List" to create your first one.</p>`;
+      }
+
+      return `
+        <div class="price-lists-grid">
+          ${priceListRows.map(function (row) {
+            return `
+              <div class="ungani-card price-list-card" onclick="openPriceListModal('${UnganiClientShared.attr(row.id)}')">
+                <div style="font-size:16px;font-weight:800;">${UnganiClientShared.safe(row.name)}</div>
+                ${row.description ? `<p class="ungani-small" style="margin-top:4px;">${UnganiClientShared.safe(row.description)}</p>` : ""}
+                <p class="ungani-small" style="margin-top:10px;color:var(--ungani-muted,#6B7280);">${row.item_count} item${row.item_count === 1 ? "" : "s"} priced</p>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    async function refreshPriceListsPage() {
+      await loadPriceListRows();
+      renderPriceListsPage();
+      UnganiClientShared.showToast("Refreshed ✓");
+    }
+
+    // ---- Add/Edit modal ----
+
+    function stockItemOptionsHtml(selectedId) {
+      const options = stockItemOptions.map(function (item) {
+        const selected = String(item.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(item.id)}" data-base-price="${item.property_price != null ? item.property_price : ""}"${selected}>${UnganiClientShared.safe(stockItemLabel(item))}</option>`;
+      }).join("");
+
+      return `<option value="">— Choose an item —</option>${options}`;
+    }
+
+    function openPriceListModal(id) {
+      const row = id ? priceListRows.find(function (item) { return String(item.id) === String(id); }) : null;
+
+      if (id && !row) {
+        UnganiClientShared.showToast("Price list not found.");
+        return;
+      }
+
+      editingPriceListId = row ? row.id : null;
+
+      if (editingPriceListId) {
+        loadPriceListDetailAndOpenModal(editingPriceListId);
+        return;
+      }
+
+      editingPriceListEntries = [{ item_id: null, price: "" }];
+      openPriceListModalForm(null);
+    }
+
+    async function loadPriceListDetailAndOpenModal(id) {
+      UnganiClientShared.showToast("Loading price list...");
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_ungani_price_list_detail", { p_price_list_id: id });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not load price list: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        editingPriceListEntries = (response.data.entries || []).map(function (entry) {
+          return { item_id: entry.item_id, price: entry.price };
+        });
+
+        if (!editingPriceListEntries.length) {
+          editingPriceListEntries = [{ item_id: null, price: "" }];
+        }
+
+        openPriceListModalForm(response.data.price_list);
+      } catch (error) {
+        UnganiClientShared.showToast("Could not load price list: " + error.message);
+      }
+    }
+
+    function openPriceListModalForm(priceList) {
+      const bodyHtml = `
+        <form onsubmit="savePriceListRecord(event)">
+          <label for="priceListName">Name *</label>
+          <input type="text" id="priceListName" placeholder="e.g. Wholesale, VIP Customers" required value="${priceList ? UnganiClientShared.attr(priceList.name) : ""}" />
+
+          <label for="priceListDescription">Description (optional)</label>
+          <textarea id="priceListDescription" rows="2">${priceList ? UnganiClientShared.safe(priceList.description || "") : ""}</textarea>
+
+          <div style="margin-top:16px;">
+            <label>Item prices</label>
+            <table class="price-list-items-table" id="priceListEntriesTable"></table>
+            <button type="button" class="ungani-btn light" style="margin-top:8px;" onclick="addPriceListEntryRow()">+ Add Item</button>
+          </div>
+
+          <div class="ungani-button-row" style="margin-top:18px;justify-content:space-between;">
+            <div>
+              ${priceList ? `<button type="button" class="ungani-btn red" onclick="deletePriceListRecord('${UnganiClientShared.attr(priceList.id)}')">Delete</button>` : ""}
+            </div>
+            <div class="ungani-button-row" style="margin:0;">
+              <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Close</button>
+              <button type="submit" class="ungani-btn gold">${priceList ? "Update Price List" : "Create Price List"}</button>
+            </div>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({
+        title: priceList ? priceList.name : "New Price List",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          renderPriceListEntriesTable();
+        }
+      });
+    }
+
+    function renderPriceListEntriesTable() {
+      const table = document.getElementById("priceListEntriesTable");
+      if (!table) return;
+
+      table.innerHTML = editingPriceListEntries.map(function (entry, index) {
+        return `
+          <tr>
+            <td style="width:60%;">
+              <select onchange="handlePriceListItemPick(${index}, this)">
+                ${stockItemOptionsHtml(entry.item_id)}
+              </select>
+            </td>
+            <td style="width:30%;"><input type="number" min="0" step="0.01" placeholder="Price" value="${entry.price}" oninput="updatePriceListEntryField(${index}, 'price', this.value)" /></td>
+            <td style="width:10%;"><button type="button" class="ungani-btn red" style="padding:4px 8px;min-height:auto;" onclick="removePriceListEntryRow(${index})">✕</button></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function handlePriceListItemPick(index, selectEl) {
+      const itemId = selectEl.value || null;
+      editingPriceListEntries[index].item_id = itemId;
+
+      // Convenience: default the price to the item's own current price so
+      // there's a sensible starting point to adjust from, rather than a
+      // blank field - only when this row's price hasn't been typed yet.
+      if (itemId && !editingPriceListEntries[index].price) {
+        const basePrice = selectEl.selectedOptions[0].getAttribute("data-base-price");
+        if (basePrice) {
+          editingPriceListEntries[index].price = basePrice;
+          renderPriceListEntriesTable();
+        }
+      }
+    }
+
+    function updatePriceListEntryField(index, field, value) {
+      if (!editingPriceListEntries[index]) return;
+      editingPriceListEntries[index][field] = value;
+    }
+
+    function addPriceListEntryRow() {
+      editingPriceListEntries.push({ item_id: null, price: "" });
+      renderPriceListEntriesTable();
+    }
+
+    function removePriceListEntryRow(index) {
+      editingPriceListEntries.splice(index, 1);
+      if (!editingPriceListEntries.length) editingPriceListEntries.push({ item_id: null, price: "" });
+      renderPriceListEntriesTable();
+    }
+
+    async function savePriceListRecord(event) {
+      event.preventDefault();
+
+      const name = UnganiClientShared.value("priceListName").trim();
+      if (!name) {
+        UnganiClientShared.showToast("A name is required.");
+        return;
+      }
+
+      const entries = editingPriceListEntries
+        .filter(function (entry) { return entry.item_id && entry.price !== "" && entry.price != null; })
+        .map(function (entry) { return { item_id: entry.item_id, price: Number(entry.price) || 0 }; });
+
+      const submitBtn = event.target.querySelector("button[type=submit]");
+
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        try {
+          const response = await currentContext.supabaseClient.rpc("owner_upsert_ungani_price_list", {
+            p_price_list_id: editingPriceListId,
+            p_name: name,
+            p_description: UnganiClientShared.value("priceListDescription") || null,
+            p_entries: entries
+          });
+
+          if (response.error || !response.data || response.data.ok !== true) {
+            UnganiClientShared.showToast("Could not save price list: " + (response.error ? response.error.message : (response.data && response.data.message)));
+            return;
+          }
+
+          UnganiClientShared.closeModal();
+          UnganiClientShared.showToast(editingPriceListId ? "Price list updated ✓" : "Price list created ✓");
+          await loadPriceListRows();
+          renderPriceListsPage();
+        } catch (error) {
+          UnganiClientShared.showToast("Could not save price list: " + error.message);
+        }
+      });
+    }
+
+    async function deletePriceListRecord(id) {
+      if (!confirm("Move this price list to Recently Deleted? You can restore it within 30 days.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+          p_table_name: "ungani_price_lists",
+          p_record_id: id,
+          p_delete_reason: "Deleted from Price Lists page"
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not delete price list: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Price list deleted ✓");
+        await loadPriceListRows();
+        renderPriceListsPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not delete price list: " + error.message);
+      }
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>

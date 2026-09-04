@@ -1027,6 +1027,35 @@
         </div>
       </section>
 
+      <section class="panel full" id="priceListsPanel">
+        <div class="panel-head">
+          <h2>Price Lists</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Turn this on to create named price lists (e.g. "Wholesale", "VIP Customers") that override
+            an item's usual price. Once on, a Price Lists page appears in your sidebar, and Quotations,
+            Customer Invoices, and Orders let you link a line to a real item and pick which pricing
+            applies - the price fills in automatically but can still be changed by hand.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--border); border-radius: 14px; cursor: pointer;">
+                <input type="checkbox" id="priceListsEnabled" style="width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer;" />
+                <span style="color: var(--text);">Use named price lists for Quotations, Invoices, and Orders</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="priceListsMessage" class="action-msg"></span>
+            <button type="button" id="btnSavePriceLists" class="ungani-btn gold" onclick="savePriceLists()">Save Price Lists Setting</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full" id="brandingPanel">
         <div class="panel-head">
           <h2>Branding</h2>
@@ -2086,6 +2115,7 @@
       renderMultiCurrencyPanel(tenantRow);
       renderStockTrackingPanel(tenantRow);
       renderDebtorsPayablesPanel(tenantRow);
+      renderPriceListsPanel(tenantRow);
       renderBrandingPanel(tenantRow);
 
       const business = data.business || {};
@@ -2298,6 +2328,45 @@
 
           msgSpan.className = "action-msg success";
           msgSpan.textContent = "Debtors & Payables setting saved.";
+        } catch (err) {
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
+    }
+
+    function renderPriceListsPanel(tenantRow) {
+      const el = document.getElementById("priceListsEnabled");
+      if (!el) return;
+      el.checked = !!(tenantRow && tenantRow.price_lists_enabled);
+    }
+
+    async function savePriceLists() {
+      const msgSpan = document.getElementById("priceListsMessage");
+      const btn = document.getElementById("btnSavePriceLists");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const priceListsEnabled = document.getElementById("priceListsEnabled").checked;
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { error } = await supabaseClient
+            .from("tenants")
+            .update({ price_lists_enabled: priceListsEnabled })
+            .eq("id", currentTenantId);
+
+          if (error) throw error;
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = "Price Lists setting saved.";
         } catch (err) {
           msgSpan.className = "action-msg error";
           msgSpan.textContent = "Failed to save: " + getErrorMessage(err);

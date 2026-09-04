@@ -38,6 +38,7 @@
     { key: "customer-invoices", href: "my-customer-invoices.html", icon: "📃", label: "Customer Invoices", aliases: ["customer invoices", "invoices", "invoice", "invoicing", "bill a customer"] },
     { key: "quotations", href: "my-quotations.html", icon: "📋", label: "Quotations", aliases: ["quotations", "quotation", "quote", "quotes", "estimate", "estimates"] },
     { key: "orders", href: "my-orders.html", icon: "🛒", label: "Orders", aliases: ["orders", "order", "customer order", "sales order", "fulfilment", "fulfillment", "fulfil an order", "fulfill an order"] },
+    { key: "price-lists", href: "my-price-lists.html", icon: "💲", label: "Price Lists", aliases: ["price lists", "price list", "prices", "price", "wholesale pricing"] },
     { key: "documents", href: "my-documents.html", icon: "📄", label: "Documents", aliases: ["documents", "document", "docs", "files", "uploads"] },
     { key: "reports", href: "reports.html", icon: "📑", label: "Reports", aliases: ["reports", "report", "export", "exports"] },
     { key: "people", href: "my-people.html", icon: "👥", label: "People", aliases: ["people", "customers", "customer", "clients", "client", "leads", "lead", "staff", "employees", "employee", "contacts", "drivers", "driver", "suppliers", "supplier"] },
@@ -321,6 +322,14 @@
       answer: "Orders track a customer's commitment to buy through to fulfilment, separately from Quotations - a business can use either or both, they don't chain together. An order moves Pending → Confirmed, then each line gets fulfilled (partially or fully) as goods actually go out - if a line is linked to a real Item and Stock Tracking is on, fulfilling it automatically deducts stock. Once every line is fully fulfilled, use \"Convert to Invoice\" to bill it (starting as a draft). Cancelling is only possible before any fulfilment has started.",
       href: "my-orders.html",
       linkLabel: "Open Orders"
+    },
+    {
+      key: "price-lists-explained",
+      match: ["what is price lists", "how do price lists work", "wholesale pricing", "vip pricing", "price list feature", "override an item price", "link an item to a quote"],
+      question: "How do Price Lists work?",
+      answer: "Turn this on in Settings and every item already has its usual price - Price Lists let you create named lists (e.g. \"Wholesale\", \"VIP Customers\") that override that price for specific situations. When creating a Quotation, Customer Invoice, or Order, pick which pricing applies, then link a line to a real item and the price fills in automatically from that list (or the item's usual price if you leave it on default) - always still editable by hand.",
+      href: "my-price-lists.html",
+      linkLabel: "Open Price Lists"
     }
   ];
 
@@ -548,6 +557,7 @@
     { key: "createInvoice", match: ["create invoice", "add invoice", "new invoice", "bill a customer", "invoice a customer"], href: "my-customer-invoices.html", params: { action: "add" }, confirm: "Opening Customer Invoices with a new invoice ready to fill in." },
     { key: "createQuotation", match: ["create quotation", "add quotation", "new quotation", "create quote", "add quote", "new quote", "quote a customer"], href: "my-quotations.html", params: { action: "add" }, confirm: "Opening Quotations with a new quote ready to fill in." },
     { key: "createOrder", match: ["create order", "add order", "new order", "create a customer order", "log an order"], href: "my-orders.html", params: { action: "add" }, confirm: "Opening Orders with a new order ready to fill in." },
+    { key: "createPriceList", match: ["create price list", "add price list", "new price list", "create a wholesale price list"], href: "my-price-lists.html", params: { action: "add" }, confirm: "Opening Price Lists with a new price list ready to fill in." },
     { key: "uploadDocument", match: ["upload document", "upload a document", "add document"], href: "my-documents.html", params: { action: "add" }, confirm: "Opening Documents with a new document ready to fill in." },
     { key: "openCalendar", match: ["open calendar"], href: "my-calendar.html", params: {}, confirm: "Opening Calendar." },
     { key: "openReports", match: ["open reports"], href: "reports.html", params: {}, confirm: "Opening Reports." },
@@ -2369,6 +2379,19 @@
         return runOrderQueryIntent();
       }
 
+      // Live-data price list question ("price", "prices", "price list") -
+      // same reasoning as invoices/debtors/quotations/orders above,
+      // checked right after them since all are financial live-data
+      // questions.
+      if (isPriceListQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Price Lists aren't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runPriceListQueryIntent();
+      }
+
       // Health score diagnosis - works on BOTH surfaces (client Business
       // Health Score, admin Platform Health Score), unlike the asset/
       // payroll checks above which are client-only.
@@ -3306,6 +3329,71 @@
     return {
       spoken: "Pending fulfilment: " + formatNiaKES(pendingTotal) + " across " + pendingRows.length +
         " order" + (pendingRows.length === 1 ? "" : "s") + ". " + readyCount + " ready to invoice. " + overdueText + "."
+    };
+  }
+
+  // ---- Price Lists (Task 7) ----
+  // Reuses get_my_ungani_price_lists() - the exact RPC my-price-lists.html
+  // itself calls. "price"/"prices" are safe bare-keyword matches (checked
+  // deliberately, per the false-positive lesson from Orders' "order" vs
+  // "in order to") - no existing English word in common use contains
+  // "price" as a substring (surprise/comprise/enterprise all use "prise",
+  // not "price"), and "pricing" is intentionally left OUT of this list
+  // since it collides with the existing "VAT pricing mode" feature -
+  // "how does VAT pricing work" must keep reaching that topic, not this
+  // one.
+  function isPriceListQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["price list", "price lists", "prices", "price"].some(function (word) { return lower.indexOf(word) !== -1; });
+  }
+
+  async function runPriceListQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    if (!state.tenant || state.tenant.price_lists_enabled !== true) {
+      addNiaMessage(
+        `Price Lists isn't turned on yet. Enable it in Settings to create named pricing like "Wholesale" or "VIP Customers" — ${goldLink("my-settings.html", "Open Settings")}.`
+      );
+      return { spoken: "Price Lists isn't turned on yet." };
+    }
+
+    addNiaMessage("Checking your price lists...");
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_price_lists");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const priceLists = (response && !response.error && response.data && response.data.ok === true)
+      ? (response.data.price_lists || [])
+      : [];
+
+    if (!priceLists.length) {
+      addNiaMessage(
+        "No price lists yet. Create one from " + goldLink("my-price-lists.html", "Price Lists") + "."
+      );
+      return { spoken: "No price lists yet." };
+    }
+
+    const summary = priceLists.map(function (pl) {
+      return pl.name + " (" + pl.item_count + " item" + (pl.item_count === 1 ? "" : "s") + ")";
+    }).join(", ");
+
+    const html =
+      `<strong>Price Lists</strong>` +
+      `<div style="margin-top:8px;">💲 ${priceLists.length} price list${priceLists.length === 1 ? "" : "s"}: ${safe(summary)}</div>` +
+      `<div style="margin-top:8px;">${goldLink("my-price-lists.html", "See all price lists →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: priceLists.length + " price list" + (priceLists.length === 1 ? "" : "s") + ": " + summary + "."
     };
   }
 

@@ -56,6 +56,10 @@
       operationsItems.push(["debtors-payables", "my-debtors-payables.html", "📒", "Debtors & Payables"]);
     }
 
+    if (tenant && tenant.price_lists_enabled === true) {
+      operationsItems.push(["price-lists", "my-price-lists.html", "💲", "Price Lists"]);
+    }
+
     return [
       {
         key: "main",

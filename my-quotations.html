@@ -53,6 +53,10 @@
     let currentContext = null;
     let quotationRows = [];
     let customerOptions = [];
+    let stockItemOptions = [];
+    let priceListOptions = [];
+    let activePriceListMap = null;
+    let selectedPriceListId = "";
     let editingQuotationId = null;
     let editingQuotationItems = [];
     let printQuotationId = null;
@@ -79,6 +83,8 @@
       if (subEl) subEl.innerText = "Send quotes and convert accepted ones into invoices.";
 
       await loadCustomerOptions();
+      await loadStockItemOptions();
+      await loadPriceListOptions();
       await loadQuotationRows();
 
       if (printQuotationId) {
@@ -108,6 +114,85 @@
         console.warn("Could not load People for customer picker:", error.message);
         customerOptions = [];
       }
+    }
+
+    // Optional per-line link to a real item, purely for pulling in its
+    // price/name - never persisted (ungani_quotation_items has no item_id
+    // column, unlike Orders, since a Quotation line is a point-in-time
+    // snapshot, not a tracked link). Only loaded when Price Lists is on.
+    async function loadStockItemOptions() {
+      if (!currentContext.tenant || currentContext.tenant.price_lists_enabled !== true) {
+        stockItemOptions = [];
+        return;
+      }
+
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, title, property_name, property_price")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .limit(1000);
+
+        stockItemOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load Items for quotation-line picker:", error.message);
+        stockItemOptions = [];
+      }
+    }
+
+    function stockItemLabel(item) {
+      return item.item_name || item.name || item.title || item.property_name || "Item";
+    }
+
+    async function loadPriceListOptions() {
+      if (!currentContext.tenant || currentContext.tenant.price_lists_enabled !== true) {
+        priceListOptions = [];
+        return;
+      }
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_price_lists");
+        priceListOptions = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.price_lists || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load price lists:", error.message);
+        priceListOptions = [];
+      }
+    }
+
+    async function loadActivePriceListMap(priceListId) {
+      if (!priceListId) {
+        activePriceListMap = null;
+        return;
+      }
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_ungani_price_list_detail", { p_price_list_id: priceListId });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          activePriceListMap = null;
+          return;
+        }
+
+        activePriceListMap = new Map((response.data.entries || []).map(function (entry) { return [entry.item_id, entry.price]; }));
+      } catch (error) {
+        activePriceListMap = null;
+      }
+    }
+
+    // Resolution order: the selected price list's override for this item,
+    // then the item's own current price, then null (leave it manual).
+    function resolvePriceForItem(itemId) {
+      if (!itemId) return null;
+
+      if (activePriceListMap && activePriceListMap.has(itemId)) {
+        return activePriceListMap.get(itemId);
+      }
+
+      const item = stockItemOptions.find(function (it) { return String(it.id) === String(itemId); });
+      return item && item.property_price != null ? item.property_price : null;
     }
 
     async function loadQuotationRows() {
@@ -285,7 +370,7 @@
         return;
       }
 
-      editingQuotationItems = [{ description: "", quantity: 1, unit_price: 0 }];
+      editingQuotationItems = [{ item_id: null, description: "", quantity: 1, unit_price: 0 }];
       openQuotationModalForm(null);
     }
 
@@ -305,7 +390,7 @@
         });
 
         if (!editingQuotationItems.length) {
-          editingQuotationItems = [{ description: "", quantity: 1, unit_price: 0 }];
+          editingQuotationItems = [{ item_id: null, description: "", quantity: 1, unit_price: 0 }];
         }
 
         openQuotationModalForm(response.data.quotation);
@@ -316,6 +401,8 @@
 
     function openQuotationModalForm(quotation) {
       const isLocked = quotation && !["draft", "sent"].includes(quotation.status);
+      selectedPriceListId = "";
+      activePriceListMap = null;
 
       const bodyHtml = `
         <form onsubmit="saveQuotationRecord(event)">
@@ -370,6 +457,18 @@
               <textarea id="quotationPaymentDetails" rows="2" placeholder="e.g. Paybill 000000, Account: Your Name" ${isLocked ? "disabled" : ""}>${quotation ? UnganiClientShared.safe(quotation.payment_details || "") : ""}</textarea>
             </div>
           </div>
+
+          ${!isLocked && currentContext.tenant && currentContext.tenant.price_lists_enabled === true && priceListOptions.length ? `
+            <div style="margin-top:16px;">
+              <label for="quotationPricingSelector">Pricing</label>
+              <select id="quotationPricingSelector" onchange="handleQuotationPricingSelectorChange()">
+                <option value="">Default pricing (item's usual price)</option>
+                ${priceListOptions.map(function (pl) {
+                  return `<option value="${UnganiClientShared.attr(pl.id)}">${UnganiClientShared.safe(pl.name)}</option>`;
+                }).join("")}
+              </select>
+            </div>
+          ` : ""}
 
           <div style="margin-top:16px;">
             <label>Line items</label>
@@ -449,16 +548,27 @@
       }
     }
 
+    function quotationStockItemOptionsHtml(selectedId) {
+      const options = stockItemOptions.map(function (item) {
+        const selected = String(item.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(item.id)}"${selected}>${UnganiClientShared.safe(stockItemLabel(item))}</option>`;
+      }).join("");
+
+      return `<option value="">— Not linked to an item —</option>${options}`;
+    }
+
     function renderQuotationItemsTable() {
       const table = document.getElementById("quotationItemsTable");
       if (!table) return;
 
       const isLocked = document.getElementById("quotationCustomerName").disabled;
+      const showItemPicker = currentContext.tenant && currentContext.tenant.price_lists_enabled === true;
 
       table.innerHTML = editingQuotationItems.map(function (item, index) {
         return `
           <tr>
-            <td style="width:50%;"><input type="text" placeholder="Description" value="${UnganiClientShared.attr(item.description)}" oninput="updateQuotationItemField(${index}, 'description', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            ${showItemPicker ? `<td style="width:20%;"><select onchange="updateQuotationItemField(${index}, 'item_id', this.value)" ${isLocked ? "disabled" : ""}>${quotationStockItemOptionsHtml(item.item_id)}</select></td>` : ""}
+            <td style="width:${showItemPicker ? "30" : "50"}%;"><input type="text" placeholder="Description" value="${UnganiClientShared.attr(item.description)}" oninput="updateQuotationItemField(${index}, 'description', this.value)" ${isLocked ? "disabled" : ""} /></td>
             <td style="width:15%;"><input type="number" min="0" step="0.01" placeholder="Qty" value="${item.quantity}" oninput="updateQuotationItemField(${index}, 'quantity', this.value)" ${isLocked ? "disabled" : ""} /></td>
             <td style="width:20%;"><input type="number" min="0" step="0.01" placeholder="Unit price" value="${item.unit_price}" oninput="updateQuotationItemField(${index}, 'unit_price', this.value)" ${isLocked ? "disabled" : ""} /></td>
             <td style="width:10%;text-align:right;" class="quotation-item-line-total" data-row="${index}">${UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}</td>
@@ -469,20 +579,64 @@
     }
 
     function addQuotationItemRow() {
-      editingQuotationItems.push({ description: "", quantity: 1, unit_price: 0 });
+      editingQuotationItems.push({ item_id: null, description: "", quantity: 1, unit_price: 0 });
       renderQuotationItemsTable();
       handleQuotationTotalsChange();
     }
 
     function removeQuotationItemRow(index) {
       editingQuotationItems.splice(index, 1);
-      if (!editingQuotationItems.length) editingQuotationItems.push({ description: "", quantity: 1, unit_price: 0 });
+      if (!editingQuotationItems.length) editingQuotationItems.push({ item_id: null, description: "", quantity: 1, unit_price: 0 });
+      renderQuotationItemsTable();
+      handleQuotationTotalsChange();
+    }
+
+    // Picking an item pulls in its resolved price (from the active price
+    // list if one's selected, else the item's own price) and, if the
+    // description is still empty, its name - never persisted server-side,
+    // ungani_quotation_items has no item_id column, this is purely an
+    // entry aid.
+    function handleQuotationItemPick(index, itemId) {
+      editingQuotationItems[index].item_id = itemId || null;
+
+      if (!itemId) return;
+
+      const picked = stockItemOptions.find(function (it) { return String(it.id) === String(itemId); });
+      if (picked && !editingQuotationItems[index].description) {
+        editingQuotationItems[index].description = stockItemLabel(picked);
+      }
+
+      const resolvedPrice = resolvePriceForItem(itemId);
+      if (resolvedPrice != null) {
+        editingQuotationItems[index].unit_price = resolvedPrice;
+      }
+
+      renderQuotationItemsTable();
+      handleQuotationTotalsChange();
+    }
+
+    async function handleQuotationPricingSelectorChange() {
+      selectedPriceListId = document.getElementById("quotationPricingSelector").value;
+      await loadActivePriceListMap(selectedPriceListId);
+
+      editingQuotationItems.forEach(function (item) {
+        if (item.item_id) {
+          const resolvedPrice = resolvePriceForItem(item.item_id);
+          if (resolvedPrice != null) item.unit_price = resolvedPrice;
+        }
+      });
+
       renderQuotationItemsTable();
       handleQuotationTotalsChange();
     }
 
     function updateQuotationItemField(index, field, value) {
       if (!editingQuotationItems[index]) return;
+
+      if (field === "item_id") {
+        handleQuotationItemPick(index, value);
+        return;
+      }
 
       // Update state and just this row's computed total in place - do NOT
       // call renderQuotationItemsTable() here. Rebuilding the table's

@@ -54,6 +54,9 @@
     let orderRows = [];
     let customerOptions = [];
     let stockItemOptions = [];
+    let priceListOptions = [];
+    let activePriceListMap = null;
+    let selectedPriceListId = "";
     let editingOrderId = null;
     let editingOrderItems = [];
     let printOrderId = null;
@@ -81,6 +84,7 @@
 
       await loadCustomerOptions();
       await loadStockItemOptions();
+      await loadPriceListOptions();
       await loadOrderRows();
 
       if (printOrderId) {
@@ -120,7 +124,7 @@
       try {
         const response = await currentContext.supabaseClient
           .from("business_items")
-          .select("id, item_name, name, title, property_name, quantity")
+          .select("id, item_name, name, title, property_name, quantity, property_price")
           .eq("tenant_id", currentContext.tenantId)
           .is("deleted_at", null)
           .limit(1000);
@@ -134,6 +138,56 @@
 
     function stockItemLabel(item) {
       return item.item_name || item.name || item.title || item.property_name || "Item";
+    }
+
+    async function loadPriceListOptions() {
+      if (!currentContext.tenant || currentContext.tenant.price_lists_enabled !== true) {
+        priceListOptions = [];
+        return;
+      }
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_price_lists");
+        priceListOptions = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.price_lists || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load price lists:", error.message);
+        priceListOptions = [];
+      }
+    }
+
+    async function loadActivePriceListMap(priceListId) {
+      if (!priceListId) {
+        activePriceListMap = null;
+        return;
+      }
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_ungani_price_list_detail", { p_price_list_id: priceListId });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          activePriceListMap = null;
+          return;
+        }
+
+        activePriceListMap = new Map((response.data.entries || []).map(function (entry) { return [entry.item_id, entry.price]; }));
+      } catch (error) {
+        activePriceListMap = null;
+      }
+    }
+
+    // Resolution order: the selected price list's override for this item,
+    // then the item's own current price, then null (leave it manual).
+    function resolvePriceForItem(itemId) {
+      if (!itemId) return null;
+
+      if (activePriceListMap && activePriceListMap.has(itemId)) {
+        return activePriceListMap.get(itemId);
+      }
+
+      const item = stockItemOptions.find(function (it) { return String(it.id) === String(itemId); });
+      return item && item.property_price != null ? item.property_price : null;
     }
 
     async function loadOrderRows() {
@@ -357,6 +411,8 @@
     function openOrderModalForm(order) {
       const isLocked = order && !["pending", "confirmed"].includes(order.status);
       const canFulfil = order && ["confirmed", "partially_fulfilled"].includes(order.status);
+      selectedPriceListId = "";
+      activePriceListMap = null;
 
       const bodyHtml = `
         <form onsubmit="saveOrderRecord(event)">
@@ -411,6 +467,18 @@
               <textarea id="orderPaymentDetails" rows="2" placeholder="e.g. Paybill 000000, Account: Your Name" ${isLocked ? "disabled" : ""}>${order ? UnganiClientShared.safe(order.payment_details || "") : ""}</textarea>
             </div>
           </div>
+
+          ${!isLocked && currentContext.tenant && currentContext.tenant.price_lists_enabled === true && priceListOptions.length ? `
+            <div style="margin-top:16px;">
+              <label for="orderPricingSelector">Pricing</label>
+              <select id="orderPricingSelector" onchange="handleOrderPricingSelectorChange()">
+                <option value="">Default pricing (item's usual price)</option>
+                ${priceListOptions.map(function (pl) {
+                  return `<option value="${UnganiClientShared.attr(pl.id)}">${UnganiClientShared.safe(pl.name)}</option>`;
+                }).join("")}
+              </select>
+            </div>
+          ` : ""}
 
           <div style="margin-top:16px;">
             <label>Line items</label>
@@ -513,6 +581,21 @@
       }
     }
 
+    async function handleOrderPricingSelectorChange() {
+      selectedPriceListId = document.getElementById("orderPricingSelector").value;
+      await loadActivePriceListMap(selectedPriceListId);
+
+      editingOrderItems.forEach(function (item) {
+        if (item.item_id) {
+          const resolvedPrice = resolvePriceForItem(item.item_id);
+          if (resolvedPrice != null) item.unit_price = resolvedPrice;
+        }
+      });
+
+      renderOrderItemsTable();
+      handleOrderTotalsChange();
+    }
+
     function renderOrderItemsTable() {
       const table = document.getElementById("orderItemsTable");
       if (!table) return;
@@ -563,12 +646,29 @@
         // Convenience: auto-fill description from the picked item's name
         // if the description is still empty - same auto-fill pattern as
         // the customer-person picker, never overwrites something typed.
+        // Price, unlike description, refreshes every time an item is
+        // (re-)picked - the point of picking an item is to use its price.
+        let changed = false;
+
         if (value && !editingOrderItems[index].description) {
           const picked = stockItemOptions.find(function (it) { return String(it.id) === String(value); });
           if (picked) {
             editingOrderItems[index].description = stockItemLabel(picked);
-            renderOrderItemsTable();
+            changed = true;
           }
+        }
+
+        if (value) {
+          const resolvedPrice = resolvePriceForItem(value);
+          if (resolvedPrice != null) {
+            editingOrderItems[index].unit_price = resolvedPrice;
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          renderOrderItemsTable();
+          handleOrderTotalsChange();
         }
         return;
       }
