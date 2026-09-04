@@ -37,6 +37,7 @@
     { key: "money", href: "my-money.html", icon: "💰", label: "Money", aliases: ["money", "finance", "finances", "transactions", "expenses", "expense", "income", "payments", "payment", "petty cash"] },
     { key: "customer-invoices", href: "my-customer-invoices.html", icon: "📃", label: "Customer Invoices", aliases: ["customer invoices", "invoices", "invoice", "invoicing", "bill a customer"] },
     { key: "quotations", href: "my-quotations.html", icon: "📋", label: "Quotations", aliases: ["quotations", "quotation", "quote", "quotes", "estimate", "estimates"] },
+    { key: "orders", href: "my-orders.html", icon: "🛒", label: "Orders", aliases: ["orders", "order", "customer order", "sales order", "fulfilment", "fulfillment", "fulfil an order", "fulfill an order"] },
     { key: "documents", href: "my-documents.html", icon: "📄", label: "Documents", aliases: ["documents", "document", "docs", "files", "uploads"] },
     { key: "reports", href: "reports.html", icon: "📑", label: "Reports", aliases: ["reports", "report", "export", "exports"] },
     { key: "people", href: "my-people.html", icon: "👥", label: "People", aliases: ["people", "customers", "customer", "clients", "client", "leads", "lead", "staff", "employees", "employee", "contacts", "drivers", "driver", "suppliers", "supplier"] },
@@ -312,6 +313,14 @@
       answer: "Quotations let you send a customer a formal quote before any money's involved - same line items, VAT, and branded print layout as Customer Invoices, but its own lifecycle: Draft, Sent, Accepted, Rejected, or Cancelled, and it flags itself as Expired once its \"valid until\" date passes. Once a customer accepts, use \"Convert to Invoice\" to turn it straight into a real invoice (starting as a draft so you can review it first) - the quote itself then shows as Converted and can't be edited further.",
       href: "my-quotations.html",
       linkLabel: "Open Quotations"
+    },
+    {
+      key: "orders-explained",
+      match: ["what is orders", "how do orders work", "order fulfilment", "order fulfillment", "fulfil an order", "fulfill an order", "convert order to invoice", "order numbering", "link an item to an order"],
+      question: "How do Orders work?",
+      answer: "Orders track a customer's commitment to buy through to fulfilment, separately from Quotations - a business can use either or both, they don't chain together. An order moves Pending → Confirmed, then each line gets fulfilled (partially or fully) as goods actually go out - if a line is linked to a real Item and Stock Tracking is on, fulfilling it automatically deducts stock. Once every line is fully fulfilled, use \"Convert to Invoice\" to bill it (starting as a draft). Cancelling is only possible before any fulfilment has started.",
+      href: "my-orders.html",
+      linkLabel: "Open Orders"
     }
   ];
 
@@ -538,6 +547,7 @@
     { key: "createRecord", match: ["create record", "add record", "new record", "log a record"], href: "my-records.html", params: { action: "add" }, confirm: "Opening Records with a new record ready to fill in." },
     { key: "createInvoice", match: ["create invoice", "add invoice", "new invoice", "bill a customer", "invoice a customer"], href: "my-customer-invoices.html", params: { action: "add" }, confirm: "Opening Customer Invoices with a new invoice ready to fill in." },
     { key: "createQuotation", match: ["create quotation", "add quotation", "new quotation", "create quote", "add quote", "new quote", "quote a customer"], href: "my-quotations.html", params: { action: "add" }, confirm: "Opening Quotations with a new quote ready to fill in." },
+    { key: "createOrder", match: ["create order", "add order", "new order", "create a customer order", "log an order"], href: "my-orders.html", params: { action: "add" }, confirm: "Opening Orders with a new order ready to fill in." },
     { key: "uploadDocument", match: ["upload document", "upload a document", "add document"], href: "my-documents.html", params: { action: "add" }, confirm: "Opening Documents with a new document ready to fill in." },
     { key: "openCalendar", match: ["open calendar"], href: "my-calendar.html", params: {}, confirm: "Opening Calendar." },
     { key: "openReports", match: ["open reports"], href: "reports.html", params: {}, confirm: "Opening Reports." },
@@ -2348,6 +2358,17 @@
         return runQuotationQueryIntent();
       }
 
+      // Live-data orders question ("order", "orders", "fulfilment") - same
+      // reasoning as invoices/debtors/quotations above.
+      if (isOrderQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Orders aren't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runOrderQueryIntent();
+      }
+
       // Health score diagnosis - works on BOTH surfaces (client Business
       // Health Score, admin Platform Health Score), unlike the asset/
       // payroll checks above which are client-only.
@@ -3214,6 +3235,77 @@
     return {
       spoken: "Awaiting response: " + formatNiaKES(awaitingTotal) + " across " + awaitingRows.length +
         " quote" + (awaitingRows.length === 1 ? "" : "s") + ". " + acceptedCount + " accepted, ready to convert. " + expiredText + "."
+    };
+  }
+
+  // ---- Orders (Task 6) ----
+  // Reuses get_my_ungani_orders() - the exact RPC my-orders.html itself
+  // calls. Single-keyword-first from day one, matching the standing
+  // requirement set after the keyword-matching audit.
+  function isOrderQueryPhrase(text) {
+    const lower = text.toLowerCase();
+
+    if (lower.indexOf("orders") !== -1 || lower.indexOf("fulfilment") !== -1 || lower.indexOf("fulfillment") !== -1) {
+      return true;
+    }
+
+    // Bare "order" is ambiguous with the common English filler phrase
+    // "in order to ..." (e.g. "what do I do in order to reset my
+    // password?") - checked here specifically because this intent fires
+    // ahead of the generic help/how-to matchers, so a false match would
+    // hijack unrelated questions instead of answering them. "orders"
+    // (plural) above has no such collision and is unaffected.
+    return /\border\b/.test(lower) && lower.indexOf("order to") === -1;
+  }
+
+  async function runOrderQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your orders...");
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_orders");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const orders = (response && !response.error && response.data && response.data.ok === true)
+      ? (response.data.orders || [])
+      : [];
+
+    if (!orders.length) {
+      addNiaMessage(
+        "No orders yet. Create one from " + goldLink("my-orders.html", "Orders") + "."
+      );
+      return { spoken: "No orders yet." };
+    }
+
+    const pendingRows = orders.filter(function (o) { return o.status === "pending" || o.status === "confirmed"; });
+    const pendingTotal = pendingRows.reduce(function (sum, o) { return sum + (Number(o.total_amount) || 0); }, 0);
+    const readyCount = orders.filter(function (o) { return o.status === "fulfilled"; }).length;
+    const overdueCount = orders.filter(function (o) { return o.effective_status === "overdue"; }).length;
+
+    const overdueText = overdueCount > 0
+      ? overdueCount + " overdue order" + (overdueCount === 1 ? "" : "s")
+      : "None overdue";
+
+    const html =
+      `<strong>Orders</strong>` +
+      `<div style="margin-top:8px;">🛒 Pending fulfilment: ${safe(formatNiaKES(pendingTotal))} across ${pendingRows.length} order${pendingRows.length === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:4px;">✅ Ready to invoice: ${readyCount}</div>` +
+      `<div style="margin-top:4px;${overdueCount > 0 ? "color:#DC2626;" : "opacity:0.85;"}">${overdueCount > 0 ? "⚠️" : "✅"} ${safe(overdueText)}</div>` +
+      `<div style="margin-top:8px;">${goldLink("my-orders.html", "See all orders →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: "Pending fulfilment: " + formatNiaKES(pendingTotal) + " across " + pendingRows.length +
+        " order" + (pendingRows.length === 1 ? "" : "s") + ". " + readyCount + " ready to invoice. " + overdueText + "."
     };
   }
 

@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Orders</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script src="ungani-print-branding.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let orderRows = [];
+    let customerOptions = [];
+    let stockItemOptions = [];
+    let editingOrderId = null;
+    let editingOrderItems = [];
+    let printOrderId = null;
+    let printModeActive = false;
+
+    window.addEventListener("load", function () {
+      const params = new URLSearchParams(window.location.search);
+      printOrderId = params.get("print");
+
+      UnganiClientShared.initPage({
+        pageKey: "orders",
+        pageTitle: "Orders",
+        pageSubtitle: "Confirm customer orders, fulfil them, then convert to an invoice.",
+        onReady: startOrdersPage
+      });
+    });
+
+    async function startOrdersPage(context) {
+      currentContext = context;
+
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      const subEl = document.querySelector(".ungani-topbar p");
+      if (titleEl) titleEl.innerText = "Orders";
+      if (subEl) subEl.innerText = "Confirm customer orders, fulfil them, then convert to an invoice.";
+
+      await loadCustomerOptions();
+      await loadStockItemOptions();
+      await loadOrderRows();
+
+      if (printOrderId) {
+        renderPrintView(printOrderId);
+      } else {
+        renderOrdersPage();
+
+        const applyAction = new URLSearchParams(window.location.search).get("action");
+        if (applyAction === "add") {
+          setTimeout(function () { openOrderModal(); }, 250);
+        }
+      }
+    }
+
+    async function loadCustomerOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, person_type, phone, email")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("full_name")
+          .limit(500);
+
+        customerOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load People for customer picker:", error.message);
+        customerOptions = [];
+      }
+    }
+
+    // Optional per-line link to a real stock item - purely additive, works
+    // whether or not this tenant has Stock Tracking on. When it's off, the
+    // picker still lets a line reference an item for record-keeping, it
+    // just won't do anything to quantity on fulfilment.
+    async function loadStockItemOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, title, property_name, quantity")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .limit(1000);
+
+        stockItemOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load Items for order-line picker:", error.message);
+        stockItemOptions = [];
+      }
+    }
+
+    function stockItemLabel(item) {
+      return item.item_name || item.name || item.title || item.property_name || "Item";
+    }
+
+    async function loadOrderRows() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_orders");
+        orderRows = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.orders || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load orders:", error.message);
+        orderRows = [];
+      }
+    }
+
+    // ---- List page ----
+
+    function renderOrdersPage() {
+      const pendingRows = orderRows.filter(function (row) { return row.status === "pending" || row.status === "confirmed"; });
+      const pendingTotal = pendingRows.reduce(function (sum, row) { return sum + Number(row.total_amount); }, 0);
+
+      const overdueRows = orderRows.filter(function (row) { return row.effective_status === "overdue"; });
+
+      const readyRows = orderRows.filter(function (row) { return row.status === "fulfilled"; });
+      const readyTotal = readyRows.reduce(function (sum, row) { return sum + Number(row.total_amount); }, 0);
+
+      UnganiClientShared.setContent(`
+        <style>
+          .money-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .money-form-grid .wide {
+            grid-column: span 3;
+          }
+
+          @media (max-width: 720px) {
+            .money-form-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .money-form-grid .wide {
+              grid-column: span 1;
+            }
+          }
+
+          .orders-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          .orders-table th, .orders-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.1)); font-size: 14px; }
+          .orders-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--ungani-muted, #6B7280); }
+          .orders-table tr { cursor: pointer; }
+          .orders-table tr:hover { background: rgba(212,166,58,0.06); }
+          .order-status-badge { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+          .order-status-pending { background: rgba(107,114,128,0.15); color: #6B7280; }
+          .order-status-confirmed { background: rgba(37,99,235,0.15); color: #2563EB; }
+          .order-status-partially_fulfilled { background: rgba(212,166,58,0.2); color: #92600E; }
+          .order-status-fulfilled { background: rgba(22,163,74,0.15); color: #16A34A; }
+          .order-status-invoiced { background: rgba(212,166,58,0.2); color: #92600E; }
+          .order-status-cancelled { background: rgba(107,114,128,0.15); color: #6B7280; text-decoration: line-through; }
+          .order-status-overdue { background: rgba(220,38,38,0.15); color: #DC2626; }
+          .order-items-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+          .order-items-table td { padding: 8px 6px; vertical-align: top; }
+          .order-items-table input, .order-items-table select { width: 100%; }
+          .order-fulfil-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px dashed var(--ungani-border, rgba(6,28,61,0.15)); }
+          .order-fulfil-row input[type="number"] { width: 90px; }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Orders</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">Confirm it, fulfil it, bill it.</h2>
+          <p>Track a customer order from commitment through fulfilment, then convert it straight into an invoice once everything has shipped.</p>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn gold" onclick="openOrderModal()">+ New Order</button>
+            <button class="ungani-btn green" onclick="refreshOrdersPage()">Refresh</button>
+          </div>
+        </section>
+
+        <section class="money-kpi-grid" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
+          ${orderKpi("Pending Fulfilment", UnganiAnalytics.compactMoney(pendingTotal), pendingRows.length + " order(s) awaiting shipment", "#2563EB")}
+          ${orderKpi("Overdue Fulfilment", String(overdueRows.length), overdueRows.length > 0 ? "Past their expected date" : "None overdue", overdueRows.length > 0 ? "#DC2626" : "#16A34A")}
+          ${orderKpi("Ready to Invoice", UnganiAnalytics.compactMoney(readyTotal), readyRows.length + " fully fulfilled", readyRows.length > 0 ? "#16A34A" : "#6B7280")}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>All Orders</h3>
+              <p class="ungani-small">${orderRows.length} order(s).</p>
+            </div>
+          </div>
+
+          ${renderOrdersTable()}
+        </section>
+
+        <p class="ungani-small">Orders · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    function orderKpi(label, value, sub, accent) {
+      return `
+        <div class="ungani-card" style="border-left:4px solid ${accent};box-shadow:none;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ungani-muted,#6B7280);font-weight:800;">${UnganiClientShared.safe(label)}</div>
+          <div style="font-size:26px;font-weight:900;margin:6px 0 2px;">${UnganiClientShared.safe(value)}</div>
+          <div class="ungani-small">${UnganiClientShared.safe(sub)}</div>
+        </div>
+      `;
+    }
+
+    function renderOrdersTable() {
+      if (!orderRows.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No orders yet. Click "+ New Order" to create your first one.</p>`;
+      }
+
+      return `
+        <table class="orders-table">
+          <thead>
+            <tr>
+              <th>Order #</th>
+              <th>Customer</th>
+              <th>Order Date</th>
+              <th>Expected</th>
+              <th>Total</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orderRows.map(function (row) {
+              return `
+                <tr onclick="openOrderModal('${UnganiClientShared.attr(row.id)}')">
+                  <td><strong>${UnganiClientShared.safe(row.order_number)}</strong></td>
+                  <td>${UnganiClientShared.safe(row.customer_name)}</td>
+                  <td>${UnganiClientShared.formatDate(row.order_date)}</td>
+                  <td>${row.expected_fulfillment_date ? UnganiClientShared.formatDate(row.expected_fulfillment_date) : "—"}</td>
+                  <td>${UnganiClientShared.formatKES(row.total_amount)}</td>
+                  <td><span class="order-status-badge order-status-${UnganiClientShared.attr(row.effective_status)}">${UnganiClientShared.safe((row.effective_status || "").replace("_", " "))}</span></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function refreshOrdersPage() {
+      await loadOrderRows();
+      renderOrdersPage();
+      UnganiClientShared.showToast("Refreshed ✓");
+    }
+
+    // ---- Add/Edit modal ----
+
+    function customerOptionsHtml(selectedId) {
+      const options = customerOptions.map(function (person) {
+        const suffix = person.person_type ? " (" + person.person_type + ")" : "";
+        const selected = String(person.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(person.id)}"${selected}>${UnganiClientShared.safe(person.full_name)}${UnganiClientShared.safe(suffix)}</option>`;
+      }).join("");
+
+      return `<option value="">— Type customer details manually below —</option>${options}`;
+    }
+
+    function stockItemOptionsHtml(selectedId) {
+      const trackingOn = !!(currentContext.tenant && currentContext.tenant.stock_tracking_enabled);
+      const options = stockItemOptions.map(function (item) {
+        const stockHint = trackingOn && item.quantity != null ? " (" + item.quantity + " in stock)" : "";
+        const selected = String(item.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(item.id)}"${selected}>${UnganiClientShared.safe(stockItemLabel(item))}${UnganiClientShared.safe(stockHint)}</option>`;
+      }).join("");
+
+      return `<option value="">— Not linked to a stock item —</option>${options}`;
+    }
+
+    function openOrderModal(id) {
+      const row = id ? orderRows.find(function (item) { return String(item.id) === String(id); }) : null;
+
+      if (id && !row) {
+        UnganiClientShared.showToast("Order not found.");
+        return;
+      }
+
+      editingOrderId = row ? row.id : null;
+
+      if (editingOrderId) {
+        loadOrderDetailAndOpenModal(editingOrderId);
+        return;
+      }
+
+      editingOrderItems = [{ item_id: null, description: "", quantity: 1, fulfilled_quantity: 0, unit_price: 0 }];
+      openOrderModalForm(null);
+    }
+
+    async function loadOrderDetailAndOpenModal(id) {
+      UnganiClientShared.showToast("Loading order...");
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_ungani_order_detail", { p_order_id: id });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not load order: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        editingOrderItems = (response.data.items || []).map(function (item) {
+          return {
+            id: item.id, item_id: item.item_id, description: item.description,
+            quantity: item.quantity, fulfilled_quantity: item.fulfilled_quantity, unit_price: item.unit_price
+          };
+        });
+
+        if (!editingOrderItems.length) {
+          editingOrderItems = [{ item_id: null, description: "", quantity: 1, fulfilled_quantity: 0, unit_price: 0 }];
+        }
+
+        openOrderModalForm(response.data.order);
+      } catch (error) {
+        UnganiClientShared.showToast("Could not load order: " + error.message);
+      }
+    }
+
+    function openOrderModalForm(order) {
+      const isLocked = order && !["pending", "confirmed"].includes(order.status);
+      const canFulfil = order && ["confirmed", "partially_fulfilled"].includes(order.status);
+
+      const bodyHtml = `
+        <form onsubmit="saveOrderRecord(event)">
+          ${isLocked ? `<p class="ungani-small" style="color:#DC2626;margin:0 0 12px;">This order has started (or finished) fulfilment and can no longer be edited - you can still fulfil remaining lines, print it, or convert it once fully fulfilled.</p>` : ""}
+          ${order && order.status === "invoiced" ? `<p class="ungani-small" style="color:#92600E;margin:0 0 12px;">This order was already converted to an invoice.</p>` : ""}
+
+          <div class="money-form-grid">
+            <div>
+              <label for="orderCustomerPerson">Customer (from People)</label>
+              <select id="orderCustomerPerson" onchange="handleOrderCustomerPersonChange()" ${isLocked ? "disabled" : ""}>
+                ${customerOptionsHtml(order ? order.customer_person_id : "")}
+              </select>
+            </div>
+
+            <div>
+              <label for="orderCustomerName">Customer name *</label>
+              <input type="text" id="orderCustomerName" value="${order ? UnganiClientShared.attr(order.customer_name) : ""}" required ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="orderCustomerContact">Customer contact</label>
+              <input type="text" id="orderCustomerContact" placeholder="Phone or email" value="${order ? UnganiClientShared.attr(order.customer_contact || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="orderExpectedDate">Expected fulfilment date</label>
+              <input type="date" id="orderExpectedDate" value="${order && order.expected_fulfillment_date ? order.expected_fulfillment_date : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="orderCustomerAddress">Customer address</label>
+              <textarea id="orderCustomerAddress" rows="2" ${isLocked ? "disabled" : ""}>${order ? UnganiClientShared.safe(order.customer_address || "") : ""}</textarea>
+            </div>
+
+            <div>
+              <label for="orderDeliveryAddress">Delivery address (optional)</label>
+              <input type="text" id="orderDeliveryAddress" value="${order ? UnganiClientShared.attr(order.delivery_address || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="orderDeliveryDate">Delivery date (optional)</label>
+              <input type="date" id="orderDeliveryDate" value="${order && order.delivery_date ? order.delivery_date : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="orderPaymentTerms">Payment terms</label>
+              <input type="text" id="orderPaymentTerms" placeholder="e.g. Net 30, Due on receipt" value="${order ? UnganiClientShared.attr(order.payment_terms || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="orderPaymentDetails">Payment details (bank / M-Pesa)</label>
+              <textarea id="orderPaymentDetails" rows="2" placeholder="e.g. Paybill 000000, Account: Your Name" ${isLocked ? "disabled" : ""}>${order ? UnganiClientShared.safe(order.payment_details || "") : ""}</textarea>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <label>Line items</label>
+            <table class="order-items-table" id="orderItemsTable"></table>
+            ${isLocked ? "" : `<button type="button" class="ungani-btn light" style="margin-top:8px;" onclick="addOrderItemRow()">+ Add Line</button>`}
+          </div>
+
+          <div class="money-form-grid" style="margin-top:16px;">
+            <div>
+              <label style="display:flex;align-items:center;gap:10px;">
+                <input type="checkbox" id="orderVatApplicable" onchange="handleOrderTotalsChange()" ${order && order.vat_applicable ? "checked" : ""} ${isLocked ? "disabled" : ""} style="width:18px;height:18px;" />
+                VAT applies to this order
+              </label>
+            </div>
+
+            <div>
+              <label for="orderVatRate">VAT rate (%)</label>
+              <input type="number" id="orderVatRate" min="0" max="100" step="0.01" value="${order && order.vat_rate != null ? order.vat_rate : (currentContext.tenant && currentContext.tenant.default_vat_rate) || 16}" oninput="handleOrderTotalsChange()" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="orderVatPricingMode">VAT pricing</label>
+              <select id="orderVatPricingMode" onchange="handleOrderTotalsChange()" ${isLocked ? "disabled" : ""}>
+                <option value="inclusive" ${!order || order.vat_pricing_mode !== "exclusive" ? "selected" : ""}>Amount includes VAT</option>
+                <option value="exclusive" ${order && order.vat_pricing_mode === "exclusive" ? "selected" : ""}>VAT added on top</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="orderDiscountAmount">Discount (Ksh)</label>
+              <input type="number" id="orderDiscountAmount" min="0" step="0.01" value="${order ? order.discount_amount : 0}" oninput="handleOrderTotalsChange()" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="orderNotes">Notes</label>
+              <textarea id="orderNotes" rows="2" ${isLocked ? "disabled" : ""}>${order ? UnganiClientShared.safe(order.notes || "") : ""}</textarea>
+            </div>
+          </div>
+
+          <div id="orderTotalsBox" style="margin-top:14px;padding:14px;border-radius:14px;background:rgba(212,166,58,0.08);"></div>
+
+          ${order && canFulfil ? renderOrderFulfilmentSection(order) : ""}
+
+          <div class="ungani-button-row" style="margin-top:18px;justify-content:space-between;">
+            <div>
+              ${order ? `<button type="button" class="ungani-btn light" onclick="printOrderFromModal('${UnganiClientShared.attr(order.id)}')">Print</button>` : ""}
+              ${order && order.status === "pending" ? `<button type="button" class="ungani-btn dark" onclick="setOrderStatus('${UnganiClientShared.attr(order.id)}', 'confirmed')">Confirm Order</button>` : ""}
+              ${order && order.status === "fulfilled" ? `<button type="button" class="ungani-btn gold" onclick="convertOrderToInvoice('${UnganiClientShared.attr(order.id)}')">Convert to Invoice</button>` : ""}
+              ${order && ["pending", "confirmed"].includes(order.status) ? `<button type="button" class="ungani-btn red" onclick="setOrderStatus('${UnganiClientShared.attr(order.id)}', 'cancelled')">Cancel Order</button>` : ""}
+              ${order ? `<button type="button" class="ungani-btn red" onclick="deleteOrderRecord('${UnganiClientShared.attr(order.id)}')">Delete</button>` : ""}
+            </div>
+            <div class="ungani-button-row" style="margin:0;">
+              <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Close</button>
+              ${isLocked ? "" : `<button type="submit" class="ungani-btn gold">${order ? "Update Order" : "Create Order"}</button>`}
+            </div>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({
+        title: order ? ("Order " + order.order_number) : "New Order",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          renderOrderItemsTable();
+          handleOrderTotalsChange();
+        }
+      });
+    }
+
+    function renderOrderFulfilmentSection(order) {
+      return `
+        <div style="margin-top:16px;padding:14px;border:1px solid var(--ungani-border,rgba(6,28,61,0.1));border-radius:14px;">
+          <strong>Fulfilment</strong>
+          <p class="ungani-small" style="margin-top:4px;">Record what's actually shipped, per line. ${currentContext.tenant && currentContext.tenant.stock_tracking_enabled ? "Stock is deducted automatically for lines linked to a tracked item." : ""}</p>
+
+          ${editingOrderItems.map(function (item, index) {
+            const remaining = Number(item.quantity) - Number(item.fulfilled_quantity || 0);
+            if (remaining <= 0) {
+              return `<div class="order-fulfil-row"><span class="ungani-small">${UnganiClientShared.safe(item.description)}: fully fulfilled (${item.fulfilled_quantity}/${item.quantity}).</span></div>`;
+            }
+            return `
+              <div class="order-fulfil-row">
+                <span class="ungani-small" style="flex:1;">${UnganiClientShared.safe(item.description)}: ${item.fulfilled_quantity || 0}/${item.quantity} fulfilled</span>
+                <input type="number" min="0.01" max="${remaining}" step="0.01" id="fulfilQty_${index}" placeholder="Qty" value="${remaining}" />
+                <button type="button" class="ungani-btn green" style="padding:6px 12px;min-height:auto;" onclick="fulfilOrderLine('${UnganiClientShared.attr(item.id)}', ${index})">Fulfil</button>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function handleOrderCustomerPersonChange() {
+      const select = document.getElementById("orderCustomerPerson");
+      const person = customerOptions.find(function (item) { return String(item.id) === String(select.value); });
+
+      if (person) {
+        document.getElementById("orderCustomerName").value = person.full_name || "";
+        document.getElementById("orderCustomerContact").value = person.phone || person.email || "";
+      }
+    }
+
+    function renderOrderItemsTable() {
+      const table = document.getElementById("orderItemsTable");
+      if (!table) return;
+
+      const isLocked = document.getElementById("orderCustomerName").disabled;
+
+      table.innerHTML = editingOrderItems.map(function (item, index) {
+        return `
+          <tr>
+            <td style="width:25%;">
+              <select onchange="updateOrderItemField(${index}, 'item_id', this.value)" ${isLocked ? "disabled" : ""}>
+                ${stockItemOptionsHtml(item.item_id)}
+              </select>
+            </td>
+            <td style="width:30%;"><input type="text" placeholder="Description" value="${UnganiClientShared.attr(item.description)}" oninput="updateOrderItemField(${index}, 'description', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:13%;"><input type="number" min="0" step="0.01" placeholder="Qty" value="${item.quantity}" oninput="updateOrderItemField(${index}, 'quantity', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:17%;"><input type="number" min="0" step="0.01" placeholder="Unit price" value="${item.unit_price}" oninput="updateOrderItemField(${index}, 'unit_price', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:10%;text-align:right;" class="order-item-line-total" data-row="${index}">${UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}</td>
+            <td style="width:5%;">${isLocked ? "" : `<button type="button" class="ungani-btn red" style="padding:4px 8px;min-height:auto;" onclick="removeOrderItemRow(${index})">✕</button>`}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function addOrderItemRow() {
+      editingOrderItems.push({ item_id: null, description: "", quantity: 1, fulfilled_quantity: 0, unit_price: 0 });
+      renderOrderItemsTable();
+      handleOrderTotalsChange();
+    }
+
+    function removeOrderItemRow(index) {
+      editingOrderItems.splice(index, 1);
+      if (!editingOrderItems.length) editingOrderItems.push({ item_id: null, description: "", quantity: 1, fulfilled_quantity: 0, unit_price: 0 });
+      renderOrderItemsTable();
+      handleOrderTotalsChange();
+    }
+
+    function updateOrderItemField(index, field, value) {
+      if (!editingOrderItems[index]) return;
+
+      // Update state and just this row's computed total in place - do NOT
+      // call renderOrderItemsTable() here, same reasoning as
+      // my-customer-invoices.html/my-quotations.html: rebuilding the
+      // table's innerHTML on every keystroke drops focus/cursor position.
+      if (field === "item_id") {
+        editingOrderItems[index].item_id = value || null;
+
+        // Convenience: auto-fill description from the picked item's name
+        // if the description is still empty - same auto-fill pattern as
+        // the customer-person picker, never overwrites something typed.
+        if (value && !editingOrderItems[index].description) {
+          const picked = stockItemOptions.find(function (it) { return String(it.id) === String(value); });
+          if (picked) {
+            editingOrderItems[index].description = stockItemLabel(picked);
+            renderOrderItemsTable();
+          }
+        }
+        return;
+      }
+
+      editingOrderItems[index][field] = field === "description" ? value : Number(value) || 0;
+
+      const item = editingOrderItems[index];
+      const lineTotalCell = document.querySelector('.order-item-line-total[data-row="' + index + '"]');
+      if (lineTotalCell) {
+        lineTotalCell.textContent = UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0));
+      }
+
+      handleOrderTotalsChange();
+    }
+
+    // Client-side preview only, mirrors owner_upsert_ungani_order()'s VAT
+    // math exactly - the real, authoritative totals are always recomputed
+    // server-side.
+    function handleOrderTotalsChange() {
+      const box = document.getElementById("orderTotalsBox");
+      if (!box) return;
+
+      let subtotal = editingOrderItems.reduce(function (sum, item) {
+        return sum + ((Number(item.quantity) || 0) * (Number(item.unit_price) || 0));
+      }, 0);
+
+      const discount = Number(document.getElementById("orderDiscountAmount").value) || 0;
+      subtotal -= discount;
+
+      const vatApplicable = document.getElementById("orderVatApplicable").checked;
+      const vatRate = Number(document.getElementById("orderVatRate").value) || 0;
+      const vatMode = document.getElementById("orderVatPricingMode").value;
+
+      let vatAmount = 0;
+      let total = subtotal;
+
+      if (vatApplicable && vatRate > 0) {
+        if (vatMode === "exclusive") {
+          vatAmount = Math.round((subtotal * vatRate / 100) * 100) / 100;
+          total = subtotal + vatAmount;
+        } else {
+          vatAmount = Math.round((subtotal * vatRate / (100 + vatRate)) * 100) / 100;
+          total = subtotal;
+        }
+      }
+
+      box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Subtotal (after discount)</span><strong>${UnganiClientShared.formatKES(subtotal)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>VAT</span><strong>${UnganiClientShared.formatKES(vatAmount)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0 0;border-top:1px solid rgba(212,166,58,0.3);font-size:18px;"><span>Total</span><strong>${UnganiClientShared.formatKES(total)}</strong></div>
+      `;
+    }
+
+    async function saveOrderRecord(event) {
+      event.preventDefault();
+
+      const customerName = UnganiClientShared.value("orderCustomerName").trim();
+      if (!customerName) {
+        UnganiClientShared.showToast("Customer name is required.");
+        return;
+      }
+
+      const items = editingOrderItems
+        .filter(function (item) { return item.description && item.description.trim(); })
+        .map(function (item) {
+          return {
+            item_id: item.item_id || null,
+            description: item.description.trim(),
+            quantity: Number(item.quantity) || 1,
+            unit_price: Number(item.unit_price) || 0
+          };
+        });
+
+      if (!items.length) {
+        UnganiClientShared.showToast("Add at least one line item with a description.");
+        return;
+      }
+
+      const submitBtn = event.target.querySelector("button[type=submit]");
+
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        try {
+          const response = await currentContext.supabaseClient.rpc("owner_upsert_ungani_order", {
+            p_order_id: editingOrderId,
+            p_customer_person_id: UnganiClientShared.value("orderCustomerPerson") || null,
+            p_customer_name: customerName,
+            p_customer_address: UnganiClientShared.value("orderCustomerAddress") || null,
+            p_customer_contact: UnganiClientShared.value("orderCustomerContact") || null,
+            p_expected_fulfillment_date: UnganiClientShared.value("orderExpectedDate") || null,
+            p_delivery_address: UnganiClientShared.value("orderDeliveryAddress") || null,
+            p_delivery_date: UnganiClientShared.value("orderDeliveryDate") || null,
+            p_payment_terms: UnganiClientShared.value("orderPaymentTerms") || null,
+            p_payment_details: UnganiClientShared.value("orderPaymentDetails") || null,
+            p_vat_applicable: document.getElementById("orderVatApplicable").checked,
+            p_vat_rate: Number(UnganiClientShared.value("orderVatRate")) || null,
+            p_vat_pricing_mode: UnganiClientShared.value("orderVatPricingMode") || "inclusive",
+            p_discount_amount: Number(UnganiClientShared.value("orderDiscountAmount")) || 0,
+            p_currency: "KES",
+            p_notes: UnganiClientShared.value("orderNotes") || null,
+            p_items: items
+          });
+
+          if (response.error || !response.data || response.data.ok !== true) {
+            UnganiClientShared.showToast("Could not save order: " + (response.error ? response.error.message : (response.data && response.data.message)));
+            return;
+          }
+
+          UnganiClientShared.closeModal();
+          UnganiClientShared.showToast(editingOrderId ? "Order updated ✓" : "Order created ✓");
+          await loadOrderRows();
+          renderOrdersPage();
+        } catch (error) {
+          UnganiClientShared.showToast("Could not save order: " + error.message);
+        }
+      });
+    }
+
+    async function setOrderStatus(id, status) {
+      if (status === "cancelled" && !confirm("Cancel this order?")) return;
+      if (status === "confirmed" && !confirm("Confirm this order? Fulfilment can begin once confirmed.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("update_ungani_order_status", { p_order_id: id, p_status: status });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not update status: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Status updated ✓");
+        await loadOrderRows();
+        renderOrdersPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not update status: " + error.message);
+      }
+    }
+
+    async function fulfilOrderLine(orderItemId, index) {
+      const qtyInput = document.getElementById("fulfilQty_" + index);
+      const qty = Number(qtyInput ? qtyInput.value : 0);
+
+      if (!qty || qty <= 0) {
+        UnganiClientShared.showToast("Enter a quantity greater than zero.");
+        return;
+      }
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("fulfill_ungani_order_item", {
+          p_order_item_id: orderItemId,
+          p_fulfill_quantity: qty
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not fulfil: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Fulfilled ✓ (" + response.data.order_status.replace("_", " ") + ")");
+        await loadOrderRows();
+        renderOrdersPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not fulfil: " + error.message);
+      }
+    }
+
+    async function convertOrderToInvoice(id) {
+      if (!confirm("Convert this order into a real invoice? The invoice will start as a draft for you to review.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("convert_ungani_order_to_invoice", { p_order_id: id });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not convert to invoice: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Converted to invoice " + response.data.invoice_number + " ✓");
+        await loadOrderRows();
+        renderOrdersPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not convert to invoice: " + error.message);
+      }
+    }
+
+    async function deleteOrderRecord(id) {
+      if (!confirm("Move this order to Recently Deleted? You can restore it within 30 days.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+          p_table_name: "ungani_orders",
+          p_record_id: id,
+          p_delete_reason: "Deleted from Orders page"
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not delete order: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Order deleted ✓");
+        await loadOrderRows();
+        renderOrdersPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not delete order: " + error.message);
+      }
+    }
+
+    function printOrderFromModal(id) {
+      window.open("my-orders.html?print=" + encodeURIComponent(id), "_blank");
+    }
+
+    // ---- Print view ----
+
+    function computeOrderPrintStatus(order) {
+      if (["pending", "confirmed", "partially_fulfilled"].includes(order.status) && order.expected_fulfillment_date) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        if (order.expected_fulfillment_date < todayStr) return "overdue";
+      }
+      return order.status;
+    }
+
+    function orderStatusMeta(status) {
+      const map = {
+        pending: { label: "Pending", bg: "#F3F4F6", fg: "#6B7280" },
+        confirmed: { label: "Confirmed", bg: "#DBEAFE", fg: "#1D4ED8" },
+        partially_fulfilled: { label: "Partially Fulfilled", bg: "#FDF0D5", fg: "#92600E" },
+        fulfilled: { label: "Fulfilled", bg: "#DCFCE7", fg: "#15803D" },
+        invoiced: { label: "Invoiced", bg: "#FDF0D5", fg: "#92600E" },
+        cancelled: { label: "Cancelled", bg: "#F3F4F6", fg: "#6B7280" },
+        overdue: { label: "Overdue", bg: "#FEE2E2", fg: "#B91C1C" }
+      };
+      return map[status] || map.pending;
+    }
+
+    async function renderPrintView(id) {
+      printModeActive = true;
+
+      const response = await currentContext.supabaseClient.rpc("get_ungani_order_detail", { p_order_id: id });
+
+      if (response.error || !response.data || response.data.ok !== true) {
+        UnganiClientShared.setContent(`<p style="padding:40px;">Could not load this order. ${UnganiClientShared.safe(response.error ? response.error.message : (response.data && response.data.message) || "")}</p>`);
+        return;
+      }
+
+      const order = response.data.order;
+      const items = response.data.items || [];
+      const grossSubtotal = Number(order.subtotal) + Number(order.discount_amount || 0);
+      const statusMeta = orderStatusMeta(computeOrderPrintStatus(order));
+      const tenant = currentContext.tenant;
+
+      UnganiClientShared.setContent(`
+        <style>
+          .invoice-print-shell {
+            max-width: 820px; margin: 0 auto; background: #FFFFFF; color: #111827;
+            border-radius: 18px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            border: 1px solid #E5E7EB;
+          }
+          .invoice-print-shell, .invoice-print-shell * {
+            -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact;
+          }
+          .invoice-print-toolbar { max-width: 820px; margin: 0 auto 16px; display: flex; justify-content: flex-end; gap: 10px; }
+          .invoice-print-topbar { height: 8px; background: linear-gradient(90deg, #061C3D, #D4A63A); }
+          .invoice-print-body { padding: 36px; }
+
+          .invoice-print-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+
+          .invoice-meta-box { min-width: 230px; background: #061C3D; color: #FFFFFF; border-radius: 14px; padding: 18px 20px; }
+          .invoice-meta-title { font-size: 22px; font-weight: 900; letter-spacing: 1.2px; }
+          .invoice-meta-sub { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 2px; letter-spacing: 0.4px; }
+          .invoice-meta-table { width: 100%; margin-top: 14px; border-collapse: collapse; }
+          .invoice-meta-table td { padding: 3px 0; font-size: 13px; }
+          .invoice-meta-table td:first-child { color: rgba(255,255,255,0.55); }
+          .invoice-meta-table td:last-child { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+          .invoice-status-chip { display: inline-block; margin-top: 12px; padding: 5px 14px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; }
+
+          .invoice-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 30px; }
+          .invoice-party-box { border: 1px solid #E5E7EB; border-left: 3px solid #D4A63A; border-radius: 10px; padding: 14px 16px; background: #FAFAFA; }
+          .invoice-party-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #061C3D; font-weight: 800; }
+          .invoice-party-body { margin-top: 8px; line-height: 1.6; font-size: 13.5px; }
+
+          .invoice-print-table { width: 100%; border-collapse: collapse; margin-top: 30px; border: 1px solid #E5E7EB; border-radius: 10px; overflow: hidden; }
+          .invoice-print-table thead th { background: #061C3D; color: #FFFFFF; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+          .invoice-print-table tbody td { padding: 11px 12px; border-bottom: 1px solid #EEF0F3; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+          .invoice-print-table tbody tr:nth-child(even) { background: #FAFAFA; }
+          .invoice-print-table tbody tr:last-child td { border-bottom: none; }
+
+          .invoice-print-totals { display: flex; justify-content: flex-end; margin-top: 18px; }
+          .invoice-print-totals table { min-width: 280px; border-collapse: collapse; }
+          .invoice-print-totals td { padding: 6px 4px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+          .invoice-total-due td { padding-top: 12px; border-top: 2px solid #061C3D; font-size: 19px; font-weight: 900; color: #061C3D; }
+
+          .invoice-payment-box { margin-top: 26px; border: 1px solid #EADDB8; background: #FBF6E9; border-radius: 12px; padding: 16px 18px; }
+          .invoice-payment-box-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #92600E; font-weight: 800; margin-bottom: 8px; }
+          .invoice-payment-row { font-size: 13.5px; line-height: 1.6; }
+          .invoice-payment-row + .invoice-payment-row { margin-top: 6px; }
+
+          @media print {
+            @page { size: A4; margin: 12mm; }
+
+            body { background: #FFFFFF !important; }
+
+            .no-print,
+            .ungani-sidebar,
+            .ungani-mobile-bottom,
+            .ungani-mobile-nav,
+            .ungani-topbar,
+            .ungani-toast,
+            .invoice-print-toolbar,
+            #niaFabBtn,
+            #niaTagline,
+            #niaHelpBtn,
+            #unganiPushBanner,
+            .nia-fab,
+            .nia-tagline,
+            .ungani-push-banner {
+              display: none !important;
+            }
+
+            .ungani-app-shell,
+            .ungani-main,
+            .ungani-content {
+              display: block !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              max-width: none !important;
+            }
+
+            .invoice-print-shell { box-shadow: none !important; border-radius: 0 !important; border: none !important; }
+          }
+        </style>
+
+        <div class="invoice-print-toolbar">
+          <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
+          <a class="ungani-btn light" href="my-orders.html">Back to Orders</a>
+        </div>
+
+        <div class="invoice-print-shell">
+          <div class="invoice-print-topbar"></div>
+          <div class="invoice-print-body">
+
+            <div class="invoice-print-header">
+              ${UnganiPrintBranding.renderHeaderBlock(tenant, { logoSize: 74, contactColor: "#6B7280", nameColor: "#061C3D" })}
+
+              <div class="invoice-meta-box">
+                <div class="invoice-meta-title">ORDER</div>
+                <div class="invoice-meta-sub">${UnganiClientShared.safe(order.order_number)}</div>
+                <table class="invoice-meta-table">
+                  <tr><td>Order date</td><td>${UnganiClientShared.formatDate(order.order_date)}</td></tr>
+                  ${order.expected_fulfillment_date ? `<tr><td>Expected</td><td>${UnganiClientShared.formatDate(order.expected_fulfillment_date)}</td></tr>` : ""}
+                </table>
+                <div class="invoice-status-chip" style="background:${statusMeta.bg};color:${statusMeta.fg};">${statusMeta.label}</div>
+              </div>
+            </div>
+
+            <div class="invoice-parties">
+              <div class="invoice-party-box">
+                <div class="invoice-party-label">Ordered By</div>
+                <div class="invoice-party-body">
+                  <strong>${UnganiClientShared.safe(order.customer_name)}</strong><br />
+                  ${order.customer_address ? UnganiClientShared.safe(order.customer_address).replace(/\n/g, "<br />") + "<br />" : ""}
+                  ${order.customer_contact ? UnganiClientShared.safe(order.customer_contact) : ""}
+                </div>
+              </div>
+
+              ${order.delivery_address || order.delivery_date ? `
+                <div class="invoice-party-box">
+                  <div class="invoice-party-label">Delivery</div>
+                  <div class="invoice-party-body">
+                    ${order.delivery_address ? UnganiClientShared.safe(order.delivery_address) + "<br />" : ""}
+                    ${order.delivery_date ? UnganiClientShared.formatDate(order.delivery_date) : ""}
+                  </div>
+                </div>
+              ` : ""}
+            </div>
+
+            <table class="invoice-print-table">
+              <thead>
+                <tr><th>Description</th><th>Qty</th><th>Fulfilled</th><th>Unit Price</th><th style="text-align:right;">Amount</th></tr>
+              </thead>
+              <tbody>
+                ${items.map(function (item) {
+                  return `<tr><td>${UnganiClientShared.safe(item.description)}</td><td>${item.quantity}</td><td>${item.fulfilled_quantity}</td><td>${UnganiClientShared.formatKES(item.unit_price)}</td><td style="text-align:right;">${UnganiClientShared.formatKES(item.line_subtotal)}</td></tr>`;
+                }).join("")}
+              </tbody>
+            </table>
+
+            <div class="invoice-print-totals">
+              <table>
+                <tr><td>Subtotal</td><td style="text-align:right;">${UnganiClientShared.formatKES(grossSubtotal)}</td></tr>
+                ${Number(order.discount_amount) > 0 ? `<tr><td>Discount</td><td style="text-align:right;">-${UnganiClientShared.formatKES(order.discount_amount)}</td></tr>` : ""}
+                ${order.vat_applicable ? `<tr><td>VAT${order.vat_pricing_mode === "inclusive" ? " (included)" : ""}</td><td style="text-align:right;">${UnganiClientShared.formatKES(order.vat_amount)}</td></tr>` : ""}
+                <tr class="invoice-total-due"><td>Total</td><td style="text-align:right;">${UnganiClientShared.formatKES(order.total_amount)}</td></tr>
+              </table>
+            </div>
+
+            ${order.payment_terms || order.payment_details ? `
+              <div class="invoice-payment-box">
+                <div class="invoice-payment-box-title">Payment Information</div>
+                ${order.payment_terms ? `<div class="invoice-payment-row"><strong>Terms:</strong> ${UnganiClientShared.safe(order.payment_terms)}</div>` : ""}
+                ${order.payment_details ? `<div class="invoice-payment-row"><strong>Bank / M-Pesa details:</strong> ${UnganiClientShared.safe(order.payment_details).replace(/\n/g, "<br />")}</div>` : ""}
+              </div>
+            ` : ""}
+
+            ${order.notes ? `<div style="margin-top:16px;font-size:13px;color:#6B7280;">${UnganiClientShared.safe(order.notes)}</div>` : ""}
+
+            ${UnganiPrintBranding.renderPoweredByFooter()}
+          </div>
+        </div>
+      `);
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
