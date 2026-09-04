@@ -36,6 +36,7 @@
     { key: "dashboard", href: "client.html", icon: "🏠", label: "Dashboard", aliases: ["home", "dashboard", "main page"] },
     { key: "money", href: "my-money.html", icon: "💰", label: "Money", aliases: ["money", "finance", "finances", "transactions", "expenses", "expense", "income", "payments", "payment", "petty cash"] },
     { key: "customer-invoices", href: "my-customer-invoices.html", icon: "📃", label: "Customer Invoices", aliases: ["customer invoices", "invoices", "invoice", "invoicing", "bill a customer"] },
+    { key: "quotations", href: "my-quotations.html", icon: "📋", label: "Quotations", aliases: ["quotations", "quotation", "quote", "quotes", "estimate", "estimates"] },
     { key: "documents", href: "my-documents.html", icon: "📄", label: "Documents", aliases: ["documents", "document", "docs", "files", "uploads"] },
     { key: "reports", href: "reports.html", icon: "📑", label: "Reports", aliases: ["reports", "report", "export", "exports"] },
     { key: "people", href: "my-people.html", icon: "👥", label: "People", aliases: ["people", "customers", "customer", "clients", "client", "leads", "lead", "staff", "employees", "employee", "contacts", "drivers", "driver", "suppliers", "supplier"] },
@@ -303,6 +304,14 @@
       answer: "A Payee is for people you pay who don't need to log into UNGANI OS - a driver, cleaner, or casual worker, for example. Unlike a full Team Access profile, adding a Payee doesn't use up one of your paid user seats. Add one from Team Access, or on the fly from Money's \"Paid To\" field when recording an expense. Payees are expense-only - there's no income side.",
       href: "my-team-access.html",
       linkLabel: "Open Team Access"
+    },
+    {
+      key: "quotations-explained",
+      match: ["what is quotations", "how do quotations work", "quote a customer", "quotation feature", "convert quote to invoice", "quotation numbering"],
+      question: "How do Quotations work?",
+      answer: "Quotations let you send a customer a formal quote before any money's involved - same line items, VAT, and branded print layout as Customer Invoices, but its own lifecycle: Draft, Sent, Accepted, Rejected, or Cancelled, and it flags itself as Expired once its \"valid until\" date passes. Once a customer accepts, use \"Convert to Invoice\" to turn it straight into a real invoice (starting as a draft so you can review it first) - the quote itself then shows as Converted and can't be edited further.",
+      href: "my-quotations.html",
+      linkLabel: "Open Quotations"
     }
   ];
 
@@ -528,6 +537,7 @@
     { key: "createProperty", match: ["create property", "add property", "new property", "add item", "create item", "new item"], href: "my-items.html", params: { action: "add" }, confirm: "Opening Items with a new item ready to fill in." },
     { key: "createRecord", match: ["create record", "add record", "new record", "log a record"], href: "my-records.html", params: { action: "add" }, confirm: "Opening Records with a new record ready to fill in." },
     { key: "createInvoice", match: ["create invoice", "add invoice", "new invoice", "bill a customer", "invoice a customer"], href: "my-customer-invoices.html", params: { action: "add" }, confirm: "Opening Customer Invoices with a new invoice ready to fill in." },
+    { key: "createQuotation", match: ["create quotation", "add quotation", "new quotation", "create quote", "add quote", "new quote", "quote a customer"], href: "my-quotations.html", params: { action: "add" }, confirm: "Opening Quotations with a new quote ready to fill in." },
     { key: "uploadDocument", match: ["upload document", "upload a document", "add document"], href: "my-documents.html", params: { action: "add" }, confirm: "Opening Documents with a new document ready to fill in." },
     { key: "openCalendar", match: ["open calendar"], href: "my-calendar.html", params: {}, confirm: "Opening Calendar." },
     { key: "openReports", match: ["open reports"], href: "reports.html", params: {}, confirm: "Opening Reports." },
@@ -2326,6 +2336,18 @@
         return runDebtorsQueryIntent();
       }
 
+      // Live-data quotations question ("quote", "quotation", "estimate") -
+      // same reasoning as invoices/debtors above, checked right after them
+      // since all three are financial live-data questions.
+      if (isQuotationQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Quotations aren't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runQuotationQueryIntent();
+      }
+
       // Health score diagnosis - works on BOTH surfaces (client Business
       // Health Score, admin Platform Health Score), unlike the asset/
       // payroll checks above which are client-only.
@@ -3129,6 +3151,69 @@
 
     return {
       spoken: "Owed to you: " + formatNiaKES(owedToMe) + ". You owe: " + formatNiaKES(iOwe) + "."
+    };
+  }
+
+  // ---- Quotations (Task 5) ----
+  // Reuses get_my_ungani_quotations() - the exact RPC my-quotations.html
+  // itself calls - rather than a canned answer. A bare mention of the
+  // topic is enough on its own, matching every other module fixed in the
+  // keyword-recognition audit; this one was built single-keyword-first
+  // from the start per that standing requirement, not retrofitted.
+  function isQuotationQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["quotation", "quotations", "quote", "quotes", "estimate", "estimates"]
+      .some(function (word) { return lower.indexOf(word) !== -1; });
+  }
+
+  async function runQuotationQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your quotations...");
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_quotations");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const quotations = (response && !response.error && response.data && response.data.ok === true)
+      ? (response.data.quotations || [])
+      : [];
+
+    if (!quotations.length) {
+      addNiaMessage(
+        "No quotations yet. Create one from " + goldLink("my-quotations.html", "Quotations") + "."
+      );
+      return { spoken: "No quotations yet." };
+    }
+
+    const awaitingRows = quotations.filter(function (q) { return q.effective_status === "sent"; });
+    const awaitingTotal = awaitingRows.reduce(function (sum, q) { return sum + (Number(q.total_amount) || 0); }, 0);
+    const acceptedCount = quotations.filter(function (q) { return q.status === "accepted"; }).length;
+    const expiredCount = quotations.filter(function (q) { return q.effective_status === "expired"; }).length;
+
+    const expiredText = expiredCount > 0
+      ? expiredCount + " expired quote" + (expiredCount === 1 ? "" : "s")
+      : "None expired";
+
+    const html =
+      `<strong>Quotations</strong>` +
+      `<div style="margin-top:8px;">📋 Awaiting response: ${safe(formatNiaKES(awaitingTotal))} across ${awaitingRows.length} quote${awaitingRows.length === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:4px;">✅ Accepted, ready to convert: ${acceptedCount}</div>` +
+      `<div style="margin-top:4px;${expiredCount > 0 ? "color:#D97706;" : "opacity:0.85;"}">${expiredCount > 0 ? "⚠️" : "✅"} ${safe(expiredText)}</div>` +
+      `<div style="margin-top:8px;">${goldLink("my-quotations.html", "See all quotations →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: "Awaiting response: " + formatNiaKES(awaitingTotal) + " across " + awaitingRows.length +
+        " quote" + (awaitingRows.length === 1 ? "" : "s") + ". " + acceptedCount + " accepted, ready to convert. " + expiredText + "."
     };
   }
 

@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Quotations</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script src="ungani-print-branding.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let quotationRows = [];
+    let customerOptions = [];
+    let editingQuotationId = null;
+    let editingQuotationItems = [];
+    let printQuotationId = null;
+    let printModeActive = false;
+
+    window.addEventListener("load", function () {
+      const params = new URLSearchParams(window.location.search);
+      printQuotationId = params.get("print");
+
+      UnganiClientShared.initPage({
+        pageKey: "quotations",
+        pageTitle: "Quotations",
+        pageSubtitle: "Send quotes and convert accepted ones into invoices.",
+        onReady: startQuotationsPage
+      });
+    });
+
+    async function startQuotationsPage(context) {
+      currentContext = context;
+
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      const subEl = document.querySelector(".ungani-topbar p");
+      if (titleEl) titleEl.innerText = "Quotations";
+      if (subEl) subEl.innerText = "Send quotes and convert accepted ones into invoices.";
+
+      await loadCustomerOptions();
+      await loadQuotationRows();
+
+      if (printQuotationId) {
+        renderPrintView(printQuotationId);
+      } else {
+        renderQuotationsPage();
+
+        const applyAction = new URLSearchParams(window.location.search).get("action");
+        if (applyAction === "add") {
+          setTimeout(function () { openQuotationModal(); }, 250);
+        }
+      }
+    }
+
+    async function loadCustomerOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, person_type, phone, email")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("full_name")
+          .limit(500);
+
+        customerOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load People for customer picker:", error.message);
+        customerOptions = [];
+      }
+    }
+
+    async function loadQuotationRows() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_quotations");
+        quotationRows = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.quotations || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load quotations:", error.message);
+        quotationRows = [];
+      }
+    }
+
+    // ---- List page ----
+
+    function renderQuotationsPage() {
+      const openRows = quotationRows.filter(function (row) { return row.effective_status === "sent"; });
+      const openTotal = openRows.reduce(function (sum, row) { return sum + Number(row.total_amount); }, 0);
+
+      const expiredRows = quotationRows.filter(function (row) { return row.effective_status === "expired"; });
+
+      const acceptedRows = quotationRows.filter(function (row) { return row.status === "accepted"; });
+      const acceptedTotal = acceptedRows.reduce(function (sum, row) { return sum + Number(row.total_amount); }, 0);
+
+      UnganiClientShared.setContent(`
+        <style>
+          .money-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .money-form-grid .wide {
+            grid-column: span 3;
+          }
+
+          @media (max-width: 720px) {
+            .money-form-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .money-form-grid .wide {
+              grid-column: span 1;
+            }
+          }
+
+          .quotations-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          .quotations-table th, .quotations-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.1)); font-size: 14px; }
+          .quotations-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--ungani-muted, #6B7280); }
+          .quotations-table tr { cursor: pointer; }
+          .quotations-table tr:hover { background: rgba(212,166,58,0.06); }
+          .quotation-status-badge { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+          .quotation-status-draft { background: rgba(107,114,128,0.15); color: #6B7280; }
+          .quotation-status-sent { background: rgba(37,99,235,0.15); color: #2563EB; }
+          .quotation-status-accepted { background: rgba(22,163,74,0.15); color: #16A34A; }
+          .quotation-status-rejected { background: rgba(220,38,38,0.15); color: #DC2626; }
+          .quotation-status-cancelled { background: rgba(107,114,128,0.15); color: #6B7280; text-decoration: line-through; }
+          .quotation-status-expired { background: rgba(217,119,6,0.15); color: #D97706; }
+          .quotation-status-converted { background: rgba(212,166,58,0.2); color: #92600E; }
+          .invoice-items-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+          .invoice-items-table td { padding: 8px 6px; vertical-align: top; }
+          .invoice-items-table input { width: 100%; }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Quotations</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">Quote it before you bill it.</h2>
+          <p>Send a professional quote, track whether it's accepted, and convert it straight into an invoice when it is.</p>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn gold" onclick="openQuotationModal()">+ New Quotation</button>
+            <button class="ungani-btn green" onclick="refreshQuotationsPage()">Refresh</button>
+          </div>
+        </section>
+
+        <section class="money-kpi-grid" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
+          ${quotationKpi("Awaiting Response", UnganiAnalytics.compactMoney(openTotal), openRows.length + " quote(s) sent", "#2563EB")}
+          ${quotationKpi("Expired", String(expiredRows.length), expiredRows.length > 0 ? "Past their valid-until date" : "None expired", expiredRows.length > 0 ? "#D97706" : "#16A34A")}
+          ${quotationKpi("Accepted", UnganiAnalytics.compactMoney(acceptedTotal), acceptedRows.length + " ready to convert", acceptedRows.length > 0 ? "#16A34A" : "#6B7280")}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>All Quotations</h3>
+              <p class="ungani-small">${quotationRows.length} quotation(s).</p>
+            </div>
+          </div>
+
+          ${renderQuotationsTable()}
+        </section>
+
+        <p class="ungani-small">Quotations · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    function quotationKpi(label, value, sub, accent) {
+      return `
+        <div class="ungani-card" style="border-left:4px solid ${accent};box-shadow:none;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ungani-muted,#6B7280);font-weight:800;">${UnganiClientShared.safe(label)}</div>
+          <div style="font-size:26px;font-weight:900;margin:6px 0 2px;">${UnganiClientShared.safe(value)}</div>
+          <div class="ungani-small">${UnganiClientShared.safe(sub)}</div>
+        </div>
+      `;
+    }
+
+    function renderQuotationsTable() {
+      if (!quotationRows.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No quotations yet. Click "+ New Quotation" to create your first one.</p>`;
+      }
+
+      return `
+        <table class="quotations-table">
+          <thead>
+            <tr>
+              <th>Quote #</th>
+              <th>Customer</th>
+              <th>Issue Date</th>
+              <th>Valid Until</th>
+              <th>Total</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${quotationRows.map(function (row) {
+              return `
+                <tr onclick="openQuotationModal('${UnganiClientShared.attr(row.id)}')">
+                  <td><strong>${UnganiClientShared.safe(row.quotation_number)}</strong></td>
+                  <td>${UnganiClientShared.safe(row.customer_name)}</td>
+                  <td>${UnganiClientShared.formatDate(row.issue_date)}</td>
+                  <td>${row.valid_until ? UnganiClientShared.formatDate(row.valid_until) : "—"}</td>
+                  <td>${UnganiClientShared.formatKES(row.total_amount)}</td>
+                  <td><span class="quotation-status-badge quotation-status-${UnganiClientShared.attr(row.effective_status)}">${UnganiClientShared.safe((row.effective_status || "").replace("_", " "))}</span></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function refreshQuotationsPage() {
+      await loadQuotationRows();
+      renderQuotationsPage();
+      UnganiClientShared.showToast("Refreshed ✓");
+    }
+
+    // ---- Add/Edit modal ----
+
+    function customerOptionsHtml(selectedId) {
+      const options = customerOptions.map(function (person) {
+        const suffix = person.person_type ? " (" + person.person_type + ")" : "";
+        const selected = String(person.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(person.id)}"${selected}>${UnganiClientShared.safe(person.full_name)}${UnganiClientShared.safe(suffix)}</option>`;
+      }).join("");
+
+      return `<option value="">— Type customer details manually below —</option>${options}`;
+    }
+
+    function openQuotationModal(id) {
+      const row = id ? quotationRows.find(function (item) { return String(item.id) === String(id); }) : null;
+
+      if (id && !row) {
+        UnganiClientShared.showToast("Quotation not found.");
+        return;
+      }
+
+      editingQuotationId = row ? row.id : null;
+
+      // The list RPC only returns summary fields - for editing, fetch the
+      // full detail (items included) before opening the form.
+      if (editingQuotationId) {
+        loadQuotationDetailAndOpenModal(editingQuotationId);
+        return;
+      }
+
+      editingQuotationItems = [{ description: "", quantity: 1, unit_price: 0 }];
+      openQuotationModalForm(null);
+    }
+
+    async function loadQuotationDetailAndOpenModal(id) {
+      UnganiClientShared.showToast("Loading quotation...");
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_ungani_quotation_detail", { p_quotation_id: id });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not load quotation: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        editingQuotationItems = (response.data.items || []).map(function (item) {
+          return { description: item.description, quantity: item.quantity, unit_price: item.unit_price };
+        });
+
+        if (!editingQuotationItems.length) {
+          editingQuotationItems = [{ description: "", quantity: 1, unit_price: 0 }];
+        }
+
+        openQuotationModalForm(response.data.quotation);
+      } catch (error) {
+        UnganiClientShared.showToast("Could not load quotation: " + error.message);
+      }
+    }
+
+    function openQuotationModalForm(quotation) {
+      const isLocked = quotation && !["draft", "sent"].includes(quotation.status);
+
+      const bodyHtml = `
+        <form onsubmit="saveQuotationRecord(event)">
+          ${isLocked ? `<p class="ungani-small" style="color:#DC2626;margin:0 0 12px;">This quotation has moved past draft/sent and can no longer be edited - you can still print it, change its status, or convert it to an invoice.</p>` : ""}
+          ${quotation && quotation.status === "converted" ? `<p class="ungani-small" style="color:#92600E;margin:0 0 12px;">This quotation was already converted to an invoice.</p>` : ""}
+
+          <div class="money-form-grid">
+            <div>
+              <label for="quotationCustomerPerson">Customer (from People)</label>
+              <select id="quotationCustomerPerson" onchange="handleQuotationCustomerPersonChange()" ${isLocked ? "disabled" : ""}>
+                ${customerOptionsHtml(quotation ? quotation.customer_person_id : "")}
+              </select>
+            </div>
+
+            <div>
+              <label for="quotationCustomerName">Customer name *</label>
+              <input type="text" id="quotationCustomerName" value="${quotation ? UnganiClientShared.attr(quotation.customer_name) : ""}" required ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="quotationCustomerContact">Customer contact</label>
+              <input type="text" id="quotationCustomerContact" placeholder="Phone or email" value="${quotation ? UnganiClientShared.attr(quotation.customer_contact || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="quotationValidUntil">Valid until</label>
+              <input type="date" id="quotationValidUntil" value="${quotation && quotation.valid_until ? quotation.valid_until : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="quotationCustomerAddress">Customer address</label>
+              <textarea id="quotationCustomerAddress" rows="2" ${isLocked ? "disabled" : ""}>${quotation ? UnganiClientShared.safe(quotation.customer_address || "") : ""}</textarea>
+            </div>
+
+            <div>
+              <label for="quotationDeliveryAddress">Delivery address (optional)</label>
+              <input type="text" id="quotationDeliveryAddress" value="${quotation ? UnganiClientShared.attr(quotation.delivery_address || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="quotationDeliveryDate">Delivery date (optional)</label>
+              <input type="date" id="quotationDeliveryDate" value="${quotation && quotation.delivery_date ? quotation.delivery_date : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="quotationPaymentTerms">Payment terms</label>
+              <input type="text" id="quotationPaymentTerms" placeholder="e.g. Net 30, Due on receipt" value="${quotation ? UnganiClientShared.attr(quotation.payment_terms || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="quotationPaymentDetails">Payment details (bank / M-Pesa)</label>
+              <textarea id="quotationPaymentDetails" rows="2" placeholder="e.g. Paybill 000000, Account: Your Name" ${isLocked ? "disabled" : ""}>${quotation ? UnganiClientShared.safe(quotation.payment_details || "") : ""}</textarea>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <label>Line items</label>
+            <table class="invoice-items-table" id="quotationItemsTable"></table>
+            ${isLocked ? "" : `<button type="button" class="ungani-btn light" style="margin-top:8px;" onclick="addQuotationItemRow()">+ Add Line</button>`}
+          </div>
+
+          <div class="money-form-grid" style="margin-top:16px;">
+            <div>
+              <label style="display:flex;align-items:center;gap:10px;">
+                <input type="checkbox" id="quotationVatApplicable" onchange="handleQuotationTotalsChange()" ${quotation && quotation.vat_applicable ? "checked" : ""} ${isLocked ? "disabled" : ""} style="width:18px;height:18px;" />
+                VAT applies to this quotation
+              </label>
+            </div>
+
+            <div>
+              <label for="quotationVatRate">VAT rate (%)</label>
+              <input type="number" id="quotationVatRate" min="0" max="100" step="0.01" value="${quotation && quotation.vat_rate != null ? quotation.vat_rate : (currentContext.tenant && currentContext.tenant.default_vat_rate) || 16}" oninput="handleQuotationTotalsChange()" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="quotationVatPricingMode">VAT pricing</label>
+              <select id="quotationVatPricingMode" onchange="handleQuotationTotalsChange()" ${isLocked ? "disabled" : ""}>
+                <option value="inclusive" ${!quotation || quotation.vat_pricing_mode !== "exclusive" ? "selected" : ""}>Amount includes VAT</option>
+                <option value="exclusive" ${quotation && quotation.vat_pricing_mode === "exclusive" ? "selected" : ""}>VAT added on top</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="quotationDiscountAmount">Discount (Ksh)</label>
+              <input type="number" id="quotationDiscountAmount" min="0" step="0.01" value="${quotation ? quotation.discount_amount : 0}" oninput="handleQuotationTotalsChange()" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="quotationNotes">Notes</label>
+              <textarea id="quotationNotes" rows="2" ${isLocked ? "disabled" : ""}>${quotation ? UnganiClientShared.safe(quotation.notes || "") : ""}</textarea>
+            </div>
+          </div>
+
+          <div id="quotationTotalsBox" style="margin-top:14px;padding:14px;border-radius:14px;background:rgba(212,166,58,0.08);"></div>
+
+          <div class="ungani-button-row" style="margin-top:18px;justify-content:space-between;">
+            <div>
+              ${quotation ? `<button type="button" class="ungani-btn light" onclick="printQuotationFromModal('${UnganiClientShared.attr(quotation.id)}')">Print</button>` : ""}
+              ${quotation && quotation.status === "draft" ? `<button type="button" class="ungani-btn dark" onclick="setQuotationStatus('${UnganiClientShared.attr(quotation.id)}', 'sent')">Mark as Sent</button>` : ""}
+              ${quotation && quotation.status === "sent" ? `<button type="button" class="ungani-btn green" onclick="setQuotationStatus('${UnganiClientShared.attr(quotation.id)}', 'accepted')">Mark Accepted</button>` : ""}
+              ${quotation && (quotation.status === "sent" || quotation.status === "accepted") ? `<button type="button" class="ungani-btn red" onclick="setQuotationStatus('${UnganiClientShared.attr(quotation.id)}', 'rejected')">Mark Rejected</button>` : ""}
+              ${quotation && (quotation.status === "sent" || quotation.status === "accepted") ? `<button type="button" class="ungani-btn gold" onclick="convertQuotationToInvoice('${UnganiClientShared.attr(quotation.id)}')">Convert to Invoice</button>` : ""}
+              ${quotation && !["cancelled", "converted"].includes(quotation.status) ? `<button type="button" class="ungani-btn red" onclick="setQuotationStatus('${UnganiClientShared.attr(quotation.id)}', 'cancelled')">Cancel Quotation</button>` : ""}
+              ${quotation ? `<button type="button" class="ungani-btn red" onclick="deleteQuotationRecord('${UnganiClientShared.attr(quotation.id)}')">Delete</button>` : ""}
+            </div>
+            <div class="ungani-button-row" style="margin:0;">
+              <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Close</button>
+              ${isLocked ? "" : `<button type="submit" class="ungani-btn gold">${quotation ? "Update Quotation" : "Create Quotation"}</button>`}
+            </div>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({
+        title: quotation ? ("Quotation " + quotation.quotation_number) : "New Quotation",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          renderQuotationItemsTable();
+          handleQuotationTotalsChange();
+        }
+      });
+    }
+
+    function handleQuotationCustomerPersonChange() {
+      const select = document.getElementById("quotationCustomerPerson");
+      const person = customerOptions.find(function (item) { return String(item.id) === String(select.value); });
+
+      if (person) {
+        document.getElementById("quotationCustomerName").value = person.full_name || "";
+        document.getElementById("quotationCustomerContact").value = person.phone || person.email || "";
+      }
+    }
+
+    function renderQuotationItemsTable() {
+      const table = document.getElementById("quotationItemsTable");
+      if (!table) return;
+
+      const isLocked = document.getElementById("quotationCustomerName").disabled;
+
+      table.innerHTML = editingQuotationItems.map(function (item, index) {
+        return `
+          <tr>
+            <td style="width:50%;"><input type="text" placeholder="Description" value="${UnganiClientShared.attr(item.description)}" oninput="updateQuotationItemField(${index}, 'description', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:15%;"><input type="number" min="0" step="0.01" placeholder="Qty" value="${item.quantity}" oninput="updateQuotationItemField(${index}, 'quantity', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:20%;"><input type="number" min="0" step="0.01" placeholder="Unit price" value="${item.unit_price}" oninput="updateQuotationItemField(${index}, 'unit_price', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:10%;text-align:right;" class="quotation-item-line-total" data-row="${index}">${UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}</td>
+            <td style="width:5%;">${isLocked ? "" : `<button type="button" class="ungani-btn red" style="padding:4px 8px;min-height:auto;" onclick="removeQuotationItemRow(${index})">✕</button>`}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function addQuotationItemRow() {
+      editingQuotationItems.push({ description: "", quantity: 1, unit_price: 0 });
+      renderQuotationItemsTable();
+      handleQuotationTotalsChange();
+    }
+
+    function removeQuotationItemRow(index) {
+      editingQuotationItems.splice(index, 1);
+      if (!editingQuotationItems.length) editingQuotationItems.push({ description: "", quantity: 1, unit_price: 0 });
+      renderQuotationItemsTable();
+      handleQuotationTotalsChange();
+    }
+
+    function updateQuotationItemField(index, field, value) {
+      if (!editingQuotationItems[index]) return;
+
+      // Update state and just this row's computed total in place - do NOT
+      // call renderQuotationItemsTable() here. Rebuilding the table's
+      // innerHTML on every keystroke destroys and recreates the input the
+      // user is actively typing in, which drops focus/cursor position
+      // after every character (the exact bug my-customer-invoices.html hit
+      // in live testing - avoided here from the start).
+      editingQuotationItems[index][field] = field === "description" ? value : Number(value) || 0;
+
+      const item = editingQuotationItems[index];
+      const lineTotalCell = document.querySelector('.quotation-item-line-total[data-row="' + index + '"]');
+      if (lineTotalCell) {
+        lineTotalCell.textContent = UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0));
+      }
+
+      handleQuotationTotalsChange();
+    }
+
+    // Client-side preview only, mirrors owner_upsert_ungani_quotation()'s
+    // VAT math exactly - the real, authoritative totals are always
+    // recomputed server-side.
+    function handleQuotationTotalsChange() {
+      const box = document.getElementById("quotationTotalsBox");
+      if (!box) return;
+
+      let subtotal = editingQuotationItems.reduce(function (sum, item) {
+        return sum + ((Number(item.quantity) || 0) * (Number(item.unit_price) || 0));
+      }, 0);
+
+      const discount = Number(document.getElementById("quotationDiscountAmount").value) || 0;
+      subtotal -= discount;
+
+      const vatApplicable = document.getElementById("quotationVatApplicable").checked;
+      const vatRate = Number(document.getElementById("quotationVatRate").value) || 0;
+      const vatMode = document.getElementById("quotationVatPricingMode").value;
+
+      let vatAmount = 0;
+      let total = subtotal;
+
+      if (vatApplicable && vatRate > 0) {
+        if (vatMode === "exclusive") {
+          vatAmount = Math.round((subtotal * vatRate / 100) * 100) / 100;
+          total = subtotal + vatAmount;
+        } else {
+          vatAmount = Math.round((subtotal * vatRate / (100 + vatRate)) * 100) / 100;
+          total = subtotal;
+        }
+      }
+
+      box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Subtotal (after discount)</span><strong>${UnganiClientShared.formatKES(subtotal)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>VAT</span><strong>${UnganiClientShared.formatKES(vatAmount)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0 0;border-top:1px solid rgba(212,166,58,0.3);font-size:18px;"><span>Total</span><strong>${UnganiClientShared.formatKES(total)}</strong></div>
+      `;
+    }
+
+    async function saveQuotationRecord(event) {
+      event.preventDefault();
+
+      const customerName = UnganiClientShared.value("quotationCustomerName").trim();
+      if (!customerName) {
+        UnganiClientShared.showToast("Customer name is required.");
+        return;
+      }
+
+      const items = editingQuotationItems
+        .filter(function (item) { return item.description && item.description.trim(); })
+        .map(function (item) { return { description: item.description.trim(), quantity: Number(item.quantity) || 1, unit_price: Number(item.unit_price) || 0 }; });
+
+      if (!items.length) {
+        UnganiClientShared.showToast("Add at least one line item with a description.");
+        return;
+      }
+
+      const submitBtn = event.target.querySelector("button[type=submit]");
+
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        try {
+          const response = await currentContext.supabaseClient.rpc("owner_upsert_ungani_quotation", {
+            p_quotation_id: editingQuotationId,
+            p_customer_person_id: UnganiClientShared.value("quotationCustomerPerson") || null,
+            p_customer_name: customerName,
+            p_customer_address: UnganiClientShared.value("quotationCustomerAddress") || null,
+            p_customer_contact: UnganiClientShared.value("quotationCustomerContact") || null,
+            p_valid_until: UnganiClientShared.value("quotationValidUntil") || null,
+            p_delivery_address: UnganiClientShared.value("quotationDeliveryAddress") || null,
+            p_delivery_date: UnganiClientShared.value("quotationDeliveryDate") || null,
+            p_payment_terms: UnganiClientShared.value("quotationPaymentTerms") || null,
+            p_payment_details: UnganiClientShared.value("quotationPaymentDetails") || null,
+            p_vat_applicable: document.getElementById("quotationVatApplicable").checked,
+            p_vat_rate: Number(UnganiClientShared.value("quotationVatRate")) || null,
+            p_vat_pricing_mode: UnganiClientShared.value("quotationVatPricingMode") || "inclusive",
+            p_discount_amount: Number(UnganiClientShared.value("quotationDiscountAmount")) || 0,
+            p_currency: "KES",
+            p_notes: UnganiClientShared.value("quotationNotes") || null,
+            p_items: items
+          });
+
+          if (response.error || !response.data || response.data.ok !== true) {
+            UnganiClientShared.showToast("Could not save quotation: " + (response.error ? response.error.message : (response.data && response.data.message)));
+            return;
+          }
+
+          UnganiClientShared.closeModal();
+          UnganiClientShared.showToast(editingQuotationId ? "Quotation updated ✓" : "Quotation created ✓");
+          await loadQuotationRows();
+          renderQuotationsPage();
+        } catch (error) {
+          UnganiClientShared.showToast("Could not save quotation: " + error.message);
+        }
+      });
+    }
+
+    async function setQuotationStatus(id, status) {
+      if (status === "cancelled" && !confirm("Cancel this quotation?")) return;
+      if (status === "rejected" && !confirm("Mark this quotation as rejected?")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("update_ungani_quotation_status", { p_quotation_id: id, p_status: status });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not update status: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Status updated ✓");
+        await loadQuotationRows();
+        renderQuotationsPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not update status: " + error.message);
+      }
+    }
+
+    async function convertQuotationToInvoice(id) {
+      if (!confirm("Convert this quotation into a real invoice? The invoice will start as a draft for you to review.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("convert_ungani_quotation_to_invoice", { p_quotation_id: id });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not convert to invoice: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Converted to invoice " + response.data.invoice_number + " ✓");
+        await loadQuotationRows();
+        renderQuotationsPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not convert to invoice: " + error.message);
+      }
+    }
+
+    async function deleteQuotationRecord(id) {
+      if (!confirm("Move this quotation to Recently Deleted? You can restore it within 30 days.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+          p_table_name: "ungani_quotations",
+          p_record_id: id,
+          p_delete_reason: "Deleted from Quotations page"
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not delete quotation: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Quotation deleted ✓");
+        await loadQuotationRows();
+        renderQuotationsPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not delete quotation: " + error.message);
+      }
+    }
+
+    function printQuotationFromModal(id) {
+      window.open("my-quotations.html?print=" + encodeURIComponent(id), "_blank");
+    }
+
+    // ---- Print view ----
+
+    // The detail RPC returns the stored status only (no "expired" derivation
+    // - that logic lives in get_my_ungani_quotations()'s SQL). Mirror it
+    // here client-side so the print view's status chip matches the list.
+    function computeQuotationPrintStatus(quotation) {
+      if (quotation.status === "sent" && quotation.valid_until) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        if (quotation.valid_until < todayStr) return "expired";
+      }
+      return quotation.status;
+    }
+
+    function quotationStatusMeta(status) {
+      const map = {
+        draft: { label: "Draft", bg: "#F3F4F6", fg: "#6B7280" },
+        sent: { label: "Sent", bg: "#DBEAFE", fg: "#1D4ED8" },
+        accepted: { label: "Accepted", bg: "#DCFCE7", fg: "#15803D" },
+        rejected: { label: "Rejected", bg: "#FEE2E2", fg: "#B91C1C" },
+        cancelled: { label: "Cancelled", bg: "#F3F4F6", fg: "#6B7280" },
+        expired: { label: "Expired", bg: "#FEF3C7", fg: "#92400E" },
+        converted: { label: "Converted", bg: "#FDF0D5", fg: "#92600E" }
+      };
+      return map[status] || map.draft;
+    }
+
+    async function renderPrintView(id) {
+      printModeActive = true;
+
+      const response = await currentContext.supabaseClient.rpc("get_ungani_quotation_detail", { p_quotation_id: id });
+
+      if (response.error || !response.data || response.data.ok !== true) {
+        UnganiClientShared.setContent(`<p style="padding:40px;">Could not load this quotation. ${UnganiClientShared.safe(response.error ? response.error.message : (response.data && response.data.message) || "")}</p>`);
+        return;
+      }
+
+      const quotation = response.data.quotation;
+      const items = response.data.items || [];
+      const grossSubtotal = Number(quotation.subtotal) + Number(quotation.discount_amount || 0);
+      const statusMeta = quotationStatusMeta(computeQuotationPrintStatus(quotation));
+      const tenant = currentContext.tenant;
+
+      UnganiClientShared.setContent(`
+        <style>
+          .invoice-print-shell {
+            max-width: 820px; margin: 0 auto; background: #FFFFFF; color: #111827;
+            border-radius: 18px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            border: 1px solid #E5E7EB;
+          }
+          .invoice-print-shell, .invoice-print-shell * {
+            -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact;
+          }
+          .invoice-print-toolbar { max-width: 820px; margin: 0 auto 16px; display: flex; justify-content: flex-end; gap: 10px; }
+          .invoice-print-topbar { height: 8px; background: linear-gradient(90deg, #061C3D, #D4A63A); }
+          .invoice-print-body { padding: 36px; }
+
+          .invoice-print-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+
+          .invoice-meta-box { min-width: 230px; background: #061C3D; color: #FFFFFF; border-radius: 14px; padding: 18px 20px; }
+          .invoice-meta-title { font-size: 22px; font-weight: 900; letter-spacing: 1.2px; }
+          .invoice-meta-sub { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 2px; letter-spacing: 0.4px; }
+          .invoice-meta-table { width: 100%; margin-top: 14px; border-collapse: collapse; }
+          .invoice-meta-table td { padding: 3px 0; font-size: 13px; }
+          .invoice-meta-table td:first-child { color: rgba(255,255,255,0.55); }
+          .invoice-meta-table td:last-child { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+          .invoice-status-chip { display: inline-block; margin-top: 12px; padding: 5px 14px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; }
+
+          .invoice-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 30px; }
+          .invoice-party-box { border: 1px solid #E5E7EB; border-left: 3px solid #D4A63A; border-radius: 10px; padding: 14px 16px; background: #FAFAFA; }
+          .invoice-party-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #061C3D; font-weight: 800; }
+          .invoice-party-body { margin-top: 8px; line-height: 1.6; font-size: 13.5px; }
+
+          .invoice-print-table { width: 100%; border-collapse: collapse; margin-top: 30px; border: 1px solid #E5E7EB; border-radius: 10px; overflow: hidden; }
+          .invoice-print-table thead th { background: #061C3D; color: #FFFFFF; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+          .invoice-print-table tbody td { padding: 11px 12px; border-bottom: 1px solid #EEF0F3; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+          .invoice-print-table tbody tr:nth-child(even) { background: #FAFAFA; }
+          .invoice-print-table tbody tr:last-child td { border-bottom: none; }
+
+          .invoice-print-totals { display: flex; justify-content: flex-end; margin-top: 18px; }
+          .invoice-print-totals table { min-width: 280px; border-collapse: collapse; }
+          .invoice-print-totals td { padding: 6px 4px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+          .invoice-total-due td { padding-top: 12px; border-top: 2px solid #061C3D; font-size: 19px; font-weight: 900; color: #061C3D; }
+
+          .invoice-payment-box { margin-top: 26px; border: 1px solid #EADDB8; background: #FBF6E9; border-radius: 12px; padding: 16px 18px; }
+          .invoice-payment-box-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #92600E; font-weight: 800; margin-bottom: 8px; }
+          .invoice-payment-row { font-size: 13.5px; line-height: 1.6; }
+          .invoice-payment-row + .invoice-payment-row { margin-top: 6px; }
+
+          @media print {
+            @page { size: A4; margin: 12mm; }
+
+            body { background: #FFFFFF !important; }
+
+            .no-print,
+            .ungani-sidebar,
+            .ungani-mobile-bottom,
+            .ungani-mobile-nav,
+            .ungani-topbar,
+            .ungani-toast,
+            .invoice-print-toolbar,
+            #niaFabBtn,
+            #niaTagline,
+            #niaHelpBtn,
+            #unganiPushBanner,
+            .nia-fab,
+            .nia-tagline,
+            .ungani-push-banner {
+              display: none !important;
+            }
+
+            .ungani-app-shell,
+            .ungani-main,
+            .ungani-content {
+              display: block !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              max-width: none !important;
+            }
+
+            .invoice-print-shell { box-shadow: none !important; border-radius: 0 !important; border: none !important; }
+          }
+        </style>
+
+        <div class="invoice-print-toolbar">
+          <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
+          <a class="ungani-btn light" href="my-quotations.html">Back to Quotations</a>
+        </div>
+
+        <div class="invoice-print-shell">
+          <div class="invoice-print-topbar"></div>
+          <div class="invoice-print-body">
+
+            <div class="invoice-print-header">
+              ${UnganiPrintBranding.renderHeaderBlock(tenant, { logoSize: 74, contactColor: "#6B7280", nameColor: "#061C3D" })}
+
+              <div class="invoice-meta-box">
+                <div class="invoice-meta-title">QUOTATION</div>
+                <div class="invoice-meta-sub">${UnganiClientShared.safe(quotation.quotation_number)}</div>
+                <table class="invoice-meta-table">
+                  <tr><td>Issue date</td><td>${UnganiClientShared.formatDate(quotation.issue_date)}</td></tr>
+                  ${quotation.valid_until ? `<tr><td>Valid until</td><td>${UnganiClientShared.formatDate(quotation.valid_until)}</td></tr>` : ""}
+                </table>
+                <div class="invoice-status-chip" style="background:${statusMeta.bg};color:${statusMeta.fg};">${statusMeta.label}</div>
+              </div>
+            </div>
+
+            <div class="invoice-parties">
+              <div class="invoice-party-box">
+                <div class="invoice-party-label">Quote For</div>
+                <div class="invoice-party-body">
+                  <strong>${UnganiClientShared.safe(quotation.customer_name)}</strong><br />
+                  ${quotation.customer_address ? UnganiClientShared.safe(quotation.customer_address).replace(/\n/g, "<br />") + "<br />" : ""}
+                  ${quotation.customer_contact ? UnganiClientShared.safe(quotation.customer_contact) : ""}
+                </div>
+              </div>
+
+              ${quotation.delivery_address || quotation.delivery_date ? `
+                <div class="invoice-party-box">
+                  <div class="invoice-party-label">Delivery</div>
+                  <div class="invoice-party-body">
+                    ${quotation.delivery_address ? UnganiClientShared.safe(quotation.delivery_address) + "<br />" : ""}
+                    ${quotation.delivery_date ? UnganiClientShared.formatDate(quotation.delivery_date) : ""}
+                  </div>
+                </div>
+              ` : ""}
+            </div>
+
+            <table class="invoice-print-table">
+              <thead>
+                <tr><th>Description</th><th>Qty</th><th>Unit Price</th><th style="text-align:right;">Amount</th></tr>
+              </thead>
+              <tbody>
+                ${items.map(function (item) {
+                  return `<tr><td>${UnganiClientShared.safe(item.description)}</td><td>${item.quantity}</td><td>${UnganiClientShared.formatKES(item.unit_price)}</td><td style="text-align:right;">${UnganiClientShared.formatKES(item.line_subtotal)}</td></tr>`;
+                }).join("")}
+              </tbody>
+            </table>
+
+            <div class="invoice-print-totals">
+              <table>
+                <tr><td>Subtotal</td><td style="text-align:right;">${UnganiClientShared.formatKES(grossSubtotal)}</td></tr>
+                ${Number(quotation.discount_amount) > 0 ? `<tr><td>Discount</td><td style="text-align:right;">-${UnganiClientShared.formatKES(quotation.discount_amount)}</td></tr>` : ""}
+                ${quotation.vat_applicable ? `<tr><td>VAT${quotation.vat_pricing_mode === "inclusive" ? " (included)" : ""}</td><td style="text-align:right;">${UnganiClientShared.formatKES(quotation.vat_amount)}</td></tr>` : ""}
+                <tr class="invoice-total-due"><td>Total</td><td style="text-align:right;">${UnganiClientShared.formatKES(quotation.total_amount)}</td></tr>
+              </table>
+            </div>
+
+            ${quotation.payment_terms || quotation.payment_details ? `
+              <div class="invoice-payment-box">
+                <div class="invoice-payment-box-title">Payment Information</div>
+                ${quotation.payment_terms ? `<div class="invoice-payment-row"><strong>Terms:</strong> ${UnganiClientShared.safe(quotation.payment_terms)}</div>` : ""}
+                ${quotation.payment_details ? `<div class="invoice-payment-row"><strong>Bank / M-Pesa details:</strong> ${UnganiClientShared.safe(quotation.payment_details).replace(/\n/g, "<br />")}</div>` : ""}
+              </div>
+            ` : ""}
+
+            ${quotation.notes ? `<div style="margin-top:16px;font-size:13px;color:#6B7280;">${UnganiClientShared.safe(quotation.notes)}</div>` : ""}
+
+            ${UnganiPrintBranding.renderPoweredByFooter()}
+          </div>
+        </div>
+      `);
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>

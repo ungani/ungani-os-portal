@@ -34,6 +34,7 @@
     const operationsItems = [
       ["money", "my-money.html", "💰", "Money Records"],
       ["customer-invoices", "my-customer-invoices.html", "📃", "Customer Invoices"],
+      ["quotations", "my-quotations.html", "📋", "Quotations"],
       ["records", "my-records.html", "🗂️", "Business Records"],
       ["items", "my-items.html", "🏷️", "Items / Assets / Stock"],
       ["people", "my-people.html", "👥", "People"],
