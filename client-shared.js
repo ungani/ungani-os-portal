@@ -4359,11 +4359,34 @@
       return;
     }
 
-    const items = await getEngineNotifications();
-    const unread = items.filter(isNotificationActive);
+    // Real unlimited count via the canonical RPC (shared with every other
+    // bell/badge in the app - see sql/task10-unified-notification-count.sql),
+    // not derived from getEngineNotifications()'s p_limit:30-capped fetch,
+    // which under-counts once a tenant has more than 30 total rows. Falls
+    // back to the old capped-array count only if the RPC itself fails.
+    let unread = -1;
 
-    countEl.textContent = String(unread.length);
-    countEl.style.display = unread.length > 0 ? "inline-flex" : "none";
+    try {
+      const shared = window.UnganiClientShared;
+      const state = shared && typeof shared.getState === "function" ? shared.getState() : null;
+
+      if (state && state.supabaseClient) {
+        const countResponse = await state.supabaseClient.rpc("get_my_ungani_unread_notification_count");
+        if (!countResponse.error && typeof countResponse.data === "number") {
+          unread = countResponse.data;
+        }
+      }
+    } catch (error) {
+      console.warn("Unread notification count RPC skipped:", error.message);
+    }
+
+    if (unread === -1) {
+      const items = await getEngineNotifications();
+      unread = items.filter(isNotificationActive).length;
+    }
+
+    countEl.textContent = String(unread);
+    countEl.style.display = unread > 0 ? "inline-flex" : "none";
   }
 
   async function toggleEngineNotifications() {

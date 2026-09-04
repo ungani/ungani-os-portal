@@ -77,24 +77,30 @@ async function resolveTenantOwnerAuthUserId(supabaseAdmin, tenantId) {
   }
 }
 
-// Matches the client's real unread definition closely enough for a
-// badge number (client.html's isNotificationUnread() additionally keeps
-// task_overdue/support_issue_open rows "unread" until resolved_at is
-// set, on top of this - a minor refinement not worth the query
-// complexity here, since those rows also carry status != 'read' until
-// resolved anyway in the current data).
-async function computeUnreadBadgeCount(supabaseAdmin, authUserId) {
-  if (!authUserId) return 0;
+// Canonical RPC (see sql/task10-unified-notification-count.sql) - the
+// same shared counting core used by every other bell/badge in the app
+// (client.html, client-shared.js, admin-shared.js). Replaces a previous
+// query keyed on user_id (null on nearly every real notification row -
+// client-facing rows are tenant-scoped, not user-scoped) with the
+// correct target_type/tenant_id scoping, and the correct unread
+// semantics (state-type rows stay unread until resolved_at, regardless
+// of status - previously missing here entirely).
+async function computeUnreadBadgeCount(supabaseAdmin, sub) {
+  if (!sub) return 0;
+
+  const targetType = sub.user_type === "admin" ? "admin" : "client";
+  const tenantId = targetType === "admin" ? null : (sub.tenant_id || null);
+
+  if (targetType === "client" && !tenantId) return 0;
 
   try {
-    const { count, error } = await supabaseAdmin
-      .from("ungani_notifications")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", authUserId)
-      .neq("status", "read");
+    const { data, error } = await supabaseAdmin.rpc("get_ungani_unread_notification_count_for", {
+      p_target_type: targetType,
+      p_tenant_id: tenantId
+    });
 
     if (error) return 0;
-    return count || 0;
+    return typeof data === "number" ? data : 0;
   } catch (error) {
     return 0;
   }
@@ -112,7 +118,7 @@ async function sendToSubscriptions(supabaseAdmin, subscriptions, payload) {
 
   for (const sub of subscriptions) {
     try {
-      const badgeCount = await computeUnreadBadgeCount(supabaseAdmin, sub.auth_user_id);
+      const badgeCount = await computeUnreadBadgeCount(supabaseAdmin, sub);
       const subPayload = JSON.stringify(Object.assign({}, basePayload, { badgeCount: badgeCount }));
 
       await webpush.sendNotification(
@@ -214,7 +220,7 @@ async function handleNewRegistration(supabaseAdmin, registrationId, res) {
 
   const { data: subscriptions } = await supabaseAdmin
     .from(SUBSCRIPTIONS_TABLE)
-    .select("id, auth_user_id, endpoint, p256dh, auth_key")
+    .select("id, auth_user_id, endpoint, p256dh, auth_key, user_type, tenant_id")
     .eq("user_type", "admin");
 
   if (!subscriptions || subscriptions.length === 0) {
@@ -293,7 +299,7 @@ async function handleTaskAssignment(req, supabaseAdmin, taskId, res) {
 
   const { data: subscriptions } = await supabaseAdmin
     .from(SUBSCRIPTIONS_TABLE)
-    .select("id, auth_user_id, endpoint, p256dh, auth_key")
+    .select("id, auth_user_id, endpoint, p256dh, auth_key, user_type, tenant_id")
     .eq("auth_user_id", assigneeUserId);
 
   if (!subscriptions || subscriptions.length === 0) {
@@ -350,7 +356,7 @@ async function handleSupportResponse(req, supabaseAdmin, issueId, res) {
 
   const { data: subscriptions } = await supabaseAdmin
     .from(SUBSCRIPTIONS_TABLE)
-    .select("id, auth_user_id, endpoint, p256dh, auth_key")
+    .select("id, auth_user_id, endpoint, p256dh, auth_key, user_type, tenant_id")
     .eq("tenant_id", issue.tenant_id)
     .eq("user_type", "client");
 
@@ -432,7 +438,7 @@ async function handleTeamChatMessage(req, supabaseAdmin, messageId, res) {
 
   const { data: subscriptions } = await supabaseAdmin
     .from(SUBSCRIPTIONS_TABLE)
-    .select("id, auth_user_id, endpoint, p256dh, auth_key")
+    .select("id, auth_user_id, endpoint, p256dh, auth_key, user_type, tenant_id")
     .eq("auth_user_id", recipientUserId);
 
   if (!subscriptions || subscriptions.length === 0) {
@@ -486,7 +492,7 @@ async function handleAdminClientMessage(req, supabaseAdmin, messageId, res) {
 
   const { data: subscriptions } = await supabaseAdmin
     .from(SUBSCRIPTIONS_TABLE)
-    .select("id, auth_user_id, endpoint, p256dh, auth_key")
+    .select("id, auth_user_id, endpoint, p256dh, auth_key, user_type, tenant_id")
     .eq("tenant_id", message.tenant_id)
     .eq("user_type", "client");
 
@@ -551,7 +557,7 @@ async function handleClientAdminMessage(req, supabaseAdmin, messageId, res) {
 
   const { data: subscriptions } = await supabaseAdmin
     .from(SUBSCRIPTIONS_TABLE)
-    .select("id, auth_user_id, endpoint, p256dh, auth_key")
+    .select("id, auth_user_id, endpoint, p256dh, auth_key, user_type, tenant_id")
     .eq("user_type", "admin");
 
   if (!subscriptions || subscriptions.length === 0) {
@@ -640,7 +646,7 @@ async function pushToUser(supabaseAdmin, authUserId, eventType, relatedId, recip
 
   const { data: subscriptions } = await supabaseAdmin
     .from(SUBSCRIPTIONS_TABLE)
-    .select("id, auth_user_id, endpoint, p256dh, auth_key")
+    .select("id, auth_user_id, endpoint, p256dh, auth_key, user_type, tenant_id")
     .eq("auth_user_id", authUserId);
 
   if (!subscriptions || subscriptions.length === 0) {

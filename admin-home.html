@@ -3264,10 +3264,27 @@
         var res = await supabaseClient.from('system_notices').select('*').order('created_at', { ascending: false }).limit(10);
         if (res.error) throw res.error;
 
+        // Real count via the canonical RPC (see sql/task10-unified-
+        // notification-count.sql), NOT derived from system_notices (a
+        // separate, legitimate system-broadcast feature whose list/panel
+        // below is unrelated to this app's unified notification concept -
+        // this page's badge number was previously the only one in the app
+        // reading a different table entirely, which is why it never
+        // matched any other bell/push count). Falls back to the old
+        // system_notices-derived count only if the RPC itself fails.
         var count = (res.data || []).filter(function(n) {
           if (n.is_read !== undefined) return n.is_read === false;
           return n.read === false;
         }).length;
+
+        try {
+          var countResponse = await supabaseClient.rpc('get_my_ungani_unread_notification_count');
+          if (!countResponse.error && typeof countResponse.data === 'number') {
+            count = countResponse.data;
+          }
+        } catch (countError) {
+          console.warn('Unread notification count RPC skipped:', countError.message);
+        }
 
         var dCount = document.getElementById('desktopNotificationCount');
         var mCount = document.getElementById('mobileNotificationCount');

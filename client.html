@@ -4259,8 +4259,23 @@
       }
     }
 
-    function updateNotificationCounts() {
-      const unread = notifications.filter(isNotificationUnread).length;
+    async function updateNotificationCounts() {
+      // Real unlimited count via the canonical RPC (shared with every
+      // other bell/badge in the app - see sql/task10-unified-notification-
+      // count.sql), not derived from the 50-row-capped `notifications`
+      // array above, which under-counts once a tenant has more than 50
+      // total rows. Falls back to the old capped-array count only if the
+      // RPC itself fails, so the badge never goes silently blank.
+      let unread = notifications.filter(isNotificationUnread).length;
+
+      try {
+        const countResponse = await supabaseClient.rpc("get_my_ungani_unread_notification_count");
+        if (!countResponse.error && typeof countResponse.data === "number") {
+          unread = countResponse.data;
+        }
+      } catch (error) {
+        console.warn("Unread notification count RPC skipped:", error.message);
+      }
 
       const mobileCount = document.getElementById("mobileNotificationCount");
       const desktopCount = document.getElementById("desktopNotificationCount");

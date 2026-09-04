@@ -1381,12 +1381,17 @@
     }
 
     try {
-      const notificationsResponse = await client
-        .from("ungani_notifications")
-        .select("id", { count: "exact", head: true })
-        .neq("status", "read");
+      // Canonical RPC (see sql/task10-unified-notification-count.sql) -
+      // replaces a previous query with zero tenant/target_type scoping at
+      // all, which counted every unread client-facing notification across
+      // the entire platform and had no logical connection to "this admin's
+      // notifications". Auto-resolves to target_type='admin' for an admin
+      // caller.
+      const notificationsResponse = await client.rpc("get_my_ungani_unread_notification_count");
 
-      if (!notificationsResponse.error) counts.notifications = notificationsResponse.count || 0;
+      if (!notificationsResponse.error && typeof notificationsResponse.data === "number") {
+        counts.notifications = notificationsResponse.data;
+      }
     } catch (error) {
       console.warn("Admin sidebar badge (notifications) skipped:", error.message);
     }
