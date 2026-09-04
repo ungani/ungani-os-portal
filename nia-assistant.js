@@ -286,6 +286,14 @@
       answer: "Turn it on in Settings and every restock, sale, waste, and correction gets logged with who did it and when, instead of a single quantity number that just gets overwritten. Once it's on, quantity and reorder level move to the Stock Tracking page - the fields on the item itself become read-only there, so there's only ever one place a quantity can change from. It's off by default and doesn't affect how items work until you switch it on.",
       href: "my-stock-tracking.html",
       linkLabel: "Open Stock Tracking"
+    },
+    {
+      key: "debtors-payables-explained",
+      match: ["who owes me", "who do i owe", "debtors and payables", "what is debtors payables", "track debtors", "track payables", "outstanding customers", "unpaid suppliers"],
+      question: "How does Debtors & Payables work?",
+      answer: "Turn it on in Settings and a Debtors & Payables page appears in your sidebar. \"Who Owes Me\" is built from your Customer Invoices - any invoice that's Sent, Partially Paid, or Overdue with a balance still due shows up there, grouped by customer. \"Who I Owe\" is built from Money - any pending expense you've linked to a supplier or contact using the Related Person / Supplier field shows up there, grouped by who it's owed to. Nothing new to fill in beyond what you're already tracking in Customer Invoices and Money.",
+      href: "my-debtors-payables.html",
+      linkLabel: "Open Debtors & Payables"
     }
   ];
 

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Debtors & Payables</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let debtorRows = [];
+    let payableRows = [];
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "debtorsPayables",
+        pageTitle: "Debtors & Payables",
+        pageSubtitle: "Who owes you money, and who you owe.",
+        onReady: startDebtorsPayablesPage
+      });
+    });
+
+    async function startDebtorsPayablesPage(context) {
+      currentContext = context;
+
+      if (!context.tenant || context.tenant.debtors_payables_enabled !== true) {
+        UnganiClientShared.setContent(`
+          <section class="ungani-card ungani-hero">
+            <span class="ungani-badge gold">Debtors &amp; Payables</span>
+            <h2 style="font-size:clamp(24px,3.6vw,36px);line-height:1.1;margin:16px 0 12px;">Debtors &amp; Payables isn't turned on yet.</h2>
+            <p>Enable it from My Settings to see who owes you money and who you owe, built from your existing Customer Invoices and Money records.</p>
+            <div class="ungani-button-row">
+              <a class="ungani-btn gold" href="my-settings.html">Go to Settings</a>
+            </div>
+          </section>
+        `);
+        return;
+      }
+
+      await Promise.all([loadDebtors(), loadPayables()]);
+      renderDebtorsPayablesPage();
+    }
+
+    function moneyText(value) {
+      return "KSh " + (Number(value) || 0).toLocaleString("en-KE");
+    }
+
+    // Debtors: built entirely from Customer Invoices (Task 2) - no new
+    // schema. get_my_ungani_customer_invoices() already computes
+    // effective_status (auto-flags a sent/partially_paid invoice as
+    // "overdue" once its due_date has passed), so overdue detection
+    // doesn't need to be reimplemented here. Grouped by customer_name -
+    // the RPC doesn't surface customer_person_id, so name is the only
+    // reliable grouping key available from this data.
+    async function loadDebtors() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_customer_invoices");
+        const invoices = (!response.error && response.data && response.data.ok === true) ? (response.data.invoices || []) : [];
+
+        const outstanding = invoices.filter(function (inv) {
+          const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
+          return balance > 0 && inv.status !== "cancelled" && inv.status !== "draft";
+        });
+
+        const byCustomer = {};
+        outstanding.forEach(function (inv) {
+          const name = inv.customer_name || "Unknown customer";
+          const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
+
+          if (!byCustomer[name]) {
+            byCustomer[name] = { customerName: name, outstanding: 0, invoiceCount: 0, isOverdue: false };
+          }
+
+          byCustomer[name].outstanding += balance;
+          byCustomer[name].invoiceCount += 1;
+          if (inv.effective_status === "overdue") byCustomer[name].isOverdue = true;
+        });
+
+        debtorRows = Object.keys(byCustomer).map(function (key) { return byCustomer[key]; })
+          .sort(function (a, b) { return b.outstanding - a.outstanding; });
+      } catch (error) {
+        console.warn("Could not load debtors:", error.message);
+        debtorRows = [];
+      }
+    }
+
+    // Payables (lean scope): pending expense transactions linked to a
+    // person via related_person_id, grouped by that person. No new
+    // table - transactions already has everything needed. The
+    // isRealEstate-only gate on the Related Person field in my-money.html
+    // was relaxed so any business type can tag an expense to a supplier.
+    // Known limitation (accepted): transactions has no due_date, so
+    // unlike Debtors there's no overdue detection here - just an
+    // outstanding total.
+    async function loadPayables() {
+      try {
+        const [peopleResponse, txResponse] = await Promise.all([
+          currentContext.supabaseClient
+            .from("client_people")
+            .select("id, full_name, person_type")
+            .eq("tenant_id", currentContext.tenantId),
+          currentContext.supabaseClient
+            .from("transactions")
+            .select("id, amount, amount_kes, currency, status, transaction_type, type, related_person_id, transaction_date, category, category_name")
+            .eq("tenant_id", currentContext.tenantId)
+            .eq("status", "pending")
+            .not("related_person_id", "is", null)
+            .limit(1000)
+        ]);
+
+        const people = (!peopleResponse.error && peopleResponse.data) ? peopleResponse.data : [];
+        const peopleById = {};
+        people.forEach(function (p) { peopleById[p.id] = p; });
+
+        const transactions = (!txResponse.error && txResponse.data) ? txResponse.data : [];
+        const expenseRows = transactions.filter(function (row) {
+          const broadType = UnganiClientShared.getValue(row, ["transaction_type", "type"], "income");
+          return String(broadType).toLowerCase() === "expense";
+        });
+
+        const byPerson = {};
+        expenseRows.forEach(function (row) {
+          const personId = row.related_person_id;
+          const person = peopleById[personId];
+          const name = person ? UnganiClientShared.getValue(person, ["full_name"], "Person") : "Unknown person";
+          const personType = person ? UnganiClientShared.getValue(person, ["person_type"], "") : "";
+          const amount = Number(row.amount_kes) || Number(row.amount) || 0;
+
+          if (!byPerson[personId]) {
+            byPerson[personId] = { personName: name, personType: personType, owed: 0, transactionCount: 0 };
+          }
+
+          byPerson[personId].owed += amount;
+          byPerson[personId].transactionCount += 1;
+        });
+
+        payableRows = Object.keys(byPerson).map(function (key) { return byPerson[key]; })
+          .sort(function (a, b) { return b.owed - a.owed; });
+      } catch (error) {
+        console.warn("Could not load payables:", error.message);
+        payableRows = [];
+      }
+    }
+
+    function renderDebtorsPayablesPage() {
+      const totalOwedToMe = debtorRows.reduce(function (sum, row) { return sum + row.outstanding; }, 0);
+      const totalIOwe = payableRows.reduce(function (sum, row) { return sum + row.owed; }, 0);
+      const overdueCount = debtorRows.filter(function (row) { return row.isOverdue; }).length;
+
+      UnganiClientShared.setContent(`
+        <style>
+          .dp-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          .dp-table th, .dp-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.1)); font-size: 14px; }
+          .dp-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--ungani-muted, #6B7280); }
+          .dp-status-badge { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+          .dp-status-overdue { background: rgba(220,38,38,0.15); color: #DC2626; }
+          .dp-status-open { background: rgba(212,166,58,0.2); color: #92600E; }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Debtors &amp; Payables</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">Who owes you, and who you owe.</h2>
+          <p>Debtors come from your Customer Invoices. Payables come from pending expenses linked to a supplier or contact under Money.</p>
+        </section>
+
+        <section class="money-kpi-grid" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
+          ${dpKpi("Owed To Me", moneyText(totalOwedToMe), debtorRows.length + " customer(s) with an outstanding balance", "#16A34A")}
+          ${dpKpi("Overdue", String(overdueCount), overdueCount > 0 ? "Invoice(s) past their due date" : "Nothing overdue", overdueCount > 0 ? "#DC2626" : "#16A34A")}
+          ${dpKpi("I Owe", moneyText(totalIOwe), payableRows.length + " supplier/contact(s) with a pending expense", "#92600E")}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Who Owes Me</h3>
+              <p class="ungani-small">${debtorRows.length} customer(s) with money outstanding on Customer Invoices.</p>
+            </div>
+            <a class="ungani-btn light" href="my-customer-invoices.html">Open Customer Invoices</a>
+          </div>
+
+          ${renderDebtorsTable()}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Who I Owe</h3>
+              <p class="ungani-small">${payableRows.length} supplier/contact(s) with a pending expense linked to them under Money.</p>
+            </div>
+            <a class="ungani-btn light" href="my-money.html">Open Money</a>
+          </div>
+
+          ${renderPayablesTable()}
+        </section>
+
+        <p class="ungani-small">Debtors &amp; Payables · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    function dpKpi(label, value, sub, accent) {
+      return `
+        <div class="ungani-card" style="border-left:4px solid ${accent};box-shadow:none;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ungani-muted,#6B7280);font-weight:800;">${UnganiClientShared.safe(label)}</div>
+          <div style="font-size:26px;font-weight:900;margin:6px 0 2px;">${UnganiClientShared.safe(value)}</div>
+          <div class="ungani-small">${UnganiClientShared.safe(sub)}</div>
+        </div>
+      `;
+    }
+
+    function renderDebtorsTable() {
+      if (!debtorRows.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No outstanding customer invoices right now.</p>`;
+      }
+
+      return `
+        <table class="dp-table">
+          <thead>
+            <tr><th>Customer</th><th>Outstanding</th><th>Invoice(s)</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            ${debtorRows.map(function (row) {
+              return `
+                <tr>
+                  <td><strong>${UnganiClientShared.safe(row.customerName)}</strong></td>
+                  <td>${UnganiClientShared.safe(moneyText(row.outstanding))}</td>
+                  <td>${row.invoiceCount}</td>
+                  <td><span class="dp-status-badge ${row.isOverdue ? "dp-status-overdue" : "dp-status-open"}">${row.isOverdue ? "Overdue" : "Open"}</span></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderPayablesTable() {
+      if (!payableRows.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No pending expenses linked to a supplier or contact right now. Link one from the Related Person / Supplier field on a Money record.</p>`;
+      }
+
+      return `
+        <table class="dp-table">
+          <thead>
+            <tr><th>Supplier / Contact</th><th>Amount Owed</th><th>Pending Transaction(s)</th></tr>
+          </thead>
+          <tbody>
+            ${payableRows.map(function (row) {
+              const typeSuffix = row.personType ? " (" + row.personType + ")" : "";
+              return `
+                <tr>
+                  <td><strong>${UnganiClientShared.safe(row.personName + typeSuffix)}</strong></td>
+                  <td>${UnganiClientShared.safe(moneyText(row.owed))}</td>
+                  <td>${row.transactionCount}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+  </script>
+</body>
+</html>

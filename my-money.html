@@ -268,12 +268,9 @@
         loadCategorySuggestions(),
         loadRecurringRows(),
         loadTeamMemberOptions(),
-        loadPayeeOptions()
+        loadPayeeOptions(),
+        loadPersonOptions()
       ];
-
-      if (isRealEstate) {
-        loaders.push(loadPersonOptions());
-      }
 
       await Promise.all(loaders);
 
@@ -2009,18 +2006,18 @@
               </select>
             </div>
 
-            ${isRealEstate ? `
-              <div>
-                <label for="moneyRelatedPerson">Related Tenant / Person</label>
-                <select id="moneyRelatedPerson">
-                  <option value="">Not linked</option>
-                  ${personOptions.map(function (person) {
-                    const label = UnganiClientShared.getValue(person, ["full_name", "name"], "Person");
-                    return `<option value="${UnganiClientShared.attr(person.id)}">${UnganiClientShared.safe(label)}</option>`;
-                  }).join("")}
-                </select>
-              </div>
-            ` : ""}
+            <div>
+              <label for="moneyRelatedPerson">${isRealEstate ? "Related Tenant / Person" : "Related Person / Supplier"}</label>
+              <select id="moneyRelatedPerson">
+                <option value="">Not linked</option>
+                ${personOptions.map(function (person) {
+                  const label = UnganiClientShared.getValue(person, ["full_name", "name"], "Person");
+                  const personType = UnganiClientShared.getValue(person, ["person_type"], "");
+                  const suffix = personType ? " (" + personType + ")" : "";
+                  return `<option value="${UnganiClientShared.attr(person.id)}">${UnganiClientShared.safe(label + suffix)}</option>`;
+                }).join("")}
+              </select>
+            </div>
 
             <div id="moneyTeamMemberWrap">
               <label for="moneyPaidTo">Paid To (optional)</label>
@@ -2136,7 +2133,7 @@
           document.getElementById("moneyMethod").value = row ? UnganiClientShared.getValue(row, ["payment_method"], "") : "";
           document.getElementById("moneyStatus").value = row ? UnganiClientShared.getValue(row, ["status"], "completed") : "completed";
 
-          if (isRealEstate && document.getElementById("moneyRelatedPerson")) {
+          if (document.getElementById("moneyRelatedPerson")) {
             document.getElementById("moneyRelatedPerson").value = row ? UnganiClientShared.getValue(row, ["related_person_id"], "") : "";
           }
 
@@ -2473,9 +2470,7 @@ const payload = {
   updated_at: new Date().toISOString()
 };
 
-      if (isRealEstate) {
-        payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
-      }
+      payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
 
       const paidToValue = broadType === "expense" ? (UnganiClientShared.value("moneyPaidTo") || "") : "";
       payload.related_team_member_id = paidToValue.indexOf("payee:") !== 0 ? (paidToValue || null) : null;

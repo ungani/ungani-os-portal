@@ -50,6 +50,10 @@
       operationsItems.push(["stock-tracking", "my-stock-tracking.html", "📦", "Stock Tracking"]);
     }
 
+    if (tenant && tenant.debtors_payables_enabled === true) {
+      operationsItems.push(["debtors-payables", "my-debtors-payables.html", "📒", "Debtors & Payables"]);
+    }
+
     return [
       {
         key: "main",

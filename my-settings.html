@@ -998,6 +998,35 @@
         </div>
       </section>
 
+      <section class="panel full" id="debtorsPayablesPanel">
+        <div class="panel-head">
+          <h2>Debtors &amp; Payables</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Turn this on to see who owes you money and who you owe, in one place. "Who Owes Me" is
+            built from your Customer Invoices; "Who I Owe" is built from pending expenses linked to a
+            supplier or contact under Money. Once on, a Debtors &amp; Payables page appears in your
+            sidebar.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--border); border-radius: 14px; cursor: pointer;">
+                <input type="checkbox" id="debtorsPayablesEnabled" style="width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer;" />
+                <span style="color: var(--text);">Track who owes me and who I owe</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="debtorsPayablesMessage" class="action-msg"></span>
+            <button type="button" id="btnSaveDebtorsPayables" class="ungani-btn gold" onclick="saveDebtorsPayables()">Save Debtors &amp; Payables Setting</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full" id="brandingPanel">
         <div class="panel-head">
           <h2>Branding</h2>
@@ -2043,7 +2072,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -2056,6 +2085,7 @@
       renderTaxSettingsPanel(tenantRow);
       renderMultiCurrencyPanel(tenantRow);
       renderStockTrackingPanel(tenantRow);
+      renderDebtorsPayablesPanel(tenantRow);
       renderBrandingPanel(tenantRow);
 
       const business = data.business || {};
@@ -2234,6 +2264,45 @@
       const el = document.getElementById("stockTrackingEnabled");
       if (!el) return;
       el.checked = !!(tenantRow && tenantRow.stock_tracking_enabled);
+    }
+
+    function renderDebtorsPayablesPanel(tenantRow) {
+      const el = document.getElementById("debtorsPayablesEnabled");
+      if (!el) return;
+      el.checked = !!(tenantRow && tenantRow.debtors_payables_enabled);
+    }
+
+    async function saveDebtorsPayables() {
+      const msgSpan = document.getElementById("debtorsPayablesMessage");
+      const btn = document.getElementById("btnSaveDebtorsPayables");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const debtorsPayablesEnabled = document.getElementById("debtorsPayablesEnabled").checked;
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { error } = await supabaseClient
+            .from("tenants")
+            .update({ debtors_payables_enabled: debtorsPayablesEnabled })
+            .eq("id", currentTenantId);
+
+          if (error) throw error;
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = "Debtors & Payables setting saved.";
+        } catch (err) {
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
     }
 
     async function saveStockTracking() {
