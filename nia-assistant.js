@@ -34,7 +34,8 @@
 
   const NAV_ITEMS = [
     { key: "dashboard", href: "client.html", icon: "🏠", label: "Dashboard", aliases: ["home", "dashboard", "main page"] },
-    { key: "money", href: "my-money.html", icon: "💰", label: "Money", aliases: ["money", "finance", "finances", "transactions", "expenses", "expense", "income", "payments", "payment", "invoices", "invoice", "petty cash"] },
+    { key: "money", href: "my-money.html", icon: "💰", label: "Money", aliases: ["money", "finance", "finances", "transactions", "expenses", "expense", "income", "payments", "payment", "petty cash"] },
+    { key: "customer-invoices", href: "my-customer-invoices.html", icon: "📃", label: "Customer Invoices", aliases: ["customer invoices", "invoices", "invoice", "invoicing", "bill a customer"] },
     { key: "documents", href: "my-documents.html", icon: "📄", label: "Documents", aliases: ["documents", "document", "docs", "files", "uploads"] },
     { key: "reports", href: "reports.html", icon: "📑", label: "Reports", aliases: ["reports", "report", "export", "exports"] },
     { key: "people", href: "my-people.html", icon: "👥", label: "People", aliases: ["people", "customers", "customer", "clients", "client", "leads", "lead", "staff", "employees", "employee", "contacts", "drivers", "driver", "suppliers", "supplier"] },
@@ -54,7 +55,7 @@
     { key: "support", href: "my-support.html", icon: "🛟", label: "Contact Support", aliases: ["support", "contact support", "help desk", "get help"] },
     { key: "print-report", href: "print-report.html", icon: "🖨️", label: "Print Report", aliases: ["print report", "printable report"] },
     { key: "security", href: "my-security.html", icon: "🔐", label: "Security & Data", aliases: ["security", "data security", "2fa", "two-factor", "two factor"] },
-    { key: "team-access", href: "my-team-access.html", icon: "🧑‍🤝‍🧑", label: "Team Access", aliases: ["team access", "staff access", "invite staff", "add staff", "manage staff", "payroll", "staff salary", "staff salaries", "staff wages"] },
+    { key: "team-access", href: "my-team-access.html", icon: "🧑‍🤝‍🧑", label: "Team Access", aliases: ["team access", "staff access", "invite staff", "add staff", "manage staff", "payroll", "staff salary", "staff salaries", "staff wages", "payee", "payees"] },
     { key: "support-access", href: "my-support-access.html", icon: "🛟", label: "UNGANI Support Access", aliases: ["support access", "ungani support", "grant access", "invite support", "revoke access", "temporary access"] },
     { key: "recently-deleted", href: "my-recently-deleted.html", icon: "🗑️", label: "Recently Deleted", aliases: ["recently deleted", "deleted", "recover", "recycle bin", "restore"] },
     { key: "package", href: "my-package.html", icon: "💼", label: "Package", aliases: ["package", "my package", "upgrade request", "upgrade requests"] },
@@ -294,6 +295,14 @@
       answer: "Turn it on in Settings and a Debtors & Payables page appears in your sidebar. \"Who Owes Me\" is built from your Customer Invoices - any invoice that's Sent, Partially Paid, or Overdue with a balance still due shows up there, grouped by customer. \"Who I Owe\" is built from Money - any pending expense you've linked to a supplier or contact using the Related Person / Supplier field shows up there, grouped by who it's owed to. Nothing new to fill in beyond what you're already tracking in Customer Invoices and Money.",
       href: "my-debtors-payables.html",
       linkLabel: "Open Debtors & Payables"
+    },
+    {
+      key: "payees-explained",
+      match: ["payee", "payees", "what is a payee", "no-login staff", "vendor payment", "pay someone without a login"],
+      question: "What is a Payee?",
+      answer: "A Payee is for people you pay who don't need to log into UNGANI OS - a driver, cleaner, or casual worker, for example. Unlike a full Team Access profile, adding a Payee doesn't use up one of your paid user seats. Add one from Team Access, or on the fly from Money's \"Paid To\" field when recording an expense. Payees are expense-only - there's no income side.",
+      href: "my-team-access.html",
+      linkLabel: "Open Team Access"
     }
   ];
 
@@ -2268,6 +2277,19 @@
         return runAssetCountIntent(text);
       }
 
+      // Live-data stock question ("stock", "inventory", "restock") -
+      // checked ahead of the static Stock Tracking HELP_TOPICS answer so
+      // a bare mention gets real low/out-of-stock numbers, not just an
+      // explanation of the feature.
+      if (isStockQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Stock levels aren't available on the admin side yet.");
+          return { spoken: "That's not available on the admin side yet." };
+        }
+
+        return runStockQueryIntent();
+      }
+
       // Live-data payroll question ("how much have I paid staff", "who's
       // been paid this month") - checked ahead of the static howTo/help
       // matchers for the same reason as the asset checks above: this needs
@@ -2290,6 +2312,18 @@
         }
 
         return runInvoiceQueryIntent();
+      }
+
+      // Live-data debtors/payables question ("debtors", "payables", "who
+      // owes me") - same reasoning as invoices above, checked right after
+      // it since both are financial live-data questions.
+      if (isDebtorsQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Debtors & Payables isn't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runDebtorsQueryIntent();
       }
 
       // Health score diagnosis - works on BOTH surfaces (client Business
@@ -2777,6 +2811,58 @@
     return { spoken: "You have " + total + " items on record." };
   }
 
+  // A bare mention of "stock"/"stock tracking"/"inventory" is enough on
+  // its own - computeAssetAttentionEntries() already works whether or not
+  // Stock Tracking is turned on (it falls back to custom_fields.stock_quantity
+  // when it's off), so there's always a real answer to give.
+  function isStockQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["stock", "inventory", "restock", "reorder level"].some(function (word) { return lower.indexOf(word) !== -1; });
+  }
+
+  async function runStockQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your stock levels...");
+
+    let rows;
+    try {
+      rows = await fetchAssetRowsForTenant();
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const stockEntries = computeAssetAttentionEntries(rows).filter(function (e) { return e.kind === "stock"; });
+    const stockTrackingEnabled = !!(state.tenant && state.tenant.stock_tracking_enabled === true);
+
+    if (!stockEntries.length) {
+      addNiaMessage(
+        "Nothing is low or out of stock right now." +
+        (stockTrackingEnabled ? "" : ` Turn on Stock Tracking in Settings for a full movement history — ${goldLink("my-settings.html", "Open Settings")}.`)
+      );
+      return { spoken: "Nothing is low or out of stock right now." };
+    }
+
+    const shown = stockEntries.slice(0, 6);
+    const remaining = stockEntries.length - shown.length;
+
+    const listHtml = shown.map(function (entry) {
+      const url = "my-item-profile.html?id=" + encodeURIComponent(entry.id);
+      return `<div style="margin-top:6px;">${entry.severity === "red" ? "🔴" : "🟠"} <a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(entry.name)}</a> — ${safe(entry.label)}</div>`;
+    }).join("");
+
+    addNiaMessage(
+      stockEntries.length + " item" + (stockEntries.length === 1 ? "" : "s") + " low or out of stock:" + listHtml +
+      (remaining > 0 ? `<div style="margin-top:8px;"><a class="nia-link-btn" style="margin-top:0;" href="${attr(stockTrackingEnabled ? "my-stock-tracking.html" : "my-items.html")}">See ${remaining} more →</a></div>` : "")
+    );
+
+    return { spoken: stockEntries.length + " items are low or out of stock." };
+  }
+
   // ---- Payroll / staff-payment questions ----
   // Reads the same transactions.related_team_member_id link client.html's
   // dashboard Payroll card and my-team-access.html's summary already use -
@@ -2888,15 +2974,14 @@
   // has no admin surface.
   function isInvoiceQueryPhrase(text) {
     const lower = text.toLowerCase();
-    const mentionsInvoiceTopic = ["invoice", "invoices", "invoicing"].some(function (word) { return lower.indexOf(word) !== -1; })
+
+    // A bare mention of the topic ("invoice", "invoicing") is enough on
+    // its own - runInvoiceQueryIntent() already returns a general status
+    // summary (outstanding total, overdue count, link) regardless of
+    // which qualifier (if any) triggered it, so there's no reason to
+    // require one. The qualifier list only adds more ways to ask.
+    return ["invoice", "invoices", "invoicing"].some(function (word) { return lower.indexOf(word) !== -1; })
       || (lower.indexOf("owe") !== -1 && (lower.indexOf("customer") !== -1 || lower.indexOf("client") !== -1));
-
-    if (!mentionsInvoiceTopic) return false;
-
-    return [
-      "how much", "who owes", "overdue", "unpaid", "outstanding", "status",
-      "how many", "this month", "this week", "last invoice", "total"
-    ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
   }
 
   async function runInvoiceQueryIntent() {
@@ -2964,6 +3049,89 @@
     };
   }
 
+  // ---- Debtors & Payables (Task 4) ----
+  // Reuses the exact aggregation logic my-debtors-payables.html uses:
+  // "Who Owes Me" from get_my_ungani_customer_invoices() (outstanding
+  // balance, non-cancelled/non-draft), "Who I Owe" from pending expense
+  // transactions with related_person_id set. A bare topic mention is
+  // enough - both halves below already degrade gracefully to "nothing
+  // outstanding" when there's no data.
+  function isDebtorsQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["debtor", "debtors", "payable", "payables", "who owes me", "who do i owe", "who i owe"]
+      .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  async function runDebtorsQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    if (!state.tenant || state.tenant.debtors_payables_enabled !== true) {
+      addNiaMessage(
+        `Debtors &amp; Payables isn't turned on yet. Enable it in Settings to track who owes you and who you owe — ${goldLink("my-settings.html", "Open Settings")}.`
+      );
+      return { spoken: "Debtors and Payables isn't turned on yet." };
+    }
+
+    addNiaMessage("Checking who owes you and who you owe...");
+
+    let invoices = [];
+    let transactions = [];
+    let people = [];
+
+    try {
+      const [invoiceResponse, peopleResponse, txResponse] = await Promise.all([
+        state.supabaseClient.rpc("get_my_ungani_customer_invoices"),
+        state.supabaseClient.from("client_people").select("id, full_name, person_type").eq("tenant_id", state.tenantId),
+        state.supabaseClient.from("transactions")
+          .select("id, amount, amount_kes, status, transaction_type, type, related_person_id")
+          .eq("tenant_id", state.tenantId).eq("status", "pending").not("related_person_id", "is", null).limit(1000)
+      ]);
+
+      invoices = (invoiceResponse && !invoiceResponse.error && invoiceResponse.data && invoiceResponse.data.ok === true)
+        ? (invoiceResponse.data.invoices || []) : [];
+      people = (!peopleResponse.error && peopleResponse.data) ? peopleResponse.data : [];
+      transactions = (!txResponse.error && txResponse.data) ? txResponse.data : [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const owedToMe = invoices.reduce(function (sum, inv) {
+      const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
+      const isOutstanding = balance > 0 && inv.status !== "cancelled" && inv.status !== "draft";
+      return isOutstanding ? sum + balance : sum;
+    }, 0);
+    const debtorCount = invoices.filter(function (inv) {
+      const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
+      return balance > 0 && inv.status !== "cancelled" && inv.status !== "draft";
+    }).length;
+
+    const peopleById = {};
+    people.forEach(function (p) { peopleById[p.id] = p; });
+
+    const expenseRows = transactions.filter(function (row) {
+      const broadType = pickField(row, ["transaction_type", "type"], "income");
+      return String(broadType).toLowerCase() === "expense";
+    });
+    const iOwe = expenseRows.reduce(function (sum, row) { return sum + (Number(row.amount_kes) || Number(row.amount) || 0); }, 0);
+    const payeeIds = new Set(expenseRows.map(function (row) { return row.related_person_id; }));
+
+    const html =
+      `<strong>Debtors &amp; Payables</strong>` +
+      `<div style="margin-top:8px;">💰 Owed to you: ${safe(formatNiaKES(owedToMe))} across ${debtorCount} customer${debtorCount === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:4px;">📤 You owe: ${safe(formatNiaKES(iOwe))} across ${payeeIds.size} supplier/contact${payeeIds.size === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:8px;">${goldLink("my-debtors-payables.html", "See full breakdown →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: "Owed to you: " + formatNiaKES(owedToMe) + ". You owe: " + formatNiaKES(iOwe) + "."
+    };
+  }
+
   // ---- Business/Platform Health Score diagnosis ----
   // Reuses the exact same factor math as client.html's
   // computeGenericHealthScore/computePropertyHealthScore (client surface,
@@ -2977,14 +3145,14 @@
   // for Nia everywhere else (payroll, assets, etc.).
   function isHealthScoreQueryPhrase(text) {
     const lower = text.toLowerCase();
-    const mentionsHealthTopic = lower.indexOf("health score") !== -1 || lower.indexOf("business health") !== -1 ||
-      lower.indexOf("platform health") !== -1 || (lower.indexOf("health") !== -1 && lower.indexOf("score") !== -1);
-    if (!mentionsHealthTopic) return false;
 
-    return [
-      "why", "low", "what's wrong", "whats wrong", "improve", "fix", "explain",
-      "affecting", "reason", "doing", "bad", "dropped", "down", "how do i", "how can i"
-    ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+    // A bare mention of the topic is enough on its own -
+    // runHealthScoreQueryIntent() already degrades gracefully (reports
+    // "everything is in good shape" when nothing is weak), so there's no
+    // reason to require a qualifier word too. The qualifier list only
+    // adds more ways to ask.
+    return lower.indexOf("health score") !== -1 || lower.indexOf("business health") !== -1 ||
+      lower.indexOf("platform health") !== -1 || (lower.indexOf("health") !== -1 && lower.indexOf("score") !== -1);
   }
 
   // Ungani Connect ("what's new"/"catch me up"/"any mentions") - checked
