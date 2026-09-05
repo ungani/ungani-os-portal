@@ -70,7 +70,7 @@
 
       --page-bg:
         radial-gradient(circle at top right, rgba(212,166,58,0.20), transparent 32%),
-        linear-gradient(135deg, #061C3D 0%, #092B58 44%, #F5F5F3 44%, #F5F5F3 100%);
+        var(--offwhite);
 
       --text: #061C3D;
       --text-soft: #64748B;
@@ -2909,16 +2909,40 @@
         .subscribe();
     }
 
+    // Sidebar badge counts are non-critical background reads, but they were
+    // observed 404-ing intermittently in live testing (2 of 3 fresh page
+    // loads) with the exact same auth token as adjacent, successful requests
+    // fired moments apart - ruling out a stale-session/token-refresh race.
+    // That points at a transient backend/PostgREST blip rather than anything
+    // wrong with the request itself, so a short retry is the right fix: cheap,
+    // and it self-heals the one-off case without masking a real, persistent
+    // failure (which still surfaces after 3 attempts).
+    async function fetchAdminHomeBadgeWithRetry(queryFn, attempts = 3, baseDelayMs = 300) {
+      let lastResponse = null;
+
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        lastResponse = await queryFn();
+        if (!lastResponse.error) return lastResponse;
+        if (attempt < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+        }
+      }
+
+      return lastResponse;
+    }
+
     async function getAdminHomeSidebarBadgeCounts() {
       if (!supabaseClient) return {};
 
       const counts = {};
 
       try {
-        const registrationsResponse = await supabaseClient
-          .from("registrations")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "pending");
+        const registrationsResponse = await fetchAdminHomeBadgeWithRetry(() =>
+          supabaseClient
+            .from("registrations")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "pending")
+        );
 
         if (!registrationsResponse.error) counts.registrations = registrationsResponse.count || 0;
       } catch (error) {
@@ -2926,10 +2950,12 @@
       }
 
       try {
-        const supportResponse = await supabaseClient
-          .from("support_issues")
-          .select("id", { count: "exact", head: true })
-          .in("status", ["open", "new", "pending", "in_progress"]);
+        const supportResponse = await fetchAdminHomeBadgeWithRetry(() =>
+          supabaseClient
+            .from("support_issues")
+            .select("id", { count: "exact", head: true })
+            .in("status", ["open", "new", "pending", "in_progress"])
+        );
 
         if (!supportResponse.error) counts.support = supportResponse.count || 0;
       } catch (error) {
@@ -2937,11 +2963,13 @@
       }
 
       try {
-        const chatResponse = await supabaseClient
-          .from("admin_client_messages")
-          .select("id", { count: "exact", head: true })
-          .eq("sender_role", "client")
-          .is("read_by_admin_at", null);
+        const chatResponse = await fetchAdminHomeBadgeWithRetry(() =>
+          supabaseClient
+            .from("admin_client_messages")
+            .select("id", { count: "exact", head: true })
+            .eq("sender_role", "client")
+            .is("read_by_admin_at", null)
+        );
 
         if (!chatResponse.error) counts.adminChat = chatResponse.count || 0;
       } catch (error) {
@@ -2949,10 +2977,12 @@
       }
 
       try {
-        const proofsResponse = await supabaseClient
-          .from("payment-proofs")
-          .select("id", { count: "exact", head: true })
-          .eq("proof_status", "submitted");
+        const proofsResponse = await fetchAdminHomeBadgeWithRetry(() =>
+          supabaseClient
+            .from("payment_proofs")
+            .select("id", { count: "exact", head: true })
+            .eq("proof_status", "submitted")
+        );
 
         if (!proofsResponse.error) counts.paymentProofs = proofsResponse.count || 0;
       } catch (error) {
@@ -2960,10 +2990,12 @@
       }
 
       try {
-        const upgradeResponse = await supabaseClient
-          .from("ungani_upgrade_requests")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "pending");
+        const upgradeResponse = await fetchAdminHomeBadgeWithRetry(() =>
+          supabaseClient
+            .from("ungani_upgrade_requests")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "pending")
+        );
 
         if (!upgradeResponse.error) counts.upgradeRequests = upgradeResponse.count || 0;
       } catch (error) {
@@ -2971,12 +3003,21 @@
       }
 
       try {
-        const notificationsResponse = await supabaseClient
-          .from("ungani_notifications")
-          .select("id", { count: "exact", head: true })
-          .neq("status", "read");
+        // Canonical RPC (see sql/task10-unified-notification-count.sql) -
+        // this sidebar-badge count was missed during the notification
+        // unification pass (only the dashboard panel's separate
+        // loadNotifications() was updated) and was still reading the old
+        // unscoped ungani_notifications.neq("status","read") query - the
+        // exact "counts every client notification platform-wide" bug the
+        // unification work was meant to eliminate. Now matches
+        // admin-shared.js's version of this same badge.
+        const notificationsResponse = await fetchAdminHomeBadgeWithRetry(() =>
+          supabaseClient.rpc("get_my_ungani_unread_notification_count")
+        );
 
-        if (!notificationsResponse.error) counts.notifications = notificationsResponse.count || 0;
+        if (!notificationsResponse.error && typeof notificationsResponse.data === "number") {
+          counts.notifications = notificationsResponse.data;
+        }
       } catch (error) {
         console.warn("Admin home sidebar badge (notifications) skipped:", error.message);
       }

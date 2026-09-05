@@ -2204,6 +2204,7 @@
         }
       } catch (error) {
         console.warn("User profile lookup skipped:", attempt.column, error.message);
+        logAppError("user_profile_lookup_failed", error.message, { column: attempt.column });
       }
     }
 
@@ -2268,6 +2269,7 @@
       }
     } catch (error) {
       console.warn("Tenant RPC skipped:", error.message);
+      logAppError("tenant_rpc_failed", error.message, { authUserId: authUser?.id || null });
     }
 
     return null;
@@ -2284,12 +2286,14 @@
 
       if (response.error) {
         console.warn("Tenant lookup error:", response.error.message);
+        logAppError("tenant_lookup_failed", response.error.message, { tenantId: tenantId });
         return null;
       }
 
       return response.data;
     } catch (error) {
       console.warn("Tenant lookup failed:", error.message);
+      logAppError("tenant_lookup_failed", error.message, { tenantId: tenantId });
       return null;
     }
   }
@@ -3275,6 +3279,39 @@
     }
   }
 
+  // Passive error-monitoring log (sql/task-app-error-log.sql) - same
+  // fire-and-forget/keepalive shape as logAuditEvent() above, deliberately
+  // never throws or recurses into itself (a broken logger must never break
+  // the caller, or cascade into logging its own failure forever). Called
+  // from a curated set of high-value catch blocks below, not every catch
+  // in this file - this is meant to surface real, actionable problems on
+  // admin-error-log.html, not become a second console.warn.
+  async function logAppError(errorType, message, context) {
+    try {
+      if (!state.supabaseClient) return;
+
+      const sessionRes = await state.supabaseClient.auth.getSession();
+      const token = sessionRes?.data?.session?.access_token;
+
+      if (!token) return;
+
+      await fetch("/api/log-app-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({
+          surface: "client",
+          page: window.location.pathname,
+          errorType: errorType,
+          message: message,
+          context: context || null
+        }),
+        keepalive: true
+      });
+    } catch (error) {
+      console.warn("App error log warning:", error.message);
+    }
+  }
+
   // Fire-and-forget instant-send for the caller's OWN tenant's pending
   // emails - mirrors admin.html's triggerApprovalEmailSendNow() but hits
   // the tenant-scoped auth path (get_my_ungani_tenant_id RPC) added to
@@ -3775,6 +3812,7 @@
       toggleSidebar,
       logout,
       logAuditEvent,
+      logAppError,
       triggerEmailSendNow,
       triggerEventPush,
       exportRecordsToCsv,
@@ -3943,6 +3981,7 @@
         }
       } catch (error) {
         console.warn("UNGANI read-only access check skipped:", error.message);
+        logAppError("readonly_access_check_failed", error.message, { tenantId: state.tenantId || null });
       }
 
       try {
@@ -3966,6 +4005,7 @@
         }
       } catch (error) {
         console.warn("UNGANI read-only notice check skipped:", error.message);
+        logAppError("readonly_notice_check_failed", error.message, { tenantId: state.tenantId || null });
       }
 
       readOnlyState.loaded = true;
@@ -4320,6 +4360,7 @@
 
       if (response.error) {
         console.warn("UNGANI notification engine error:", response.error.message);
+        if (shared.logAppError) shared.logAppError("notification_engine_failed", response.error.message, { tenantId: state.tenantId });
         return [];
       }
 
@@ -4378,6 +4419,9 @@
       }
     } catch (error) {
       console.warn("Unread notification count RPC skipped:", error.message);
+      if (window.UnganiClientShared && window.UnganiClientShared.logAppError) {
+        window.UnganiClientShared.logAppError("unread_notification_count_failed", error.message, null);
+      }
     }
 
     if (unread === -1) {

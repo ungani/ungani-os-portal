@@ -1313,6 +1313,28 @@
     return currentAdmin;
   }
 
+  // Sidebar badge counts are non-critical background reads, but they were
+  // observed 404-ing intermittently in live testing (2 of 3 fresh page
+  // loads) with the exact same auth token as adjacent, successful requests
+  // fired moments apart - ruling out a stale-session/token-refresh race.
+  // That points at a transient backend/PostgREST blip rather than anything
+  // wrong with the request itself, so a short retry is the right fix: cheap,
+  // and it self-heals the one-off case without masking a real, persistent
+  // failure (which still surfaces after 3 attempts).
+  async function fetchWithRetry(queryFn, attempts = 3, baseDelayMs = 300) {
+    let lastResponse = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      lastResponse = await queryFn();
+      if (!lastResponse.error) return lastResponse;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+      }
+    }
+
+    return lastResponse;
+  }
+
   // Admin sidebar item badges (Client Registrations/Support Desk/Client
   // Chat/Payment Proofs/Upgrade Requests/Notifications) - one batched round
   // of lightweight COUNT queries per page load, matching the client-side
@@ -1325,59 +1347,94 @@
     const counts = {};
 
     try {
-      const registrationsResponse = await client
-        .from("registrations")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending");
+      const registrationsResponse = await fetchWithRetry(() =>
+        client
+          .from("registrations")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending")
+      );
 
-      if (!registrationsResponse.error) counts.registrations = registrationsResponse.count || 0;
+      if (!registrationsResponse.error) {
+        counts.registrations = registrationsResponse.count || 0;
+      } else {
+        logAppError("sidebar_badge_registrations", registrationsResponse.error.message, null);
+      }
     } catch (error) {
       console.warn("Admin sidebar badge (registrations) skipped:", error.message);
+      logAppError("sidebar_badge_registrations", error.message, null);
     }
 
     try {
-      const supportResponse = await client
-        .from("support_issues")
-        .select("id", { count: "exact", head: true })
-        .in("status", ["open", "new", "pending", "in_progress"]);
+      const supportResponse = await fetchWithRetry(() =>
+        client
+          .from("support_issues")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["open", "new", "pending", "in_progress"])
+      );
 
-      if (!supportResponse.error) counts.support = supportResponse.count || 0;
+      if (!supportResponse.error) {
+        counts.support = supportResponse.count || 0;
+      } else {
+        logAppError("sidebar_badge_support", supportResponse.error.message, null);
+      }
     } catch (error) {
       console.warn("Admin sidebar badge (support) skipped:", error.message);
+      logAppError("sidebar_badge_support", error.message, null);
     }
 
     try {
-      const chatResponse = await client
-        .from("admin_client_messages")
-        .select("id", { count: "exact", head: true })
-        .eq("sender_role", "client")
-        .is("read_by_admin_at", null);
+      const chatResponse = await fetchWithRetry(() =>
+        client
+          .from("admin_client_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("sender_role", "client")
+          .is("read_by_admin_at", null)
+      );
 
-      if (!chatResponse.error) counts.adminChat = chatResponse.count || 0;
+      if (!chatResponse.error) {
+        counts.adminChat = chatResponse.count || 0;
+      } else {
+        logAppError("sidebar_badge_admin_chat", chatResponse.error.message, null);
+      }
     } catch (error) {
       console.warn("Admin sidebar badge (chat) skipped:", error.message);
+      logAppError("sidebar_badge_admin_chat", error.message, null);
     }
 
     try {
-      const proofsResponse = await client
-        .from("payment-proofs")
-        .select("id", { count: "exact", head: true })
-        .eq("proof_status", "submitted");
+      const proofsResponse = await fetchWithRetry(() =>
+        client
+          .from("payment_proofs")
+          .select("id", { count: "exact", head: true })
+          .eq("proof_status", "submitted")
+      );
 
-      if (!proofsResponse.error) counts.paymentProofs = proofsResponse.count || 0;
+      if (!proofsResponse.error) {
+        counts.paymentProofs = proofsResponse.count || 0;
+      } else {
+        logAppError("sidebar_badge_payment_proofs", proofsResponse.error.message, null);
+      }
     } catch (error) {
       console.warn("Admin sidebar badge (payment proofs) skipped:", error.message);
+      logAppError("sidebar_badge_payment_proofs", error.message, null);
     }
 
     try {
-      const upgradeResponse = await client
-        .from("ungani_upgrade_requests")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending");
+      const upgradeResponse = await fetchWithRetry(() =>
+        client
+          .from("ungani_upgrade_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending")
+      );
 
-      if (!upgradeResponse.error) counts.upgradeRequests = upgradeResponse.count || 0;
+      if (!upgradeResponse.error) {
+        counts.upgradeRequests = upgradeResponse.count || 0;
+      } else {
+        logAppError("sidebar_badge_upgrade_requests", upgradeResponse.error.message, null);
+      }
     } catch (error) {
       console.warn("Admin sidebar badge (upgrade requests) skipped:", error.message);
+      logAppError("sidebar_badge_upgrade_requests", error.message, null);
     }
 
     try {
@@ -1387,13 +1444,18 @@
       // the entire platform and had no logical connection to "this admin's
       // notifications". Auto-resolves to target_type='admin' for an admin
       // caller.
-      const notificationsResponse = await client.rpc("get_my_ungani_unread_notification_count");
+      const notificationsResponse = await fetchWithRetry(() =>
+        client.rpc("get_my_ungani_unread_notification_count")
+      );
 
       if (!notificationsResponse.error && typeof notificationsResponse.data === "number") {
         counts.notifications = notificationsResponse.data;
+      } else if (notificationsResponse.error) {
+        logAppError("sidebar_badge_notifications", notificationsResponse.error.message, null);
       }
     } catch (error) {
       console.warn("Admin sidebar badge (notifications) skipped:", error.message);
+      logAppError("sidebar_badge_notifications", error.message, null);
     }
 
     return counts;
@@ -1555,6 +1617,41 @@
       });
     } catch (error) {
       console.warn("Audit log warning:", error.message);
+    }
+  }
+
+  // Passive error-monitoring log (sql/task-app-error-log.sql) - same
+  // fire-and-forget/keepalive shape as logAuditEvent() above, deliberately
+  // never throws or recurses into itself (a broken logger must never break
+  // the caller, or cascade into logging its own failure forever). Called
+  // from the sidebar badge counters below, which already retry 3 times
+  // (see fetchWithRetry) before giving up - anything that reaches this
+  // logger has exhausted retries and is a real, actionable problem worth
+  // surfacing on admin-error-log.html.
+  async function logAppError(errorType, message, context) {
+    try {
+      const client = getSupabaseClient();
+      if (!client) return;
+
+      const sessionRes = await client.auth.getSession();
+      const token = sessionRes?.data?.session?.access_token;
+
+      if (!token) return;
+
+      await fetch("/api/log-app-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({
+          surface: "admin",
+          page: window.location.pathname,
+          errorType: errorType,
+          message: message,
+          context: context || null
+        }),
+        keepalive: true
+      });
+    } catch (error) {
+      console.warn("App error log warning:", error.message);
     }
   }
 

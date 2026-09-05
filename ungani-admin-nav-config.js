@@ -107,6 +107,7 @@
         items: [
           { key: "healthCheck", href: "admin-health.html", icon: "❤️", label: "System Health", activeKey: "admin-health" },
           { key: "auditLogs", href: "admin-audit-logs.html", icon: "📜", label: "Audit Logs", activeKey: "admin-audit-logs" },
+          { key: "errorLog", href: "admin-error-log.html", icon: "🐞", label: "Error Log", activeKey: "admin-error-log" },
           { key: "emailQueue", href: "admin-email-queue.html", icon: "✉️", label: "Email Queue", activeKey: "admin-email-queue" },
           { key: "smartChecks", href: "admin-smart-checks.html", icon: "🧠", label: "Smart Checks", activeKey: "admin-smart-checks" },
           { key: "launchReadiness", href: "admin-launch.html", icon: "🚀", label: "Launch Readiness", activeKey: "admin-launch" }

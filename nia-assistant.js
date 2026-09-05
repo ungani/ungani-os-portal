@@ -105,6 +105,7 @@
     { key: "admin-charts", href: "admin-charts.html", icon: "📊", label: "Charts", aliases: ["charts", "analytics", "graphs"] },
     { key: "admin-reports", href: "admin-reports.html", icon: "📑", label: "Reports", aliases: ["reports", "report"] },
     { key: "admin-audit-logs", href: "admin-audit-logs.html", icon: "🕵️", label: "Audit Logs", aliases: ["audit logs", "audit log", "activity log", "security log", "who did what"] },
+    { key: "admin-error-log", href: "admin-error-log.html", icon: "🐞", label: "Error Log", aliases: ["error log", "errors", "app errors", "failures", "failed requests"] },
     { key: "admin-email-queue", href: "admin-email-queue.html", icon: "✉️", label: "Email Queue", aliases: ["email queue", "emails", "email", "send email"] },
     { key: "admin-health", href: "admin-health.html", icon: "❤️", label: "System Health", aliases: ["system health", "health check", "status", "uptime"] },
     { key: "admin-smart-checks", href: "admin-smart-checks.html", icon: "🧠", label: "Smart Checks", aliases: ["smart checks"] },
@@ -2399,6 +2400,37 @@
         return runHealthScoreQueryIntent();
       }
 
+      // Live-data admin payment-proofs question ("payment proofs", "proof
+      // of payment") - admin-only, mirrors the client-only live-data
+      // checks above but inverted (this is admin-side work, not a client
+      // concern). Reads admin_get_ungani_payment_proofs(), the same RPC
+      // admin-payment-proofs.html's own list uses, rather than querying
+      // payment_proofs directly, so this always reflects the same access
+      // rules/shape as the real page.
+      if (isAdminPaymentProofsQueryPhrase(text)) {
+        if (state.surface !== "admin") {
+          addNiaMessage("Payment proof review is an admin-only feature.");
+          return { spoken: "That's an admin-only feature." };
+        }
+
+        return runAdminPaymentProofsQueryIntent();
+      }
+
+      // Live-data admin notifications question ("notifications", "unread
+      // notifications") - admin-only. Reuses
+      // get_my_ungani_unread_notification_count(), the same canonical RPC
+      // the admin topbar bell and sidebar badge already call (see
+      // sql/task10-unified-notification-count.sql), so Nia's number always
+      // matches what's on screen.
+      if (isAdminNotificationsQueryPhrase(text)) {
+        if (state.surface !== "admin") {
+          addNiaMessage("That's an admin-only feature — check your own notification bell for your updates.");
+          return { spoken: "That's an admin-only feature." };
+        }
+
+        return runAdminNotificationsQueryIntent();
+      }
+
       // Ungani Connect digest ("what's new", "any mentions") - live-data
       // query like the checks above, client-only (Connect has no admin
       // surface today).
@@ -2927,6 +2959,94 @@
     );
 
     return { spoken: stockEntries.length + " items are low or out of stock." };
+  }
+
+  // ---- Admin: payment proofs + notifications ----
+  // Admin-only live-data intents, added because Nia could previously only
+  // navigate to these pages (via ADMIN_NAV_ITEMS aliases), not answer a
+  // real question about them - a gap in the standing "update Nia on every
+  // feature" rule that predates both features. A bare mention is enough on
+  // its own, matching isStockQueryPhrase's reasoning above: both intents
+  // degrade gracefully to "nothing pending" rather than needing a specific
+  // question shape.
+  function isAdminPaymentProofsQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["payment proof", "payment proofs", "proof of payment", "proofs submitted", "pending proof"]
+      .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  async function runAdminPaymentProofsQueryIntent() {
+    if (!state.supabaseClient) {
+      addNiaMessage("I'm still loading — please try that again in a moment.");
+      return { spoken: "I'm still loading." };
+    }
+
+    addNiaMessage("Checking payment proofs...");
+
+    let rows;
+    try {
+      const { data, error } = await state.supabaseClient.rpc("admin_get_ungani_payment_proofs");
+      if (error) throw error;
+      rows = Array.isArray(data) ? data : [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const submitted = rows.filter(function (r) { return String(r.proof_status || "").toLowerCase() === "submitted"; });
+
+    if (!submitted.length) {
+      addNiaMessage("No payment proofs are waiting for review right now. " + goldLink("admin-payment-proofs.html", "Open Payment Proofs") + ".");
+      return { spoken: "No payment proofs are waiting for review." };
+    }
+
+    const shown = submitted.slice(0, 6);
+    const remaining = submitted.length - shown.length;
+
+    const listHtml = shown.map(function (r) {
+      const label = r.invoice_number ? ("Invoice " + r.invoice_number) : ("Proof " + String(r.id || "").slice(0, 8));
+      return `<div style="margin-top:6px;">🧾 ${safe(label)}${r.proof_file_name ? " — " + safe(r.proof_file_name) : ""}</div>`;
+    }).join("");
+
+    addNiaMessage(
+      submitted.length + " payment proof" + (submitted.length === 1 ? "" : "s") + " waiting for review:" + listHtml +
+      `<div style="margin-top:8px;">${goldLink("admin-payment-proofs.html", remaining > 0 ? ("See all " + submitted.length + " →") : "Open Payment Proofs")}</div>`
+    );
+
+    return { spoken: submitted.length + " payment proofs are waiting for review." };
+  }
+
+  function isAdminNotificationsQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return lower.indexOf("notification") !== -1;
+  }
+
+  async function runAdminNotificationsQueryIntent() {
+    if (!state.supabaseClient) {
+      addNiaMessage("I'm still loading — please try that again in a moment.");
+      return { spoken: "I'm still loading." };
+    }
+
+    addNiaMessage("Checking notifications...");
+
+    let count = 0;
+    try {
+      const { data, error } = await state.supabaseClient.rpc("get_my_ungani_unread_notification_count");
+      if (error) throw error;
+      count = typeof data === "number" ? data : 0;
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (!count) {
+      addNiaMessage("You're all caught up — no unread notifications. " + goldLink("admin-notifications.html", "Open Notifications") + ".");
+      return { spoken: "No unread notifications." };
+    }
+
+    addNiaMessage(count + " unread notification" + (count === 1 ? "" : "s") + ". " + goldLink("admin-notifications.html", "Open Notifications"));
+
+    return { spoken: count + " unread notifications." };
   }
 
   // ---- Payroll / staff-payment questions ----
