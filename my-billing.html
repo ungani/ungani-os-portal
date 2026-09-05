@@ -1034,33 +1034,177 @@
     let currentTenantId = null;
     let selectedPaymentForProof = null;
 
-    // TODO: Once UNGANI has real payment details (M-Pesa Paybill/Till number,
-    // account name, bank details, etc.), set PAYMENT_INSTRUCTIONS_READY to
-    // true and fill in PAYMENT_INSTRUCTIONS_HTML below - renderPaymentInstructions()
-    // already handles both states, so no other change is needed.
+    // TODO: Once UNGANI has real payment details for OTHER methods (bank
+    // transfer, etc.), set PAYMENT_INSTRUCTIONS_READY to true and fill in
+    // PAYMENT_INSTRUCTIONS_HTML below - renderPaymentInstructions() already
+    // handles both states, so no other change is needed. M-Pesa STK Push
+    // below works independently of this flag (Sandbox now, production once
+    // the real Paybill/Consumer Key/Secret/Passkey are confirmed - swapping
+    // is a Vercel env-var change only, not a rebuild).
     const PAYMENT_INSTRUCTIONS_READY = false;
     const PAYMENT_INSTRUCTIONS_HTML = "";
+
+    let mpesaPollTimer = null;
 
     function renderPaymentInstructions() {
       const body = document.getElementById("paymentInstructionsBody");
       if (!body) return;
 
-      if (PAYMENT_INSTRUCTIONS_READY && PAYMENT_INSTRUCTIONS_HTML) {
-        body.innerHTML = PAYMENT_INSTRUCTIONS_HTML;
+      const fallback = PAYMENT_INSTRUCTIONS_READY && PAYMENT_INSTRUCTIONS_HTML
+        ? PAYMENT_INSTRUCTIONS_HTML
+        : `
+          <p class="muted" style="margin: 0 0 10px; line-height: 1.55;">
+            Other payment methods (bank transfer, etc.) will appear here once your package
+            request is approved — you don't need to guess or ask separately.
+          </p>
+          <p class="muted" style="margin: 0; line-height: 1.55;">
+            Haven't requested a package yet?
+            <a href="my-package.html" class="gold-link" style="color: var(--gold); font-weight: 800; text-decoration: none;">Open My Package</a>
+            to get started.
+          </p>
+        `;
+
+      body.innerHTML = `
+        <div style="margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--border);">
+          <p class="muted" style="margin: 0 0 12px; line-height: 1.55;">
+            Pay instantly with M-Pesa — enter your Safaricom number and confirm the prompt on your phone.
+          </p>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+            <input
+              id="mpesaPhoneInput"
+              type="tel"
+              placeholder="0712345678"
+              style="flex: 1 1 200px; min-width: 180px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--input-bg, var(--card)); color: var(--text);"
+            />
+            <button id="mpesaPayButton" class="ungani-btn gold" type="button" data-ungani-allow-readonly onclick="initiateMpesaPayment()">
+              Pay with M-Pesa
+            </button>
+          </div>
+          <div id="mpesaStatus" style="margin-top: 12px; display: none;"></div>
+        </div>
+        ${fallback}
+      `;
+    }
+
+    function setMpesaStatus(message, tone) {
+      const el = document.getElementById("mpesaStatus");
+      if (!el) return;
+
+      const colors = {
+        info: "var(--text-soft, var(--muted))",
+        success: "#166534",
+        error: "#991B1B"
+      };
+
+      el.style.display = "block";
+      el.style.color = colors[tone] || colors.info;
+      el.textContent = message;
+    }
+
+    async function initiateMpesaPayment() {
+      const button = document.getElementById("mpesaPayButton");
+      const phoneInput = document.getElementById("mpesaPhoneInput");
+      const phone = phoneInput ? phoneInput.value.trim() : "";
+
+      if (!phone) {
+        setMpesaStatus("Enter your M-Pesa phone number first.", "error");
         return;
       }
 
-      body.innerHTML = `
-        <p class="muted" style="margin: 0 0 10px; line-height: 1.55;">
-          UNGANI will share exact payment details (e.g. M-Pesa Paybill or bank transfer) here
-          once your package request is approved — you don't need to guess or ask separately.
-        </p>
-        <p class="muted" style="margin: 0; line-height: 1.55;">
-          Haven't requested a package yet?
-          <a href="my-package.html" class="gold-link" style="color: var(--gold); font-weight: 800; text-decoration: none;">Open My Package</a>
-          to get started.
-        </p>
-      `;
+      if (mpesaPollTimer) {
+        clearInterval(mpesaPollTimer);
+        mpesaPollTimer = null;
+      }
+
+      button.disabled = true;
+      button.textContent = "Sending request...";
+      setMpesaStatus("Sending payment request...", "info");
+
+      try {
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const accessToken = sessionData && sessionData.session ? sessionData.session.access_token : null;
+
+        if (!accessToken) {
+          setMpesaStatus("Your session has expired — please log in again.", "error");
+          button.disabled = false;
+          button.textContent = "Pay with M-Pesa";
+          return;
+        }
+
+        const response = await fetch("/api/mpesa-stk-push", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + accessToken
+          },
+          body: JSON.stringify({ phone: phone })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          setMpesaStatus(result.message || "Could not start the M-Pesa payment.", "error");
+          button.disabled = false;
+          button.textContent = "Pay with M-Pesa";
+          return;
+        }
+
+        setMpesaStatus("Check your phone and enter your M-Pesa PIN to complete payment...", "info");
+        button.textContent = "Waiting for payment...";
+        pollMpesaTransaction(result.transactionId, button);
+      } catch (error) {
+        setMpesaStatus("Something went wrong: " + error.message, "error");
+        button.disabled = false;
+        button.textContent = "Pay with M-Pesa";
+      }
+    }
+
+    function pollMpesaTransaction(transactionId, button) {
+      let attempts = 0;
+      const maxAttempts = 30; // ~90 seconds at 3s intervals - Daraja STK prompts time out around then anyway.
+
+      mpesaPollTimer = setInterval(async () => {
+        attempts += 1;
+
+        try {
+          const { data, error } = await supabaseClient
+            .from("ungani_mpesa_transactions")
+            .select("status, result_desc")
+            .eq("id", transactionId)
+            .maybeSingle();
+
+          if (error || !data) return;
+
+          if (data.status === "success") {
+            clearInterval(mpesaPollTimer);
+            mpesaPollTimer = null;
+            setMpesaStatus("Payment received — your account is now active.", "success");
+            button.disabled = false;
+            button.textContent = "Pay with M-Pesa";
+            loadBillingData();
+            return;
+          }
+
+          if (data.status === "failed" || data.status === "cancelled") {
+            clearInterval(mpesaPollTimer);
+            mpesaPollTimer = null;
+            setMpesaStatus(data.result_desc || "Payment was not completed.", "error");
+            button.disabled = false;
+            button.textContent = "Pay with M-Pesa";
+            return;
+          }
+        } catch (error) {
+          // Keep polling - a transient network error shouldn't stop the wait.
+        }
+
+        if (attempts >= maxAttempts) {
+          clearInterval(mpesaPollTimer);
+          mpesaPollTimer = null;
+          setMpesaStatus("Still waiting on M-Pesa — if you completed the payment, refresh this page shortly.", "info");
+          button.disabled = false;
+          button.textContent = "Pay with M-Pesa";
+        }
+      }, 3000);
     }
 
     document.addEventListener("DOMContentLoaded", () => {
