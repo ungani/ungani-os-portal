@@ -67,6 +67,12 @@
         background: var(--ungani-card, #FFFFFF);
       }
 
+      .ucp-icon svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 2px;
+      }
+
       .ucp-item strong {
         display: block;
         font-size: 13.5px;
@@ -360,7 +366,7 @@
     container.innerHTML = rows.map(function (row) {
       return `
         <div class="ucp-item">
-          <div class="ucp-icon">💬</div>
+          <div class="ucp-icon"><i data-lucide="message-circle"></i></div>
           <div>
             <strong>${UnganiClientShared.safe(row.author_name || "Someone")}</strong>
             <p style="white-space:pre-wrap;">${UnganiClientShared.safe(row.body)}</p>
@@ -369,6 +375,8 @@
         </div>
       `;
     }).join("");
+
+    UnganiClientShared.renderLucideIcons();
   }
 
   async function postComment(event) {
@@ -477,7 +485,7 @@
 
       return `
         <a class="ucp-doc-row" href="${UnganiClientShared.attr(row.file_url || editHref)}"${row.file_url ? ' target="_blank" rel="noopener noreferrer"' : ""}>
-          <span class="ucp-icon">📄</span>
+          <span class="ucp-icon"><i data-lucide="file-text"></i></span>
           <span>
             <strong>${UnganiClientShared.safe(title)}</strong>
             <span class="ungani-small">${UnganiClientShared.safe(toTitle(docType))} · ${UnganiClientShared.safe(UnganiClientShared.formatDate(row.document_date))}</span>
@@ -485,6 +493,8 @@
         </a>
       `;
     }).join("");
+
+    UnganiClientShared.renderLucideIcons();
   }
 
   async function loadTimeline() {
@@ -515,10 +525,10 @@
   }
 
   const TIMELINE_ICONS = {
-    created: "✨",
-    status_changed: "🔄",
-    assigned: "👤",
-    commented: "💬"
+    created: '<i data-lucide="sparkles"></i>',
+    status_changed: '<i data-lucide="refresh-cw"></i>',
+    assigned: '<i data-lucide="user"></i>',
+    commented: '<i data-lucide="message-circle"></i>'
   };
 
   function renderTimeline(rows) {
@@ -543,6 +553,8 @@
         </div>
       `;
     }).join("");
+
+    UnganiClientShared.renderLucideIcons();
   }
 
   // Best-effort, non-blocking helper for host pages to log a real

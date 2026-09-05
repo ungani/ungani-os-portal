@@ -636,6 +636,18 @@
         box-shadow: 0 14px 32px rgba(6,28,61,0.15);
       }
 
+      .ungani-icon-button svg {
+        width: 19px;
+        height: 19px;
+        stroke-width: 2px;
+      }
+
+      .ungani-profile-menu-item svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 2px;
+      }
+
       .ungani-topbar-avatar {
         width: 44px;
         height: 44px;
@@ -1995,7 +2007,7 @@
 
               <div class="ungani-bell-holder">
                 <button id="unganiBellBtn" class="ungani-icon-button" type="button" onclick="UnganiClientShared.toggleNotifications()" title="Notifications">
-                  🔔
+                  <i data-lucide="bell"></i>
                   <span id="unganiBellCount" class="ungani-bell-count">0</span>
                 </button>
                 <div id="unganiNotificationPanel" class="ungani-notification-panel" style="display:none;"></div>
@@ -2003,7 +2015,7 @@
 
               <div class="ungani-bell-holder">
                 <button id="unganiChatBtn" class="ungani-icon-button" type="button" onclick="UnganiTeamChat.toggle()" title="Team Chat">
-                  💬
+                  <i data-lucide="message-circle"></i>
                   <span id="unganiChatCount" class="ungani-bell-count" data-ungani-chat-badge>0</span>
                 </button>
                 <div id="unganiTeamChatPanel" style="display:none;"></div>
@@ -2091,13 +2103,13 @@
 
     if (labels.length <= 1) return null;
 
-    const items = [["dashboard", "client.html", "📊", "Overview"]];
+    const items = [["dashboard", "client.html", "chart-column", "Overview"]];
 
     labels.forEach(function (label) {
       items.push([
         "section-" + label.toLowerCase(),
         "client.html?section=" + encodeURIComponent(label),
-        "🏷️",
+        "tag",
         label
       ]);
     });
@@ -2977,11 +2989,11 @@
         <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeProfileMenu()">Close</button>
       </div>
       <div class="ungani-panel-body">
-        <a class="ungani-profile-menu-item" href="my-profile.html">🏢 Business Profile</a>
-        <a class="ungani-profile-menu-item" href="my-settings.html#brandingPanel">🎨 Branding</a>
-        <button class="ungani-profile-menu-item" type="button" onclick="UnganiClientShared.toggleTheme()">🌓 Theme</button>
-        <a class="ungani-profile-menu-item" href="my-settings.html#myAccountPanel">👤 My Account</a>
-        <button class="ungani-profile-menu-item" type="button" onclick="UnganiClientShared.logout()">🚪 Logout</button>
+        <a class="ungani-profile-menu-item" href="my-profile.html"><i data-lucide="building-2"></i> Business Profile</a>
+        <a class="ungani-profile-menu-item" href="my-settings.html#brandingPanel"><i data-lucide="palette"></i> Branding</a>
+        <button class="ungani-profile-menu-item" type="button" onclick="UnganiClientShared.toggleTheme()"><i data-lucide="sun-moon"></i> Theme</button>
+        <a class="ungani-profile-menu-item" href="my-settings.html#myAccountPanel"><i data-lucide="user"></i> My Account</a>
+        <button class="ungani-profile-menu-item" type="button" onclick="UnganiClientShared.logout()"><i data-lucide="log-out"></i> Logout</button>
       </div>
     `;
   }
@@ -3008,6 +3020,7 @@
 
     panel.style.display = "block";
     panel.innerHTML = renderProfileMenu();
+    renderLucideIcons();
   }
 
   function closeProfileMenu() {

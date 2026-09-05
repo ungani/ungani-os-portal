@@ -11,6 +11,7 @@
   <link rel="icon" href="/ungani-icon-32.png" type="image/png" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js"></script>
   <script src="ungani-business-config.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script src="ungani-analytics.js"></script>
@@ -1210,13 +1211,15 @@
             </div>
 
             <div class="actions" style="justify-content:flex-start;">
-              ${isOwnerViewer ? `<button class="ungani-btn small dark" type="button" onclick="openMemberDiscussionPanel('${attr(member.id)}')">💬 Discuss</button>` : ""}
+              ${isOwnerViewer ? `<button class="ungani-btn small dark" type="button" onclick="openMemberDiscussionPanel('${attr(member.id)}')"><i data-lucide="message-circle"></i> Discuss</button>` : ""}
               <button class="ungani-btn small light" type="button" onclick="resetMemberToRoleDefaults('${attr(member.id)}', '${attr(member.role_key || "staff")}', this)">Reset to ${safe(toTitleMember(member.role_key || "staff"))} Defaults</button>
               <button class="ungani-btn small red" type="button" onclick="disableMember('${attr(member.id)}', this)">Disable Staff</button>
             </div>
           </div>
         `;
       }).join("");
+
+      hydrateIcons();
     }
 
     async function saveTeamMember(event) {
@@ -1566,6 +1569,12 @@
           font-size: 14px;
         }
 
+        .mp-item-icon svg {
+          width: 15px;
+          height: 15px;
+          stroke-width: 2px;
+        }
+
         .mp-item strong { display: block; font-size: 13px; }
         .mp-item p { margin: 2px 0 0; font-size: 12px; color: var(--text-soft, #64748B); }
         .mp-item time { display: block; margin-top: 4px; font-size: 10.5px; color: var(--text-soft, #64748B); }
@@ -1821,7 +1830,7 @@
 
       container.innerHTML = rows.map(row => `
         <div class="mp-item">
-          <div class="mp-item-icon">💬</div>
+          <div class="mp-item-icon"><i data-lucide="message-circle"></i></div>
           <div>
             <strong>${safe(row.author_name || "Someone")}</strong>
             <p style="white-space:pre-wrap;">${safe(row.body)}</p>
@@ -1829,6 +1838,8 @@
           </div>
         </div>
       `).join("");
+
+      hydrateIcons();
     }
 
     async function postMemberComment(event) {
@@ -1925,13 +1936,15 @@
 
       container.innerHTML = rows.map(row => `
         <a class="mp-item" href="${attr(row.file_url || ("my-documents.html?highlight=" + encodeURIComponent(row.id)))}"${row.file_url ? ' target="_blank" rel="noopener noreferrer"' : ""} style="text-decoration:none;color:inherit;">
-          <div class="mp-item-icon">📄</div>
+          <div class="mp-item-icon"><i data-lucide="file-text"></i></div>
           <div>
             <strong>${safe(getValue(row, ["document_title"], "Document"))}</strong>
             <p>${safe(toTitleMember(getValue(row, ["document_type"], "Document")))} · ${safe(formatMemberDate(row.document_date))}</p>
           </div>
         </a>
       `).join("");
+
+      hydrateIcons();
     }
 
     async function loadMemberTimeline(memberId) {
@@ -1961,7 +1974,11 @@
       renderMemberTimeline(response.data || []);
     }
 
-    const MEMBER_TIMELINE_ICONS = { created: "✨", status_changed: "🔄", commented: "💬" };
+    const MEMBER_TIMELINE_ICONS = {
+      created: '<i data-lucide="sparkles"></i>',
+      status_changed: '<i data-lucide="refresh-cw"></i>',
+      commented: '<i data-lucide="message-circle"></i>'
+    };
 
     function renderMemberTimeline(rows) {
       const container = document.getElementById("mpTimelineList");
@@ -1981,6 +1998,8 @@
           </div>
         </div>
       `).join("");
+
+      hydrateIcons();
     }
 
     function getChecked(memberId, sectionKey, action) {
@@ -2062,6 +2081,12 @@
       }
 
       return fallback === undefined ? "" : fallback;
+    }
+
+    function hydrateIcons() {
+      if (window.lucide && typeof window.lucide.createIcons === "function") {
+        window.lucide.createIcons();
+      }
     }
 
     function safe(value) {
