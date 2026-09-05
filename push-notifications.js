@@ -252,8 +252,9 @@
       .ungani-push-banner-icon {
         width: 40px; height: 40px; border-radius: 999px;
         display: flex; align-items: center; justify-content: center;
-        background: rgba(212, 166, 58, 0.18); color: #D4A63A; font-size: 19px;
+        background: rgba(212, 166, 58, 0.18); color: #D4A63A;
       }
+      .ungani-push-banner-icon svg { width: 19px; height: 19px; stroke-width: 2px; }
       .ungani-push-banner-content { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
       .ungani-push-banner-content strong { color: #D4A63A; font-size: 14px; }
       .ungani-push-banner-content span { color: #F5F5F3; font-size: 13px; line-height: 1.4; }
@@ -283,7 +284,7 @@
     banner.id = "unganiPushBanner";
     banner.className = "ungani-push-banner";
     banner.innerHTML =
-      '<div class="ungani-push-banner-icon">🔔</div>' +
+      '<div class="ungani-push-banner-icon"><i data-lucide="bell"></i></div>' +
       '<div class="ungani-push-banner-content">' +
       "<strong>Turn on notifications?</strong>" +
       "<span>Get notified instantly for important updates - even when this tab isn't open.</span>" +
@@ -303,6 +304,8 @@
 
     document.body.appendChild(banner);
     setTimeout(function () { banner.classList.add("show"); }, 50);
+
+    if (window.lucide) window.lucide.createIcons();
   }
 
   window.UnganiPush = {

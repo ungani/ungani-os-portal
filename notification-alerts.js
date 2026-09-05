@@ -160,7 +160,7 @@
     popup.type = "button";
 
     popup.innerHTML = `
-      <div class="ungani-notification-icon">🔔</div>
+      <div class="ungani-notification-icon"><i data-lucide="bell"></i></div>
       <div class="ungani-notification-content">
         <strong>${escapeHtml(title)}</strong>
         <span>${escapeHtml(message)}</span>
@@ -173,6 +173,7 @@
     });
 
     container.appendChild(popup);
+    if (window.lucide) window.lucide.createIcons();
 
     setTimeout(() => {
       popup.classList.add("show");
@@ -282,6 +283,12 @@
         opacity: 1;
       }
 
+      .ungani-notification-icon svg {
+        width: 18px;
+        height: 18px;
+        stroke-width: 2px;
+      }
+
       .ungani-notification-icon {
         width: 38px;
         height: 38px;
@@ -291,7 +298,6 @@
         justify-content: center;
         background: rgba(212, 166, 58, 0.18);
         color: #D4A63A;
-        font-size: 18px;
       }
 
       .ungani-notification-content {

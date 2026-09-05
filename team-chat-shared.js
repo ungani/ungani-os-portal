@@ -630,7 +630,7 @@
     const body = (isDm ? "(Private) " : "") + (rawBody.length > 80 ? rawBody.slice(0, 80) + "..." : rawBody);
 
     toast.innerHTML = `
-      <div style="font-size:20px;">💬</div>
+      <div style="font-size:20px;"><i data-lucide="message-circle"></i></div>
       <div>
         <strong>${safe(senderName)}</strong>
         <p>${safe(body)}</p>
@@ -643,6 +643,7 @@
     });
 
     document.body.appendChild(toast);
+    if (window.lucide) window.lucide.createIcons();
 
     setTimeout(function () { toast.classList.add("show"); }, 30);
     setTimeout(function () {

@@ -107,6 +107,15 @@
     if (!warningEl) {
       warningEl = buildWarningEl();
       document.body.appendChild(warningEl);
+
+      if (window.lucide) {
+        window.lucide.createIcons();
+      } else {
+        var script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js";
+        script.onload = function () { if (window.lucide) window.lucide.createIcons(); };
+        document.head.appendChild(script);
+      }
     }
 
     updateCountdown(msRemaining);
@@ -157,8 +166,8 @@
           width:56px;height:56px;border-radius:16px;
           background:rgba(212,166,58,0.16);
           display:flex;align-items:center;justify-content:center;
-          font-size:26px;margin:0 auto 14px;
-        ">⏱️</div>
+          color:#D4A63A;margin:0 auto 14px;
+        "><i data-lucide="timer" width="26" height="26" stroke-width="2"></i></div>
 
         <h2 style="margin:0 0 8px;font-size:21px;letter-spacing:-0.03em;color:white;">Still there?</h2>
 

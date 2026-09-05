@@ -141,9 +141,9 @@
             display:flex;
             align-items:center;
             justify-content:center;
-            font-size:30px;
+            color:#D4A63A;
             margin-bottom:16px;
-          ">🔐</div>
+          "><i data-lucide="lock" width="30" height="30" stroke-width="2"></i></div>
 
           <h1 style="margin:0;font-size:34px;letter-spacing:-0.05em;">Staff Access Restricted</h1>
 
@@ -185,6 +185,21 @@
         </div>
       </div>
     `;
+
+    // document.body.innerHTML above wipes every element the host page
+    // had, including any <script src="lucide..."> tag - but not
+    // window.lucide itself, since that global survives independently of
+    // the DOM nodes that created it. Still, a page that never loaded
+    // Lucide before this guard fired (e.g. a very early block) needs it
+    // fetched fresh here rather than assuming the host page already did.
+    if (window.lucide) {
+      window.lucide.createIcons();
+    } else {
+      var script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js";
+      script.onload = function () { if (window.lucide) window.lucide.createIcons(); };
+      document.head.appendChild(script);
+    }
   }
 
   function escapeHtml(value) {
