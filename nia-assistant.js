@@ -33,40 +33,40 @@
   const SESSION_GAP_MS = 30 * 60 * 1000;
 
   const NAV_ITEMS = [
-    { key: "dashboard", href: "client.html", icon: "🏠", label: "Dashboard", aliases: ["home", "dashboard", "main page"] },
-    { key: "money", href: "my-money.html", icon: "💰", label: "Money", aliases: ["money", "finance", "finances", "transactions", "expenses", "expense", "income", "payments", "payment", "petty cash"] },
-    { key: "customer-invoices", href: "my-customer-invoices.html", icon: "📃", label: "Customer Invoices", aliases: ["customer invoices", "invoices", "invoice", "invoicing", "bill a customer"] },
-    { key: "quotations", href: "my-quotations.html", icon: "📋", label: "Quotations", aliases: ["quotations", "quotation", "quote", "quotes", "estimate", "estimates"] },
-    { key: "orders", href: "my-orders.html", icon: "🛒", label: "Orders", aliases: ["orders", "order", "customer order", "sales order", "fulfilment", "fulfillment", "fulfil an order", "fulfill an order"] },
-    { key: "price-lists", href: "my-price-lists.html", icon: "💲", label: "Price Lists", aliases: ["price lists", "price list", "prices", "price", "wholesale pricing"] },
-    { key: "documents", href: "my-documents.html", icon: "📄", label: "Documents", aliases: ["documents", "document", "docs", "files", "uploads"] },
-    { key: "reports", href: "reports.html", icon: "📑", label: "Reports", aliases: ["reports", "report", "export", "exports"] },
-    { key: "people", href: "my-people.html", icon: "👥", label: "People", aliases: ["people", "customers", "customer", "clients", "client", "leads", "lead", "staff", "employees", "employee", "contacts", "drivers", "driver", "suppliers", "supplier"] },
-    { key: "tasks", href: "my-tasks.html", icon: "✅", label: "Tasks", aliases: ["tasks", "task", "follow-ups", "follow ups", "to-do", "todo", "reminders", "reminder"] },
-    { key: "items", href: "my-items.html", icon: "🏷️", label: "Items / Assets", aliases: ["items", "assets", "inventory", "stock", "properties", "property", "units", "listings"] },
-    { key: "records", href: "my-records.html", icon: "🗂️", label: "Records", aliases: ["records", "record"] },
-    { key: "calendar", href: "my-calendar.html", icon: "📅", label: "Calendar", aliases: ["calendar", "schedule", "trips", "trip", "bookings", "booking"] },
-    { key: "charts", href: "my-charts.html", icon: "📊", label: "Charts", aliases: ["charts", "chart", "analytics", "graphs"] },
-    { key: "overview", href: "my-overview.html", icon: "📌", label: "Overview", aliases: ["overview"] },
-    { key: "activity", href: "my-activity.html", icon: "🕒", label: "Activity Feed", aliases: ["activity", "activity feed", "history"] },
-    { key: "notifications", href: "client-notifications.html", icon: "🔔", label: "Notifications", aliases: ["notifications", "notification center", "my notifications", "unread"] },
-    { key: "notices", href: "my-notices.html", icon: "📢", label: "Notices", aliases: ["notices", "notice", "announcements"] },
-    { key: "team-chat", href: "my-team-chat.html", icon: "👨‍👩‍👧‍👦", label: "Team Chat", aliases: ["team chat", "chat with my team"] },
-    { key: "connect", href: "my-connect.html", icon: "🔗", label: "Shared Files", aliases: ["ungani connect", "connect", "shared files", "team documents"] },
-    { key: "profile", href: "my-profile.html", icon: "🏢", label: "Business Profile", aliases: ["business profile", "company profile"] },
-    { key: "my-settings", href: "my-settings.html", icon: "🔧", label: "My Settings", aliases: ["settings", "account", "account settings", "preferences", "theme", "language", "business sections", "manage sections", "business settings", "quick settings"] },
-    { key: "support", href: "my-support.html", icon: "🛟", label: "Contact Support", aliases: ["support", "contact support", "help desk", "get help"] },
-    { key: "print-report", href: "print-report.html", icon: "🖨️", label: "Print Report", aliases: ["print report", "printable report"] },
-    { key: "security", href: "my-security.html", icon: "🔐", label: "Security & Data", aliases: ["security", "data security", "2fa", "two-factor", "two factor"] },
-    { key: "team-access", href: "my-team-access.html", icon: "🧑‍🤝‍🧑", label: "Team Access", aliases: ["team access", "staff access", "invite staff", "add staff", "manage staff", "payroll", "staff salary", "staff salaries", "staff wages", "payee", "payees"] },
-    { key: "support-access", href: "my-support-access.html", icon: "🛟", label: "UNGANI Support Access", aliases: ["support access", "ungani support", "grant access", "invite support", "revoke access", "temporary access"] },
-    { key: "recently-deleted", href: "my-recently-deleted.html", icon: "🗑️", label: "Recently Deleted", aliases: ["recently deleted", "deleted", "recover", "recycle bin", "restore"] },
-    { key: "package", href: "my-package.html", icon: "💼", label: "Package", aliases: ["package", "my package", "upgrade request", "upgrade requests"] },
-    { key: "billing", href: "my-billing.html", icon: "🧾", label: "Billing", aliases: ["billing", "invoice", "invoices", "payment proof", "upload payment"] },
-    { key: "account-status", href: "my-account-status.html", icon: "🔎", label: "Account Status", aliases: ["account status", "access status"] },
-    { key: "onboarding", href: "my-onboarding.html", icon: "🚀", label: "Onboarding", aliases: ["onboarding", "setup checklist", "getting started"] },
-    { key: "my-tools", href: "my-tools.html", icon: "🧰", label: "My Tools", aliases: ["my tools", "tools"] },
-    { key: "integrations", href: "my-integrations.html", icon: "🛰️", label: "Integrations", aliases: ["integrations", "gps", "cctv", "tracking", "cameras"] }
+    { key: "dashboard", href: "client.html", icon: "house", label: "Dashboard", aliases: ["home", "dashboard", "main page"] },
+    { key: "money", href: "my-money.html", icon: "wallet", label: "Money", aliases: ["money", "finance", "finances", "transactions", "expenses", "expense", "income", "payments", "payment", "petty cash"] },
+    { key: "customer-invoices", href: "my-customer-invoices.html", icon: "banknote", label: "Customer Invoices", aliases: ["customer invoices", "invoices", "invoice", "invoicing", "bill a customer"] },
+    { key: "quotations", href: "my-quotations.html", icon: "file-pen", label: "Quotations", aliases: ["quotations", "quotation", "quote", "quotes", "estimate", "estimates"] },
+    { key: "orders", href: "my-orders.html", icon: "shopping-cart", label: "Orders", aliases: ["orders", "order", "customer order", "sales order", "fulfilment", "fulfillment", "fulfil an order", "fulfill an order"] },
+    { key: "price-lists", href: "my-price-lists.html", icon: "wallet", label: "Price Lists", aliases: ["price lists", "price list", "prices", "price", "wholesale pricing"] },
+    { key: "documents", href: "my-documents.html", icon: "file-text", label: "Documents", aliases: ["documents", "document", "docs", "files", "uploads"] },
+    { key: "reports", href: "reports.html", icon: "file-text", label: "Reports", aliases: ["reports", "report", "export", "exports"] },
+    { key: "people", href: "my-people.html", icon: "users", label: "People", aliases: ["people", "customers", "customer", "clients", "client", "leads", "lead", "staff", "employees", "employee", "contacts", "drivers", "driver", "suppliers", "supplier"] },
+    { key: "tasks", href: "my-tasks.html", icon: "square-check-big", label: "Tasks", aliases: ["tasks", "task", "follow-ups", "follow ups", "to-do", "todo", "reminders", "reminder"] },
+    { key: "items", href: "my-items.html", icon: "tag", label: "Items / Assets", aliases: ["items", "assets", "inventory", "stock", "properties", "property", "units", "listings"] },
+    { key: "records", href: "my-records.html", icon: "clipboard-list", label: "Records", aliases: ["records", "record"] },
+    { key: "calendar", href: "my-calendar.html", icon: "calendar", label: "Calendar", aliases: ["calendar", "schedule", "trips", "trip", "bookings", "booking"] },
+    { key: "charts", href: "my-charts.html", icon: "chart-column", label: "Charts", aliases: ["charts", "chart", "analytics", "graphs"] },
+    { key: "overview", href: "my-overview.html", icon: "pin", label: "Overview", aliases: ["overview"] },
+    { key: "activity", href: "my-activity.html", icon: "clock", label: "Activity Feed", aliases: ["activity", "activity feed", "history"] },
+    { key: "notifications", href: "client-notifications.html", icon: "bell", label: "Notifications", aliases: ["notifications", "notification center", "my notifications", "unread"] },
+    { key: "notices", href: "my-notices.html", icon: "megaphone", label: "Notices", aliases: ["notices", "notice", "announcements"] },
+    { key: "team-chat", href: "my-team-chat.html", icon: "users-round", label: "Team Chat", aliases: ["team chat", "chat with my team"] },
+    { key: "connect", href: "my-connect.html", icon: "link-2", label: "Shared Files", aliases: ["ungani connect", "connect", "shared files", "team documents"] },
+    { key: "profile", href: "my-profile.html", icon: "building-2", label: "Business Profile", aliases: ["business profile", "company profile"] },
+    { key: "my-settings", href: "my-settings.html", icon: "settings", label: "My Settings", aliases: ["settings", "account", "account settings", "preferences", "theme", "language", "business sections", "manage sections", "business settings", "quick settings"] },
+    { key: "support", href: "my-support.html", icon: "life-buoy", label: "Contact Support", aliases: ["support", "contact support", "help desk", "get help"] },
+    { key: "print-report", href: "print-report.html", icon: "printer", label: "Print Report", aliases: ["print report", "printable report"] },
+    { key: "security", href: "my-security.html", icon: "shield-check", label: "Security & Data", aliases: ["security", "data security", "2fa", "two-factor", "two factor"] },
+    { key: "team-access", href: "my-team-access.html", icon: "user-cog", label: "Team Access", aliases: ["team access", "staff access", "invite staff", "add staff", "manage staff", "payroll", "staff salary", "staff salaries", "staff wages", "payee", "payees"] },
+    { key: "support-access", href: "my-support-access.html", icon: "lock-open", label: "UNGANI Support Access", aliases: ["support access", "ungani support", "grant access", "invite support", "revoke access", "temporary access"] },
+    { key: "recently-deleted", href: "my-recently-deleted.html", icon: "trash", label: "Recently Deleted", aliases: ["recently deleted", "deleted", "recover", "recycle bin", "restore"] },
+    { key: "package", href: "my-package.html", icon: "briefcase", label: "Package", aliases: ["package", "my package", "upgrade request", "upgrade requests"] },
+    { key: "billing", href: "my-billing.html", icon: "banknote", label: "Billing", aliases: ["billing", "invoice", "invoices", "payment proof", "upload payment"] },
+    { key: "account-status", href: "my-account-status.html", icon: "search", label: "Account Status", aliases: ["account status", "access status"] },
+    { key: "onboarding", href: "my-onboarding.html", icon: "rocket", label: "Onboarding", aliases: ["onboarding", "setup checklist", "getting started"] },
+    { key: "my-tools", href: "my-tools.html", icon: "toolbox", label: "My Tools", aliases: ["my tools", "tools"] },
+    { key: "integrations", href: "my-integrations.html", icon: "satellite", label: "Integrations", aliases: ["integrations", "gps", "cctv", "tracking", "cameras"] }
   ];
 
   const NAV_BY_KEY = {};
@@ -79,39 +79,39 @@
   // customer/property-style data for Nia to search across the way the
   // client side does, per the earlier audit finding.
   const ADMIN_NAV_ITEMS = [
-    { key: "admin-dashboard", href: "admin-home.html", icon: "🏠", label: "Dashboard", aliases: ["home", "dashboard", "main page", "admin home"] },
-    { key: "admin-approvals", href: "admin.html", icon: "✅", label: "Approvals", aliases: ["approvals", "registrations", "registration", "pending signups", "signups", "sign ups", "approve"] },
-    { key: "admin-users", href: "users.html", icon: "👥", label: "Users", aliases: ["users", "clients", "tenants", "businesses", "accounts", "user accounts"] },
-    { key: "admin-money", href: "admin-money.html", icon: "💰", label: "Money", aliases: ["money", "transactions", "revenue", "ledger", "payments"] },
-    { key: "admin-billing", href: "admin-billing.html", icon: "💳", label: "Billing", aliases: ["billing", "invoices", "invoice", "billing records"] },
-    { key: "admin-subscriptions", href: "admin-subscriptions.html", icon: "📦", label: "Subscriptions & Packages", aliases: ["subscriptions", "packages", "plans"] },
-    { key: "admin-upgrade-requests", href: "admin-upgrade-requests.html", icon: "⬆️", label: "Upgrade Requests", aliases: ["upgrade requests", "upgrades", "package upgrade"] },
-    { key: "admin-payment-proofs", href: "admin-payment-proofs.html", icon: "🧾", label: "Payment Proofs", aliases: ["payment proofs", "proof of payment", "proofs"] },
-    { key: "admin-billing-automation", href: "admin-billing-automation.html", icon: "⚡", label: "Billing Automation", aliases: ["billing automation", "run billing"] },
-    { key: "admin-billing-reminders", href: "admin-billing-reminders.html", icon: "⏰", label: "Billing Reminders", aliases: ["billing reminders", "reminder history", "reminder logs"] },
-    { key: "admin-sections", href: "sections.html", icon: "🏷️", label: "Business Types & Sections", aliases: ["sections", "business types", "categories"] },
-    { key: "admin-onboarding", href: "admin-onboarding.html", icon: "🧭", label: "Client Onboarding", aliases: ["onboarding", "onboarding checklist", "client onboarding"] },
-    { key: "admin-branches", href: "admin-branches.html", icon: "🏬", label: "Branches", aliases: ["branches", "multi-branch", "branch control"] },
-    { key: "admin-support", href: "support.html", icon: "🛟", label: "Support Desk", aliases: ["support", "support tickets", "help desk", "issues", "tickets"] },
-    { key: "admin-support-access", href: "admin-support-access.html", icon: "🔓", label: "UNGANI Support Access", aliases: ["support access", "ungani support access", "tenant access", "granted access", "open support session"] },
-    { key: "admin-notices", href: "notices.html", icon: "🔔", label: "Notices", aliases: ["notices", "notifications", "announcements"] },
-    { key: "admin-profiles", href: "admin-profiles.html", icon: "🏢", label: "Client Profiles", aliases: ["client profiles", "profiles", "business profiles"] },
-    { key: "admin-documents", href: "admin-documents.html", icon: "📄", label: "Documents", aliases: ["documents", "files"] },
-    { key: "admin-people", href: "admin-people.html", icon: "👤", label: "People", aliases: ["people", "contacts"] },
-    { key: "admin-tasks", href: "admin-tasks.html", icon: "✅", label: "Tasks", aliases: ["tasks", "follow-ups", "follow ups"] },
-    { key: "admin-records", href: "admin-records.html", icon: "🗂️", label: "Records", aliases: ["records"] },
-    { key: "admin-items", href: "admin-items.html", icon: "🏷️", label: "Items", aliases: ["items", "assets", "inventory"] },
-    { key: "admin-calendar", href: "admin-calendar.html", icon: "📅", label: "Calendar", aliases: ["calendar", "schedule"] },
-    { key: "admin-charts", href: "admin-charts.html", icon: "📊", label: "Charts", aliases: ["charts", "analytics", "graphs"] },
-    { key: "admin-reports", href: "admin-reports.html", icon: "📑", label: "Reports", aliases: ["reports", "report"] },
-    { key: "admin-audit-logs", href: "admin-audit-logs.html", icon: "🕵️", label: "Audit Logs", aliases: ["audit logs", "audit log", "activity log", "security log", "who did what"] },
-    { key: "admin-error-log", href: "admin-error-log.html", icon: "🐞", label: "Error Log", aliases: ["error log", "errors", "app errors", "failures", "failed requests"] },
-    { key: "admin-email-queue", href: "admin-email-queue.html", icon: "✉️", label: "Email Queue", aliases: ["email queue", "emails", "email", "send email"] },
-    { key: "admin-health", href: "admin-health.html", icon: "❤️", label: "System Health", aliases: ["system health", "health check", "status", "uptime"] },
-    { key: "admin-smart-checks", href: "admin-smart-checks.html", icon: "🧠", label: "Smart Checks", aliases: ["smart checks"] },
-    { key: "admin-launch", href: "admin-launch.html", icon: "🚀", label: "Launch Readiness", aliases: ["launch readiness", "pilot readiness", "readiness score"] },
-    { key: "admin-chat", href: "admin-chat.html", icon: "💬", label: "Client Chat", aliases: ["chat", "client chat", "messages"] },
-    { key: "admin-settings", href: "admin-settings.html", icon: "⚙️", label: "Settings", aliases: ["settings", "admin settings", "preferences"] }
+    { key: "admin-dashboard", href: "admin-home.html", icon: "house", label: "Dashboard", aliases: ["home", "dashboard", "main page", "admin home"] },
+    { key: "admin-approvals", href: "admin.html", icon: "user-plus", label: "Approvals", aliases: ["approvals", "registrations", "registration", "pending signups", "signups", "sign ups", "approve"] },
+    { key: "admin-users", href: "users.html", icon: "shield-check", label: "Users", aliases: ["users", "clients", "tenants", "businesses", "accounts", "user accounts"] },
+    { key: "admin-money", href: "admin-money.html", icon: "wallet", label: "Money", aliases: ["money", "transactions", "revenue", "ledger", "payments"] },
+    { key: "admin-billing", href: "admin-billing.html", icon: "credit-card", label: "Billing", aliases: ["billing", "invoices", "invoice", "billing records"] },
+    { key: "admin-subscriptions", href: "admin-subscriptions.html", icon: "layers", label: "Subscriptions & Packages", aliases: ["subscriptions", "packages", "plans"] },
+    { key: "admin-upgrade-requests", href: "admin-upgrade-requests.html", icon: "arrow-up", label: "Upgrade Requests", aliases: ["upgrade requests", "upgrades", "package upgrade"] },
+    { key: "admin-payment-proofs", href: "admin-payment-proofs.html", icon: "banknote", label: "Payment Proofs", aliases: ["payment proofs", "proof of payment", "proofs"] },
+    { key: "admin-billing-automation", href: "admin-billing-automation.html", icon: "zap", label: "Billing Automation", aliases: ["billing automation", "run billing"] },
+    { key: "admin-billing-reminders", href: "admin-billing-reminders.html", icon: "clock", label: "Billing Reminders", aliases: ["billing reminders", "reminder history", "reminder logs"] },
+    { key: "admin-sections", href: "sections.html", icon: "puzzle", label: "Business Types & Sections", aliases: ["sections", "business types", "categories"] },
+    { key: "admin-onboarding", href: "admin-onboarding.html", icon: "compass", label: "Client Onboarding", aliases: ["onboarding", "onboarding checklist", "client onboarding"] },
+    { key: "admin-branches", href: "admin-branches.html", icon: "store", label: "Branches", aliases: ["branches", "multi-branch", "branch control"] },
+    { key: "admin-support", href: "support.html", icon: "life-buoy", label: "Support Desk", aliases: ["support", "support tickets", "help desk", "issues", "tickets"] },
+    { key: "admin-support-access", href: "admin-support-access.html", icon: "lock-open", label: "UNGANI Support Access", aliases: ["support access", "ungani support access", "tenant access", "granted access", "open support session"] },
+    { key: "admin-notices", href: "notices.html", icon: "megaphone", label: "Notices", aliases: ["notices", "notifications", "announcements"] },
+    { key: "admin-profiles", href: "admin-profiles.html", icon: "building-2", label: "Client Profiles", aliases: ["client profiles", "profiles", "business profiles"] },
+    { key: "admin-documents", href: "admin-documents.html", icon: "folder", label: "Documents", aliases: ["documents", "files"] },
+    { key: "admin-people", href: "admin-people.html", icon: "users", label: "People", aliases: ["people", "contacts"] },
+    { key: "admin-tasks", href: "admin-tasks.html", icon: "square-check-big", label: "Tasks", aliases: ["tasks", "follow-ups", "follow ups"] },
+    { key: "admin-records", href: "admin-records.html", icon: "clipboard-list", label: "Records", aliases: ["records"] },
+    { key: "admin-items", href: "admin-items.html", icon: "package", label: "Items", aliases: ["items", "assets", "inventory"] },
+    { key: "admin-calendar", href: "admin-calendar.html", icon: "calendar", label: "Calendar", aliases: ["calendar", "schedule"] },
+    { key: "admin-charts", href: "admin-charts.html", icon: "chart-column", label: "Charts", aliases: ["charts", "analytics", "graphs"] },
+    { key: "admin-reports", href: "admin-reports.html", icon: "file-text", label: "Reports", aliases: ["reports", "report"] },
+    { key: "admin-audit-logs", href: "admin-audit-logs.html", icon: "scroll-text", label: "Audit Logs", aliases: ["audit logs", "audit log", "activity log", "security log", "who did what"] },
+    { key: "admin-error-log", href: "admin-error-log.html", icon: "bug", label: "Error Log", aliases: ["error log", "errors", "app errors", "failures", "failed requests"] },
+    { key: "admin-email-queue", href: "admin-email-queue.html", icon: "mail", label: "Email Queue", aliases: ["email queue", "emails", "email", "send email"] },
+    { key: "admin-health", href: "admin-health.html", icon: "heart-pulse", label: "System Health", aliases: ["system health", "health check", "status", "uptime"] },
+    { key: "admin-smart-checks", href: "admin-smart-checks.html", icon: "brain", label: "Smart Checks", aliases: ["smart checks"] },
+    { key: "admin-launch", href: "admin-launch.html", icon: "rocket", label: "Launch Readiness", aliases: ["launch readiness", "pilot readiness", "readiness score"] },
+    { key: "admin-chat", href: "admin-chat.html", icon: "message-circle", label: "Client Chat", aliases: ["chat", "client chat", "messages"] },
+    { key: "admin-settings", href: "admin-settings.html", icon: "settings", label: "Settings", aliases: ["settings", "admin settings", "preferences"] }
   ];
 
   const ADMIN_NAV_BY_KEY = {};
@@ -747,7 +747,7 @@
 
   function buildFirstTimeGreeting() {
     const name = getPersonName();
-    const greetingLine = name ? "Hello " + safe(name) + " 👋" : "Hello 👋";
+    const greetingLine = name ? "Hello " + safe(name) : "Hello";
 
     if (state.surface === "admin") {
       return greetingLine + "<br>I'm <strong>Nia</strong>, your UNGANI Business Assistant.<br><br>I can help you:<br>• Navigate the admin console<br>• Explain features<br>• Open pages<br>• Walk you through admin tasks<br><br>What would you like to do today?";
@@ -833,6 +833,16 @@
 
   function attr(value) {
     return safe(value);
+  }
+
+  // Small colored severity dot for attention-list rows (asset alerts,
+  // low-stock warnings) - replaces the red/orange/gold circle emoji,
+  // which render inconsistently across platforms and read as an
+  // AI-chatbot tell. A plain styled span is honest about being a status
+  // indicator rather than borrowing a decorative glyph for the job.
+  function severityDotHtml(color) {
+    const hex = { red: "#DC2626", orange: "#D97706", gold: BRAND.gold }[color] || "#94A3B8";
+    return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${hex};margin-right:2px;"></span>`;
   }
 
   function isDarkMode() {
@@ -1368,6 +1378,38 @@
     document.body.appendChild(panel);
 
     watchForObstructingPanels();
+    ensureLucideAndObserve(panel);
+  }
+
+  // nia-assistant.js is loaded on every page type (client.html's own
+  // shell, my-*.html pages via client-shared.js, admin-home.html/
+  // admin-*.html via admin-shared.js) and each of those wires up Lucide
+  // hydration differently (or not at all, for pages that never render
+  // dynamic icon content of their own). Rather than depend on any host
+  // page's hydration mechanism, this makes Nia self-sufficient: load the
+  // same pinned Lucide build if it isn't already on the page, then watch
+  // just the Nia panel (not all of document.body) for new <i data-lucide>
+  // nodes - chat bubbles, quick-reply chips, and the overview/FAQ lists
+  // all inject via innerHTML/appendChild well after this runs.
+  function ensureLucideAndObserve(panel) {
+    function hydrate() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    if (!window.lucide && !document.querySelector('script[src*="lucide@"]')) {
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js";
+      script.onload = hydrate;
+      document.head.appendChild(script);
+    }
+
+    let hydrateTimer = null;
+    const observer = new MutationObserver(function () {
+      clearTimeout(hydrateTimer);
+      hydrateTimer = setTimeout(hydrate, 50);
+    });
+    observer.observe(panel, { childList: true, subtree: true });
+    hydrate();
   }
 
   // Dedicated entry point for the permanent help button - always opens
@@ -1596,7 +1638,7 @@
       <div class="nia-messages" id="niaMessages"></div>
       <div class="nia-quick-actions" id="niaQuickActions"></div>
       <div class="nia-input-row">
-        <button type="button" class="nia-round-btn nia-mic-btn" id="niaMicBtn" title="Speak to Nia">🎤</button>
+        <button type="button" class="nia-round-btn nia-mic-btn" id="niaMicBtn" title="Speak to Nia"><i data-lucide="mic"></i></button>
         <input type="text" class="nia-text-input" id="niaTextInput" placeholder="Ask Nia anything..." autocomplete="off" />
         <button type="button" class="nia-round-btn nia-send-btn" id="niaSendBtn" title="Send">➤</button>
       </div>
@@ -1801,7 +1843,7 @@
 
     const lines = sections.map(function (label) {
       const href = "client.html?section=" + encodeURIComponent(label);
-      return `<div style="margin-top:7px;">🏷️ <strong>${safe(label)}</strong> ` +
+      return `<div style="margin-top:7px;"><i data-lucide="tag"></i> <strong>${safe(label)}</strong> ` +
         `<a href="${attr(href)}" style="color:${BRAND.gold};font-weight:800;text-decoration:none;">Open →</a></div>`;
     }).join("");
 
@@ -1813,7 +1855,7 @@
       const navItem = NAV_BY_KEY[section.key];
       if (!navItem) return "";
 
-      return `<div style="margin-top:7px;">${safe(navItem.icon)} <strong>${safe(navItem.label)}</strong> — ${safe(section.blurb)} ` +
+      return `<div style="margin-top:7px;"><i data-lucide="${attr(navItem.icon)}"></i> <strong>${safe(navItem.label)}</strong> — ${safe(section.blurb)} ` +
         `<a href="${attr(navItem.href)}" style="color:${BRAND.gold};font-weight:800;text-decoration:none;">Open →</a></div>`;
     }).join("");
 
@@ -2664,7 +2706,7 @@
           // for free, without a second query.
           if (config.table === "business_items") {
             const flags = computeAssetAttentionEntries([row]);
-            if (flags.length) detail = (detail ? detail + " · " : "") + "⚠️ " + flags[0].label;
+            if (flags.length) detail = (detail ? detail + " · " : "") + flags[0].label;
           }
 
           results.push({
@@ -2854,11 +2896,9 @@
 
     const shown = entries.slice(0, 6);
     const remaining = entries.length - shown.length;
-    const severityIcon = { red: "🔴", orange: "🟠", gold: "🟡" };
-
     const listHtml = shown.map(function (entry) {
       const url = "my-item-profile.html?id=" + encodeURIComponent(entry.id);
-      return `<div style="margin-top:6px;">${severityIcon[entry.severity] || "•"} <a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(entry.name)}</a> — ${safe(entry.label)}</div>`;
+      return `<div style="margin-top:6px;">${severityDotHtml(entry.severity)}<a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(entry.name)}</a> — ${safe(entry.label)}</div>`;
     }).join("");
 
     addNiaMessage(
@@ -2950,7 +2990,7 @@
 
     const listHtml = shown.map(function (entry) {
       const url = "my-item-profile.html?id=" + encodeURIComponent(entry.id);
-      return `<div style="margin-top:6px;">${entry.severity === "red" ? "🔴" : "🟠"} <a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(entry.name)}</a> — ${safe(entry.label)}</div>`;
+      return `<div style="margin-top:6px;">${severityDotHtml(entry.severity)}<a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(entry.name)}</a> — ${safe(entry.label)}</div>`;
     }).join("");
 
     addNiaMessage(
@@ -3005,7 +3045,7 @@
 
     const listHtml = shown.map(function (r) {
       const label = r.invoice_number ? ("Invoice " + r.invoice_number) : ("Proof " + String(r.id || "").slice(0, 8));
-      return `<div style="margin-top:6px;">🧾 ${safe(label)}${r.proof_file_name ? " — " + safe(r.proof_file_name) : ""}</div>`;
+      return `<div style="margin-top:6px;"><i data-lucide="banknote"></i> ${safe(label)}${r.proof_file_name ? " — " + safe(r.proof_file_name) : ""}</div>`;
     }).join("");
 
     addNiaMessage(
@@ -3140,7 +3180,7 @@
 
     const html =
       `<strong>Payroll</strong>` +
-      `<div style="margin-top:8px;">🧑‍💼 Paid to staff this month: ${safe(formatNiaKES(totalThisMonth))} across ${staffCount} staff member${staffCount === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:8px;"><i data-lucide="users"></i> Paid to staff this month: ${safe(formatNiaKES(totalThisMonth))} across ${staffCount} staff member${staffCount === 1 ? "" : "s"}</div>` +
       (lastPaidText ? `<div style="margin-top:4px;opacity:0.85;">${safe(lastPaidText)}</div>` : "") +
       `<div style="margin-top:8px;">${goldLink("my-team-access.html", "See staff payment details →")}</div>`;
 
@@ -3223,8 +3263,8 @@
 
     const html =
       `<strong>Customer Invoices</strong>` +
-      `<div style="margin-top:8px;">💰 Outstanding: ${safe(formatNiaKES(outstandingTotal))} across ${invoices.length} invoice${invoices.length === 1 ? "" : "s"}</div>` +
-      `<div style="margin-top:4px;${overdueCount > 0 ? "color:#B91C1C;" : "opacity:0.85;"}">${overdueCount > 0 ? "⚠️" : "✅"} ${safe(overdueText)}</div>` +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Outstanding: ${safe(formatNiaKES(outstandingTotal))} across ${invoices.length} invoice${invoices.length === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:4px;${overdueCount > 0 ? "color:#B91C1C;" : "opacity:0.85;"}">${overdueCount > 0 ? '<i data-lucide="triangle-alert"></i>' : '<i data-lucide="square-check-big"></i>'} ${safe(overdueText)}</div>` +
       `<div style="margin-top:8px;">${goldLink("my-customer-invoices.html", "See all invoices →")}</div>`;
 
     addNiaMessage(html);
@@ -3307,8 +3347,8 @@
 
     const html =
       `<strong>Debtors &amp; Payables</strong>` +
-      `<div style="margin-top:8px;">💰 Owed to you: ${safe(formatNiaKES(owedToMe))} across ${debtorCount} customer${debtorCount === 1 ? "" : "s"}</div>` +
-      `<div style="margin-top:4px;">📤 You owe: ${safe(formatNiaKES(iOwe))} across ${payeeIds.size} supplier/contact${payeeIds.size === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Owed to you: ${safe(formatNiaKES(owedToMe))} across ${debtorCount} customer${debtorCount === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:4px;"><i data-lucide="wallet"></i> You owe: ${safe(formatNiaKES(iOwe))} across ${payeeIds.size} supplier/contact${payeeIds.size === 1 ? "" : "s"}</div>` +
       `<div style="margin-top:8px;">${goldLink("my-debtors-payables.html", "See full breakdown →")}</div>`;
 
     addNiaMessage(html);
@@ -3368,9 +3408,9 @@
 
     const html =
       `<strong>Quotations</strong>` +
-      `<div style="margin-top:8px;">📋 Awaiting response: ${safe(formatNiaKES(awaitingTotal))} across ${awaitingRows.length} quote${awaitingRows.length === 1 ? "" : "s"}</div>` +
-      `<div style="margin-top:4px;">✅ Accepted, ready to convert: ${acceptedCount}</div>` +
-      `<div style="margin-top:4px;${expiredCount > 0 ? "color:#D97706;" : "opacity:0.85;"}">${expiredCount > 0 ? "⚠️" : "✅"} ${safe(expiredText)}</div>` +
+      `<div style="margin-top:8px;"><i data-lucide="clipboard-list"></i> Awaiting response: ${safe(formatNiaKES(awaitingTotal))} across ${awaitingRows.length} quote${awaitingRows.length === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:4px;"><i data-lucide="square-check-big"></i> Accepted, ready to convert: ${acceptedCount}</div>` +
+      `<div style="margin-top:4px;${expiredCount > 0 ? "color:#D97706;" : "opacity:0.85;"}">${expiredCount > 0 ? '<i data-lucide="triangle-alert"></i>' : '<i data-lucide="square-check-big"></i>'} ${safe(expiredText)}</div>` +
       `<div style="margin-top:8px;">${goldLink("my-quotations.html", "See all quotations →")}</div>`;
 
     addNiaMessage(html);
@@ -3439,9 +3479,9 @@
 
     const html =
       `<strong>Orders</strong>` +
-      `<div style="margin-top:8px;">🛒 Pending fulfilment: ${safe(formatNiaKES(pendingTotal))} across ${pendingRows.length} order${pendingRows.length === 1 ? "" : "s"}</div>` +
-      `<div style="margin-top:4px;">✅ Ready to invoice: ${readyCount}</div>` +
-      `<div style="margin-top:4px;${overdueCount > 0 ? "color:#DC2626;" : "opacity:0.85;"}">${overdueCount > 0 ? "⚠️" : "✅"} ${safe(overdueText)}</div>` +
+      `<div style="margin-top:8px;"><i data-lucide="shopping-cart"></i> Pending fulfilment: ${safe(formatNiaKES(pendingTotal))} across ${pendingRows.length} order${pendingRows.length === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:4px;"><i data-lucide="square-check-big"></i> Ready to invoice: ${readyCount}</div>` +
+      `<div style="margin-top:4px;${overdueCount > 0 ? "color:#DC2626;" : "opacity:0.85;"}">${overdueCount > 0 ? '<i data-lucide="triangle-alert"></i>' : '<i data-lucide="square-check-big"></i>'} ${safe(overdueText)}</div>` +
       `<div style="margin-top:8px;">${goldLink("my-orders.html", "See all orders →")}</div>`;
 
     addNiaMessage(html);
@@ -3507,7 +3547,7 @@
 
     const html =
       `<strong>Price Lists</strong>` +
-      `<div style="margin-top:8px;">💲 ${priceLists.length} price list${priceLists.length === 1 ? "" : "s"}: ${safe(summary)}</div>` +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> ${priceLists.length} price list${priceLists.length === 1 ? "" : "s"}: ${safe(summary)}</div>` +
       `<div style="margin-top:8px;">${goldLink("my-price-lists.html", "See all price lists →")}</div>`;
 
     addNiaMessage(html);
@@ -3758,7 +3798,7 @@
 
     const listHtml = weak.slice(0, 4).map(function (e) {
       const linkHtml = e.href ? ` <a class="nia-link-btn" style="margin-top:0;" href="${attr(e.href)}">${safe(e.actionLabel || "Fix this")} →</a>` : "";
-      return `<div style="margin-top:8px;">🔻 <strong>${safe(e.label)}</strong> — ${safe(e.text)}${linkHtml}</div>`;
+      return `<div style="margin-top:8px;"><i data-lucide="trending-down"></i> <strong>${safe(e.label)}</strong> — ${safe(e.text)}${linkHtml}</div>`;
     }).join("");
 
     addNiaMessage(
@@ -3829,7 +3869,7 @@
 
       var href = pageInfo.highlight ? pageInfo.page + "?highlight=" + encodeURIComponent(g.recordId) : pageInfo.page;
 
-      return `<div style="margin-top:8px;">🔔 <strong>${safe(pageInfo.label)}</strong> — ${safe(parts.join(", "))} ` +
+      return `<div style="margin-top:8px;"><i data-lucide="bell"></i> <strong>${safe(pageInfo.label)}</strong> — ${safe(parts.join(", "))} ` +
         `<a class="nia-link-btn" style="margin-top:0;" href="${attr(href)}">Open →</a></div>`;
     }).join("");
 
@@ -3933,7 +3973,7 @@
     const listHtml = weak.slice(0, 4).map(function (e) {
       const href = ADMIN_HEALTH_FACTOR_HREFS[e.key];
       const linkHtml = href ? ` <a class="nia-link-btn" style="margin-top:0;" href="${attr(href)}">Open →</a>` : "";
-      return `<div style="margin-top:8px;">🔻 <strong>${safe(e.label)}</strong> — ${safe(e.problemText)}<div style="margin-top:2px;opacity:0.85;">${safe(e.recommendation)}</div>${linkHtml}</div>`;
+      return `<div style="margin-top:8px;"><i data-lucide="trending-down"></i> <strong>${safe(e.label)}</strong> — ${safe(e.problemText)}<div style="margin-top:2px;opacity:0.85;">${safe(e.recommendation)}</div>${linkHtml}</div>`;
     }).join("");
 
     addNiaMessage("The Platform Health Score is <strong>" + result.score + "/100</strong> (" + band + "). Here's what's bringing it down:" + listHtml);
@@ -4175,8 +4215,8 @@
 
     const html =
       `<strong>${safe(meta.label)}</strong> <span style="opacity:0.7;">(${safe(meta.rangeText)})</span>` +
-      `<div style="margin-top:8px;">💰 Income: ${safe(formatNiaKES(money.income))} · Expenses: ${safe(formatNiaKES(money.expenses))} · Net: ${safe(formatNiaKES(money.net))}</div>` +
-      `<div style="margin-top:4px;">✅ ${tasks.completedInRange} task${tasks.completedInRange === 1 ? "" : "s"} completed · ${tasks.overdue} overdue · ${tasks.dueToday} due today</div>` +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Income: ${safe(formatNiaKES(money.income))} · Expenses: ${safe(formatNiaKES(money.expenses))} · Net: ${safe(formatNiaKES(money.net))}</div>` +
+      `<div style="margin-top:4px;"><i data-lucide="square-check-big"></i> ${tasks.completedInRange} task${tasks.completedInRange === 1 ? "" : "s"} completed · ${tasks.overdue} overdue · ${tasks.dueToday} due today</div>` +
       `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">` +
       `<a class="nia-link-btn" style="margin-top:0;" href="print-report.html?range=${attr(rangeKey)}">See full printable report →</a>` +
       `</div>`;
@@ -4381,23 +4421,23 @@
 
     const lines = [];
     if (tasks.dueToday > 0) {
-      lines.push(`📋 ${tasks.dueToday} task${tasks.dueToday === 1 ? "" : "s"} due today`);
+      lines.push(`<i data-lucide="clipboard-list"></i> ${tasks.dueToday} task${tasks.dueToday === 1 ? "" : "s"} due today`);
     }
     if (tasks.overdue > 0) {
-      lines.push(`⏰ ${tasks.overdue} task${tasks.overdue === 1 ? "" : "s"} overdue`);
+      lines.push(`<i data-lucide="clock"></i> ${tasks.overdue} task${tasks.overdue === 1 ? "" : "s"} overdue`);
     }
     if (assetEntries.length > 0) {
-      lines.push(`🔴 ${assetEntries.length} item${assetEntries.length === 1 ? "" : "s"} need${assetEntries.length === 1 ? "s" : ""} attention`);
+      lines.push(`<i data-lucide="triangle-alert"></i> ${assetEntries.length} item${assetEntries.length === 1 ? "" : "s"} need${assetEntries.length === 1 ? "s" : ""} attention`);
     }
 
     const weekLine = `This week so far: ${formatNiaKES(money.income)} in, ${formatNiaKES(money.expenses)} out.`;
 
     const healthLine = healthWeak
-      ? `<div style="margin-top:8px;">📊 Your Business Health Score is ${healthWeak.score}/100${healthWeak.label ? " — mostly due to " + safe(healthWeak.label) : ""}. Ask me "why is my health score low?" any time for details.</div>`
+      ? `<div style="margin-top:8px;"><i data-lucide="chart-column"></i> Your Business Health Score is ${healthWeak.score}/100${healthWeak.label ? " — mostly due to " + safe(healthWeak.label) : ""}. Ask me "why is my health score low?" any time for details.</div>`
       : "";
 
     const connectLine = connectCount > 0
-      ? `<div style="margin-top:8px;">🔔 ${connectCount} new update${connectCount === 1 ? "" : "s"} in Ungani Connect (comments, mentions, or status changes). Ask me "what's new" for details.</div>`
+      ? `<div style="margin-top:8px;"><i data-lucide="bell"></i> ${connectCount} new update${connectCount === 1 ? "" : "s"} in Ungani Connect (comments, mentions, or status changes). Ask me "what's new" for details.</div>`
       : "";
 
     if (lines.length > 0) {
