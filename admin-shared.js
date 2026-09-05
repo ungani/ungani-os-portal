@@ -1889,6 +1889,7 @@
     updateAdminPreferences,
     logoutAdmin,
     logAuditEvent,
+    logAppError,
     describeAdminWriteError,
     exportRowsToCsv,
     showToast,
