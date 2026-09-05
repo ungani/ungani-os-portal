@@ -66,7 +66,7 @@
     const salesItems = [
       ["quotations", "my-quotations.html", "file-pen", "Quotations"],
       ["orders", "my-orders.html", "shopping-cart", "Orders"],
-      ["customer-invoices", "my-customer-invoices.html", "receipt", "Customer Invoices"]
+      ["customer-invoices", "my-customer-invoices.html", "banknote", "Customer Invoices"]
     ];
 
     const inventoryItems = [
@@ -168,7 +168,7 @@
         defaultExpanded: false,
         items: [
           ["package", "my-package.html", "briefcase", "Package"],
-          ["billing", "my-billing.html", "receipt", "Billing"],
+          ["billing", "my-billing.html", "banknote", "Billing"],
           ["account-status", "my-account-status.html", "search", "Account Status"],
           ["onboarding", "my-onboarding.html", "rocket", "Onboarding"],
           ["my-tools", "my-tools.html", "toolbox", "My Tools"]

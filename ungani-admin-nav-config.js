@@ -91,7 +91,7 @@
         items: [
           { key: "billing", href: "admin-billing.html", icon: "credit-card", label: "Billing", activeKey: "admin-billing" },
           { key: "packages", href: "admin-subscriptions.html", icon: "layers", label: "Packages", activeKey: "admin-subscriptions" },
-          { key: "paymentProofs", href: "admin-payment-proofs.html", icon: "receipt", label: "Payment Proofs", activeKey: "admin-payment-proofs" },
+          { key: "paymentProofs", href: "admin-payment-proofs.html", icon: "banknote", label: "Payment Proofs", activeKey: "admin-payment-proofs" },
           { key: "upgradeRequests", href: "admin-upgrade-requests.html", icon: "arrow-up", label: "Upgrade Requests", activeKey: "admin-upgrade-requests" },
           { key: "billingAutomation", href: "admin-billing-automation.html", icon: "zap", label: "Billing Automation", activeKey: "admin-billing-automation" },
           { key: "billingReminders", href: "admin-billing-reminders.html", icon: "clock", label: "Billing Reminders", activeKey: "admin-billing-reminders" },
