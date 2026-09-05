@@ -1,6 +1,10 @@
--- Diagnostic only, no writes. Compares table-level GRANTs between
--- app_error_log (broken, 403 "permission denied") and ungani_audit_log
--- (working) to confirm the missing-grant theory before fixing anything.
+-- Diagnostic only, no writes. Compares table-level GRANTs across all
+-- relevant roles for app_error_log vs the working ungani_audit_log.
+-- Round 2: the authenticated/SELECT grant fix worked (confirmed live),
+-- but /api/log-app-error (service_role, bypasses RLS) now fails with the
+-- SAME "permission denied for table app_error_log" error on INSERT -
+-- suggesting service_role is also missing its table-level grant on this
+-- one table specifically.
 
 select table_name, grantee, privilege_type
 from information_schema.role_table_grants

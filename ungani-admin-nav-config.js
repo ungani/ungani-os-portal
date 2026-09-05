@@ -33,7 +33,7 @@
         title: "Main",
         collapsible: false,
         items: [
-          { key: "adminHome", href: "admin-home.html", icon: "🏠", label: "Dashboard", activeKey: "admin-home" }
+          { key: "adminHome", href: "admin-home.html", icon: "house", label: "Dashboard", activeKey: "admin-home" }
         ]
       },
       {
@@ -42,13 +42,13 @@
         title: "Operations",
         collapsible: false,
         items: [
-          { key: "registrations", href: "admin.html", icon: "📝", label: "Client Registrations", activeKey: "admin-main" },
-          { key: "clientProfiles", href: "admin-profiles.html", icon: "🏢", label: "Client Profiles", activeKey: "admin-profiles" },
-          { key: "onboarding", href: "admin-onboarding.html", icon: "🧭", label: "Client Onboarding", activeKey: "admin-onboarding" },
-          { key: "sections", href: "sections.html", icon: "🧩", label: "Business Types & Sections", activeKey: "admin-sections" },
-          { key: "users", href: "users.html", icon: "🔐", label: "Users & Permissions", activeKey: "admin-users" },
-          { key: "tasks", href: "admin-tasks.html", icon: "✅", label: "Tasks", activeKey: "admin-tasks" },
-          { key: "calendar", href: "admin-calendar.html", icon: "📅", label: "Calendar", activeKey: "admin-calendar" }
+          { key: "registrations", href: "admin.html", icon: "user-plus", label: "Client Registrations", activeKey: "admin-main" },
+          { key: "clientProfiles", href: "admin-profiles.html", icon: "building-2", label: "Client Profiles", activeKey: "admin-profiles" },
+          { key: "onboarding", href: "admin-onboarding.html", icon: "compass", label: "Client Onboarding", activeKey: "admin-onboarding" },
+          { key: "sections", href: "sections.html", icon: "puzzle", label: "Business Types & Sections", activeKey: "admin-sections" },
+          { key: "users", href: "users.html", icon: "shield-check", label: "Users & Permissions", activeKey: "admin-users" },
+          { key: "tasks", href: "admin-tasks.html", icon: "square-check-big", label: "Tasks", activeKey: "admin-tasks" },
+          { key: "calendar", href: "admin-calendar.html", icon: "calendar", label: "Calendar", activeKey: "admin-calendar" }
         ]
       },
       {
@@ -58,14 +58,14 @@
         collapsible: true,
         defaultExpanded: true,
         items: [
-          { key: "money", href: "admin-money.html", icon: "💰", label: "Money Records", activeKey: "admin-money" },
-          { key: "itemsAssets", href: "admin-items.html", icon: "📦", label: "Assets", activeKey: "admin-items" },
-          { key: "peopleStaff", href: "admin-people.html", icon: "🧑‍💼", label: "People", activeKey: "admin-people" },
-          { key: "branches", href: "admin-branches.html", icon: "🏬", label: "Branches", activeKey: "admin-branches" },
-          { key: "records", href: "admin-records.html", icon: "📋", label: "Business Records", activeKey: "admin-records" },
-          { key: "documents", href: "admin-documents.html", icon: "📁", label: "Documents", activeKey: "admin-documents" },
-          { key: "reports", href: "admin-reports.html", icon: "📄", label: "Reports", activeKey: "admin-reports" },
-          { key: "charts", href: "admin-charts.html", icon: "📊", label: "System Analytics", activeKey: "admin-charts" }
+          { key: "money", href: "admin-money.html", icon: "wallet", label: "Money Records", activeKey: "admin-money" },
+          { key: "itemsAssets", href: "admin-items.html", icon: "package", label: "Assets", activeKey: "admin-items" },
+          { key: "peopleStaff", href: "admin-people.html", icon: "users", label: "People", activeKey: "admin-people" },
+          { key: "branches", href: "admin-branches.html", icon: "store", label: "Branches", activeKey: "admin-branches" },
+          { key: "records", href: "admin-records.html", icon: "clipboard-list", label: "Business Records", activeKey: "admin-records" },
+          { key: "documents", href: "admin-documents.html", icon: "folder", label: "Documents", activeKey: "admin-documents" },
+          { key: "reports", href: "admin-reports.html", icon: "file-text", label: "Reports", activeKey: "admin-reports" },
+          { key: "charts", href: "admin-charts.html", icon: "chart-column", label: "System Analytics", activeKey: "admin-charts" }
         ]
       },
       {
@@ -75,11 +75,11 @@
         collapsible: true,
         defaultExpanded: false,
         items: [
-          { key: "support", href: "support.html", icon: "🛟", label: "Support Desk", activeKey: "admin-support" },
-          { key: "supportAccess", href: "admin-support-access.html", icon: "🔓", label: "UNGANI Support Access", activeKey: "admin-support-access" },
-          { key: "adminChat", href: "admin-chat.html", icon: "💬", label: "Client Chat", activeKey: "admin-chat" },
-          { key: "notifications", href: "admin-notifications.html", icon: "🔔", label: "Notifications", activeKey: "admin-notifications" },
-          { key: "notices", href: "notices.html", icon: "📢", label: "Notices", activeKey: "admin-notices" }
+          { key: "support", href: "support.html", icon: "life-buoy", label: "Support Desk", activeKey: "admin-support" },
+          { key: "supportAccess", href: "admin-support-access.html", icon: "lock-open", label: "UNGANI Support Access", activeKey: "admin-support-access" },
+          { key: "adminChat", href: "admin-chat.html", icon: "message-circle", label: "Client Chat", activeKey: "admin-chat" },
+          { key: "notifications", href: "admin-notifications.html", icon: "bell", label: "Notifications", activeKey: "admin-notifications" },
+          { key: "notices", href: "notices.html", icon: "megaphone", label: "Notices", activeKey: "admin-notices" }
         ]
       },
       {
@@ -89,13 +89,13 @@
         collapsible: true,
         defaultExpanded: false,
         items: [
-          { key: "billing", href: "admin-billing.html", icon: "💳", label: "Billing", activeKey: "admin-billing" },
-          { key: "packages", href: "admin-subscriptions.html", icon: "🗃️", label: "Packages", activeKey: "admin-subscriptions" },
-          { key: "paymentProofs", href: "admin-payment-proofs.html", icon: "🧾", label: "Payment Proofs", activeKey: "admin-payment-proofs" },
-          { key: "upgradeRequests", href: "admin-upgrade-requests.html", icon: "⬆️", label: "Upgrade Requests", activeKey: "admin-upgrade-requests" },
-          { key: "billingAutomation", href: "admin-billing-automation.html", icon: "⚡", label: "Billing Automation", activeKey: "admin-billing-automation" },
-          { key: "billingReminders", href: "admin-billing-reminders.html", icon: "⏰", label: "Billing Reminders", activeKey: "admin-billing-reminders" },
-          { key: "adminSettings", href: "admin-settings.html", icon: "⚙️", label: "Settings", activeKey: "admin-settings" }
+          { key: "billing", href: "admin-billing.html", icon: "credit-card", label: "Billing", activeKey: "admin-billing" },
+          { key: "packages", href: "admin-subscriptions.html", icon: "layers", label: "Packages", activeKey: "admin-subscriptions" },
+          { key: "paymentProofs", href: "admin-payment-proofs.html", icon: "receipt", label: "Payment Proofs", activeKey: "admin-payment-proofs" },
+          { key: "upgradeRequests", href: "admin-upgrade-requests.html", icon: "arrow-up", label: "Upgrade Requests", activeKey: "admin-upgrade-requests" },
+          { key: "billingAutomation", href: "admin-billing-automation.html", icon: "zap", label: "Billing Automation", activeKey: "admin-billing-automation" },
+          { key: "billingReminders", href: "admin-billing-reminders.html", icon: "clock", label: "Billing Reminders", activeKey: "admin-billing-reminders" },
+          { key: "adminSettings", href: "admin-settings.html", icon: "settings", label: "Settings", activeKey: "admin-settings" }
         ]
       },
       {
@@ -105,12 +105,12 @@
         collapsible: true,
         defaultExpanded: false,
         items: [
-          { key: "healthCheck", href: "admin-health.html", icon: "❤️", label: "System Health", activeKey: "admin-health" },
-          { key: "auditLogs", href: "admin-audit-logs.html", icon: "📜", label: "Audit Logs", activeKey: "admin-audit-logs" },
-          { key: "errorLog", href: "admin-error-log.html", icon: "🐞", label: "Error Log", activeKey: "admin-error-log" },
-          { key: "emailQueue", href: "admin-email-queue.html", icon: "✉️", label: "Email Queue", activeKey: "admin-email-queue" },
-          { key: "smartChecks", href: "admin-smart-checks.html", icon: "🧠", label: "Smart Checks", activeKey: "admin-smart-checks" },
-          { key: "launchReadiness", href: "admin-launch.html", icon: "🚀", label: "Launch Readiness", activeKey: "admin-launch" }
+          { key: "healthCheck", href: "admin-health.html", icon: "heart-pulse", label: "System Health", activeKey: "admin-health" },
+          { key: "auditLogs", href: "admin-audit-logs.html", icon: "scroll-text", label: "Audit Logs", activeKey: "admin-audit-logs" },
+          { key: "errorLog", href: "admin-error-log.html", icon: "bug", label: "Error Log", activeKey: "admin-error-log" },
+          { key: "emailQueue", href: "admin-email-queue.html", icon: "mail", label: "Email Queue", activeKey: "admin-email-queue" },
+          { key: "smartChecks", href: "admin-smart-checks.html", icon: "brain", label: "Smart Checks", activeKey: "admin-smart-checks" },
+          { key: "launchReadiness", href: "admin-launch.html", icon: "rocket", label: "Launch Readiness", activeKey: "admin-launch" }
         ]
       }
     ];

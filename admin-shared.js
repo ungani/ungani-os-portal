@@ -341,6 +341,13 @@
         transform: translateX(3px);
       }
 
+      .ungani-side-link svg {
+        width: 17px;
+        height: 17px;
+        flex-shrink: 0;
+        stroke-width: 2.1px;
+      }
+
       .ungani-side-badge {
         margin-left: auto;
         min-width: 20px;
@@ -1037,7 +1044,7 @@
       const isActive = activeKey === link.activeKey || activeKey === link.key;
       return `
         <a class="ungani-side-link ${isActive ? "active" : ""}" href="${safe(link.href)}">
-          ${safe(link.icon)} <span data-i18n="${safe(link.key)}">${safe(t(link.key))}</span>
+          <i data-lucide="${safe(link.icon)}"></i> <span data-i18n="${safe(link.key)}">${safe(t(link.key))}</span>
           <span class="ungani-side-badge" id="unganiSideBadge-${safe(link.key)}"></span>
         </a>
       `;
@@ -1114,6 +1121,7 @@
     document.getElementById("unganiSidebarLogoutButton")?.addEventListener("click", logoutAdmin);
 
     applyLanguage(target);
+    renderLucideIcons();
   }
 
   function renderShell(targetId, options) {
@@ -1870,12 +1878,54 @@
     showToast("Exported " + list.length + " record(s) ✓");
   }
 
+  // Shared icon system (visual-polish pass): Lucide replaces emoji across
+  // the app for a consistent, professionally-designed look rather than
+  // platform-inconsistent emoji glyphs. Loaded lazily once, same pattern
+  // as ensureAdminPushScriptLoaded() above - a single pinned CDN script,
+  // never re-injected if already present. Version is pinned (unlike
+  // chart.js elsewhere in this app) because icon names are referenced by
+  // string across many files; an upstream rename would silently break
+  // rendering if left floating on @latest.
+  let lucideScriptLoadPromise = null;
+
+  function ensureLucideLoaded() {
+    if (window.lucide) return Promise.resolve();
+
+    if (!lucideScriptLoadPromise) {
+      lucideScriptLoadPromise = new Promise(function (resolve) {
+        const existing = document.querySelector('script[src*="lucide@1.41.0"]');
+
+        if (existing) {
+          existing.addEventListener("load", resolve);
+          existing.addEventListener("error", resolve);
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js";
+        script.onload = resolve;
+        script.onerror = resolve;
+        document.head.appendChild(script);
+      });
+    }
+
+    return lucideScriptLoadPromise;
+  }
+
+  async function renderLucideIcons() {
+    await ensureLucideLoaded();
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
+  }
+
   window.UnganiAdminShared = {
     config: UNGANI_CONFIG,
     getSupabaseClient,
     injectBaseStyles,
     renderSidebar,
     renderShell,
+    renderLucideIcons,
     toggleSidebarGroup: toggleAdminSidebarGroup,
     toggleAdminSidebar,
     closeAdminSidebar,

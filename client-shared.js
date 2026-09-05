@@ -400,6 +400,12 @@
         font-size: 14px;
       }
 
+      .ungani-nav-icon svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 2.1px;
+      }
+
       .ungani-nav-link.active .ungani-nav-icon {
         background: rgba(212,166,58,0.22);
       }
@@ -2028,6 +2034,46 @@
 
     state.shellEl = document.getElementById("unganiAppShell");
     state.contentEl = document.getElementById("unganiContent");
+    renderLucideIcons();
+  }
+
+  // Shared icon system (visual-polish pass): Lucide replaces emoji across
+  // the app for a consistent, professionally-designed look. Loaded lazily
+  // once and never re-injected if already present - same lazy-script
+  // pattern used elsewhere in this file for dynamically-loaded scripts.
+  // Version is pinned (unlike chart.js elsewhere in this app) since icon
+  // names are referenced by string across many files.
+  let lucideScriptLoadPromise = null;
+
+  function ensureLucideLoaded() {
+    if (window.lucide) return Promise.resolve();
+
+    if (!lucideScriptLoadPromise) {
+      lucideScriptLoadPromise = new Promise(function (resolve) {
+        const existing = document.querySelector('script[src*="lucide@1.41.0"]');
+
+        if (existing) {
+          existing.addEventListener("load", resolve);
+          existing.addEventListener("error", resolve);
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js";
+        script.onload = resolve;
+        script.onerror = resolve;
+        document.head.appendChild(script);
+      });
+    }
+
+    return lucideScriptLoadPromise;
+  }
+
+  async function renderLucideIcons() {
+    await ensureLucideLoaded();
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
   }
 
   function buildSectionNavGroup() {
@@ -2146,7 +2192,7 @@
 
               return `
                 <a class="ungani-nav-link ${active}" href="${attr(item[1])}">
-                  <span class="ungani-nav-icon">${safe(item[2])}</span>
+                  <span class="ungani-nav-icon"><i data-lucide="${attr(item[2])}"></i></span>
                   <span>${safe(item[3])}</span>
                   <span class="ungani-nav-badge" id="unganiNavBadge-${safe(item[0])}"></span>
                 </a>
@@ -2160,23 +2206,23 @@
 
   function renderBottomNav() {
     const items = [
-      ["dashboard", "client.html", "🏠", "Home"],
-      ["items", "my-items.html", "🏷️", "Items"],
-      ["money", "my-money.html", "💰", "Money"],
-      ["tasks", "my-tasks.html", "✅", "Tasks"],
-      ["menu", "#", "☰", "Menu"]
+      ["dashboard", "client.html", "house", "Home"],
+      ["items", "my-items.html", "tag", "Items"],
+      ["money", "my-money.html", "wallet", "Money"],
+      ["tasks", "my-tasks.html", "square-check-big", "Tasks"],
+      ["menu", "#", "menu", "Menu"]
     ];
 
     return `
       <nav class="ungani-bottom-nav">
         ${items.map(function (item) {
           if (item[0] === "menu") {
-            return `<button type="button" onclick="UnganiClientShared.toggleSidebar()"><span>${safe(item[2])}</span>${safe(item[3])}</button>`;
+            return `<button type="button" onclick="UnganiClientShared.toggleSidebar()"><span><i data-lucide="${attr(item[2])}"></i></span>${safe(item[3])}</button>`;
           }
 
           const active = item[0] === state.currentPageKey ? "active" : "";
 
-          return `<a class="${active}" href="${attr(item[1])}"><span>${safe(item[2])}</span>${safe(item[3])}</a>`;
+          return `<a class="${active}" href="${attr(item[1])}"><span><i data-lucide="${attr(item[2])}"></i></span>${safe(item[3])}</a>`;
         }).join("")}
       </nav>
     `;
@@ -2347,6 +2393,7 @@
       state.contentEl.classList.remove("ungani-content");
       void state.contentEl.offsetWidth;
       state.contentEl.classList.add("ungani-content");
+      renderLucideIcons();
     }
   }
 
@@ -2415,7 +2462,7 @@
       <div class="ungani-card ungani-metric ${attr(selectedColor)} ${href ? "clickable" : ""}" title="${attr(cardTitle)}">
         <div class="ungani-metric-top">
           <div class="ungani-metric-label">${safe(title)}</div>
-          <div class="ungani-metric-icon">${safe(icon)}</div>
+          <div class="ungani-metric-icon"><i data-lucide="${attr(icon)}"></i></div>
         </div>
 
         <h3 class="ungani-metric-value ${display.isCompact ? "compact" : ""}">${safe(display.displayValue)}</h3>
@@ -2523,17 +2570,17 @@
   function metricIcon(title, color) {
     const lower = String(title || "").toLowerCase();
 
-    if (lower.includes("money") || lower.includes("income") || lower.includes("expense") || lower.includes("balance")) return "💰";
-    if (lower.includes("task") || lower.includes("pending")) return color === "red" ? "⚠️" : "✅";
-    if (lower.includes("people") || lower.includes("agent") || lower.includes("lead")) return "👥";
-    if (lower.includes("document")) return "📄";
-    if (lower.includes("calendar") || lower.includes("event")) return "📅";
-    if (lower.includes("support")) return "🛟";
-    if (lower.includes("message") || lower.includes("chat")) return "💬";
-    if (lower.includes("property") || lower.includes("item") || lower.includes("asset")) return "🏷️";
-    if (lower.includes("report")) return "📑";
+    if (lower.includes("money") || lower.includes("income") || lower.includes("expense") || lower.includes("balance")) return "wallet";
+    if (lower.includes("task") || lower.includes("pending")) return color === "red" ? "triangle-alert" : "square-check-big";
+    if (lower.includes("people") || lower.includes("agent") || lower.includes("lead")) return "users";
+    if (lower.includes("document")) return "file-text";
+    if (lower.includes("calendar") || lower.includes("event")) return "calendar";
+    if (lower.includes("support")) return "life-buoy";
+    if (lower.includes("message") || lower.includes("chat")) return "message-circle";
+    if (lower.includes("property") || lower.includes("item") || lower.includes("asset")) return "tag";
+    if (lower.includes("report")) return "files";
 
-    return "◆";
+    return "diamond";
   }
 
   async function handleGlobalSearchInput() {
@@ -3813,6 +3860,7 @@
       logout,
       logAuditEvent,
       logAppError,
+      renderLucideIcons,
       triggerEmailSendNow,
       triggerEventPush,
       exportRecordsToCsv,

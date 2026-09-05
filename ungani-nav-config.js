@@ -44,41 +44,41 @@
     // Main/Operations already used.
 
     const operationsItems = [
-      ["people", "my-people.html", "👥", "People"],
-      ["records", "my-records.html", "🗂️", "Business Records"],
-      ["tasks", "my-tasks.html", "✅", "Tasks / Follow-ups"],
-      ["calendar", "my-calendar.html", "📅", "Calendar"],
-      ["documents", "my-documents.html", "📄", "Documents"]
+      ["people", "my-people.html", "users", "People"],
+      ["records", "my-records.html", "clipboard-list", "Business Records"],
+      ["tasks", "my-tasks.html", "square-check-big", "Tasks / Follow-ups"],
+      ["calendar", "my-calendar.html", "calendar", "Calendar"],
+      ["documents", "my-documents.html", "file-text", "Documents"]
     ];
 
     if (isIntegrationsEligible(tenant)) {
-      operationsItems.push(["integrations", "my-integrations.html", "🛰️", "Integrations"]);
+      operationsItems.push(["integrations", "my-integrations.html", "satellite", "Integrations"]);
     }
 
     const financeItems = [
-      ["money", "my-money.html", "💰", "Money Records"]
+      ["money", "my-money.html", "wallet", "Money Records"]
     ];
 
     if (tenant && tenant.debtors_payables_enabled === true) {
-      financeItems.push(["debtors-payables", "my-debtors-payables.html", "📒", "Debtors & Payables"]);
+      financeItems.push(["debtors-payables", "my-debtors-payables.html", "notebook", "Debtors & Payables"]);
     }
 
     const salesItems = [
-      ["quotations", "my-quotations.html", "📋", "Quotations"],
-      ["orders", "my-orders.html", "🛒", "Orders"],
-      ["customer-invoices", "my-customer-invoices.html", "📃", "Customer Invoices"]
+      ["quotations", "my-quotations.html", "file-pen", "Quotations"],
+      ["orders", "my-orders.html", "shopping-cart", "Orders"],
+      ["customer-invoices", "my-customer-invoices.html", "receipt", "Customer Invoices"]
     ];
 
     const inventoryItems = [
-      ["items", "my-items.html", "🏷️", "Items / Assets / Stock"]
+      ["items", "my-items.html", "tag", "Items / Assets / Stock"]
     ];
 
     if (tenant && tenant.stock_tracking_enabled === true) {
-      inventoryItems.push(["stock-tracking", "my-stock-tracking.html", "📦", "Stock Tracking"]);
+      inventoryItems.push(["stock-tracking", "my-stock-tracking.html", "package", "Stock Tracking"]);
     }
 
     if (tenant && tenant.price_lists_enabled === true) {
-      inventoryItems.push(["price-lists", "my-price-lists.html", "💲", "Price Lists"]);
+      inventoryItems.push(["price-lists", "my-price-lists.html", "wallet", "Price Lists"]);
     }
 
     return [
@@ -87,12 +87,12 @@
         title: "Main",
         collapsible: false,
         items: [
-          ["dashboard", "client.html", "🏠", "Dashboard"],
-          ["overview", "my-overview.html", "📌", "Overview"],
-          ["connect", "my-connect.html", "🔗", "Shared Files"],
-          ["notifications", "client-notifications.html", "🔔", "Notifications"],
-          ["activity", "my-activity.html", "🕒", "Activity Feed"],
-          ["charts", "my-charts.html", "📊", "Charts"]
+          ["dashboard", "client.html", "house", "Dashboard"],
+          ["overview", "my-overview.html", "pin", "Overview"],
+          ["connect", "my-connect.html", "link-2", "Shared Files"],
+          ["notifications", "client-notifications.html", "bell", "Notifications"],
+          ["activity", "my-activity.html", "clock", "Activity Feed"],
+          ["charts", "my-charts.html", "chart-column", "Charts"]
         ]
       },
       {
@@ -125,10 +125,10 @@
         collapsible: true,
         defaultExpanded: true,
         items: [
-          ["support", "my-support.html", "🛟", "Support Issues"],
-          ["notices", "my-notices.html", "📢", "Notices"],
-          ["chat", "my-chat.html", "💬", "Chat with UNGANI"],
-          ["team-chat", "my-team-chat.html", "👨‍👩‍👧‍👦", "Team Chat"]
+          ["support", "my-support.html", "life-buoy", "Support Issues"],
+          ["notices", "my-notices.html", "megaphone", "Notices"],
+          ["chat", "my-chat.html", "message-circle", "Chat with UNGANI"],
+          ["team-chat", "my-team-chat.html", "users-round", "Team Chat"]
         ]
       },
       {
@@ -137,8 +137,8 @@
         collapsible: true,
         defaultExpanded: false,
         items: [
-          ["reports", "reports.html", "📑", "Reports"],
-          ["print-report", "print-report.html", "🖨️", "Print Report"]
+          ["reports", "reports.html", "file-text", "Reports"],
+          ["print-report", "print-report.html", "printer", "Print Report"]
         ]
       },
       {
@@ -147,9 +147,9 @@
         collapsible: true,
         defaultExpanded: false,
         items: [
-          ["security", "my-security.html", "🔐", "Security & Data"],
-          ["team-access", "my-team-access.html", "🧑‍🤝‍🧑", "Team Access"],
-          ["recently-deleted", "my-recently-deleted.html", "🗑️", "Recently Deleted"]
+          ["security", "my-security.html", "shield-check", "Security & Data"],
+          ["team-access", "my-team-access.html", "user-cog", "Team Access"],
+          ["recently-deleted", "my-recently-deleted.html", "trash", "Recently Deleted"]
         ]
       },
       {
@@ -158,7 +158,7 @@
         collapsible: true,
         defaultExpanded: false,
         items: [
-          ["support-access", "my-support-access.html", "🔓", "Support Access"]
+          ["support-access", "my-support-access.html", "lock-open", "Support Access"]
         ]
       },
       {
@@ -167,11 +167,11 @@
         collapsible: true,
         defaultExpanded: false,
         items: [
-          ["package", "my-package.html", "💼", "Package"],
-          ["billing", "my-billing.html", "🧾", "Billing"],
-          ["account-status", "my-account-status.html", "🔎", "Account Status"],
-          ["onboarding", "my-onboarding.html", "🚀", "Onboarding"],
-          ["my-tools", "my-tools.html", "🧰", "My Tools"]
+          ["package", "my-package.html", "briefcase", "Package"],
+          ["billing", "my-billing.html", "receipt", "Billing"],
+          ["account-status", "my-account-status.html", "search", "Account Status"],
+          ["onboarding", "my-onboarding.html", "rocket", "Onboarding"],
+          ["my-tools", "my-tools.html", "toolbox", "My Tools"]
         ]
       }
     ];
