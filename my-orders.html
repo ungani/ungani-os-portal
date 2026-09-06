@@ -913,6 +913,26 @@
         }
 
         UnganiClientShared.closeModal();
+
+        // Nudge, not force: this fulfilment just completed the WHOLE
+        // order (not just this line), which is exactly the moment the
+        // owner is most likely to actually want to invoice it - catching
+        // it here beats hoping they later notice the "Ready to Invoice"
+        // KPI/row badge on the list. Declining just falls back to that
+        // passive reminder, nothing is lost either way.
+        if (response.data.order_status === "fulfilled" && editingOrderId) {
+          const orderId = editingOrderId;
+          await loadOrderRows();
+          renderOrdersPage();
+
+          if (confirm("This order is now fully fulfilled. Convert it to an invoice now?")) {
+            await performOrderToInvoiceConversion(orderId);
+          } else {
+            UnganiClientShared.showToast("Fulfilled ✓ (fulfilled)");
+          }
+          return;
+        }
+
         UnganiClientShared.showToast("Fulfilled ✓ (" + response.data.order_status.replace("_", " ") + ")");
         await loadOrderRows();
         renderOrdersPage();
@@ -923,7 +943,10 @@
 
     async function convertOrderToInvoice(id) {
       if (!confirm("Convert this order into a real invoice? The invoice will start as a draft for you to review.")) return;
+      await performOrderToInvoiceConversion(id);
+    }
 
+    async function performOrderToInvoiceConversion(id) {
       try {
         const response = await currentContext.supabaseClient.rpc("convert_ungani_order_to_invoice", { p_order_id: id });
 
