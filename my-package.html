@@ -1564,6 +1564,44 @@
       return Math.round(raw / 50) * 50; // round to nearest 50 KSh, avoids odd totals like 51,003
     }
 
+    // Overwrites the hardcoded packageTierInfo prices/user limits above
+    // with live values from the real ungani_packages table (via
+    // get_ungani_active_packages(), the non-admin-gated twin of
+    // admin-billing.html's get_admin_ungani_package_catalog()) so this
+    // page can never drift from what M-Pesa actually charges. Deliberately
+    // does NOT touch base/plus (the curated marketing copy) - only
+    // monthlyPrice, yearlyPrice, and userLimitLabel. Any failure (RPC
+    // missing, network error, ok:false, empty list) leaves the hardcoded
+    // constants in place untouched - the page must never break over this.
+    async function applyLivePackagePricing() {
+      try {
+        const { data, error } = await supabaseClient.rpc("get_ungani_active_packages");
+
+        if (error || !data || data.ok !== true || !Array.isArray(data.packages)) {
+          return;
+        }
+
+        data.packages.forEach(function (row) {
+          const info = packageTierInfo[row.package_key];
+          if (!info) return;
+
+          if (row.monthly_price_ksh !== null && row.monthly_price_ksh !== undefined) {
+            info.monthlyPrice = Number(row.monthly_price_ksh) || null;
+          }
+
+          if (row.yearly_price_ksh !== null && row.yearly_price_ksh !== undefined) {
+            info.yearlyPrice = Number(row.yearly_price_ksh);
+          }
+
+          if (row.user_limit !== null && row.user_limit !== undefined) {
+            info.userLimitLabel = row.user_limit + (row.user_limit === 1 ? " user" : " users");
+          }
+        });
+      } catch (error) {
+        // Live pricing is a nice-to-have overlay - swallow and keep hardcoded fallback.
+      }
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
       loadMyPackage();
     });
@@ -1748,7 +1786,12 @@
       packageArea.classList.add("hidden");
 
       try {
-        const { data, error } = await supabaseClient.rpc("get_my_ungani_subscription");
+        const [subscriptionResult] = await Promise.all([
+          supabaseClient.rpc("get_my_ungani_subscription"),
+          applyLivePackagePricing()
+        ]);
+
+        const { data, error } = subscriptionResult;
 
         if (error) {
           throw error;
@@ -2026,7 +2069,9 @@
             '<div class="tier-compare-price-period">pricing</div>' +
             '<div class="tier-compare-price-note"></div>';
         } else if (billingCycle === "yearly") {
-          const yearly = computeYearlyPrice(info.monthlyPrice);
+          const yearly = (info.yearlyPrice !== null && info.yearlyPrice !== undefined)
+            ? info.yearlyPrice
+            : computeYearlyPrice(info.monthlyPrice);
           const fullYearly = info.monthlyPrice * 12;
           priceHtml =
             '<div class="tier-compare-price">KSh ' + yearly.toLocaleString("en-KE") + '</div>' +
