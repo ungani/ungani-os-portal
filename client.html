@@ -15614,10 +15614,27 @@
       const hasMoneyData = input.money.income > 0 || input.money.pending > 0;
       const recentCount = countRecentActivity(input.dashboardData);
 
-      // If NONE of the four dimensions have any real data behind them,
+      // Stock attention: checks both low-stock vocabularies already used
+      // elsewhere in this file (isLowStockItem/isOutOfStockItem for the
+      // real Stock Tracking quantity/reorder_level columns,
+      // isLowStockHospitalityItem/isOutOfStockHospitalityItem for F&B's
+      // status-text vocab) rather than calculateItemSummary's generic
+      // status-substring heuristic, which doesn't actually read either
+      // real stock system. Both functions safely return false for items
+      // with no stock concept at all, so this is safe to run unconditionally
+      // across every business type.
+      const itemRows = input.dashboardData.items || [];
+      const stockAttentionCount = itemRows.filter(function (item) {
+        return isOutOfStockItem(item) || isLowStockItem(item) || isOutOfStockHospitalityItem(item) || isLowStockHospitalityItem(item);
+      }).length;
+      const hasItemData = itemRows.length > 0;
+
+      // If NONE of the five dimensions have any real data behind them,
       // there is nothing to score - a brand-new tenant isn't "healthy",
-      // it just doesn't have a health score yet.
-      if (!hasTaskData && !hasSupportData && !hasMoneyData && recentCount === 0) {
+      // it just doesn't have a health score yet. hasItemData is included
+      // here too now - previously a tenant with only item/stock data and
+      // nothing else would incorrectly fall into "not enough data yet".
+      if (!hasTaskData && !hasSupportData && !hasMoneyData && !hasItemData && recentCount === 0) {
         return {
           score: null,
           notEnoughData: true,
@@ -15633,6 +15650,8 @@
       const supportScore = tierScore(input.support.open, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
 
       const activityScore = tierScore(recentCount, [[0, 45], [2, 70], [6, 90], [Infinity, 100]]);
+
+      const stockScore = tierScore(stockAttentionCount, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
 
       // Single source of truth for both the weighted score and the
       // click-through health breakdown panel - previously the scoring
@@ -15658,6 +15677,11 @@
           key: "activity", label: "recent activity", weight: 15, score: activityScore, applicable: true,
           text: "It's been quiet — log some activity to keep your records current.",
           actionLabel: "Log some recent activity", href: "my-tasks.html"
+        },
+        {
+          key: "stock", label: "low/out-of-stock items", weight: 15, score: stockScore, applicable: hasItemData,
+          text: stockAttentionCount === 1 ? "1 item is low or out of stock." : stockAttentionCount + " items are low or out of stock.",
+          actionLabel: "Review low-stock items", href: "my-items.html"
         }
       ];
 
