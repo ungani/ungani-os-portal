@@ -124,7 +124,7 @@
       try {
         const response = await currentContext.supabaseClient
           .from("business_items")
-          .select("id, item_name, name, title, property_name, quantity, property_price")
+          .select("id, item_name, name, title, property_name, quantity, custom_fields, units_available, property_price")
           .eq("tenant_id", currentContext.tenantId)
           .is("deleted_at", null)
           .limit(1000);
@@ -138,6 +138,64 @@
 
     function stockItemLabel(item) {
       return item.item_name || item.name || item.title || item.property_name || "Item";
+    }
+
+    // Mirrors client.html's getStockQuantity() 3-tier fallback exactly, so
+    // the "in stock" number shown here always matches what Items/Health
+    // Score already show for the same item: business_items.quantity only
+    // becomes authoritative once the tenant's dedicated Stock Tracking
+    // toggle is on; custom_fields.stock_quantity is Phase 2's per-item
+    // field set directly on the item form (works whether or not Stock
+    // Tracking is on); units_available is a legacy Real Estate fallback.
+    // Returns null when the item has no stock concept at all, in which
+    // case no availability warning applies.
+    function getOrderLineAvailableStock(item) {
+      if (currentContext.tenant && currentContext.tenant.stock_tracking_enabled === true) {
+        const trackedQty = item.quantity;
+        if (trackedQty !== null && trackedQty !== undefined && trackedQty !== "") {
+          const trackedNum = Number(trackedQty);
+          if (!isNaN(trackedNum)) return trackedNum;
+        }
+      }
+
+      const customFields = item.custom_fields || {};
+      const customQty = customFields.stock_quantity;
+      if (customQty !== undefined && customQty !== null && customQty !== "") {
+        const num = Number(customQty);
+        if (!isNaN(num)) return num;
+      }
+
+      const raw = item.units_available;
+      if (raw === null || raw === undefined || raw === "") return null;
+      const num = Number(raw);
+      return isNaN(num) ? null : num;
+    }
+
+    // Soft warning only, not a block - an order can legitimately be taken
+    // for more than what's on hand right now (restock expected before
+    // fulfilment, backorder accepted, etc). Stock itself is only ever
+    // touched at fulfilment time (fulfilOrderLine()), never at order
+    // creation, so this never blocks or reserves anything.
+    function orderLineWarningHtml(item) {
+      if (!item.item_id) return "";
+
+      const stockItem = stockItemOptions.find(function (it) { return String(it.id) === String(item.item_id); });
+      if (!stockItem) return "";
+
+      const available = getOrderLineAvailableStock(stockItem);
+      if (available === null) return "";
+
+      const requested = Number(item.quantity) || 0;
+      if (requested <= available) return "";
+
+      return `<div class="ungani-small" style="color:#DC2626;">Only ${available} in stock - ordering ${requested} is ${requested - available} more than available.</div>`;
+    }
+
+    function updateOrderLineWarning(index) {
+      const row = document.getElementById("orderLineWarning_" + index);
+      if (!row) return;
+      const cell = row.querySelector("td");
+      if (cell) cell.innerHTML = orderLineWarningHtml(editingOrderItems[index]);
     }
 
     async function loadPriceListOptions() {
@@ -351,9 +409,9 @@
     }
 
     function stockItemOptionsHtml(selectedId) {
-      const trackingOn = !!(currentContext.tenant && currentContext.tenant.stock_tracking_enabled);
       const options = stockItemOptions.map(function (item) {
-        const stockHint = trackingOn && item.quantity != null ? " (" + item.quantity + " in stock)" : "";
+        const available = getOrderLineAvailableStock(item);
+        const stockHint = available !== null ? " (" + available + " in stock)" : "";
         const selected = String(item.id) === String(selectedId) ? " selected" : "";
         return `<option value="${UnganiClientShared.attr(item.id)}"${selected}>${UnganiClientShared.safe(stockItemLabel(item))}${UnganiClientShared.safe(stockHint)}</option>`;
       }).join("");
@@ -616,6 +674,7 @@
             <td style="width:10%;text-align:right;" class="order-item-line-total" data-row="${index}">${UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}</td>
             <td style="width:5%;">${isLocked ? "" : `<button type="button" class="ungani-btn red" style="padding:4px 8px;min-height:auto;" onclick="removeOrderItemRow(${index})">✕</button>`}</td>
           </tr>
+          <tr id="orderLineWarning_${index}"><td colspan="6" style="padding-top:0;">${orderLineWarningHtml(item)}</td></tr>
         `;
       }).join("");
     }
@@ -669,6 +728,8 @@
         if (changed) {
           renderOrderItemsTable();
           handleOrderTotalsChange();
+        } else {
+          updateOrderLineWarning(index);
         }
         return;
       }
@@ -681,6 +742,7 @@
         lineTotalCell.textContent = UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_price) || 0));
       }
 
+      updateOrderLineWarning(index);
       handleOrderTotalsChange();
     }
 
@@ -745,6 +807,29 @@
       if (!items.length) {
         UnganiClientShared.showToast("Add at least one line item with a description.");
         return;
+      }
+
+      // Soft warning only - stock is only ever touched at fulfilment time,
+      // never at order creation, so nothing here blocks the save. This
+      // just catches it before confirming the order rather than only
+      // discovering it later at fulfilment.
+      const stockWarnings = items
+        .filter(function (item) { return item.item_id; })
+        .map(function (item) {
+          const stockItem = stockItemOptions.find(function (it) { return String(it.id) === String(item.item_id); });
+          if (!stockItem) return null;
+          const available = getOrderLineAvailableStock(stockItem);
+          if (available === null || item.quantity <= available) return null;
+          return item.description + " (ordering " + item.quantity + ", only " + available + " in stock)";
+        })
+        .filter(Boolean);
+
+      if (stockWarnings.length) {
+        const proceed = confirm(
+          "This order exceeds available stock for:\n\n" + stockWarnings.join("\n") +
+          "\n\nDo you still want to save this order?"
+        );
+        if (!proceed) return;
       }
 
       const submitBtn = event.target.querySelector("button[type=submit]");
