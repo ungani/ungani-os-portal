@@ -2745,7 +2745,59 @@
     return fallback;
   }
 
-  const ASSET_SUMMARY_COLUMNS = "id, status, item_status, property_status, item_name, name, title, property_name, quantity, reorder_level, custom_fields";
+  const ASSET_SUMMARY_COLUMNS = "id, status, item_status, property_status, item_name, name, title, property_name, quantity, reorder_level, custom_fields, units_available";
+
+  const LOW_STOCK_THRESHOLD = 5;
+
+  // Exact mirror of client.html's getStockQuantity()/getReorderLevel() -
+  // found via live testing to have drifted: this version used to require
+  // reorder_level to be explicitly set before treating an item as having
+  // any numeric stock at all, so an item relying on the default
+  // low-stock threshold (reorder_level left null - the common case,
+  // confirmed live on Billy Logistics where every item's reorder_level
+  // is null) was silently excluded from stock detection entirely. Kept
+  // as a duplicate (this repo has no module system to share it from),
+  // not a shorter version - the two must stay in lockstep or Nia's stock
+  // answers will silently disagree with the Items page and Health Score
+  // again, exactly as they did here.
+  function niaGetStockQuantity(item) {
+    if (state.tenant && state.tenant.stock_tracking_enabled === true) {
+      const trackedQty = item.quantity;
+      if (trackedQty !== null && trackedQty !== undefined && trackedQty !== "") {
+        const trackedNum = Number(trackedQty);
+        if (!isNaN(trackedNum)) return trackedNum;
+      }
+    }
+
+    const customFields = item.custom_fields || {};
+    const customQty = customFields.stock_quantity;
+    if (customQty !== undefined && customQty !== null && customQty !== "") {
+      const num = Number(customQty);
+      if (!isNaN(num)) return num;
+    }
+
+    const raw = item.units_available;
+    if (raw === null || raw === undefined || raw === "") return null;
+    const num = Number(raw);
+    return isNaN(num) ? null : num;
+  }
+
+  function niaGetReorderLevel(item) {
+    if (state.tenant && state.tenant.stock_tracking_enabled === true) {
+      const trackedLevel = item.reorder_level;
+      if (trackedLevel !== null && trackedLevel !== undefined && trackedLevel !== "") {
+        const trackedNum = Number(trackedLevel);
+        if (!isNaN(trackedNum) && trackedNum > 0) return trackedNum;
+      }
+    }
+
+    const customFields = item.custom_fields || {};
+    const raw = customFields.reorder_level;
+    if (raw === undefined || raw === null || raw === "") return LOW_STOCK_THRESHOLD;
+
+    const num = Number(raw);
+    return isNaN(num) || num <= 0 ? LOW_STOCK_THRESHOLD : num;
+  }
 
   function niaDaysUntil(dateStr) {
     const target = new Date(dateStr);
@@ -2803,18 +2855,9 @@
         }
       }
 
-      // Once Stock Tracking is enabled, business_items.quantity/reorder_level
-      // (real columns, managed via adjust_ungani_stock) are authoritative
-      // instead of custom_fields - same conditional as my-items.html and
-      // client.html's stock helpers.
-      const stockTrackingEnabled = !!(state.tenant && state.tenant.stock_tracking_enabled === true);
-      const stockQty = stockTrackingEnabled ? Number(row.quantity) : Number(customFields.stock_quantity);
-      const reorderLevel = stockTrackingEnabled ? Number(row.reorder_level) : Number(customFields.reorder_level);
-      const hasNumericStock = stockTrackingEnabled
-        ? (row.quantity !== undefined && row.quantity !== null && row.reorder_level !== undefined && row.reorder_level !== null && !isNaN(stockQty) && !isNaN(reorderLevel))
-        : (customFields.stock_quantity !== undefined && customFields.stock_quantity !== null && customFields.stock_quantity !== "" &&
-           customFields.reorder_level !== undefined && customFields.reorder_level !== null && customFields.reorder_level !== "" &&
-           !isNaN(stockQty) && !isNaN(reorderLevel));
+      const stockQty = niaGetStockQuantity(row);
+      const reorderLevel = niaGetReorderLevel(row);
+      const hasNumericStock = stockQty !== null;
 
       if (hasNumericStock) {
         if (stockQty <= 0) {
