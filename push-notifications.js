@@ -1,6 +1,6 @@
 (function () {
   // Public VAPID key - safe to ship in client code (only the private key,
-  // held server-side in api/send-push.js, is secret). Generated once
+  // held server-side in api/send-event-push.js, is secret). Generated once
   // tonight; if it's ever rotated, this and the Vercel env vars must be
   // updated together or existing subscriptions silently stop matching.
   const VAPID_PUBLIC_KEY = "BFJ-HuWHjH1OHim313PV12E7yiVaxSqw_RfwHBrgIJ8OA5JI61HWKfrD_b6zhXV46f0cUIBkigfDwH3SkYUh0dI";
@@ -177,10 +177,11 @@
 
       if (!token) return { ok: false, message: "Not signed in." };
 
-      const response = await fetch("/api/send-push", {
+      const response = await fetch("/api/send-event-push", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
         body: JSON.stringify({
+          eventType: "test_push",
           title: "UNGANI OS test push",
           body: "If you can see this, push notifications are working on this device.",
           url: "/"

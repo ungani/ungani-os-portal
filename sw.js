@@ -34,7 +34,7 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Push payload is always JSON (sent by /api/send-push.js), with a plain-
+// Push payload is always JSON (sent by /api/send-event-push.js), with a plain-
 // text fallback in case a payload ever arrives some other way. icon/badge
 // default to existing manifest.json assets so every push looks branded
 // even if the sender didn't specify them.

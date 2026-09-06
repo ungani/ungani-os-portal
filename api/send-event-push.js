@@ -827,6 +827,99 @@ async function handleRecordAttachment(req, supabaseAdmin, documentId, res) {
   return json(res, 200, { ok: true, sent: result.sent || 0 });
 }
 
+// Merged from the former api/send-push.js (deleted to stay within
+// Vercel's Hobby-plan 12-function cap). This is the manual "send
+// yourself a test push" button - deliberately not routed through
+// resolveCallerTenantId/resolveCallerIsAdmin like every other handler
+// here, since a solo owner with no team (or a not-yet-approved account)
+// still needs to be able to test their own device. Badge count is a
+// single shared value computed once via a direct user_id query, not
+// per-subscription via computeUnreadBadgeCount's RPC - kept exactly as
+// it was in the original file, since a test push always targets devices
+// belonging to the one caller, and this merge is a consolidation, not a
+// redesign of that logic.
+async function handleTestPush(req, supabaseAdmin, res) {
+  const token = getBearerToken(req);
+
+  if (!token) {
+    return json(res, 401, { ok: false, message: "Missing bearer token." });
+  }
+
+  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+
+  if (userError || !userData?.user) {
+    return json(res, 401, { ok: false, message: "Invalid or expired session." });
+  }
+
+  const callerId = userData.user.id;
+
+  const { data: subscriptions, error: subsError } = await supabaseAdmin
+    .from(SUBSCRIPTIONS_TABLE)
+    .select("id, endpoint, p256dh, auth_key")
+    .eq("auth_user_id", callerId);
+
+  if (subsError) {
+    return json(res, 500, { ok: false, message: subsError.message });
+  }
+
+  if (!subscriptions || subscriptions.length === 0) {
+    return json(res, 200, {
+      ok: true,
+      message: "No push subscriptions found for this account. Enable notifications first, then try again.",
+      sent: 0
+    });
+  }
+
+  let badgeCount = 0;
+
+  try {
+    const { count } = await supabaseAdmin
+      .from("ungani_notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", callerId)
+      .neq("status", "read");
+
+    badgeCount = count || 0;
+  } catch (badgeError) {
+    badgeCount = 0;
+  }
+
+  const payload = JSON.stringify({
+    title: req.body?.title || "UNGANI OS test push",
+    body: req.body?.body || "If you can see this, push notifications are working on this device.",
+    url: req.body?.url || "/",
+    badgeCount: badgeCount
+  });
+
+  const results = [];
+
+  for (const sub of subscriptions) {
+    try {
+      await webpush.sendNotification(
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth_key } },
+        payload
+      );
+
+      results.push({ id: sub.id, ok: true });
+    } catch (sendError) {
+      const statusCode = sendError.statusCode;
+
+      if (statusCode === 404 || statusCode === 410) {
+        await supabaseAdmin.from(SUBSCRIPTIONS_TABLE).delete().eq("id", sub.id);
+        results.push({ id: sub.id, ok: false, message: "Subscription expired - removed.", pruned: true });
+      } else {
+        results.push({ id: sub.id, ok: false, message: sendError.message });
+      }
+    }
+  }
+
+  return json(res, 200, {
+    ok: true,
+    sent: results.filter((r) => r.ok).length,
+    results
+  });
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
@@ -843,15 +936,22 @@ export default async function handler(req, res) {
     const eventType = req.body?.eventType;
     const relatedId = req.body?.relatedId;
 
-    if (!relatedId || typeof relatedId !== "string") {
-      return json(res, 400, { ok: false, message: "Missing relatedId." });
-    }
-
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+
+    // test_push has no relatedId (it isn't tied to any record), so it
+    // must be checked before the relatedId requirement below applies to
+    // every other event type.
+    if (eventType === "test_push") {
+      return await handleTestPush(req, supabaseAdmin, res);
+    }
+
+    if (!relatedId || typeof relatedId !== "string") {
+      return json(res, 400, { ok: false, message: "Missing relatedId." });
+    }
 
     if (eventType === "new_registration") {
       return await handleNewRegistration(supabaseAdmin, relatedId, res);
