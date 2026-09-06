@@ -4205,7 +4205,8 @@
         safeSelect("tasks", 250),
         safeSelect("documents", 250),
         safeSelect("business_events", 250),
-        safeSelect("support_issues", 250)
+        safeSelect("support_issues", 250),
+        safeInvoicesForHealth()
       ]);
 
       dashboardData.transactions = responses[0];
@@ -4216,6 +4217,7 @@
       dashboardData.documents = responses[5];
       dashboardData.events = responses[6];
       dashboardData.support = responses[7];
+      dashboardData.invoices = responses[8];
 
       try {
         renderDashboard();
@@ -4506,6 +4508,21 @@
         return response.data || [];
       } catch (error) {
         console.warn(tableName, error.message);
+        return [];
+      }
+    }
+
+    // ungani_customer_invoices has no deleted_at filter in its own select
+    // RLS policy (unlike the tables safeSelect reads), so a direct .from()
+    // read would leak soft-deleted invoices into the health calculation.
+    // The RPC already does the deleted_at is null filtering server-side.
+    async function safeInvoicesForHealth() {
+      try {
+        const response = await supabaseClient.rpc("get_my_ungani_customer_invoices");
+        if (response.error || !response.data || response.data.ok !== true) return [];
+        return response.data.invoices || [];
+      } catch (error) {
+        console.warn("invoices", error.message);
         return [];
       }
     }
@@ -15611,8 +15628,30 @@
       // as "no problems".
       const hasTaskData = (input.tasks.pending + input.tasks.completed) > 0;
       const hasSupportData = input.support.total > 0;
-      const hasMoneyData = input.money.income > 0 || input.money.pending > 0;
       const recentCount = countRecentActivity(input.dashboardData);
+
+      // Unpaid invoices are the same underlying risk as a manually-logged
+      // pending Money entry (money owed to the business, not yet
+      // collected) - just recorded through a different workflow - so this
+      // is blended into the existing payments factor rather than scored
+      // as its own factor (unlike stock, which is a genuinely separate
+      // risk dimension). No double-counting risk: an invoice only ever
+      // writes a transactions row once it's paid (record_ungani_invoice_payment),
+      // never while unpaid, so the two totals never overlap the same
+      // real-world receivable. KES-only for now, matching item #1's
+      // Money-sync scope - invoices have no stored exchange rate to
+      // convert a USD balance against.
+      const invoiceRows = input.dashboardData.invoices || [];
+      const unpaidInvoiceTotal = invoiceRows
+        .filter(function (inv) {
+          return inv.currency === "KES" && inv.status !== "draft" && inv.status !== "cancelled";
+        })
+        .reduce(function (sum, inv) {
+          const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
+          return sum + Math.max(balance, 0);
+        }, 0);
+
+      const hasMoneyData = input.money.income > 0 || input.money.pending > 0 || unpaidInvoiceTotal > 0;
 
       // Stock attention: checks both low-stock vocabularies already used
       // elsewhere in this file (isLowStockItem/isOutOfStockItem for the
@@ -15644,7 +15683,7 @@
 
       const tasksScore = tierScore(input.tasks.overdue, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
 
-      const pendingRatio = input.money.pending / Math.max(input.money.income, 1);
+      const pendingRatio = (input.money.pending + unpaidInvoiceTotal) / Math.max(input.money.income, 1);
       const paymentScore = pendingRatio <= 0.05 ? 100 : pendingRatio <= 0.15 ? 80 : pendingRatio <= 0.30 ? 55 : 30;
 
       const supportScore = tierScore(input.support.open, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
