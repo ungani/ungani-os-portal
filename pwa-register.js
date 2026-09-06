@@ -28,6 +28,25 @@
     return window.__unganiSupabaseClient;
   };
 
+  // Shared minimum across index.html (registration), login.html (password
+  // reset), and staff-login.html (staff account creation + reset) - a
+  // single source so the four checks can't drift apart the way the same
+  // logic already did before this existed (6 chars in two places, 8 in
+  // another).
+  window.checkUnganiPasswordPolicy = function (password) {
+    const value = String(password || "");
+
+    if (value.length < 8) {
+      return { ok: false, message: "Password must be at least 8 characters." };
+    }
+
+    if (!/[A-Za-z]/.test(value) || !/[0-9]/.test(value)) {
+      return { ok: false, message: "Password must include at least one letter and one number." };
+    }
+
+    return { ok: true, message: "" };
+  };
+
   setPortalModeFromUrl();
   loadUiPolish();
   registerServiceWorker();
