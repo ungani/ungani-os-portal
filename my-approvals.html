@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Approvals</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let isOwnerViewer = false;
+    let approvalRows = [];
+    let requesterNamesById = {};
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "approvals",
+        pageTitle: "Approvals",
+        pageSubtitle: "Expense requests awaiting review, and their history.",
+        onReady: startApprovalsPage
+      });
+    });
+
+    async function startApprovalsPage(context) {
+      currentContext = context;
+
+      try {
+        const accessResponse = await context.supabaseClient.rpc("get_my_ungani_staff_access");
+        isOwnerViewer = !!(accessResponse.data && accessResponse.data.is_owner === true);
+      } catch (error) {
+        isOwnerViewer = false;
+      }
+
+      if (isOwnerViewer && (!context.tenant || context.tenant.expense_approval_threshold_kes == null)) {
+        UnganiClientShared.setContent(`
+          <section class="ungani-card ungani-hero">
+            <span class="ungani-badge gold">Approvals</span>
+            <h2 style="font-size:clamp(24px,3.6vw,36px);line-height:1.1;margin:16px 0 12px;">Expense Approval isn't turned on yet.</h2>
+            <p>Set a KES threshold in My Settings - any expense a staff member logs at or above it will show up here for you to approve or reject before it hits Money.</p>
+            <div class="ungani-button-row">
+              <a class="ungani-btn gold" href="my-settings.html">Go to Settings</a>
+            </div>
+          </section>
+        `);
+        return;
+      }
+
+      await loadApprovalRows();
+      renderApprovalsPage();
+    }
+
+    function moneyText(value) {
+      return "KSh " + (Number(value) || 0).toLocaleString("en-KE");
+    }
+
+    // RLS on ungani_approval_requests already scopes what comes back:
+    // the owner sees every request for the tenant, a staff member sees
+    // only their own (any status) - so this is a plain direct read, no
+    // client-side filtering needed to enforce that boundary. Requester
+    // names are resolved separately since the table only stores
+    // requested_by (auth.uid()), not a display name.
+    async function loadApprovalRows() {
+      try {
+        const [requestsResponse, teamResponse] = await Promise.all([
+          currentContext.supabaseClient
+            .from("ungani_approval_requests")
+            .select("*")
+            .eq("tenant_id", currentContext.tenantId)
+            .order("created_at", { ascending: false }),
+          currentContext.supabaseClient
+            .from("ungani_team_members")
+            .select("id, full_name, auth_user_id")
+            .eq("tenant_id", currentContext.tenantId)
+        ]);
+
+        approvalRows = (!requestsResponse.error && requestsResponse.data) ? requestsResponse.data : [];
+
+        requesterNamesById = {};
+        ((!teamResponse.error && teamResponse.data) ? teamResponse.data : []).forEach(function (member) {
+          if (member.auth_user_id) requesterNamesById[member.auth_user_id] = member.full_name || "Staff member";
+        });
+      } catch (error) {
+        console.warn("Could not load approval requests:", error.message);
+        approvalRows = [];
+      }
+    }
+
+    function requesterName(row) {
+      return requesterNamesById[row.requested_by] || "Staff member";
+    }
+
+    function renderApprovalsPage() {
+      const pending = approvalRows.filter(function (row) { return row.status === "pending"; });
+      const history = approvalRows.filter(function (row) { return row.status !== "pending"; });
+      const pendingTotal = pending.reduce(function (sum, row) { return sum + (Number(row.amount_kes) || 0); }, 0);
+
+      UnganiClientShared.setContent(`
+        <style>
+          .appr-table-wrap { overflow-x: auto; }
+          .appr-table { width: 100%; border-collapse: collapse; margin-top: 14px; min-width: 560px; }
+          .appr-table th, .appr-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.1)); font-size: 14px; }
+          .appr-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--ungani-muted, #6B7280); }
+          .appr-status-badge { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+          .appr-status-pending { background: rgba(212,166,58,0.2); color: #92600E; }
+          .appr-status-approved { background: rgba(22,163,74,0.15); color: #16A34A; }
+          .appr-status-rejected { background: rgba(220,38,38,0.15); color: #DC2626; }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Approvals</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">${isOwnerViewer ? "Review expenses awaiting your approval." : "Your expense requests."}</h2>
+          <p>${isOwnerViewer ? "Any expense a staff member logs at or above your threshold shows up here first - approve it to post to Money, or reject it with a reason." : "Expenses you logged above the approval threshold wait here until the business owner reviews them."}</p>
+        </section>
+
+        <section class="money-kpi-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px;">
+          ${apprKpi("Pending", String(pending.length), pending.length + " request(s) awaiting review", pending.length > 0 ? "#92600E" : "#16A34A")}
+          ${apprKpi("Pending Total", moneyText(pendingTotal), "Not yet in Money", "#92600E")}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Pending</h3>
+              <p class="ungani-small">${pending.length} request(s) awaiting review.</p>
+            </div>
+          </div>
+
+          ${renderApprovalTable(pending, true)}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>History</h3>
+              <p class="ungani-small">${history.length} reviewed request(s).</p>
+            </div>
+          </div>
+
+          ${renderApprovalTable(history, false)}
+        </section>
+
+        <p class="ungani-small">Approvals · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    function apprKpi(label, value, sub, accent) {
+      return `
+        <div class="ungani-card" style="border-left:4px solid ${accent};box-shadow:none;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ungani-muted,#6B7280);font-weight:800;">${UnganiClientShared.safe(label)}</div>
+          <div style="font-size:26px;font-weight:900;margin:6px 0 2px;">${UnganiClientShared.safe(value)}</div>
+          <div class="ungani-small">${UnganiClientShared.safe(sub)}</div>
+        </div>
+      `;
+    }
+
+    function renderApprovalTable(rows, isPendingTable) {
+      if (!rows.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">${isPendingTable ? "Nothing waiting on review right now." : "No reviewed requests yet."}</p>`;
+      }
+
+      return `
+        <div class="appr-table-wrap">
+          <table class="appr-table">
+            <thead>
+              <tr>
+                ${isOwnerViewer ? "<th>Requested By</th>" : ""}
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Status</th>
+                ${!isPendingTable ? "<th>Note</th>" : ""}
+                ${isPendingTable && isOwnerViewer ? "<th></th>" : ""}
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(function (row) {
+                const payload = row.payload || {};
+                return `
+                  <tr>
+                    ${isOwnerViewer ? `<td>${UnganiClientShared.safe(requesterName(row))}</td>` : ""}
+                    <td><strong>${UnganiClientShared.safe(payload.category || "Expense")}</strong></td>
+                    <td>${UnganiClientShared.safe(moneyText(row.amount_kes))}</td>
+                    <td>${UnganiClientShared.safe(payload.transaction_date || "")}</td>
+                    <td><span class="appr-status-badge appr-status-${row.status}">${UnganiClientShared.safe(row.status)}</span></td>
+                    ${!isPendingTable ? `<td class="ungani-small">${UnganiClientShared.safe(row.review_note || "")}</td>` : ""}
+                    ${isPendingTable && isOwnerViewer ? `
+                      <td>
+                        <div class="ungani-button-row" style="margin:0;">
+                          <button class="ungani-btn green" style="padding:6px 12px;min-height:auto;" type="button" onclick="approveRequest('${UnganiClientShared.attr(row.id)}')">Approve</button>
+                          <button class="ungani-btn red" style="padding:6px 12px;min-height:auto;" type="button" onclick="rejectRequest('${UnganiClientShared.attr(row.id)}')">Reject</button>
+                        </div>
+                      </td>
+                    ` : ""}
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    async function approveRequest(id) {
+      if (!confirm("Approve this expense? It will be posted to Money once approved.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("owner_approve_ungani_expense_request", { p_request_id: id });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not approve: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.showToast("Expense approved ✓");
+        await loadApprovalRows();
+        renderApprovalsPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not approve: " + error.message);
+      }
+    }
+
+    async function rejectRequest(id) {
+      const noteInput = prompt("Reason for rejecting this request (optional):");
+      if (noteInput === null) return; // Cancel - abort, don't reject.
+      const note = noteInput.trim() === "" ? null : noteInput.trim();
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("owner_reject_ungani_expense_request", { p_request_id: id, p_note: note });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not reject: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.showToast("Request rejected ✓");
+        await loadApprovalRows();
+        renderApprovalsPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not reject: " + error.message);
+      }
+    }
+  </script>
+</body>
+</html>

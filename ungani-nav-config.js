@@ -63,6 +63,10 @@
       financeItems.push(["debtors-payables", "my-debtors-payables.html", "notebook", "Debtors & Payables"]);
     }
 
+    if (tenant && tenant.expense_approval_threshold_kes != null) {
+      financeItems.push(["approvals", "my-approvals.html", "shield-check", "Approvals"]);
+    }
+
     const salesItems = [
       ["quotations", "my-quotations.html", "file-pen", "Quotations"],
       ["orders", "my-orders.html", "shopping-cart", "Orders"],

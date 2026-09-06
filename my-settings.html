@@ -1056,6 +1056,33 @@
         </div>
       </section>
 
+      <section class="panel full" id="expenseApprovalPanel">
+        <div class="panel-head">
+          <h2>Expense Approval</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Set a KES amount - any expense a staff member (not you) logs at or above it gets held for
+            your approval instead of posting straight to Money. You'll be notified, and can approve or
+            reject it from the Approvals page that appears in your sidebar. Leave this blank to turn the
+            feature off - your own entries are never held, regardless of amount.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="expenseApprovalThreshold">Approval threshold (KES)</label>
+              <input type="number" id="expenseApprovalThreshold" min="1" step="1" placeholder="e.g. 20000 - leave blank to turn off" />
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="expenseApprovalMessage" class="action-msg"></span>
+            <button type="button" id="btnSaveExpenseApproval" class="ungani-btn gold" onclick="saveExpenseApproval()">Save Expense Approval Setting</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full" id="brandingPanel">
         <div class="panel-head">
           <h2>Branding</h2>
@@ -2101,7 +2128,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled, price_lists_enabled, expense_approval_threshold_kes")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -2116,6 +2143,7 @@
       renderStockTrackingPanel(tenantRow);
       renderDebtorsPayablesPanel(tenantRow);
       renderPriceListsPanel(tenantRow);
+      renderExpenseApprovalPanel(tenantRow);
       renderBrandingPanel(tenantRow);
 
       const business = data.business || {};
@@ -2367,6 +2395,52 @@
 
           msgSpan.className = "action-msg success";
           msgSpan.textContent = "Price Lists setting saved.";
+        } catch (err) {
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
+    }
+
+    function renderExpenseApprovalPanel(tenantRow) {
+      const el = document.getElementById("expenseApprovalThreshold");
+      if (!el) return;
+      el.value = (tenantRow && tenantRow.expense_approval_threshold_kes != null) ? tenantRow.expense_approval_threshold_kes : "";
+    }
+
+    async function saveExpenseApproval() {
+      const msgSpan = document.getElementById("expenseApprovalMessage");
+      const btn = document.getElementById("btnSaveExpenseApproval");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const rawValue = document.getElementById("expenseApprovalThreshold").value.trim();
+      const threshold = rawValue === "" ? null : Number(rawValue);
+
+      if (threshold !== null && (isNaN(threshold) || threshold <= 0)) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Enter a positive amount, or leave blank to turn the setting off.";
+        return;
+      }
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { error } = await supabaseClient
+            .from("tenants")
+            .update({ expense_approval_threshold_kes: threshold })
+            .eq("id", currentTenantId);
+
+          if (error) throw error;
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = threshold === null ? "Expense approval turned off." : "Expense approval setting saved.";
         } catch (err) {
           msgSpan.className = "action-msg error";
           msgSpan.textContent = "Failed to save: " + getErrorMessage(err);

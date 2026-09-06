@@ -2518,6 +2518,34 @@ const payload = {
             .update(payload)
             .eq("id", editingMoneyId)
             .eq("tenant_id", currentContext.tenantId);
+        } else if (broadType === "expense") {
+          // Approvals & Internal Controls v1: routes new EXPENSE creation
+          // through request_or_create_ungani_expense() instead of a raw
+          // insert - the RPC decides server-side whether this creates the
+          // transaction immediately (owner, or under the owner's
+          // threshold) or queues it as a pending approval request instead
+          // (non-owner staff, at/above threshold). Edits and new income
+          // entries are untouched - same raw insert/update as always.
+          const approvalResponse = await currentContext.supabaseClient.rpc("request_or_create_ungani_expense", {
+            p_payload: payload
+          });
+
+          if (approvalResponse.error || !approvalResponse.data || approvalResponse.data.ok !== true) {
+            UnganiClientShared.showToast("Could not save record: " + (approvalResponse.error ? approvalResponse.error.message : (approvalResponse.data && approvalResponse.data.message)));
+            return;
+          }
+
+          if (approvalResponse.data.mode === "pending_approval") {
+            UnganiClientShared.showToast("Submitted for approval - the business owner will review this expense ✓");
+            UnganiClientShared.closeModal();
+            await loadMoneyRows();
+            return;
+          }
+
+          // mode === "created" - shape the response like the raw insert
+          // path below so the unchanged post-save logic further down
+          // (Connect activity log, payroll email, toast) works as-is.
+          response = { data: { id: approvalResponse.data.transaction_id }, error: null };
         } else {
           payload.created_at = new Date().toISOString();
 
