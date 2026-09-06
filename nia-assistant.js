@@ -2949,6 +2949,44 @@
     return { spoken: "You have " + total + " items on record." };
   }
 
+  // Cross-references low/out-of-stock items against real order demand.
+  // ungani_orders/ungani_order_items both carry their own tenant-scoped
+  // select policy (same pattern as the direct client_people/transactions
+  // reads in runDebtorsQueryIntent above), so this is a direct read, not
+  // a new RPC. Only orders still awaiting fulfilment count - cancelled,
+  // fulfilled, and invoiced orders no longer represent open demand for
+  // stock. Returns { itemId: openOrderCount }.
+  async function fetchPendingOrderItemNeeds() {
+    const [ordersResponse, itemsResponse] = await Promise.all([
+      state.supabaseClient.from("ungani_orders")
+        .select("id")
+        .eq("tenant_id", state.tenantId)
+        .in("status", ["pending", "confirmed", "partially_fulfilled"]),
+      state.supabaseClient.from("ungani_order_items")
+        .select("order_id, item_id, quantity, fulfilled_quantity")
+        .eq("tenant_id", state.tenantId)
+        .not("item_id", "is", null)
+    ]);
+
+    if (ordersResponse.error || itemsResponse.error) return {};
+
+    const openOrderIds = new Set((ordersResponse.data || []).map(function (o) { return o.id; }));
+    const ordersByItemId = {};
+
+    (itemsResponse.data || []).forEach(function (line) {
+      if (!openOrderIds.has(line.order_id)) return;
+      const remaining = Number(line.quantity) - Number(line.fulfilled_quantity || 0);
+      if (remaining <= 0) return;
+
+      if (!ordersByItemId[line.item_id]) ordersByItemId[line.item_id] = new Set();
+      ordersByItemId[line.item_id].add(line.order_id);
+    });
+
+    const counts = {};
+    Object.keys(ordersByItemId).forEach(function (itemId) { counts[itemId] = ordersByItemId[itemId].size; });
+    return counts;
+  }
+
   // A bare mention of "stock"/"stock tracking"/"inventory" is enough on
   // its own - computeAssetAttentionEntries() already works whether or not
   // Stock Tracking is turned on (it falls back to custom_fields.stock_quantity
@@ -2985,20 +3023,36 @@
       return { spoken: "Nothing is low or out of stock right now." };
     }
 
+    // Non-critical enhancement - if the orders tables can't be read for
+    // any reason, degrade to the plain stock list rather than failing
+    // the whole answer.
+    let orderNeeds = {};
+    try {
+      orderNeeds = await fetchPendingOrderItemNeeds();
+    } catch (error) {
+      orderNeeds = {};
+    }
+
     const shown = stockEntries.slice(0, 6);
     const remaining = stockEntries.length - shown.length;
+    const blockedCount = shown.filter(function (entry) { return (orderNeeds[entry.id] || 0) > 0; }).length;
 
     const listHtml = shown.map(function (entry) {
       const url = "my-item-profile.html?id=" + encodeURIComponent(entry.id);
-      return `<div style="margin-top:6px;">${severityDotHtml(entry.severity)}<a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(entry.name)}</a> — ${safe(entry.label)}</div>`;
+      const orderCount = orderNeeds[entry.id] || 0;
+      const orderNote = orderCount > 0 ? " — needed for " + orderCount + " pending order" + (orderCount === 1 ? "" : "s") : "";
+      return `<div style="margin-top:6px;">${severityDotHtml(entry.severity)}<a class="nia-link-btn" style="margin-top:0;" href="${attr(url)}">${safe(entry.name)}</a> — ${safe(entry.label)}${safe(orderNote)}</div>`;
     }).join("");
 
     addNiaMessage(
       stockEntries.length + " item" + (stockEntries.length === 1 ? "" : "s") + " low or out of stock:" + listHtml +
+      (blockedCount > 0 ? `<div style="margin-top:8px;"><a class="nia-link-btn" style="margin-top:0;" href="my-orders.html">${blockedCount} of these ${blockedCount === 1 ? "is" : "are"} needed for open orders — review Orders →</a></div>` : "") +
       (remaining > 0 ? `<div style="margin-top:8px;"><a class="nia-link-btn" style="margin-top:0;" href="${attr(stockTrackingEnabled ? "my-stock-tracking.html" : "my-items.html")}">See ${remaining} more →</a></div>` : "")
     );
 
-    return { spoken: stockEntries.length + " items are low or out of stock." };
+    return {
+      spoken: stockEntries.length + " items are low or out of stock" + (blockedCount > 0 ? ", " + blockedCount + " needed for open orders" : "") + "."
+    };
   }
 
   // ---- Admin: payment proofs + notifications ----
@@ -3325,15 +3379,28 @@
       return { spoken: "I couldn't check that right now." };
     }
 
-    const owedToMe = invoices.reduce(function (sum, inv) {
-      const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
-      const isOutstanding = balance > 0 && inv.status !== "cancelled" && inv.status !== "draft";
-      return isOutstanding ? sum + balance : sum;
-    }, 0);
-    const debtorCount = invoices.filter(function (inv) {
+    // Named per invoice, not aggregated per customer - the old copy said
+    // "across N customers" while debtorCount was actually counting
+    // invoices (a customer with 2 unpaid invoices was miscounted as 2
+    // customers). Naming the actual invoices fixes that inaccuracy for
+    // free, since it's now built from the same per-invoice list.
+    const outstandingInvoices = invoices.filter(function (inv) {
       const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
       return balance > 0 && inv.status !== "cancelled" && inv.status !== "draft";
-    }).length;
+    }).map(function (inv) {
+      return {
+        invoice_number: inv.invoice_number,
+        customer_name: inv.customer_name,
+        balance: (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0),
+        overdue: inv.effective_status === "overdue"
+      };
+    }).sort(function (a, b) {
+      if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+      return b.balance - a.balance;
+    });
+
+    const owedToMe = outstandingInvoices.reduce(function (sum, inv) { return sum + inv.balance; }, 0);
+    const debtorCount = outstandingInvoices.length;
 
     const peopleById = {};
     people.forEach(function (p) { peopleById[p.id] = p; });
@@ -3345,16 +3412,24 @@
     const iOwe = expenseRows.reduce(function (sum, row) { return sum + (Number(row.amount_kes) || Number(row.amount) || 0); }, 0);
     const payeeIds = new Set(expenseRows.map(function (row) { return row.related_person_id; }));
 
+    const shownInvoices = outstandingInvoices.slice(0, 5);
+    const remainingInvoices = outstandingInvoices.length - shownInvoices.length;
+    const invoiceListHtml = shownInvoices.map(function (inv) {
+      return `<div style="margin-top:6px;">${severityDotHtml(inv.overdue ? "red" : "gold")}${safe(inv.invoice_number)} — ${safe(inv.customer_name)}: ${safe(formatNiaKES(inv.balance))}${inv.overdue ? " (overdue)" : ""}</div>`;
+    }).join("");
+
     const html =
       `<strong>Debtors &amp; Payables</strong>` +
-      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Owed to you: ${safe(formatNiaKES(owedToMe))} across ${debtorCount} customer${debtorCount === 1 ? "" : "s"}</div>` +
-      `<div style="margin-top:4px;"><i data-lucide="wallet"></i> You owe: ${safe(formatNiaKES(iOwe))} across ${payeeIds.size} supplier/contact${payeeIds.size === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Owed to you: ${safe(formatNiaKES(owedToMe))} across ${debtorCount} invoice${debtorCount === 1 ? "" : "s"}</div>` +
+      invoiceListHtml +
+      (remainingInvoices > 0 ? `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="my-debtors-payables.html">See ${remainingInvoices} more →</a></div>` : "") +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> You owe: ${safe(formatNiaKES(iOwe))} across ${payeeIds.size} supplier/contact${payeeIds.size === 1 ? "" : "s"}</div>` +
       `<div style="margin-top:8px;">${goldLink("my-debtors-payables.html", "See full breakdown →")}</div>`;
 
     addNiaMessage(html);
 
     return {
-      spoken: "Owed to you: " + formatNiaKES(owedToMe) + ". You owe: " + formatNiaKES(iOwe) + "."
+      spoken: "Owed to you: " + formatNiaKES(owedToMe) + " across " + debtorCount + " invoice" + (debtorCount === 1 ? "" : "s") + ". You owe: " + formatNiaKES(iOwe) + "."
     };
   }
 
