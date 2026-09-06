@@ -53,6 +53,7 @@
     let currentContext = null;
     let quotationRows = [];
     let customerOptions = [];
+    let customerNameSuggestions = [];
     let stockItemOptions = [];
     let priceListOptions = [];
     let activePriceListMap = null;
@@ -83,6 +84,7 @@
       if (subEl) subEl.innerText = "Send quotes and convert accepted ones into invoices.";
 
       await loadCustomerOptions();
+      await loadCustomerNameSuggestions();
       await loadStockItemOptions();
       await loadPriceListOptions();
       await loadQuotationRows();
@@ -114,6 +116,38 @@
         console.warn("Could not load People for customer picker:", error.message);
         customerOptions = [];
       }
+    }
+
+    // Lightweight suggestion list for the free-text Customer name field,
+    // pulled from names already used across this tenant's own quotations/
+    // orders/invoices - separate from the "Customer (from People)" picker
+    // above, which links a full tracked person record. This just reduces
+    // typo-driven fragmentation ("John Doe" vs "john doe") for one-off
+    // customers who were never added as a Person.
+    async function loadCustomerNameSuggestions() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_customer_name_suggestions");
+        customerNameSuggestions = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.customer_names || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load customer name suggestions:", error.message);
+        customerNameSuggestions = [];
+      }
+
+      renderCustomerNameDatalist();
+    }
+
+    function renderCustomerNameDatalist() {
+      let datalist = document.getElementById("customerNameSuggestions");
+      if (!datalist) {
+        datalist = document.createElement("datalist");
+        datalist.id = "customerNameSuggestions";
+        document.body.appendChild(datalist);
+      }
+      datalist.innerHTML = customerNameSuggestions.map(function (name) {
+        return `<option value="${UnganiClientShared.attr(name)}"></option>`;
+      }).join("");
     }
 
     // Optional per-line link to a real item, purely for pulling in its
@@ -419,7 +453,7 @@
 
             <div>
               <label for="quotationCustomerName">Customer name *</label>
-              <input type="text" id="quotationCustomerName" value="${quotation ? UnganiClientShared.attr(quotation.customer_name) : ""}" required ${isLocked ? "disabled" : ""} />
+              <input type="text" id="quotationCustomerName" list="customerNameSuggestions" value="${quotation ? UnganiClientShared.attr(quotation.customer_name) : ""}" required ${isLocked ? "disabled" : ""} />
             </div>
 
             <div>
