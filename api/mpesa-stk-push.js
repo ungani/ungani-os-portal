@@ -351,6 +351,21 @@ async function handleStkCallback(req, res) {
         p_payment_id: payment.id
       });
 
+      // The 3 admin "mark paid" RPCs all queue a receipt email alongside
+      // the subscription-period update; this path unlocked the
+      // subscription but never sent the receipt. Wrapped separately so a
+      // failure here can never skip recording the transaction as
+      // successful below - same exception-swallowing intent as the SQL
+      // side's own `begin ... exception when others then null; end;`.
+      try {
+        await supabaseAdmin.rpc("queue_ungani_payment_confirmation_email", {
+          p_payment_id: payment.id
+        });
+      } catch (emailError) {
+        // Non-fatal - the payment and subscription update already
+        // succeeded above.
+      }
+
       await supabaseAdmin
         .from("ungani_mpesa_transactions")
         .update({
