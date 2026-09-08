@@ -488,6 +488,20 @@
       conversations[key].push(row);
     });
 
+    // Real bug, confirmed live: a DM just started via startDm()/confirmStartDm()
+    // exists only as an empty placeholder (state.conversations[key] = []) until
+    // its first message is actually sent - it has no rows in state.messages yet,
+    // so the loop above never recreates it. Every poll (loadMessages() runs this
+    // on a 12s timer) was rebuilding `conversations` from messages alone, which
+    // silently dropped that empty conversation and the fallback below then
+    // snapped activeKey back to "team" - from the user's side, opening a new DM
+    // and pausing to read/type looked exactly like clicking it did nothing.
+    // Any previously-known key (empty or not) is preserved here so it survives
+    // until either a real message makes it permanent or the page reloads.
+    Object.keys(state.conversations).forEach(function (key) {
+      if (!conversations[key]) conversations[key] = state.conversations[key];
+    });
+
     state.conversations = conversations;
 
     if (!conversations[state.activeKey]) {
