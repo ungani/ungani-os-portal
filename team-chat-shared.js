@@ -513,7 +513,15 @@
 
     state.conversations = conversations;
 
-    if (!conversations[state.activeKey]) {
+    // Channel keys ("channel:<id>") are never stored in state.conversations
+    // - they live in state.channelMessages instead (see the "Channels"
+    // block above startDm()) - so this fallback must leave them alone.
+    // Without this check, this Team/DM poll (loadMessages(), every 12s)
+    // was stomping state.activeKey back to "team" out from under an open
+    // channel every single cycle, the same bug class as the DM-reverting
+    // one fixed above but via a different path (confirmed live, Team Chat
+    // Phase 2 testing, 2026-09).
+    if (state.activeKey.indexOf("channel:") !== 0 && !conversations[state.activeKey]) {
       state.activeKey = "team";
     }
   }
