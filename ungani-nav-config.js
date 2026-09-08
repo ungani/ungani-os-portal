@@ -92,6 +92,7 @@
         collapsible: false,
         items: [
           ["dashboard", "client.html", "house", "Dashboard"],
+          ["team-chat", "my-team-chat.html", "users-round", "Team Chat"],
           ["overview", "my-overview.html", "pin", "Overview"],
           ["connect", "my-connect.html", "link-2", "Shared Files"],
           ["notifications", "client-notifications.html", "bell", "Notifications"],
@@ -131,8 +132,7 @@
         items: [
           ["support", "my-support.html", "life-buoy", "Support Issues"],
           ["notices", "my-notices.html", "megaphone", "Notices"],
-          ["chat", "my-chat.html", "message-circle", "Chat with UNGANI"],
-          ["team-chat", "my-team-chat.html", "users-round", "Team Chat"]
+          ["chat", "my-chat.html", "message-circle", "Chat with UNGANI"]
         ]
       },
       {

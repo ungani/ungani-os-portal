@@ -1,13 +1,20 @@
 // UNGANI OS: shared Team Chat module (Team broadcast + private DMs).
 //
-// Used by client-shared.js's popup, client.html's own topbar (which does
-// NOT load client-shared.js - it has a fully separate bespoke dashboard
-// implementation), and my-team-chat.html's dedicated full page. Previously
-// this logic was duplicated three times; this is the one real
-// implementation. Fully self-contained (injects its own CSS, doesn't
-// depend on either host page's existing class names/custom properties)
-// so it can be dropped into any authenticated page that has a
-// #unganiTeamChatPanel container and calls UnganiTeamChat.init(...).
+// Two consumption modes, same data layer underneath:
+// 1. Popup mode - client-shared.js's popup and client.html's own topbar
+//    (client.html does NOT load client-shared.js - fully separate bespoke
+//    dashboard) both drop a #unganiTeamChatPanel container on the page and
+//    call UnganiTeamChat.init(...); this module renders its own complete,
+//    self-contained popup DOM/CSS into it.
+// 2. Embedded mode - my-team-chat.html (the dedicated Team Chat page) calls
+//    init(...) for the exact same roster/message loading, polling, send,
+//    and read-marking logic, but registers its own layout via
+//    setRenderCallback(fn) instead of using this module's popup DOM, and
+//    reads state through getConversationList()/getMessagesFor()/getRoster()
+//    etc. Only one real implementation of the data layer either way -
+//    embedded mode was added specifically so my-team-chat.html could stop
+//    being a second, independently-maintained reimplementation of the same
+//    feature (Team Chat redesign, 2026-09).
 (function () {
   const state = {
     getContext: null,
@@ -18,7 +25,13 @@
     pollTimer: null,
     firstLoadDone: false,
     roster: { owner: null, members: [] },
-    rosterLoaded: false
+    rosterLoaded: false,
+    // Set via setRenderCallback() by a host page that wants to render its
+    // own layout (e.g. the dedicated my-team-chat.html page) instead of
+    // this module's own popup DOM. When set, every place that would
+    // normally call renderPanel() calls this instead - the popup's own
+    // rendering is completely unaffected on pages that never set this.
+    renderCallback: null
   };
 
   function injectStylesOnce() {
@@ -542,11 +555,13 @@
       const response = await ctx.supabaseClient
         .from("team_chat_messages")
         .select("*")
-        // Department Channel messages (channel_id set) are a my-connect.html
-        // hub concept as of Ungani Connect Phase 1 - deliberately excluded
-        // here so this compact popup's "Team" tab isn't contaminated with
-        // channel chatter it has no UI context for. See my-connect.html for
-        // the full Team + Channels + DMs view.
+        // Channel messages (channel_id set) are excluded from this popup's
+        // "Team" tab, which only ever shows the broadcast + DM view - real
+        // channel browsing lives on the dedicated my-team-chat.html page
+        // instead (ungani_chat_channels backend, Team Chat redesign 2026-09).
+        // my-connect.html briefly hosted a Team+Channels+DMs view during
+        // Ungani Connect Phase 1 but was scoped back down to Shared Files
+        // only; this popup was never part of that page.
         .is("channel_id", null)
         .eq("tenant_id", ctx.tenantId)
         .order("created_at", { ascending: true })
@@ -568,7 +583,7 @@
       state.firstLoadDone = true;
       updateBadges();
 
-      if (state.isOpen) {
+      if (state.isOpen || typeof state.renderCallback === "function") {
         // renderPanel() rebuilds the whole panel, including #utcInput -
         // on the 12s auto-poll that wipes a message in progress mid-
         // keystroke (worse on mobile, where it also drops the keyboard).
@@ -577,13 +592,16 @@
         // untouched update) - the tabs/unread-dots catch up next time
         // renderPanel() runs (switching conversations, sending, opening
         // the panel), which is a fine tradeoff against losing a draft.
+        // A host page with its own renderCallback is responsible for its
+        // own equivalent draft-protection if it wants one - this check is
+        // specific to the popup's own #utcInput element.
         const inputEl = document.getElementById("utcInput");
         const userIsTyping = inputEl && (document.activeElement === inputEl || inputEl.value.trim().length > 0);
 
-        if (userIsTyping) {
+        if (userIsTyping && !state.renderCallback) {
           renderMessages();
         } else {
-          renderPanel();
+          notifyRender();
         }
 
         if (!silent) scrollToBottom();
@@ -679,7 +697,7 @@
 
   function selectConversation(key) {
     state.activeKey = key;
-    renderPanel();
+    notifyRender();
     markActiveConversationRead();
     scrollToBottom();
   }
@@ -769,6 +787,18 @@
     if (box) box.scrollTop = box.scrollHeight;
   }
 
+  // Renders the popup's own DOM if that's what's on this page, or hands
+  // control to a host page's own renderer if one is registered. Never
+  // does both - a page either uses the popup or embeds its own layout,
+  // never both at once.
+  function notifyRender() {
+    if (typeof state.renderCallback === "function") {
+      state.renderCallback();
+      return;
+    }
+    renderPanel();
+  }
+
   function toggleStartDm() {
     const row = document.getElementById("utcStartDmRow");
     if (row) row.style.display = row.style.display === "none" ? "flex" : "none";
@@ -778,12 +808,18 @@
     const select = document.getElementById("utcStartDmSelect");
     if (!select || !select.value) return;
 
-    const key = select.value;
-    if (!state.conversations[key]) state.conversations[key] = [];
-
     const row = document.getElementById("utcStartDmRow");
     if (row) row.style.display = "none";
 
+    startDm(select.value);
+  }
+
+  // Same "ensure the conversation bucket exists, then switch to it" logic
+  // confirmStartDm() uses, exposed without the popup's own DOM (#utcStartDmRow)
+  // so a host page's own "start a DM" UI can call it directly.
+  function startDm(key) {
+    if (!key) return;
+    if (!state.conversations[key]) state.conversations[key] = [];
     selectConversation(key);
   }
 
@@ -810,7 +846,7 @@
 
       rebuildConversations();
       updateBadges();
-      renderPanel();
+      notifyRender();
     } catch (error) {
       console.warn("Could not mark team chat read:", error.message);
     }
@@ -890,6 +926,13 @@
     state.pollTimer = setInterval(function () { loadMessages(true); }, 12000);
   }
 
+  // Registers a host page's own render function in place of this module's
+  // popup DOM rendering (see notifyRender()). Pass null to go back to the
+  // default popup rendering.
+  function setRenderCallback(fn) {
+    state.renderCallback = typeof fn === "function" ? fn : null;
+  }
+
   window.UnganiTeamChat = {
     init: init,
     toggle: toggle,
@@ -898,7 +941,21 @@
     selectConversation: selectConversation,
     toggleStartDm: toggleStartDm,
     confirmStartDm: confirmStartDm,
+    startDm: startDm,
     send: send,
-    getUnreadCount: totalUnread
+    getUnreadCount: totalUnread,
+    // Data-layer access for a host page rendering its own layout (e.g.
+    // my-team-chat.html) instead of this module's own popup DOM. All of
+    // these read the exact same state the popup uses - there is still
+    // only one real implementation of loading/sending/read-marking.
+    setRenderCallback: setRenderCallback,
+    getConversationList: conversationList,
+    getActiveKey: function () { return state.activeKey; },
+    getMessagesForActive: function () { return state.conversations[state.activeKey] || []; },
+    getMessagesFor: function (key) { return state.conversations[key] || []; },
+    getRoster: function () { return state.roster; },
+    getMyIdentity: myIdentity,
+    getAvailableDmTargets: availableDmTargets,
+    formatTime: formatTime
   };
 })();

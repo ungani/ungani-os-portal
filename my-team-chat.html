@@ -7,6 +7,7 @@
   <title>UNGANI OS - Team Chat</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js"></script>
   <script src="pwa-register.js"></script>
   <script src="ungani-theme.js"></script>
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
@@ -41,14 +42,256 @@
     })();
   </script>
   <script src="nia-assistant.js"></script>
+
+  <style>
+    .ttc-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 18px;
+      height: calc(100vh - 210px);
+      min-height: 480px;
+    }
+
+    @media (max-width: 900px) {
+      .ttc-layout {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      .ttc-sidebar {
+        max-height: 320px;
+      }
+    }
+
+    .ttc-sidebar {
+      background: var(--ungani-card);
+      border: 1px solid var(--ungani-border);
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .ttc-sidebar-head {
+      padding: 16px;
+      border-bottom: 1px solid var(--ungani-border);
+      flex: none;
+    }
+
+    .ttc-sidebar-head h3 {
+      margin: 0 0 4px;
+      color: var(--ungani-text);
+      font-size: 15px;
+    }
+
+    .ttc-sidebar-head p {
+      margin: 0;
+      color: var(--ungani-muted);
+      font-size: 12px;
+    }
+
+    .ttc-conversation-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+    }
+
+    .ttc-conv {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      text-align: left;
+      border: 1px solid transparent;
+      background: transparent;
+      border-radius: 14px;
+      padding: 11px 12px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      color: var(--ungani-text);
+      font-size: 13.5px;
+      font-weight: 700;
+    }
+
+    .ttc-conv:hover {
+      background: var(--ungani-soft);
+    }
+
+    .ttc-conv.active {
+      background: var(--ungani-navy);
+      color: #FFFFFF;
+      border-color: var(--ungani-navy);
+    }
+
+    .ttc-conv-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--ungani-red);
+      flex: none;
+    }
+
+    .ttc-new-dm {
+      padding: 10px;
+      border-top: 1px solid var(--ungani-border);
+      flex: none;
+      display: flex;
+      gap: 6px;
+    }
+
+    .ttc-new-dm select {
+      flex: 1;
+      border-radius: 10px;
+      border: 1px solid var(--ungani-border);
+      padding: 8px;
+      font-size: 12.5px;
+      background: var(--ungani-bg);
+      color: var(--ungani-text);
+    }
+
+    .ttc-new-dm button {
+      border: none;
+      background: var(--ungani-gold);
+      color: var(--ungani-navy);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-weight: 800;
+      font-size: 12.5px;
+      cursor: pointer;
+      flex: none;
+    }
+
+    .ttc-thread {
+      background: var(--ungani-card);
+      border: 1px solid var(--ungani-border);
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .ttc-thread-head {
+      padding: 16px;
+      border-bottom: 1px solid var(--ungani-border);
+      flex: none;
+    }
+
+    .ttc-thread-head h3 {
+      margin: 0 0 3px;
+      color: var(--ungani-text);
+      font-size: 15px;
+    }
+
+    .ttc-thread-head p {
+      margin: 0;
+      color: var(--ungani-muted);
+      font-size: 12px;
+    }
+
+    .ttc-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .ttc-empty {
+      margin: auto;
+      text-align: center;
+      color: var(--ungani-muted);
+      max-width: 320px;
+    }
+
+    .ttc-empty h4 {
+      margin: 0 0 6px;
+      color: var(--ungani-text);
+    }
+
+    .ttc-bubble {
+      max-width: 70%;
+      padding: 11px 15px;
+      border-radius: 16px;
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+
+    .ttc-bubble .ttc-sender {
+      display: block;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-bottom: 3px;
+      opacity: 0.7;
+    }
+
+    .ttc-bubble .ttc-time {
+      display: block;
+      font-size: 10.5px;
+      margin-top: 5px;
+      opacity: 0.6;
+    }
+
+    .ttc-bubble.mine {
+      align-self: flex-end;
+      background: var(--ungani-gold);
+      color: var(--ungani-navy);
+      border-bottom-right-radius: 4px;
+    }
+
+    .ttc-bubble.theirs {
+      align-self: flex-start;
+      background: var(--ungani-soft);
+      color: var(--ungani-text);
+      border: 1px solid var(--ungani-border);
+      border-bottom-left-radius: 4px;
+    }
+
+    .ttc-input-row {
+      display: flex;
+      gap: 10px;
+      padding: 14px;
+      border-top: 1px solid var(--ungani-border);
+      flex: none;
+    }
+
+    .ttc-input-row input {
+      flex: 1;
+      border-radius: 999px;
+      border: 1px solid var(--ungani-border);
+      background: var(--ungani-bg);
+      color: var(--ungani-text);
+      padding: 11px 18px;
+      font-size: 13.5px;
+      outline: none;
+    }
+
+    .ttc-input-row button {
+      width: 44px;
+      height: 44px;
+      border-radius: 999px;
+      border: 0;
+      background: var(--ungani-gold);
+      color: var(--ungani-navy);
+      font-weight: 900;
+      cursor: pointer;
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
 </head>
 
 <body>
   <script>
     let currentContext = null;
-    let messages = [];
-    let refreshTimer = null;
-    let roster = { owner: null, members: [] };
+    let shellBuilt = false;
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -59,393 +302,155 @@
       });
     });
 
-    window.addEventListener("beforeunload", function () {
-      if (refreshTimer) {
-        clearInterval(refreshTimer);
-      }
-    });
-
     async function startTeamChatPage(context) {
       currentContext = context;
-      await loadRoster();
-      await loadMessages();
 
-      refreshTimer = setInterval(function () {
-        loadMessages(true);
-      }, 20000);
+      UnganiTeamChat.setRenderCallback(renderTeamChatPage);
+      await UnganiTeamChat.init(function () { return currentContext; });
+      UnganiTeamChat.startPolling();
     }
 
-    async function loadRoster() {
-      try {
-        const response = await currentContext.supabaseClient.rpc("get_my_ungani_team_members_for_assignment");
-        if (!response.error && response.data && response.data.ok === true) {
-          roster = { owner: response.data.owner || null, members: response.data.members || [] };
-        }
-      } catch (error) {
-        console.warn("Could not load team roster:", error.message);
-      }
-    }
-
-    function isMe(authUserId) {
-      return authUserId && currentContext.authUser && authUserId === currentContext.authUser.id;
-    }
-
-    function recipientOptions() {
-      const options = [`<option value="">Team (Everyone)</option>`];
-
-      if (roster.owner && !isMe(roster.owner.auth_user_id)) {
-        options.push(`<option value="owner">${UnganiClientShared.safe(roster.owner.full_name || "Owner")} (Owner) - Private</option>`);
-      }
-
-      roster.members.forEach(function (m) {
-        if (isMe(m.auth_user_id)) return;
-        options.push(`<option value="tm:${UnganiClientShared.attr(m.id)}">${UnganiClientShared.safe(m.full_name)}${m.role_key ? " (" + UnganiClientShared.safe(m.role_key) + ")" : ""} - Private</option>`);
-      });
-
-      return options.join("");
-    }
-
-    function peerLabelForRow(row) {
-      const recipientTeamMemberId = UnganiClientShared.getValue(row, ["recipient_team_member_id"], "");
-      const recipientIsOwner = !!UnganiClientShared.getValue(row, ["recipient_is_owner"], false);
-
-      if (!recipientTeamMemberId && !recipientIsOwner) return null;
-
-      const senderId = String(UnganiClientShared.getValue(row, ["sender_user_id"], ""));
-      const isMine = senderId === String(currentContext.authUser.id);
-
-      if (isMine) {
-        if (recipientIsOwner) return "to " + ((roster.owner && roster.owner.full_name) || "Owner");
-        const member = roster.members.find(function (m) { return m.id === recipientTeamMemberId; });
-        return "to " + (member ? member.full_name : "a team member");
-      }
-
-      return "private message";
-    }
-
-    async function loadMessages(silent) {
-      if (!silent) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading team chat...");
-      }
-
-      let response;
-
-      try {
-        response = await currentContext.supabaseClient
-          .from("team_chat_messages")
-          .select("*")
-          // Department Channel messages (channel_id set) belong to the
-          // Ungani Connect hub (my-connect.html), not this page - see
-          // team-chat-shared.js's loadMessages() for the same exclusion.
-          .is("channel_id", null)
-          .eq("tenant_id", currentContext.tenantId)
-          .order("created_at", { ascending: true });
-      } catch (error) {
-        if (!silent) {
-          currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load team chat", error.message || "Network error. Please check your connection.");
-        }
-        return;
-      }
-
-      if (response.error) {
-        if (!silent) {
-          currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load team chat", response.error.message);
-        }
-        return;
-      }
-
-      messages = response.data || [];
-      await markOtherMessagesRead();
-      renderTeamChatPage();
-    }
-
-    async function markOtherMessagesRead() {
-      try {
-        await currentContext.supabaseClient
-          .from("team_chat_messages")
-          .update({
-            is_read: true,
-            updated_at: new Date().toISOString()
-          })
-          .eq("tenant_id", currentContext.tenantId)
-          .neq("sender_user_id", currentContext.authUser.id)
-          .eq("is_read", false);
-      } catch (error) {
-        console.warn("Could not mark team messages as read:", error.message);
-      }
-    }
-
+    // Builds the two-pane shell exactly once - every later call (poll
+    // refresh, switching conversations, sending) only replaces the
+    // conversation list and message list innerHTML, never the outer
+    // shell or the compose input. This is deliberately simpler than the
+    // popup's own "is the user currently typing" heuristic (see
+    // team-chat-shared.js's loadMessages()) and fully avoids that whole
+    // class of bug: the input element is never rebuilt after first paint,
+    // so a 12s poll landing mid-keystroke can't wipe a draft.
     function renderTeamChatPage() {
-      const summary = calculateSummary();
-      const tenantName = UnganiClientShared.getTenantName(currentContext.tenant);
-
-      UnganiClientShared.setContent(`
-        <section class="ungani-card ungani-hero">
-          <h2>Internal Team Chat</h2>
-          <p>
-            Use this space for internal notes, follow-ups, quick updates, and coordination inside ${UnganiClientShared.safe(tenantName)}.
-          </p>
-
-          <div class="ungani-button-row">
-            <button class="ungani-btn" onclick="loadMessages()">Refresh Chat</button>
-            <a class="ungani-btn green" href="my-tasks.html">Tasks</a>
-            <a class="ungani-btn dark" href="my-chat.html">Chat with UNGANI</a>
-          </div>
-        </section>
-
-        <section class="ungani-grid">
-          ${UnganiClientShared.metricCard("Total Messages", messages.length, "All internal team messages", "blue")}
-          ${UnganiClientShared.metricCard("Your Messages", summary.myMessages, "Messages sent by you", "gold")}
-          ${UnganiClientShared.metricCard("From Others", summary.teamMessages, "Team messages and private DMs sent to you", "green")}
-          ${UnganiClientShared.metricCard("Unread", summary.unreadTeam, "Unread team messages and DMs", summary.unreadTeam > 0 ? "orange" : "green")}
-        </section>
-
-        <section class="ungani-two-col">
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <div>
-                <h3>Team Conversation</h3>
-                <p class="ungani-small">Messages refresh automatically every 20 seconds.</p>
+      if (!shellBuilt) {
+        UnganiClientShared.setContent(`
+          <div class="ttc-layout">
+            <div class="ttc-sidebar">
+              <div class="ttc-sidebar-head">
+                <h3>Conversations</h3>
+                <p>Your team's broadcast channel plus any private messages.</p>
               </div>
-
-              <button class="ungani-btn green" onclick="loadMessages()">Refresh</button>
+              <div id="ttcConversationList" class="ttc-conversation-list"></div>
+              <div class="ttc-new-dm" id="ttcNewDmRow"></div>
             </div>
 
-            <div id="teamChatBox" style="max-height:620px;overflow:auto;padding-right:6px;">
-              ${renderMessageList()}
-            </div>
-          </div>
-
-          <div class="ungani-card">
-            <div class="ungani-section-title">
-              <h3>Send Team Message</h3>
-            </div>
-
-            ${renderMessageForm()}
-
-            <div class="ungani-card" style="box-shadow:none;margin-top:16px;">
-              <strong>Use Team Chat for</strong>
-              <p class="ungani-small">Internal updates, task notes, follow-up reminders, property updates, client updates, and quick coordination between team members.</p>
-            </div>
-
-            <div class="ungani-card" style="box-shadow:none;">
-              <strong>Need UNGANI support?</strong>
-              <p class="ungani-small">Use Chat with UNGANI or Support Issues when the message is for UNGANI, not your internal team.</p>
-              <div class="ungani-button-row">
-                <a class="ungani-btn" href="my-chat.html">Chat with UNGANI</a>
-                <a class="ungani-btn green" href="my-support.html">Support</a>
-              </div>
+            <div class="ttc-thread">
+              <div class="ttc-thread-head" id="ttcThreadHead"></div>
+              <div id="ttcMessages" class="ttc-messages"></div>
+              <form class="ttc-input-row" onsubmit="UnganiTeamChat.send(event); return false;">
+                <input id="ttcInput" type="text" placeholder="Message your team..." autocomplete="off" />
+                <button type="submit" title="Send"><i data-lucide="send"></i></button>
+              </form>
             </div>
           </div>
-        </section>
+        `);
 
-        <p class="ungani-small">
-          Team Chat Version: Step 307D Shared Layout · ungani.com · info@ungani.com
-        </p>
-      `);
-
-      scrollChatToBottom();
-    }
-
-    function renderMessageForm() {
-      return `
-        <form id="teamChatForm" onsubmit="sendMessage(event)">
-          <label for="messageRecipient">Send To</label>
-          <select id="messageRecipient">
-            ${recipientOptions()}
-          </select>
-
-          <label for="messageType">Message Type</label>
-          <select id="messageType">
-            <option value="message">General Message</option>
-            <option value="task_update">Task Update</option>
-            <option value="follow_up">Follow-up Note</option>
-            <option value="property_update">Property Update</option>
-            <option value="client_update">Client Update</option>
-            <option value="document_update">Document Update</option>
-            <option value="money_note">Money Note</option>
-            <option value="meeting_note">Meeting Note</option>
-            <option value="other">Other</option>
-          </select>
-
-          <label for="messageBody">Message</label>
-          <textarea id="messageBody" required placeholder="Type your internal team message here..."></textarea>
-
-          <label for="attachmentUrl">Optional Link</label>
-          <input id="attachmentUrl" type="url" placeholder="Paste a Drive link, document link, or reference link if needed" />
-
-          <div class="ungani-button-row">
-            <button class="ungani-btn green" type="submit">Send Message</button>
-            <button class="ungani-btn dark" type="button" onclick="clearForm()">Clear</button>
-          </div>
-        </form>
-      `;
-    }
-
-    function renderMessageList() {
-      if (messages.length === 0) {
-        return `
-          <div class="ungani-empty">
-            <h3>No team messages yet</h3>
-            <p>Send the first internal team message using the form on the right.</p>
-          </div>
-        `;
+        shellBuilt = true;
+        if (window.lucide) window.lucide.createIcons();
       }
 
-      return messages.map(function (row) {
-        return renderMessageCard(row);
+      renderConversationList();
+      renderNewDmRow();
+      renderThreadHead();
+      renderMessages();
+
+      const inputEl = document.getElementById("ttcInput");
+      if (inputEl) {
+        inputEl.placeholder = UnganiTeamChat.getActiveKey() === "team"
+          ? "Message your team..."
+          : "Send a private message...";
+      }
+    }
+
+    function renderConversationList() {
+      const box = document.getElementById("ttcConversationList");
+      if (!box) return;
+
+      const list = UnganiTeamChat.getConversationList();
+      const activeKey = UnganiTeamChat.getActiveKey();
+
+      box.innerHTML = list.map(function (c) {
+        return `
+          <button type="button" class="ttc-conv${c.key === activeKey ? " active" : ""}" onclick="UnganiTeamChat.selectConversation('${UnganiClientShared.attr(c.key)}')">
+            <span>${UnganiClientShared.safe(c.label)}</span>
+            ${c.unread > 0 ? '<span class="ttc-conv-dot"></span>' : ""}
+          </button>
+        `;
       }).join("");
     }
 
-    function renderMessageCard(row) {
-      const senderId = String(UnganiClientShared.getValue(row, ["sender_user_id"], ""));
-      const isMine = senderId === String(currentContext.authUser.id);
+    function renderNewDmRow() {
+      const row = document.getElementById("ttcNewDmRow");
+      if (!row) return;
 
-      const senderName = UnganiClientShared.getValue(row, ["sender_name"], isMine ? "You" : "Team Member");
-      const senderRole = UnganiClientShared.getValue(row, ["sender_role"], "team");
-      const type = UnganiClientShared.getValue(row, ["message_type"], "message");
-      const body = UnganiClientShared.getValue(row, ["message_body", "message", "body"], "");
-      const attachmentUrl = UnganiClientShared.getValue(row, ["attachment_url"], "");
-      const created = UnganiClientShared.getValue(row, ["created_at"], "");
-      const read = UnganiClientShared.getValue(row, ["is_read"], false);
+      const targets = UnganiTeamChat.getAvailableDmTargets();
 
-      const peerLabel = peerLabelForRow(row);
-      const bg = isMine ? "rgba(6,28,61,0.05)" : "rgba(212,166,58,0.14)";
-      const border = peerLabel ? "#7C3AED" : (isMine ? "#061C3D" : "#D4A63A");
+      if (!targets.length) {
+        row.innerHTML = "";
+        return;
+      }
 
-      return `
-        <div class="ungani-card" style="box-shadow:none;border-left:5px solid ${border};background:${bg};">
-          <div class="ungani-section-title">
-            <div>
-              <h3>${UnganiClientShared.safe(isMine ? "You" : senderName)}</h3>
-              <p class="ungani-small">
-                ${UnganiClientShared.safe(senderRole)}
-                · ${UnganiClientShared.safe(UnganiClientShared.formatDate(created))}
-              </p>
-            </div>
-
-            <div>
-              ${peerLabel ? badge("private - " + peerLabel, "blue") : ""}
-              ${badge(type, isMine ? "blue" : "gold")}
-              ${isMine ? badge(read ? "read" : "sent", read ? "green" : "orange") : ""}
-            </div>
-          </div>
-
-          <p style="white-space:pre-wrap;margin-bottom:12px;">${UnganiClientShared.safe(body)}</p>
-
-          ${attachmentUrl ? `
-            <a class="ungani-btn green" href="${UnganiClientShared.attr(attachmentUrl)}" target="_blank" rel="noopener">Open Link</a>
-          ` : ""}
-        </div>
+      row.innerHTML = `
+        <select id="ttcNewDmSelect">
+          ${targets.map(function (t) { return `<option value="${UnganiClientShared.attr(t.key)}">${UnganiClientShared.safe(t.label)}</option>`; }).join("")}
+        </select>
+        <button type="button" onclick="startNewDm()">New DM</button>
       `;
     }
 
-    function calculateSummary() {
-      let myMessages = 0;
-      let teamMessages = 0;
-      let unreadTeam = 0;
-
-      messages.forEach(function (row) {
-        const senderId = String(UnganiClientShared.getValue(row, ["sender_user_id"], ""));
-        const isMine = senderId === String(currentContext.authUser.id);
-        const read = UnganiClientShared.getValue(row, ["is_read"], false);
-
-        if (isMine) {
-          myMessages++;
-        } else {
-          teamMessages++;
-
-          if (!read) {
-            unreadTeam++;
-          }
-        }
-      });
-
-      return { myMessages, teamMessages, unreadTeam };
+    function startNewDm() {
+      const select = document.getElementById("ttcNewDmSelect");
+      if (!select || !select.value) return;
+      UnganiTeamChat.startDm(select.value);
     }
 
-    async function sendMessage(event) {
-      event.preventDefault();
+    function renderThreadHead() {
+      const head = document.getElementById("ttcThreadHead");
+      if (!head) return;
 
-      const body = UnganiClientShared.value("messageBody");
+      const activeKey = UnganiTeamChat.getActiveKey();
+      const list = UnganiTeamChat.getConversationList();
+      const active = list.find(function (c) { return c.key === activeKey; });
+      const label = active ? active.label : "Team";
 
-      if (!body) {
-        alert("Please type a message.");
+      head.innerHTML = activeKey === "team"
+        ? `<h3>Team</h3><p>Visible to your whole team.</p>`
+        : `<h3>${UnganiClientShared.safe(label)}</h3><p>Private conversation.</p>`;
+    }
+
+    function renderMessages() {
+      const box = document.getElementById("ttcMessages");
+      if (!box) return;
+
+      const rows = UnganiTeamChat.getMessagesForActive();
+      const me = UnganiTeamChat.getMyIdentity();
+      const activeKey = UnganiTeamChat.getActiveKey();
+
+      if (!rows.length) {
+        box.innerHTML = `
+          <div class="ttc-empty">
+            <h4>No messages yet</h4>
+            <p>${activeKey === "team" ? "Send a quick note to your team to get started." : "Send the first private message to start this conversation."}</p>
+          </div>
+        `;
         return;
       }
 
-      const senderName = getSenderName();
-      const recipientValue = UnganiClientShared.value("messageRecipient") || "";
+      const wasNearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 80;
 
-      const payload = {
-        tenant_id: currentContext.tenantId,
-        sender_user_id: currentContext.authUser.id,
-        sender_name: senderName,
-        sender_role: "team",
-        message_type: UnganiClientShared.value("messageType") || "message",
-        message_body: body,
-        message: body,
-        body: body,
-        attachment_url: UnganiClientShared.value("attachmentUrl") || null,
-        is_read: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
+      box.innerHTML = rows.map(function (row) {
+        const isMine = row.sender_user_id === me.authUserId;
+        const senderName = UnganiClientShared.getValue(row, ["sender_name"], isMine ? "You" : "Team Member");
+        const body = UnganiClientShared.getValue(row, ["message_body", "message", "body"], "");
+        const time = UnganiTeamChat.formatTime(UnganiClientShared.getValue(row, ["created_at"], ""));
 
-      if (recipientValue === "owner") {
-        payload.recipient_is_owner = true;
-      } else if (recipientValue.indexOf("tm:") === 0) {
-        payload.recipient_team_member_id = recipientValue.slice(3);
-      }
+        return `
+          <div class="ttc-bubble ${isMine ? "mine" : "theirs"}">
+            ${isMine || activeKey !== "team" ? "" : `<span class="ttc-sender">${UnganiClientShared.safe(senderName)}</span>`}
+            <span style="white-space:pre-wrap;">${UnganiClientShared.safe(body)}</span>
+            <span class="ttc-time">${UnganiClientShared.safe(time)}</span>
+          </div>
+        `;
+      }).join("");
 
-      let response;
-
-      try {
-        response = await currentContext.supabaseClient
-          .from("team_chat_messages")
-          .insert(payload);
-      } catch (error) {
-        alert(error.message || "Could not send message. Please check your connection.");
-        return;
-      }
-
-      if (response.error) {
-        alert(response.error.message);
-        return;
-      }
-
-      clearForm();
-      UnganiClientShared.showToast("Team message sent ✓");
-      await loadMessages(true);
-    }
-
-    function getSenderName() {
-      const profile = currentContext.userProfile || {};
-
-      return UnganiClientShared.getValue(profile, ["full_name", "name", "email"], "") ||
-        UnganiClientShared.getValue(currentContext.authUser, ["email"], "Team Member");
-    }
-
-    function clearForm() {
-      const form = document.getElementById("teamChatForm");
-
-      if (form) {
-        form.reset();
-      }
-    }
-
-    function scrollChatToBottom() {
-      setTimeout(function () {
-        const box = document.getElementById("teamChatBox");
-
-        if (box) {
-          box.scrollTop = box.scrollHeight;
-        }
-      }, 100);
-    }
-
-    function badge(text, color) {
-      return `<span class="ungani-badge ${UnganiClientShared.attr(color || "blue")}">${UnganiClientShared.safe(text)}</span>`;
+      if (wasNearBottom) box.scrollTop = box.scrollHeight;
     }
   </script>
 </body>
