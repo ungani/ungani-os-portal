@@ -1545,7 +1545,19 @@
 
     if (!session || !session.user) {
       if (typeof options?.onNoSession === "function") {
-        options.onNoSession();
+        try {
+          options.onNoSession();
+        } catch (error) {
+          // The page's own callback assumed its shell elements still exist -
+          // not true if admin-access-guard.js (loaded independently by
+          // pwa-register.js on every admin-gated page) already replaced
+          // document.body with its own "Admin Access Required"/session
+          // screen first. Both mechanisms check the same thing redundantly;
+          // when the page's own handler can't run safely, fall back to the
+          // shared shell functions, which already null-check every element.
+          console.warn("onNoSession callback failed, falling back:", error.message);
+          showShell("unganiLoginShell");
+        }
       } else {
         showShell("unganiLoginShell");
       }
@@ -1573,7 +1585,12 @@
       return admin;
     } catch (error) {
       if (typeof options?.onBlocked === "function") {
-        options.onBlocked(error.message);
+        try {
+          options.onBlocked(error.message);
+        } catch (callbackError) {
+          console.warn("onBlocked callback failed, falling back:", callbackError.message);
+          showBlocked(error.message);
+        }
       } else {
         showBlocked(error.message);
       }
