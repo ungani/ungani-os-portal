@@ -420,11 +420,7 @@
                   <h3>Channels</h3>
                   <p>Topic channels your team creates, like #nairobi-branch.</p>
                 </div>
-                <button type="button" id="ttcNewChannelBtn" class="ttc-head-add-btn" style="display:none;" title="Create a channel" onclick="toggleNewChannelRow()">+</button>
-              </div>
-              <div class="ttc-new-dm" id="ttcNewChannelRow" style="display:none;">
-                <input id="ttcNewChannelInput" type="text" placeholder="channel-name" autocomplete="off" />
-                <button type="button" onclick="submitNewChannel()">Create</button>
+                <button type="button" id="ttcNewChannelBtn" class="ttc-head-add-btn" title="Create a channel" onclick="openCreateChannelModal()">+</button>
               </div>
               <div id="ttcChannelList" class="ttc-conversation-list"></div>
             </div>
@@ -507,9 +503,6 @@
     }
 
     function renderChannelsSection() {
-      const btn = document.getElementById("ttcNewChannelBtn");
-      if (btn) btn.style.display = UnganiTeamChat.getIsOwner() ? "flex" : "none";
-
       const box = document.getElementById("ttcChannelList");
       if (!box) return;
 
@@ -517,7 +510,7 @@
       const activeKey = UnganiTeamChat.getActiveKey();
 
       if (!channels.length) {
-        box.innerHTML = `<p style="padding:10px;margin:0;color:var(--ungani-muted);font-size:12px;">No channels yet.${UnganiTeamChat.getIsOwner() ? " Tap + to create one." : ""}</p>`;
+        box.innerHTML = `<p style="padding:10px;margin:0;color:var(--ungani-muted);font-size:12px;">No channels yet. Tap + to create one.</p>`;
         return;
       }
 
@@ -535,18 +528,41 @@
       }).join("");
     }
 
-    function toggleNewChannelRow() {
-      const row = document.getElementById("ttcNewChannelRow");
-      if (!row) return;
-      row.style.display = row.style.display === "none" ? "flex" : "none";
-      if (row.style.display === "flex") {
-        const input = document.getElementById("ttcNewChannelInput");
-        if (input) input.focus();
-      }
+    // Any active staff member can create a channel now (loosened from
+    // owner-only per explicit direction - creating a channel is low-risk).
+    // The "#" prefix is never typed by the user - they type a plain name
+    // ("gensets") and every render site (conversation list, thread head,
+    // message avatars) already prepends "#" itself, so there's nothing
+    // special-character-shaped for the user to remember.
+    function openCreateChannelModal() {
+      UnganiClientShared.openModal({
+        title: "Create Channel",
+        bodyHtml: `
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div>
+              <label style="display:block;font-size:12px;font-weight:800;color:var(--ungani-muted);margin-bottom:6px;">Channel name</label>
+              <div style="display:flex;align-items:center;gap:4px;border:1px solid var(--ungani-border);border-radius:10px;padding:0 12px;background:var(--ungani-bg);">
+                <span style="color:var(--ungani-muted);font-weight:800;">#</span>
+                <input id="ttcModalChannelName" type="text" placeholder="gensets" autocomplete="off" style="flex:1;border:none;background:transparent;padding:11px 0;font-size:14px;color:var(--ungani-text);outline:none;" />
+              </div>
+              <p style="margin:6px 0 0;font-size:11.5px;color:var(--ungani-muted);">Visible to your whole team. The # is added automatically wherever this channel is shown.</p>
+            </div>
+            <button type="button" onclick="submitNewChannelFromModal()" style="border:none;background:var(--ungani-gold);color:var(--ungani-navy);border-radius:10px;padding:11px;font-weight:800;font-size:13.5px;cursor:pointer;">Create Channel</button>
+          </div>
+        `,
+        onOpen: function () {
+          const input = document.getElementById("ttcModalChannelName");
+          if (!input) return;
+          input.focus();
+          input.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") submitNewChannelFromModal();
+          });
+        }
+      });
     }
 
-    async function submitNewChannel() {
-      const input = document.getElementById("ttcNewChannelInput");
+    async function submitNewChannelFromModal() {
+      const input = document.getElementById("ttcModalChannelName");
       if (!input) return;
       const name = input.value.trim().replace(/^#+/, "");
       if (!name) return;
@@ -561,8 +577,7 @@
         return;
       }
 
-      input.value = "";
-      document.getElementById("ttcNewChannelRow").style.display = "none";
+      UnganiClientShared.closeModal();
     }
 
     function renderThreadHead() {

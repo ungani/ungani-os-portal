@@ -1043,18 +1043,21 @@
     }
   }
 
-  // name is required, "#" prefix optional (stripped server-side too);
-  // owner_upsert_ungani_chat_channel() rejects non-owner callers with
-  // {ok:false, message:"Only the business owner can manage Department
-  // Channels."} - the host page shows that message back verbatim rather
-  // than guessing at wording, and should hide/disable the create control
-  // for non-owners in the first place (see getIsOwner()).
+  // name is required, "#" prefix optional (stripped server-side too, and
+  // by the caller's own UI - see openCreateChannelModal() in
+  // my-team-chat.html). Any active staff member can create a channel -
+  // upsert_ungani_chat_channel() only gates on can_access, not is_owner
+  // (loosened from the original owner-only design per explicit direction:
+  // creating a channel is low-risk, matching the WhatsApp-simplicity
+  // goal). Archiving a channel is still owner-only
+  // (owner_archive_ungani_chat_channel, unchanged) - removal is a more
+  // consequential action than creation.
   async function createChannel(name, description) {
     const ctx = getContext();
     if (!ctx || !ctx.supabaseClient) return { ok: false, message: "Still loading - try again in a moment." };
 
     try {
-      const response = await ctx.supabaseClient.rpc("owner_upsert_ungani_chat_channel", {
+      const response = await ctx.supabaseClient.rpc("upsert_ungani_chat_channel", {
         p_name: name,
         p_description: description || null
       });
