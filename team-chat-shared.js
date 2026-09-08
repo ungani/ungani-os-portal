@@ -856,7 +856,11 @@
     if (event && event.preventDefault) event.preventDefault();
 
     const ctx = getContext();
-    const input = document.getElementById("utcInput");
+    // #utcInput is the popup's own input; #ttcInput is my-team-chat.html's
+    // (embedded mode) - send() is the one function genuinely shared by
+    // both UIs, so it has to know about both ids rather than assuming the
+    // popup's.
+    const input = document.getElementById("utcInput") || document.getElementById("ttcInput");
     const body = input ? String(input.value || "").trim() : "";
 
     if (!body || !ctx || !ctx.authUser) return;
