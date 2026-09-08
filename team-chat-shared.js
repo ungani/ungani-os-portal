@@ -1,15 +1,23 @@
-// UNGANI OS: shared Team Chat module (Team broadcast + private DMs).
+// UNGANI OS: shared Team Chat module (Team broadcast + private DMs +
+// hashtag channels).
 //
 // Two consumption modes, same data layer underneath:
-// 1. Popup mode - client-shared.js's popup and client.html's own topbar
-//    (client.html does NOT load client-shared.js - fully separate bespoke
-//    dashboard) both drop a #unganiTeamChatPanel container on the page and
-//    call UnganiTeamChat.init(...); this module renders its own complete,
-//    self-contained popup DOM/CSS into it.
+// 1. Launcher mode - client-shared.js's header chat icon and client.html's
+//    own topbar (client.html does NOT load client-shared.js - fully
+//    separate bespoke dashboard) both drop a #unganiTeamChatPanel
+//    container on the page and call UnganiTeamChat.init(...); this module
+//    renders a small unread-summary dropdown into it (real Team/DM/channel
+//    counts, deep-linking into my-team-chat.html), NOT a second mini-chat -
+//    composing a reply always happens on the real page. Used to be a full
+//    self-contained popup with its own tabs/DM-picker/compose box; that
+//    duplicated my-team-chat.html's UI in a 400px widget without ever
+//    showing channels, avatars, or read ticks, which read as a stripped-
+//    down, out-of-date parallel system next to the real page (Team Chat
+//    redesign follow-up, 2026-09).
 // 2. Embedded mode - my-team-chat.html (the dedicated Team Chat page) calls
 //    init(...) for the exact same roster/message loading, polling, send,
 //    and read-marking logic, but registers its own layout via
-//    setRenderCallback(fn) instead of using this module's popup DOM, and
+//    setRenderCallback(fn) instead of using this module's launcher DOM, and
 //    reads state through getConversationList()/getMessagesFor()/getRoster()
 //    etc. Only one real implementation of the data layer either way -
 //    embedded mode was added specifically so my-team-chat.html could stop
@@ -32,8 +40,10 @@
     // normally call renderPanel() calls this instead - the popup's own
     // rendering is completely unaffected on pages that never set this.
     renderCallback: null,
-    // Channels (embedded mode only - the popup never loads or shows these,
-    // by design, per team-chat-shared.js's file header). Kept in their own
+    // Channels. Full channel messages/content are still embedded-mode
+    // only (my-team-chat.html) - the popup/launcher only ever loads the
+    // channel list + unread counts (loadChannels()), for its own unread
+    // summary, and never renders channel messages. Kept in their own
     // state rather than folded into state.messages/state.conversations so
     // the popup's existing rebuildConversations()-based rendering is
     // completely unaffected by any of this.
@@ -263,6 +273,91 @@
 
       .utc-empty h4 { margin: 0 0 6px; font-size: 14px; color: inherit; }
       .utc-empty p { margin: 0; font-size: 12.5px; }
+
+      /* Duplicated from my-team-chat.html's own stylesheet (same
+         self-contained-CSS pattern as the rest of this popup) - avatarHtml()
+         is shared data-layer logic, but each consumer styles its own
+         .ungani-chat-avatar output since the popup can't assume the host
+         page's own CSS is present. */
+      .ungani-chat-avatar {
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        flex: none;
+        line-height: 1;
+      }
+
+      /* Launcher (Team Chat redesign, 2026-09) - replaces what used to be
+         a full second mini-chat (its own tabs, DM picker, compose box)
+         with a real unread summary that deep-links into the actual
+         my-team-chat.html page instead of duplicating its UI in a 400px
+         popup. See toggle()/renderPanel() below. */
+      .utc-launcher-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .utc-launcher-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        border-radius: 14px;
+        text-decoration: none;
+        color: #061C3D;
+      }
+
+      .utc-launcher-row:hover { background: #F8FAFC; }
+
+      body[data-theme="dark"] .utc-launcher-row { color: #F5F5F3; }
+      body[data-theme="dark"] .utc-launcher-row:hover { background: rgba(255,255,255,0.06); }
+
+      .utc-launcher-label {
+        flex: 1;
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .utc-launcher-count {
+        flex: none;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: #DC2626;
+        color: #FFFFFF;
+        font-size: 11px;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .utc-launcher-footer {
+        display: block;
+        text-align: center;
+        padding: 12px;
+        border-top: 1px solid rgba(6,28,61,0.10);
+        color: #061C3D;
+        font-weight: 800;
+        font-size: 12.5px;
+        text-decoration: none;
+        flex: none;
+      }
+
+      body[data-theme="dark"] .utc-launcher-footer {
+        border-color: rgba(255,255,255,0.12);
+        color: #F5F5F3;
+      }
 
       .utc-bubble {
         max-width: 82%;
@@ -584,7 +679,7 @@
       conversations[key].push(row);
     });
 
-    // Real bug, confirmed live: a DM just started via startDm()/confirmStartDm()
+    // Real bug, confirmed live: a DM just started via startDm()
     // exists only as an empty placeholder (state.conversations[key] = []) until
     // its first message is actually sent - it has no rows in state.messages yet,
     // so the loop above never recreates it. Every poll (loadMessages() runs this
@@ -713,28 +808,14 @@
         .map(function (m) { return m.id; });
       loadReadCounts(teamMessageIds);
 
+      // The popup no longer has a compose input of its own (see the
+      // "Launcher" block above toggle()) - it's a real unread-summary
+      // list, not a second mini-chat - so the old "don't wipe an
+      // in-progress draft on the 12s poll" special-casing for #utcInput
+      // no longer applies here. A host page with its own renderCallback
+      // (my-team-chat.html) still owns its own draft protection.
       if (state.isOpen || typeof state.renderCallback === "function") {
-        // renderPanel() rebuilds the whole panel, including #utcInput -
-        // on the 12s auto-poll that wipes a message in progress mid-
-        // keystroke (worse on mobile, where it also drops the keyboard).
-        // While the user is actively typing, only refresh the message
-        // bubbles via renderMessages() (already a separate, input-
-        // untouched update) - the tabs/unread-dots catch up next time
-        // renderPanel() runs (switching conversations, sending, opening
-        // the panel), which is a fine tradeoff against losing a draft.
-        // A host page with its own renderCallback is responsible for its
-        // own equivalent draft-protection if it wants one - this check is
-        // specific to the popup's own #utcInput element.
-        const inputEl = document.getElementById("utcInput");
-        const userIsTyping = inputEl && (document.activeElement === inputEl || inputEl.value.trim().length > 0);
-
-        if (userIsTyping && !state.renderCallback) {
-          renderMessages();
-        } else {
-          notifyRender();
-        }
-
-        if (!silent) scrollToBottom();
+        notifyRender();
       }
     } catch (error) {
       console.warn("Team chat load skipped:", error.message);
@@ -800,6 +881,17 @@
     }, 7000);
   }
 
+  // --- Launcher (header chat icon) -------------------------------------
+  // Team Chat redesign, 2026-09: this used to open a full second mini-chat
+  // (its own tabs, DM picker, compose box) reading the same Team/DM data
+  // as my-team-chat.html but never showing channels, avatars, or read
+  // ticks - a visibly stripped-down, out-of-date-looking parallel system
+  // sitting right next to the real page. Replaced with a real unread
+  // summary (Team/DM/channel counts, using the exact same data + the same
+  // avatarHtml() the real page uses) that deep-links straight into
+  // my-team-chat.html on the relevant conversation instead of duplicating
+  // its UI in a 400px popup. Composing a reply now always happens on the
+  // real page.
   function toggle() {
     const panel = document.getElementById("unganiTeamChatPanel");
     if (!panel) return;
@@ -812,11 +904,7 @@
     state.isOpen = true;
     panel.style.display = "flex";
     renderPanel();
-    markActiveConversationRead();
-    scrollToBottom();
-
-    const input = document.getElementById("utcInput");
-    if (input) input.focus();
+    loadChannels(); // fire-and-forget; re-renders itself once counts/names load
   }
 
   function close() {
@@ -829,15 +917,22 @@
     state.activeKey = key;
     notifyRender();
     markActiveConversationRead();
-    scrollToBottom();
   }
 
   function renderPanel() {
     const panel = document.getElementById("unganiTeamChatPanel");
     if (!panel) return;
 
-    const list = conversationList();
-    const targets = availableDmTargets();
+    const items = conversationList()
+      .filter(function (c) { return c.unread > 0; })
+      .map(function (c) { return { key: c.key, label: c.label, unread: c.unread, avatarKey: c.avatarKey, avatarName: c.avatarName }; })
+      .concat(
+        state.channels
+          .map(function (c) {
+            return { key: "channel:" + c.id, label: "#" + c.name, unread: state.channelUnread[c.id] || 0, avatarKey: "channel", avatarName: c.name };
+          })
+          .filter(function (c) { return c.unread > 0; })
+      );
 
     panel.innerHTML = `
       <div class="utc-head">
@@ -845,76 +940,25 @@
         <button class="utc-close-btn" type="button" onclick="UnganiTeamChat.close()">✕</button>
       </div>
 
-      <div class="utc-tabs">
-        ${list.map(function (c) {
+      <div class="utc-launcher-body">
+        ${items.length ? items.map(function (c) {
           return `
-            <button class="utc-tab${c.key === state.activeKey ? " active" : ""}" type="button" onclick="UnganiTeamChat.selectConversation('${safe(c.key)}')">
-              ${safe(c.label)}${c.unread > 0 ? '<span class="utc-tab-dot"></span>' : ""}
-            </button>
+            <a class="utc-launcher-row" href="my-team-chat.html?open=${encodeURIComponent(c.key)}">
+              ${avatarHtml(c.avatarKey, c.avatarName, 30)}
+              <span class="utc-launcher-label">${safe(c.label)}</span>
+              <span class="utc-launcher-count">${c.unread > 99 ? "99+" : c.unread}</span>
+            </a>
           `;
-        }).join("")}
-        ${targets.length ? `<button class="utc-tab-add" type="button" title="Start a private message" onclick="UnganiTeamChat.toggleStartDm()">+</button>` : ""}
+        }).join("") : `
+          <div class="utc-empty">
+            <h4>You're all caught up</h4>
+            <p>No unread messages right now.</p>
+          </div>
+        `}
       </div>
 
-      <div id="utcStartDmRow" class="utc-picker" style="display:none;">
-        <select id="utcStartDmSelect">
-          ${targets.map(function (t) { return `<option value="${safe(t.key)}">${safe(t.label)}</option>`; }).join("")}
-        </select>
-        <button type="button" onclick="UnganiTeamChat.confirmStartDm()">Start</button>
-      </div>
-
-      <div class="utc-active-label">
-        ${state.activeKey === "team" ? "Chatting with your whole Team" : "Chatting with " + safe(peerLabel(state.activeKey, null)) + " (private)"}
-      </div>
-
-      <div id="utcMessages" class="utc-messages"></div>
-
-      <form class="utc-input-row" onsubmit="UnganiTeamChat.send(event); return false;">
-        <input id="utcInput" type="text" placeholder="${state.activeKey === "team" ? "Message your team..." : "Send a private message..."}" autocomplete="off" />
-        <button class="utc-send" type="submit" title="Send">➤</button>
-      </form>
+      <a class="utc-launcher-footer" href="my-team-chat.html">Open Team Chat →</a>
     `;
-
-    renderMessages();
-  }
-
-  function renderMessages() {
-    const box = document.getElementById("utcMessages");
-    if (!box) return;
-
-    const ctx = getContext();
-    const myAuthId = ctx && ctx.authUser ? ctx.authUser.id : null;
-    const rows = state.conversations[state.activeKey] || [];
-
-    if (!rows.length) {
-      box.innerHTML = `
-        <div class="utc-empty">
-          <h4>No messages yet</h4>
-          <p>${state.activeKey === "team" ? "Send a quick note to your team to get started." : "Send the first private message to start this conversation."}</p>
-        </div>
-      `;
-      return;
-    }
-
-    box.innerHTML = rows.map(function (row) {
-      const isMine = row.sender_user_id === myAuthId;
-      const senderName = getField(row, ["sender_name"], isMine ? "You" : "Team Member");
-      const body = getField(row, ["message_body", "message", "body"], "");
-      const time = formatTime(getField(row, ["created_at"], ""));
-
-      return `
-        <div class="utc-bubble ${isMine ? "mine" : "theirs"}">
-          ${isMine || state.activeKey !== "team" ? "" : `<span class="utc-sender">${safe(senderName)}</span>`}
-          <span>${safe(body)}</span>
-          <span class="utc-time">${safe(time)}</span>
-        </div>
-      `;
-    }).join("");
-  }
-
-  function scrollToBottom() {
-    const box = document.getElementById("utcMessages");
-    if (box) box.scrollTop = box.scrollHeight;
   }
 
   // Renders the popup's own DOM if that's what's on this page, or hands
@@ -929,36 +973,24 @@
     renderPanel();
   }
 
-  function toggleStartDm() {
-    const row = document.getElementById("utcStartDmRow");
-    if (row) row.style.display = row.style.display === "none" ? "flex" : "none";
-  }
-
-  function confirmStartDm() {
-    const select = document.getElementById("utcStartDmSelect");
-    if (!select || !select.value) return;
-
-    const row = document.getElementById("utcStartDmRow");
-    if (row) row.style.display = "none";
-
-    startDm(select.value);
-  }
-
-  // Same "ensure the conversation bucket exists, then switch to it" logic
-  // confirmStartDm() uses, exposed without the popup's own DOM (#utcStartDmRow)
-  // so a host page's own "start a DM" UI can call it directly.
+  // Ensures the conversation bucket exists, then switches to it - shared
+  // by my-team-chat.html's own "start a DM" UI (the launcher no longer has
+  // one of its own, see the "Launcher" block above toggle()).
   function startDm(key) {
     if (!key) return;
     if (!state.conversations[key]) state.conversations[key] = [];
     selectConversation(key);
   }
 
-  // --- Channels (embedded mode only) ---------------------------------
+  // --- Channels ---------------------------------------------------------
   // Hashtag channels (Team Chat redesign Phase 2, 2026-09). Deliberately
   // kept out of state.messages/state.conversations/rebuildConversations()
-  // so the popup - which never calls any function below - is completely
-  // unaffected. Channel messages share the same is_read column as every
-  // other row in team_chat_messages, which is a single shared flag rather
+  // so the popup/launcher's existing rebuildConversations()-based Team/DM
+  // rendering is completely unaffected. The launcher calls loadChannels()
+  // for its own unread summary (see toggle() above) but never calls
+  // loadChannelMessages()/selectChannel() - full channel content stays
+  // embedded-mode only. Channel messages share the same is_read column as
+  // every other row in team_chat_messages, which is a single shared flag rather
   // than a per-reader read receipt; that's an existing limitation already
   // accepted for the "Team" broadcast tab above, not a new one introduced
   // here - channels just follow the same convention for consistency.
@@ -1035,7 +1067,6 @@
     await loadChannelMessages(channelId);
     notifyRender();
     await markChannelRead(channelId);
-    scrollToBottom();
   }
 
   async function markChannelRead(channelId) {
@@ -1315,7 +1346,6 @@
       } else {
         await loadMessages(true);
       }
-      scrollToBottom();
     } catch (error) {
       if (typeof window.UnganiClientShared !== "undefined" && window.UnganiClientShared.showToast) {
         window.UnganiClientShared.showToast("Could not send message: " + error.message);
@@ -1344,8 +1374,6 @@
     close: close,
     startPolling: startPolling,
     selectConversation: selectConversation,
-    toggleStartDm: toggleStartDm,
-    confirmStartDm: confirmStartDm,
     startDm: startDm,
     send: send,
     getUnreadCount: totalUnread,
@@ -1367,10 +1395,12 @@
     getMyIdentity: myIdentity,
     getAvailableDmTargets: availableDmTargets,
     formatTime: formatTime,
-    // Channels (embedded mode only, e.g. my-team-chat.html) - see the
-    // "Channels" block above startDm() for the underlying logic. The
-    // popup never calls any of these, so it never issues the extra RPC
-    // calls or queries channels involve.
+    // Channels - see the "Channels" block above startDm() for the
+    // underlying logic. loadChannels() itself is also called internally
+    // by the launcher's own toggle() for its unread summary; the rest
+    // (selectChannel/createChannel/getChannelList/refreshActiveChannel)
+    // are embedded-mode only (my-team-chat.html), since only that page
+    // ever shows real channel content.
     loadChannels: loadChannels,
     selectChannel: selectChannel,
     createChannel: createChannel,

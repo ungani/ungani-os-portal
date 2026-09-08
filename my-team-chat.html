@@ -162,6 +162,47 @@
       gap: 10px;
     }
 
+    .ttc-members-link {
+      border: none;
+      background: none;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+      font-size: 12px;
+      color: var(--ungani-muted);
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .ttc-members-link:hover {
+      color: var(--ungani-text);
+    }
+
+    .ttc-member-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--ungani-border);
+    }
+
+    .ttc-member-row:last-child {
+      border-bottom: none;
+    }
+
+    .ttc-member-name {
+      font-weight: 700;
+      font-size: 13.5px;
+      color: var(--ungani-text);
+    }
+
+    .ttc-member-role {
+      font-size: 11.5px;
+      color: var(--ungani-muted);
+      text-transform: capitalize;
+    }
+
     .ttc-msg-row {
       display: flex;
       align-items: flex-end;
@@ -407,6 +448,21 @@
       await UnganiTeamChat.loadChannels();
       UnganiTeamChat.startPolling();
 
+      // Deep-link support for the header launcher (team-chat-shared.js's
+      // renderPanel()), which links each unread row to
+      // my-team-chat.html?open=<key> instead of trying to render a second
+      // copy of the conversation/channel itself. init()/loadChannels() must
+      // both finish first so the target conversation/channel actually
+      // exists in state before we try to select it.
+      const openKey = new URLSearchParams(window.location.search).get("open");
+      if (openKey) {
+        if (openKey.indexOf("channel:") === 0) {
+          await UnganiTeamChat.selectChannel(openKey.slice(8));
+        } else {
+          UnganiTeamChat.selectConversation(openKey);
+        }
+      }
+
       // Channels live outside team-chat-shared.js's own Team/DM poll (see
       // its file header - the popup never loads or shows channels), so
       // this page runs its own lightweight refresh loop for them: the
@@ -603,6 +659,44 @@
       UnganiClientShared.closeModal();
     }
 
+    // Channels are tenant-wide by design (sql/ungani-connect-phase1-channels.sql)
+    // - every active team member already has access to every channel, the
+    // same as the Team broadcast tab. There's no per-channel membership to
+    // manage, so this is a read-only roster, not an invite/add flow - it
+    // exists purely to make that "everyone already has access" fact
+    // visible instead of leaving people to wonder how membership works.
+    function openChannelMembersModal() {
+      const roster = UnganiTeamChat.getRoster();
+      const rows = [];
+
+      if (roster.owner) {
+        rows.push({ id: roster.owner.auth_user_id || "owner", name: roster.owner.full_name || "Owner", role: "Owner" });
+      }
+      (roster.members || []).forEach(function (m) {
+        rows.push({ id: m.auth_user_id, name: m.full_name, role: m.role_key || "Staff" });
+      });
+
+      const listHtml = rows.map(function (r) {
+        return `
+          <div class="ttc-member-row">
+            ${UnganiTeamChat.avatarHtml(r.id, r.name, 34)}
+            <div>
+              <div class="ttc-member-name">${UnganiClientShared.safe(r.name)}</div>
+              <div class="ttc-member-role">${UnganiClientShared.safe(r.role)}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      UnganiClientShared.openModal({
+        title: "Channel Members",
+        bodyHtml: `
+          <p style="margin:0 0 12px;font-size:12.5px;color:var(--ungani-muted);">Every active team member automatically has access to every channel - there's no separate invite step.</p>
+          ${listHtml || '<p style="color:var(--ungani-muted);font-size:13px;">No other team members yet.</p>'}
+        `
+      });
+    }
+
     function renderThreadHead() {
       const head = document.getElementById("ttcThreadHead");
       if (!head) return;
@@ -618,7 +712,17 @@
         const channelId = activeKey.slice(8);
         const channel = UnganiTeamChat.getChannelList().find(function (c) { return c.id === channelId; });
         const channelName = channel ? channel.name : "channel";
-        head.innerHTML = `<div class="ttc-thread-head-row">${UnganiTeamChat.avatarHtml("channel", channelName, 34)}<div><h3>#${UnganiClientShared.safe(channelName)}</h3><p>Visible to your whole team.</p></div></div>`;
+        const roster = UnganiTeamChat.getRoster();
+        const memberCount = (roster.owner ? 1 : 0) + (roster.members || []).length;
+        head.innerHTML = `
+          <div class="ttc-thread-head-row">
+            ${UnganiTeamChat.avatarHtml("channel", channelName, 34)}
+            <div>
+              <h3>#${UnganiClientShared.safe(channelName)}</h3>
+              <p><button type="button" class="ttc-members-link" onclick="openChannelMembersModal()">${memberCount} member${memberCount === 1 ? "" : "s"}</button></p>
+            </div>
+          </div>
+        `;
         return;
       }
 
@@ -655,20 +759,32 @@
 
       box.innerHTML = rows.map(function (row) {
         const isMine = row.sender_user_id === me.authUserId;
-        const senderName = UnganiClientShared.getValue(row, ["sender_name"], isMine ? "You" : "Team Member");
+        // realSenderName drives the avatar's initials/color (always the
+        // actual person, even for your own messages, so the same person
+        // gets the same avatar everywhere) - displayLabel is the visible
+        // text label, which reads "You" instead of your own name.
+        const realSenderName = UnganiClientShared.getValue(row, ["sender_name"], "Team Member");
+        const displayLabel = isMine ? "You" : realSenderName;
         const body = UnganiClientShared.getValue(row, ["message_body", "message", "body"], "");
         const time = UnganiTeamChat.formatTime(UnganiClientShared.getValue(row, ["created_at"], ""));
-        const avatar = isMine ? "" : UnganiTeamChat.avatarHtml(row.sender_user_id, senderName, 28);
+        const avatar = UnganiTeamChat.avatarHtml(row.sender_user_id, realSenderName, 28);
         const receipt = isMine ? UnganiTeamChat.readReceiptHtml(row) : "";
 
+        const bubbleHtml = `
+          <div class="ttc-bubble ${isMine ? "mine" : "theirs"}">
+            ${!isMultiParty ? "" : `<span class="ttc-sender">${UnganiClientShared.safe(displayLabel)}</span>`}
+            <span style="white-space:pre-wrap;">${UnganiClientShared.safe(body)}</span>
+            <span class="ttc-time">${UnganiClientShared.safe(time)}</span>${receipt}
+          </div>
+        `;
+
+        // Avatar sits on the outside of the bubble on whichever side that
+        // bubble is aligned to - left of "theirs" (left-aligned), right
+        // of "mine" (right-aligned) - so identity is visible everywhere
+        // without ever feeling mirrored/backwards.
         return `
           <div class="ttc-msg-row ${isMine ? "mine" : "theirs"}">
-            ${avatar}
-            <div class="ttc-bubble ${isMine ? "mine" : "theirs"}">
-              ${isMine || !isMultiParty ? "" : `<span class="ttc-sender">${UnganiClientShared.safe(senderName)}</span>`}
-              <span style="white-space:pre-wrap;">${UnganiClientShared.safe(body)}</span>
-              <span class="ttc-time">${UnganiClientShared.safe(time)}</span>${receipt}
-            </div>
+            ${isMine ? bubbleHtml + avatar : avatar + bubbleHtml}
           </div>
         `;
       }).join("");
