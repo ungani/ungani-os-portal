@@ -4058,7 +4058,7 @@
       return { spoken: "That's not available on the admin side." };
     }
 
-    if (!state.supabaseClient || !state.tenantId || !state.authUser) {
+    if (!state.supabaseClient || !state.tenantId || !state.userId) {
       addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
       return { spoken: "I'm still loading your workspace." };
     }
@@ -4075,7 +4075,7 @@
         .from("team_chat_messages")
         .select("id, sender_name, message_body, message, body, recipient_team_member_id, recipient_is_owner, channel_id, created_at")
         .eq("tenant_id", state.tenantId)
-        .neq("sender_user_id", state.authUser.id)
+        .neq("sender_user_id", state.userId)
         .eq("is_read", false)
         .order("created_at", { ascending: false })
         .limit(100);
