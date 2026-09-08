@@ -12,6 +12,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="pwa-register.js"></script>
   <script src="ungani-admin-nav-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js"></script>
 
   <style>
     :root {
@@ -273,6 +274,13 @@
       background: rgba(212,166,58,0.18);
       color: var(--gold);
       transform: translateX(3px);
+    }
+
+    .side-link svg {
+      width: 17px;
+      height: 17px;
+      flex-shrink: 0;
+      stroke-width: 2.1px;
     }
 
     .sidebar-section-title-toggle {
@@ -1120,7 +1128,7 @@
     function renderAdminSettingsNavGroup(group, collapsedState) {
       const itemsHtml = group.items.map(function (item) {
         const active = item.href === "admin-settings.html" ? " active" : "";
-        return `<a class="side-link${active}" href="${item.href}">${item.icon} <span>${item.label}</span></a>`;
+        return `<a class="side-link${active}" href="${item.href}"><i data-lucide="${item.icon}"></i> <span>${item.label}</span></a>`;
       }).join("");
 
       if (!group.collapsible) {
@@ -1152,6 +1160,17 @@
       container.innerHTML = groups.map(function (group) {
         return renderAdminSettingsNavGroup(group, collapsedState);
       }).join("");
+
+      // This page pre-dates the shared admin shell (admin-shared.js) and
+      // renders its own sidebar - it was missing this call entirely, so
+      // the data-lucide attributes above sat unprocessed and rendered as
+      // literal icon-name text ("users People", "store Branches") on
+      // every load, not just after navigation. Script tag in <head> loads
+      // synchronously ahead of this inline script, so window.lucide is
+      // already available by the time either call site below runs.
+      if (window.lucide && typeof window.lucide.createIcons === "function") {
+        window.lucide.createIcons();
+      }
     }
 
     function showAccessBlocked(reason) {
