@@ -40,7 +40,14 @@
     channels: [],
     channelUnread: {},
     channelMessages: {},
-    isOwner: false
+    isOwner: false,
+    // Read-receipt counts for Team/channel (group) messages only -
+    // messageId -> number of OTHER members who've read it. DMs need no
+    // entry here; a DM's read status is is_read itself (see
+    // readReceiptHtml()). Populated by loadReadCounts(), written to by
+    // recordGroupReadReceipts() - both live in the "Read receipts" block
+    // below markActiveConversationRead().
+    readCounts: {}
   };
 
   function injectStylesOnce() {
@@ -401,10 +408,20 @@
     return fallback === undefined ? "" : fallback;
   }
 
+  // Time-only for today's messages, date+time for anything older - a
+  // message sent 5 minutes ago showing "Sept 8, 3:41 PM" read as noise;
+  // this only spells out the date once it's actually informative.
   function formatTime(value) {
     if (!value) return "";
     try {
       const d = new Date(value);
+      const now = new Date();
+      const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+
+      if (isToday) {
+        return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit" });
+      }
+
       return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
     } catch (error) {
       return "";
@@ -686,6 +703,15 @@
 
       state.firstLoadDone = true;
       updateBadges();
+
+      // Team broadcast rows only (recipient_team_member_id/recipient_is_owner
+      // both null/false, channel_id already excluded by this query) - see
+      // the "Read receipts" block below markActiveConversationRead() for
+      // why DMs need no equivalent call.
+      const teamMessageIds = state.messages
+        .filter(function (m) { return !m.recipient_team_member_id && !m.recipient_is_owner; })
+        .map(function (m) { return m.id; });
+      loadReadCounts(teamMessageIds);
 
       if (state.isOpen || typeof state.renderCallback === "function") {
         // renderPanel() rebuilds the whole panel, including #utcInput -
@@ -997,6 +1023,7 @@
       }
 
       state.channelMessages[channelId] = response.data || [];
+      loadReadCounts((response.data || []).map(function (m) { return m.id; }));
     } catch (error) {
       console.warn("Channel message load skipped:", error.message);
     }
@@ -1022,25 +1049,29 @@
 
     state.channelUnread[channelId] = 0;
 
-    if (!unreadIds.length) {
-      notifyRender();
-      return;
+    if (unreadIds.length) {
+      try {
+        await ctx.supabaseClient
+          .from("team_chat_messages")
+          .update({ is_read: true, updated_at: new Date().toISOString() })
+          .in("id", unreadIds);
+
+        rows.forEach(function (m) {
+          if (unreadIds.indexOf(m.id) !== -1) m.is_read = true;
+        });
+      } catch (error) {
+        console.warn("Could not mark channel read:", error.message);
+      }
     }
 
-    try {
-      await ctx.supabaseClient
-        .from("team_chat_messages")
-        .update({ is_read: true, updated_at: new Date().toISOString() })
-        .in("id", unreadIds);
+    // Every other-authored message in this channel, not just the
+    // currently-unread ones - see the "Read receipts" block above
+    // markActiveConversationRead() for why is_read/unreadIds can't be
+    // reused to gate this.
+    const otherIds = rows.filter(function (r) { return r.sender_user_id !== ctx.authUser.id; }).map(function (r) { return r.id; });
+    if (otherIds.length) await recordGroupReadReceipts(otherIds);
 
-      rows.forEach(function (m) {
-        if (unreadIds.indexOf(m.id) !== -1) m.is_read = true;
-      });
-
-      notifyRender();
-    } catch (error) {
-      console.warn("Could not mark channel read:", error.message);
-    }
+    notifyRender();
   }
 
   // name is required, "#" prefix optional (stripped server-side too, and
@@ -1100,6 +1131,86 @@
     await markChannelRead(channelId);
   }
 
+  // --- Read receipts ---------------------------------------------------
+  // WhatsApp-style single/double tick (Team Chat redesign, 2026-09). DMs
+  // need no new table or function here - team_chat_messages.is_read is
+  // already an exact per-message read flag for a DM (exactly one possible
+  // reader), so readReceiptHtml() reads it directly. Team broadcast and
+  // channel messages have multiple possible readers sharing that SAME
+  // is_read column, which only ever means "at least one member has read
+  // this" - real bug avoided: gating a per-reader receipt write on
+  // `!is_read` would mean only the FIRST reader of a group message ever
+  // gets recorded, since is_read flips true globally after them and every
+  // later reader's unreadIds filter would then skip it. recordGroupReadReceipts()
+  // is therefore called with EVERY other-authored message in the bucket,
+  // not just the currently-unread ones, and relies on the reads table's
+  // own (message_id, reader_user_id) primary key + ignoreDuplicates to
+  // stay cheap on repeat calls (every markActiveConversationRead()/
+  // markChannelRead(), including the popup's own calls on any of the
+  // other 30+ pages - group read counts should reflect reads from
+  // wherever they happen, not just the dedicated page).
+
+  async function loadReadCounts(messageIds) {
+    const ctx = getContext();
+    if (!ctx || !ctx.supabaseClient || !messageIds.length) return;
+
+    try {
+      const response = await ctx.supabaseClient
+        .from("team_chat_message_reads")
+        .select("message_id")
+        .in("message_id", messageIds);
+
+      const counts = {};
+      messageIds.forEach(function (id) { counts[id] = 0; });
+      (response.data || []).forEach(function (row) {
+        counts[row.message_id] = (counts[row.message_id] || 0) + 1;
+      });
+
+      Object.assign(state.readCounts, counts);
+      notifyRender();
+    } catch (error) {
+      console.warn("Read-count load skipped:", error.message);
+    }
+  }
+
+  async function recordGroupReadReceipts(messageIds) {
+    const ctx = getContext();
+    if (!ctx || !ctx.supabaseClient || !ctx.tenantId || !ctx.authUser || !messageIds.length) return;
+
+    try {
+      const rows = messageIds.map(function (id) {
+        return { message_id: id, reader_user_id: ctx.authUser.id, tenant_id: ctx.tenantId };
+      });
+
+      await ctx.supabaseClient
+        .from("team_chat_message_reads")
+        .upsert(rows, { onConflict: "message_id,reader_user_id", ignoreDuplicates: true });
+    } catch (error) {
+      console.warn("Could not record read receipts:", error.message);
+    }
+
+    await loadReadCounts(messageIds);
+  }
+
+  // isMine-only - a sender sees their own message's receipt, matching
+  // every real chat app (nobody needs a tick on someone else's message).
+  function readReceiptHtml(row) {
+    const isGroup = !!row.channel_id || (!row.recipient_team_member_id && !row.recipient_is_owner);
+
+    if (isGroup) {
+      const count = state.readCounts[row.id] || 0;
+      if (count > 0) {
+        return `<span class="ttc-receipt read" title="Seen by ${count}"><i data-lucide="check-check"></i> Seen by ${count}</span>`;
+      }
+      return `<span class="ttc-receipt sent" title="Sent"><i data-lucide="check"></i></span>`;
+    }
+
+    if (row.is_read) {
+      return `<span class="ttc-receipt read" title="Read"><i data-lucide="check-check"></i></span>`;
+    }
+    return `<span class="ttc-receipt sent" title="Sent"><i data-lucide="check"></i></span>`;
+  }
+
   async function markActiveConversationRead() {
     const ctx = getContext();
     if (!ctx || !ctx.supabaseClient || !ctx.tenantId || !ctx.authUser) return;
@@ -1109,24 +1220,30 @@
       .filter(function (r) { return r.sender_user_id !== ctx.authUser.id && !r.is_read; })
       .map(function (r) { return r.id; });
 
-    if (!unreadIds.length) return;
+    if (unreadIds.length) {
+      try {
+        await ctx.supabaseClient
+          .from("team_chat_messages")
+          .update({ is_read: true, updated_at: new Date().toISOString() })
+          .in("id", unreadIds);
 
-    try {
-      await ctx.supabaseClient
-        .from("team_chat_messages")
-        .update({ is_read: true, updated_at: new Date().toISOString() })
-        .in("id", unreadIds);
+        state.messages.forEach(function (m) {
+          if (unreadIds.indexOf(m.id) !== -1) m.is_read = true;
+        });
 
-      state.messages.forEach(function (m) {
-        if (unreadIds.indexOf(m.id) !== -1) m.is_read = true;
-      });
-
-      rebuildConversations();
-      updateBadges();
-      notifyRender();
-    } catch (error) {
-      console.warn("Could not mark team chat read:", error.message);
+        rebuildConversations();
+        updateBadges();
+      } catch (error) {
+        console.warn("Could not mark team chat read:", error.message);
+      }
     }
+
+    if (state.activeKey === "team") {
+      const otherIds = rows.filter(function (r) { return r.sender_user_id !== ctx.authUser.id; }).map(function (r) { return r.id; });
+      if (otherIds.length) await recordGroupReadReceipts(otherIds);
+    }
+
+    notifyRender();
   }
 
   async function send(event) {
@@ -1265,6 +1382,10 @@
     // sizePx) returns the complete markup, so every render site (list
     // rows, thread headers, message bubbles) uses the identical
     // color/initials logic instead of three hand-copied versions.
-    avatarHtml: avatarHtml
+    avatarHtml: avatarHtml,
+    // Read receipts (embedded mode only - the popup shows no receipt
+    // markup, though it still contributes to the underlying read data via
+    // markActiveConversationRead(), same as any of the other 30+ pages).
+    readReceiptHtml: readReceiptHtml
   };
 })();
