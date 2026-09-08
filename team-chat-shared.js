@@ -411,6 +411,76 @@
     }
   }
 
+  // --- Avatars (embedded mode only - see avatarHtml()) ----------------
+  // Initials-based avatars, no photo upload yet (Team Chat redesign
+  // Phase 2, 2026-09) - no photo/avatar_url column exists anywhere in
+  // this app today (confirmed by inspecting the team-member roster and
+  // every tracked SQL file), so this deliberately ships the fallback
+  // treatment now and leaves a real upload as a separate future phase
+  // rather than blocking the message-clarity improvement on new Storage
+  // infrastructure. Colors are hashed from the sender's real auth user id
+  // so the same person always gets the same color everywhere they appear.
+  const AVATAR_PALETTE = [
+    { bg: "var(--ungani-navy)", fg: "#FFFFFF" },
+    { bg: "var(--ungani-gold)", fg: "var(--ungani-navy)" },
+    { bg: "var(--ungani-green)", fg: "#FFFFFF" },
+    { bg: "var(--ungani-blue)", fg: "#FFFFFF" },
+    { bg: "var(--ungani-orange)", fg: "#FFFFFF" }
+  ];
+
+  function avatarInitials(name) {
+    const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  function avatarColorFor(key) {
+    const str = String(key || "x");
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+  }
+
+  // key: a stable identity string - a real auth_user_id for an actual
+  // person, or the literal "team"/"channel" for a header representing the
+  // whole conversation rather than one sender. name is only used to derive
+  // initials (ignored for the "team"/"channel" special cases).
+  function avatarHtml(key, name, sizePx) {
+    const size = sizePx || 32;
+    const color = avatarColorFor(key);
+    const initials = key === "team" ? "T" : key === "channel" ? "#" : avatarInitials(name);
+    return `<div class="ungani-chat-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.4)}px;background:${color.bg};color:${color.fg};">${safe(initials)}</div>`;
+  }
+
+  // Resolves a conversationList()/peerLabel() bucket key ("team", "owner",
+  // "tm:<id>", "uid:<id>") to the stable {authId, name} avatarHtml() needs -
+  // conversationList() only tracks bucket keys internally, so this is the
+  // one place that bridges "which bucket is this" to "whose avatar is
+  // this", used both for conversation-list rows and DM thread headers.
+  function avatarIdentityForKey(key) {
+    if (key === "team") return { authId: "team", name: "Team" };
+
+    if (key === "owner") {
+      return {
+        authId: (state.roster.owner && state.roster.owner.auth_user_id) || "owner",
+        name: (state.roster.owner && state.roster.owner.full_name) || "Owner"
+      };
+    }
+
+    if (key.indexOf("tm:") === 0) {
+      const id = key.slice(3);
+      const member = state.roster.members.find(function (m) { return m.id === id; });
+      return { authId: member ? member.auth_user_id : id, name: member ? member.full_name : "Team Member" };
+    }
+
+    if (key.indexOf("uid:") === 0) {
+      return { authId: key.slice(4), name: "Team Member" };
+    }
+
+    return { authId: key, name: "Team Member" };
+  }
+
   async function init(getContextFn) {
     state.getContext = getContextFn;
     injectStylesOnce();
@@ -536,14 +606,17 @@
       return new Date(getField(bLast, ["created_at"], 0)).getTime() - new Date(getField(aLast, ["created_at"], 0)).getTime();
     });
 
-    const list = [{ key: "team", label: "Team", unread: unreadCountFor("team") }];
+    const list = [{ key: "team", label: "Team", unread: unreadCountFor("team"), avatarKey: "team", avatarName: "Team" }];
 
     keys.forEach(function (key) {
       const rows = state.conversations[key];
+      const identity = avatarIdentityForKey(key);
       list.push({
         key: key,
         label: peerLabel(key, rows[rows.length - 1]),
-        unread: unreadCountFor(key)
+        unread: unreadCountFor(key),
+        avatarKey: identity.authId,
+        avatarName: identity.name
       });
     });
 
@@ -1183,6 +1256,12 @@
     createChannel: createChannel,
     getChannelList: getChannelList,
     getIsOwner: function () { return state.isOwner; },
-    refreshActiveChannel: refreshActiveChannelIfOpen
+    refreshActiveChannel: refreshActiveChannelIfOpen,
+    // Initials-based avatars (embedded mode only, see the "Avatars" block
+    // above init()) - avatarHtml("team"|"channel"|<auth_user_id>, name,
+    // sizePx) returns the complete markup, so every render site (list
+    // rows, thread headers, message bubbles) uses the identical
+    // color/initials logic instead of three hand-copied versions.
+    avatarHtml: avatarHtml
   };
 })();
