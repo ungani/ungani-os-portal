@@ -2242,9 +2242,9 @@
 
   async function loadUserProfile(authUser) {
     const attempts = [
+      { column: "id", value: authUser.id },
       { column: "auth_user_id", value: authUser.id },
       { column: "user_id", value: authUser.id },
-      { column: "id", value: authUser.id },
       { column: "email", value: authUser.email }
     ];
 
@@ -2825,11 +2825,42 @@
     }
   }
 
+  // Matches admin-shared.js's fetchWithRetry exactly - a network-level
+  // abort (e.g. the browser cancelling a request during a burst of
+  // concurrent page-load queries, confirmed via a real system sweep to
+  // be why these sidebar badges intermittently show stale/zero counts)
+  // rejects instead of resolving with .error, so it must be caught here
+  // to actually retry rather than propagate immediately.
+  async function fetchWithRetry(queryFn, attempts = 3, baseDelayMs = 300) {
+    let lastResponse = null;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        lastResponse = await queryFn();
+        lastError = null;
+        if (!lastResponse.error) return lastResponse;
+      } catch (error) {
+        lastError = error;
+        lastResponse = null;
+      }
+
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+      }
+    }
+
+    if (lastResponse) return lastResponse;
+    return { data: null, error: lastError || new Error("Unknown fetch failure") };
+  }
+
   // Sidebar item badges (Tasks/Support Issues/Notifications/Team Chat) -
   // one batched round of lightweight queries per page load, not one query
   // per nav item. Deliberately separate from the notification bell/engine
   // below: these are per-nav-item counts (their own "overdue"/"open"
-  // definitions), not the unified ungani_notifications feed.
+  // definitions), not the unified ungani_notifications feed - though they
+  // do read from that same real table now (fixed a dangling reference to
+  // a "notifications" table that no longer exists post-unification).
   async function getSidebarBadgeCounts() {
     if (!state.supabaseClient || !state.tenantId) return {};
 
@@ -2837,12 +2868,14 @@
     const today = todayISO();
 
     try {
-      const tasksResponse = await state.supabaseClient
-        .from("tasks")
-        .select("status")
-        .eq("tenant_id", state.tenantId)
-        .lte("due_date", today)
-        .limit(500);
+      const tasksResponse = await fetchWithRetry(() =>
+        state.supabaseClient
+          .from("tasks")
+          .select("status")
+          .eq("tenant_id", state.tenantId)
+          .lte("due_date", today)
+          .limit(500)
+      );
 
       if (!tasksResponse.error) {
         counts.tasks = (tasksResponse.data || []).filter(function (row) {
@@ -2855,11 +2888,13 @@
     }
 
     try {
-      const supportResponse = await state.supabaseClient
-        .from("support_issues")
-        .select("id", { count: "exact", head: true })
-        .eq("tenant_id", state.tenantId)
-        .in("status", ["open", "in progress"]);
+      const supportResponse = await fetchWithRetry(() =>
+        state.supabaseClient
+          .from("support_issues")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", state.tenantId)
+          .in("status", ["open", "in progress"])
+      );
 
       if (!supportResponse.error) counts.support = supportResponse.count || 0;
     } catch (error) {
@@ -2867,11 +2902,13 @@
     }
 
     try {
-      const notificationsResponse = await state.supabaseClient
-        .from("notifications")
-        .select("id", { count: "exact", head: true })
-        .eq("tenant_id", state.tenantId)
-        .neq("status", "read");
+      const notificationsResponse = await fetchWithRetry(() =>
+        state.supabaseClient
+          .from("ungani_notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", state.tenantId)
+          .neq("status", "read")
+      );
 
       if (!notificationsResponse.error) counts.notifications = notificationsResponse.count || 0;
     } catch (error) {
@@ -2880,12 +2917,14 @@
 
     try {
       if (state.authUser) {
-        const teamChatResponse = await state.supabaseClient
-          .from("team_chat_messages")
-          .select("id", { count: "exact", head: true })
-          .eq("tenant_id", state.tenantId)
-          .eq("is_read", false)
-          .neq("sender_user_id", state.authUser.id);
+        const teamChatResponse = await fetchWithRetry(() =>
+          state.supabaseClient
+            .from("team_chat_messages")
+            .select("id", { count: "exact", head: true })
+            .eq("tenant_id", state.tenantId)
+            .eq("is_read", false)
+            .neq("sender_user_id", state.authUser.id)
+        );
 
         if (!teamChatResponse.error) counts["team-chat"] = teamChatResponse.count || 0;
       }
@@ -2897,12 +2936,14 @@
       // Mirrors my-chat.html's markAdminMessagesRead() filter exactly -
       // unread messages sent by admin (not the client's own sent
       // messages) for this tenant.
-      const adminChatResponse = await state.supabaseClient
-        .from("admin_client_messages")
-        .select("id", { count: "exact", head: true })
-        .eq("tenant_id", state.tenantId)
-        .neq("sender_role", "client")
-        .eq("is_read", false);
+      const adminChatResponse = await fetchWithRetry(() =>
+        state.supabaseClient
+          .from("admin_client_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", state.tenantId)
+          .neq("sender_role", "client")
+          .eq("is_read", false)
+      );
 
       if (!adminChatResponse.error) counts["admin-chat"] = adminChatResponse.count || 0;
     } catch (error) {

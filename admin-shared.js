@@ -1331,16 +1331,31 @@
   // failure (which still surfaces after 3 attempts).
   async function fetchWithRetry(queryFn, attempts = 3, baseDelayMs = 300) {
     let lastResponse = null;
+    let lastError = null;
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
-      lastResponse = await queryFn();
-      if (!lastResponse.error) return lastResponse;
+      try {
+        lastResponse = await queryFn();
+        lastError = null;
+        if (!lastResponse.error) return lastResponse;
+      } catch (error) {
+        // A network-level abort (e.g. the browser cancelling a request
+        // during a burst of concurrent page-load queries) rejects instead
+        // of resolving with .error - previously this propagated
+        // immediately and skipped every remaining retry attempt, defeating
+        // the whole point of this wrapper. Treat it exactly like an
+        // .error response: retry.
+        lastError = error;
+        lastResponse = null;
+      }
+
       if (attempt < attempts) {
         await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
       }
     }
 
-    return lastResponse;
+    if (lastResponse) return lastResponse;
+    return { data: null, error: lastError || new Error("Unknown fetch failure") };
   }
 
   // Admin sidebar item badges (Client Registrations/Support Desk/Client
