@@ -163,6 +163,41 @@
       flex: none;
     }
 
+    .ttc-new-dm input {
+      flex: 1;
+      border-radius: 10px;
+      border: 1px solid var(--ungani-border);
+      padding: 8px 10px;
+      font-size: 12.5px;
+      background: var(--ungani-bg);
+      color: var(--ungani-text);
+    }
+
+    .ttc-sidebar-head.ttc-channels-head {
+      border-top: 1px solid var(--ungani-border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .ttc-head-add-btn {
+      flex: none;
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      border: none;
+      background: var(--ungani-gold);
+      color: var(--ungani-navy);
+      font-weight: 900;
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
     .ttc-thread {
       background: var(--ungani-card);
       border: 1px solid var(--ungani-border);
@@ -307,7 +342,18 @@
 
       UnganiTeamChat.setRenderCallback(renderTeamChatPage);
       await UnganiTeamChat.init(function () { return currentContext; });
+      await UnganiTeamChat.loadChannels();
       UnganiTeamChat.startPolling();
+
+      // Channels live outside team-chat-shared.js's own Team/DM poll (see
+      // its file header - the popup never loads or shows channels), so
+      // this page runs its own lightweight refresh loop for them: the
+      // channel list/unread counts, plus the open channel's messages if
+      // one is active.
+      setInterval(function () {
+        UnganiTeamChat.loadChannels();
+        UnganiTeamChat.refreshActiveChannel();
+      }, 15000);
     }
 
     // Builds the two-pane shell exactly once - every later call (poll
@@ -329,6 +375,19 @@
               </div>
               <div id="ttcConversationList" class="ttc-conversation-list"></div>
               <div class="ttc-new-dm" id="ttcNewDmRow"></div>
+
+              <div class="ttc-sidebar-head ttc-channels-head">
+                <div>
+                  <h3>Channels</h3>
+                  <p>Topic channels your team creates, like #nairobi-branch.</p>
+                </div>
+                <button type="button" id="ttcNewChannelBtn" class="ttc-head-add-btn" style="display:none;" title="Create a channel" onclick="toggleNewChannelRow()">+</button>
+              </div>
+              <div class="ttc-new-dm" id="ttcNewChannelRow" style="display:none;">
+                <input id="ttcNewChannelInput" type="text" placeholder="channel-name" autocomplete="off" />
+                <button type="button" onclick="submitNewChannel()">Create</button>
+              </div>
+              <div id="ttcChannelList" class="ttc-conversation-list"></div>
             </div>
 
             <div class="ttc-thread">
@@ -348,14 +407,18 @@
 
       renderConversationList();
       renderNewDmRow();
+      renderChannelsSection();
       renderThreadHead();
       renderMessages();
 
       const inputEl = document.getElementById("ttcInput");
+      const activeKey = UnganiTeamChat.getActiveKey();
       if (inputEl) {
-        inputEl.placeholder = UnganiTeamChat.getActiveKey() === "team"
+        inputEl.placeholder = activeKey === "team"
           ? "Message your team..."
-          : "Send a private message...";
+          : activeKey.indexOf("channel:") === 0
+            ? "Message this channel..."
+            : "Send a private message...";
       }
     }
 
@@ -401,18 +464,84 @@
       UnganiTeamChat.startDm(select.value);
     }
 
+    function renderChannelsSection() {
+      const btn = document.getElementById("ttcNewChannelBtn");
+      if (btn) btn.style.display = UnganiTeamChat.getIsOwner() ? "flex" : "none";
+
+      const box = document.getElementById("ttcChannelList");
+      if (!box) return;
+
+      const channels = UnganiTeamChat.getChannelList();
+      const activeKey = UnganiTeamChat.getActiveKey();
+
+      if (!channels.length) {
+        box.innerHTML = `<p style="padding:10px;margin:0;color:var(--ungani-muted);font-size:12px;">No channels yet.${UnganiTeamChat.getIsOwner() ? " Tap + to create one." : ""}</p>`;
+        return;
+      }
+
+      box.innerHTML = channels.map(function (c) {
+        const key = "channel:" + c.id;
+        return `
+          <button type="button" class="ttc-conv${key === activeKey ? " active" : ""}" onclick="UnganiTeamChat.selectChannel('${UnganiClientShared.attr(c.id)}')">
+            <span>#${UnganiClientShared.safe(c.name)}</span>
+            ${c.unread > 0 ? '<span class="ttc-conv-dot"></span>' : ""}
+          </button>
+        `;
+      }).join("");
+    }
+
+    function toggleNewChannelRow() {
+      const row = document.getElementById("ttcNewChannelRow");
+      if (!row) return;
+      row.style.display = row.style.display === "none" ? "flex" : "none";
+      if (row.style.display === "flex") {
+        const input = document.getElementById("ttcNewChannelInput");
+        if (input) input.focus();
+      }
+    }
+
+    async function submitNewChannel() {
+      const input = document.getElementById("ttcNewChannelInput");
+      if (!input) return;
+      const name = input.value.trim().replace(/^#+/, "");
+      if (!name) return;
+
+      const result = await UnganiTeamChat.createChannel(name, "");
+      if (!result.ok) {
+        if (window.UnganiClientShared && UnganiClientShared.showToast) {
+          UnganiClientShared.showToast(result.message || "Could not create channel.");
+        } else {
+          alert(result.message || "Could not create channel.");
+        }
+        return;
+      }
+
+      input.value = "";
+      document.getElementById("ttcNewChannelRow").style.display = "none";
+    }
+
     function renderThreadHead() {
       const head = document.getElementById("ttcThreadHead");
       if (!head) return;
 
       const activeKey = UnganiTeamChat.getActiveKey();
+
+      if (activeKey === "team") {
+        head.innerHTML = `<h3>Team</h3><p>Visible to your whole team.</p>`;
+        return;
+      }
+
+      if (activeKey.indexOf("channel:") === 0) {
+        const channelId = activeKey.slice(8);
+        const channel = UnganiTeamChat.getChannelList().find(function (c) { return c.id === channelId; });
+        head.innerHTML = `<h3>#${UnganiClientShared.safe(channel ? channel.name : "channel")}</h3><p>Visible to your whole team.</p>`;
+        return;
+      }
+
       const list = UnganiTeamChat.getConversationList();
       const active = list.find(function (c) { return c.key === activeKey; });
       const label = active ? active.label : "Team";
-
-      head.innerHTML = activeKey === "team"
-        ? `<h3>Team</h3><p>Visible to your whole team.</p>`
-        : `<h3>${UnganiClientShared.safe(label)}</h3><p>Private conversation.</p>`;
+      head.innerHTML = `<h3>${UnganiClientShared.safe(label)}</h3><p>Private conversation.</p>`;
     }
 
     function renderMessages() {
@@ -423,11 +552,14 @@
       const me = UnganiTeamChat.getMyIdentity();
       const activeKey = UnganiTeamChat.getActiveKey();
 
+      const isChannel = activeKey.indexOf("channel:") === 0;
+      const isMultiParty = activeKey === "team" || isChannel;
+
       if (!rows.length) {
         box.innerHTML = `
           <div class="ttc-empty">
             <h4>No messages yet</h4>
-            <p>${activeKey === "team" ? "Send a quick note to your team to get started." : "Send the first private message to start this conversation."}</p>
+            <p>${isMultiParty ? "Send a quick note to get started." : "Send the first private message to start this conversation."}</p>
           </div>
         `;
         return;
@@ -443,7 +575,7 @@
 
         return `
           <div class="ttc-bubble ${isMine ? "mine" : "theirs"}">
-            ${isMine || activeKey !== "team" ? "" : `<span class="ttc-sender">${UnganiClientShared.safe(senderName)}</span>`}
+            ${isMine || !isMultiParty ? "" : `<span class="ttc-sender">${UnganiClientShared.safe(senderName)}</span>`}
             <span style="white-space:pre-wrap;">${UnganiClientShared.safe(body)}</span>
             <span class="ttc-time">${UnganiClientShared.safe(time)}</span>
           </div>

@@ -2485,6 +2485,18 @@
         return runCollaborationDigestIntent();
       }
 
+      // Team Chat digest ("unread messages", "who messaged me", "team
+      // chat") - same unread-activity-digest shape as the Ungani Connect
+      // check above, checked right after it. Deliberately client-only
+      // (Team Chat is internal staff communication, no admin surface) and
+      // checked ahead of findNavMatch() below, which already has its own
+      // "team chat" nav alias for plain navigation - without this check
+      // running first, asking "what's happening in the team chat" would
+      // just navigate to the page instead of answering.
+      if (isTeamChatQueryPhrase(text)) {
+        return runTeamChatQueryIntent();
+      }
+
       // "print this for me" / "give me a report" - checked ahead of the
       // generic summary phrase below, since a print request should always
       // win over a conversational one even if both phrase lists could
@@ -4032,6 +4044,105 @@
     var groups = groupConnectNotifications(rows);
     addNiaMessage(buildConnectDigestHtml(groups, rows.length));
     return { spoken: rows.length + " new update" + (rows.length === 1 ? "" : "s") + " in Ungani Connect." };
+  }
+
+  function isTeamChatQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["team chat", "team message", "unread message", "who messaged", "messaged me"]
+      .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  async function runTeamChatQueryIntent() {
+    if (state.surface === "admin") {
+      addNiaMessage("Team Chat isn't available on the admin side — it's internal communication for a client's own staff.");
+      return { spoken: "That's not available on the admin side." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId || !state.authUser) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking Team Chat...");
+
+    let rows;
+    try {
+      // RLS (can_access_ungani_chat_message()) already guarantees every
+      // row returned here is either public (Team/a channel) or a DM
+      // genuinely addressed to me - no separate recipient-matching filter
+      // needed on top of the tenant/read-state filters below.
+      const response = await state.supabaseClient
+        .from("team_chat_messages")
+        .select("id, sender_name, message_body, message, body, recipient_team_member_id, recipient_is_owner, channel_id, created_at")
+        .eq("tenant_id", state.tenantId)
+        .neq("sender_user_id", state.authUser.id)
+        .eq("is_read", false)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (response.error) throw response.error;
+      rows = response.data || [];
+    } catch (error) {
+      addNiaMessage("I couldn't check Team Chat right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (!rows.length) {
+      addNiaMessage("You're all caught up — no unread Team Chat messages. " + goldLink("my-team-chat.html", "Open Team Chat"));
+      return { spoken: "You're all caught up in Team Chat." };
+    }
+
+    // Non-critical enhancement - real channel names for any unread channel
+    // messages. Degrades to a generic "a channel" label if this fails,
+    // same graceful-degradation pattern as the stock intent's pending-
+    // order lookup above.
+    let channelNames = {};
+    const channelIds = Array.from(new Set(rows.filter(function (r) { return r.channel_id; }).map(function (r) { return r.channel_id; })));
+    if (channelIds.length) {
+      try {
+        const chRes = await state.supabaseClient.from("ungani_chat_channels").select("id, name").in("id", channelIds);
+        (chRes.data || []).forEach(function (c) { channelNames[c.id] = c.name; });
+      } catch (error) {
+        channelNames = {};
+      }
+    }
+
+    function bucketKeyFor(row) {
+      if (row.recipient_team_member_id || row.recipient_is_owner) return "dm:" + row.sender_name;
+      if (row.channel_id) return "channel:" + (channelNames[row.channel_id] || "a channel");
+      return "team";
+    }
+
+    const buckets = {};
+    const bucketOrder = [];
+    rows.forEach(function (row) {
+      const key = bucketKeyFor(row);
+      if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
+      buckets[key].push(row);
+    });
+
+    const lines = bucketOrder.map(function (key) {
+      const group = buckets[key];
+      const latest = group[0];
+      const body = String(latest.message_body || latest.message || latest.body || "");
+      const preview = body.length > 60 ? body.slice(0, 60) + "..." : body;
+
+      const label = key === "team"
+        ? "in Team"
+        : key.indexOf("dm:") === 0
+          ? "from " + safe(key.slice(3)) + " (private)"
+          : "in #" + safe(key.slice(8));
+
+      return `<div style="margin-top:6px;">${group.length} ${label} — "${safe(preview)}"</div>`;
+    });
+
+    addNiaMessage(
+      rows.length + " unread message" + (rows.length === 1 ? "" : "s") + ":" +
+      lines.join("") +
+      `<div style="margin-top:8px;">${goldLink("my-team-chat.html", "Open Team Chat")}</div>`
+    );
+
+    return { spoken: rows.length + " unread message" + (rows.length === 1 ? "" : "s") + " in Team Chat." };
   }
 
   // Admin equivalent of the block above. Deliberately NOT a self-contained

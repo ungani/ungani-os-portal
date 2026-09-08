@@ -31,7 +31,16 @@
     // this module's own popup DOM. When set, every place that would
     // normally call renderPanel() calls this instead - the popup's own
     // rendering is completely unaffected on pages that never set this.
-    renderCallback: null
+    renderCallback: null,
+    // Channels (embedded mode only - the popup never loads or shows these,
+    // by design, per team-chat-shared.js's file header). Kept in their own
+    // state rather than folded into state.messages/state.conversations so
+    // the popup's existing rebuildConversations()-based rendering is
+    // completely unaffected by any of this.
+    channels: [],
+    channelUnread: {},
+    channelMessages: {},
+    isOwner: false
   };
 
   function injectStylesOnce() {
@@ -837,6 +846,176 @@
     selectConversation(key);
   }
 
+  // --- Channels (embedded mode only) ---------------------------------
+  // Hashtag channels (Team Chat redesign Phase 2, 2026-09). Deliberately
+  // kept out of state.messages/state.conversations/rebuildConversations()
+  // so the popup - which never calls any function below - is completely
+  // unaffected. Channel messages share the same is_read column as every
+  // other row in team_chat_messages, which is a single shared flag rather
+  // than a per-reader read receipt; that's an existing limitation already
+  // accepted for the "Team" broadcast tab above, not a new one introduced
+  // here - channels just follow the same convention for consistency.
+
+  async function loadChannels() {
+    const ctx = getContext();
+    if (!ctx || !ctx.supabaseClient) return;
+
+    try {
+      const response = await ctx.supabaseClient.rpc("get_my_ungani_chat_channels");
+      if (!response.error && response.data && response.data.ok === true) {
+        state.channels = response.data.channels || [];
+        state.isOwner = !!response.data.is_owner;
+      }
+    } catch (error) {
+      console.warn("Channel list load skipped:", error.message);
+    }
+
+    await loadChannelUnreadCounts();
+    notifyRender();
+  }
+
+  async function loadChannelUnreadCounts() {
+    const ctx = getContext();
+    if (!ctx || !ctx.supabaseClient || !ctx.tenantId || !ctx.authUser) return;
+
+    try {
+      const response = await ctx.supabaseClient
+        .from("team_chat_messages")
+        .select("channel_id")
+        .eq("tenant_id", ctx.tenantId)
+        .not("channel_id", "is", null)
+        .eq("is_read", false)
+        .neq("sender_user_id", ctx.authUser.id);
+
+      const counts = {};
+      (response.data || []).forEach(function (row) {
+        counts[row.channel_id] = (counts[row.channel_id] || 0) + 1;
+      });
+      state.channelUnread = counts;
+    } catch (error) {
+      console.warn("Channel unread count load skipped:", error.message);
+    }
+  }
+
+  async function loadChannelMessages(channelId) {
+    const ctx = getContext();
+    if (!ctx || !ctx.supabaseClient || !ctx.tenantId) return;
+
+    try {
+      const response = await ctx.supabaseClient
+        .from("team_chat_messages")
+        .select("*")
+        .eq("tenant_id", ctx.tenantId)
+        .eq("channel_id", channelId)
+        .order("created_at", { ascending: true })
+        .limit(300);
+
+      if (response.error) {
+        console.warn("Channel message load skipped:", response.error.message);
+        return;
+      }
+
+      state.channelMessages[channelId] = response.data || [];
+    } catch (error) {
+      console.warn("Channel message load skipped:", error.message);
+    }
+  }
+
+  async function selectChannel(channelId) {
+    state.activeKey = "channel:" + channelId;
+    notifyRender();
+    await loadChannelMessages(channelId);
+    notifyRender();
+    await markChannelRead(channelId);
+    scrollToBottom();
+  }
+
+  async function markChannelRead(channelId) {
+    const ctx = getContext();
+    if (!ctx || !ctx.supabaseClient || !ctx.authUser) return;
+
+    const rows = state.channelMessages[channelId] || [];
+    const unreadIds = rows
+      .filter(function (r) { return r.sender_user_id !== ctx.authUser.id && !r.is_read; })
+      .map(function (r) { return r.id; });
+
+    state.channelUnread[channelId] = 0;
+
+    if (!unreadIds.length) {
+      notifyRender();
+      return;
+    }
+
+    try {
+      await ctx.supabaseClient
+        .from("team_chat_messages")
+        .update({ is_read: true, updated_at: new Date().toISOString() })
+        .in("id", unreadIds);
+
+      rows.forEach(function (m) {
+        if (unreadIds.indexOf(m.id) !== -1) m.is_read = true;
+      });
+
+      notifyRender();
+    } catch (error) {
+      console.warn("Could not mark channel read:", error.message);
+    }
+  }
+
+  // name is required, "#" prefix optional (stripped server-side too);
+  // owner_upsert_ungani_chat_channel() rejects non-owner callers with
+  // {ok:false, message:"Only the business owner can manage Department
+  // Channels."} - the host page shows that message back verbatim rather
+  // than guessing at wording, and should hide/disable the create control
+  // for non-owners in the first place (see getIsOwner()).
+  async function createChannel(name, description) {
+    const ctx = getContext();
+    if (!ctx || !ctx.supabaseClient) return { ok: false, message: "Still loading - try again in a moment." };
+
+    try {
+      const response = await ctx.supabaseClient.rpc("owner_upsert_ungani_chat_channel", {
+        p_name: name,
+        p_description: description || null
+      });
+
+      if (response.error) return { ok: false, message: response.error.message };
+      if (!response.data || response.data.ok !== true) {
+        return { ok: false, message: (response.data && response.data.message) || "Could not create channel." };
+      }
+
+      await loadChannels();
+      await selectChannel(response.data.channel_id);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  }
+
+  function getChannelList() {
+    return state.channels.map(function (c) {
+      return {
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        unread: state.channelUnread[c.id] || 0
+      };
+    });
+  }
+
+  // Called from a host page's own poll (channels are outside this
+  // module's startPolling() - see the "Channels" comment above
+  // loadChannels()). Refreshes the open channel's messages without
+  // stealing scroll position or re-triggering the "start a DM" scroll-to-
+  // bottom behaviour - same silent-refresh contract loadMessages() uses
+  // for the Team/DM side on its own 12s poll.
+  async function refreshActiveChannelIfOpen() {
+    if (state.activeKey.indexOf("channel:") !== 0) return;
+    const channelId = state.activeKey.slice(8);
+    await loadChannelMessages(channelId);
+    notifyRender();
+    await markChannelRead(channelId);
+  }
+
   async function markActiveConversationRead() {
     const ctx = getContext();
     if (!ctx || !ctx.supabaseClient || !ctx.tenantId || !ctx.authUser) return;
@@ -907,6 +1086,8 @@
       payload.recipient_is_owner = true;
     } else if (state.activeKey.indexOf("tm:") === 0) {
       payload.recipient_team_member_id = state.activeKey.slice(3);
+    } else if (state.activeKey.indexOf("channel:") === 0) {
+      payload.channel_id = state.activeKey.slice(8);
     }
 
     if (input) input.value = "";
@@ -927,7 +1108,12 @@
         window.UnganiClientShared.triggerEventPush("team_chat_message", messageId);
       }
 
-      await loadMessages(true);
+      if (state.activeKey.indexOf("channel:") === 0) {
+        await loadChannelMessages(state.activeKey.slice(8));
+        notifyRender();
+      } else {
+        await loadMessages(true);
+      }
       scrollToBottom();
     } catch (error) {
       if (typeof window.UnganiClientShared !== "undefined" && window.UnganiClientShared.showToast) {
@@ -969,11 +1155,26 @@
     setRenderCallback: setRenderCallback,
     getConversationList: conversationList,
     getActiveKey: function () { return state.activeKey; },
-    getMessagesForActive: function () { return state.conversations[state.activeKey] || []; },
+    getMessagesForActive: function () {
+      if (state.activeKey.indexOf("channel:") === 0) {
+        return state.channelMessages[state.activeKey.slice(8)] || [];
+      }
+      return state.conversations[state.activeKey] || [];
+    },
     getMessagesFor: function (key) { return state.conversations[key] || []; },
     getRoster: function () { return state.roster; },
     getMyIdentity: myIdentity,
     getAvailableDmTargets: availableDmTargets,
-    formatTime: formatTime
+    formatTime: formatTime,
+    // Channels (embedded mode only, e.g. my-team-chat.html) - see the
+    // "Channels" block above startDm() for the underlying logic. The
+    // popup never calls any of these, so it never issues the extra RPC
+    // calls or queries channels involve.
+    loadChannels: loadChannels,
+    selectChannel: selectChannel,
+    createChannel: createChannel,
+    getChannelList: getChannelList,
+    getIsOwner: function () { return state.isOwner; },
+    refreshActiveChannel: refreshActiveChannelIfOpen
   };
 })();
