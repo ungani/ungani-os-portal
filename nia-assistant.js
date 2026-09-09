@@ -1879,9 +1879,14 @@
 
     try {
       const { data, error } = await state.supabaseClient.rpc("get_my_ungani_onboarding_progress");
-      if (error || !Array.isArray(data)) return false;
+      // Real shape is { ok, items, tenant_id } (confirmed against
+      // my-onboarding.html's own handling of this same RPC) - data itself
+      // is never an array, so the old `!Array.isArray(data)` check was
+      // always true and this function silently always returned false,
+      // meaning the proactive tour offer never fired for anyone.
+      if (error || !data || !Array.isArray(data.items)) return false;
 
-      const doneCount = data.filter(function (row) { return row && row.is_done === true; }).length;
+      const doneCount = data.items.filter(function (row) { return row && row.is_done === true; }).length;
       return doneCount <= 1;
     } catch (error) {
       return false;
