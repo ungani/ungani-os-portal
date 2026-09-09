@@ -52,6 +52,7 @@
   <script>
     let currentContext = null;
     let orderRows = [];
+    let orderViewMode = sessionStorage.getItem("ungani_order_view_mode") === "board" ? "board" : "list";
     let customerOptions = [];
     let customerNameSuggestions = [];
     let stockItemOptions = [];
@@ -345,6 +346,138 @@
           .order-items-table input, .order-items-table select { width: 100%; }
           .order-fulfil-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px dashed var(--ungani-border, rgba(6,28,61,0.15)); }
           .order-fulfil-row input[type="number"] { width: 90px; }
+
+          .task-view-toggle {
+            display: inline-flex;
+            border: 1px solid var(--ungani-border, rgba(6,28,61,0.1));
+            border-radius: 10px;
+            overflow: hidden;
+          }
+
+          .task-view-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: none;
+            background: transparent;
+            color: var(--ungani-muted, #6B7280);
+            font-size: 13px;
+            font-weight: 700;
+            padding: 8px 12px;
+            cursor: pointer;
+          }
+
+          .task-view-toggle-btn.active {
+            background: var(--ungani-gold, #D4A63A);
+            color: #061C3D;
+          }
+
+          .task-view-toggle-btn svg {
+            width: 15px;
+            height: 15px;
+          }
+
+          .task-board {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 14px;
+            align-items: start;
+            margin-top: 14px;
+          }
+
+          .task-board-column {
+            background: var(--ungani-surface, rgba(0,0,0,0.02));
+            border: 1px solid var(--ungani-border, rgba(6,28,61,0.1));
+            border-radius: 16px;
+            padding: 12px;
+          }
+
+          .task-board-column-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--ungani-muted, #6B7280);
+            padding: 4px 4px 10px;
+          }
+
+          .task-board-column-count {
+            background: var(--ungani-border, rgba(6,28,61,0.1));
+            color: var(--ungani-text, #061C3D);
+            border-radius: 999px;
+            font-size: 11px;
+            padding: 2px 8px;
+          }
+
+          .task-board-column-body {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          }
+
+          .task-board-card {
+            position: relative;
+            overflow: hidden;
+            background: var(--ungani-card, #fff);
+            border: 1px solid var(--ungani-border, rgba(6,28,61,0.1));
+            border-radius: 12px;
+            padding: 12px 12px 12px 16px;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(6,28,61,0.06);
+          }
+
+          .task-board-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: var(--accent);
+          }
+
+          .task-board-card-title {
+            font-weight: 750;
+            font-size: 14px;
+            margin-bottom: 6px;
+          }
+
+          .task-board-card-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            color: var(--ungani-muted, #6B7280);
+            font-size: 12px;
+            margin-bottom: 8px;
+          }
+
+          .task-board-card-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+          }
+
+          .task-board-card-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+          }
+
+          @media (max-width: 1100px) {
+            .task-board {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 640px) {
+            .task-board {
+              grid-template-columns: 1fr;
+            }
+          }
         </style>
 
         <section class="ungani-card ungani-hero">
@@ -370,9 +503,14 @@
               <h3>All Orders</h3>
               <p class="ungani-small">${orderRows.length} order(s).</p>
             </div>
+
+            <div class="task-view-toggle">
+              <button type="button" class="task-view-toggle-btn${orderViewMode === "list" ? " active" : ""}" onclick="setOrderViewMode('list')"><i data-lucide="list"></i> List</button>
+              <button type="button" class="task-view-toggle-btn${orderViewMode === "board" ? " active" : ""}" onclick="setOrderViewMode('board')"><i data-lucide="columns-3"></i> Board</button>
+            </div>
           </div>
 
-          ${renderOrdersTable()}
+          ${orderViewMode === "board" ? renderOrderBoard() : renderOrdersTable()}
         </section>
 
         <p class="ungani-small">Orders · ungani.com · info@ungani.com</p>
@@ -428,6 +566,96 @@
       await loadOrderRows();
       renderOrdersPage();
       UnganiClientShared.showToast("Refreshed ✓");
+    }
+
+    function setOrderViewMode(mode) {
+      orderViewMode = mode;
+      sessionStorage.setItem("ungani_order_view_mode", mode);
+      renderOrdersPage();
+    }
+
+    // Click-to-move board (not drag-and-drop, matches my-tasks.html's
+    // pattern). Only pending->confirmed and (pending|confirmed)->cancelled
+    // are real move-button transitions - they mirror exactly what the
+    // existing modal already allows (my-orders.html:620-622) via
+    // setOrderStatus()/update_ungani_order_status. Progressing past
+    // Confirmed happens through the line-item fulfillment flow
+    // (fulfill_ungani_order_item, opened by clicking the card), not a
+    // simple status click, so Confirmed/Partially Fulfilled cards have
+    // no forward move button - same reasoning Quotations' board uses for
+    // its own RPC-only transitions. partially_fulfilled rows are folded
+    // into the Confirmed column (a sub-state of "being worked on", not
+    // its own pipeline stage) with a small badge marking them as such.
+    const ORDER_BOARD_COLUMNS = [
+      { key: "pending", label: "Pending" },
+      { key: "confirmed", label: "Confirmed" },
+      { key: "fulfilled", label: "Fulfilled" },
+      { key: "invoiced", label: "Invoiced" },
+      { key: "cancelled", label: "Cancelled" }
+    ];
+
+    function orderBoardColumnFor(row) {
+      if (row.status === "partially_fulfilled") return "confirmed";
+      return row.status;
+    }
+
+    function renderOrderBoard() {
+      const visibleRows = orderRows.filter(function (row) {
+        return ORDER_BOARD_COLUMNS.some(function (c) { return c.key === orderBoardColumnFor(row); });
+      });
+
+      if (!visibleRows.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No orders yet. Click "+ New Order" to create your first one.</p>`;
+      }
+
+      return `
+        <div class="task-board">
+          ${ORDER_BOARD_COLUMNS.map(function (column) {
+            const columnRows = visibleRows.filter(function (row) { return orderBoardColumnFor(row) === column.key; });
+
+            return `
+              <div class="task-board-column">
+                <div class="task-board-column-head">
+                  <span>${UnganiClientShared.safe(column.label)}</span>
+                  <span class="task-board-column-count">${columnRows.length}</span>
+                </div>
+                <div class="task-board-column-body">
+                  ${columnRows.length ? columnRows.map(function (row) { return renderOrderBoardCard(row); }).join("") : `<p class="ungani-small" style="padding:4px 2px;">No orders here.</p>`}
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function renderOrderBoardCard(row) {
+      const meta = orderStatusMeta(row.status);
+      const nextMoves = [];
+
+      if (row.status === "pending") {
+        nextMoves.push({ key: "confirmed", label: "Confirmed" });
+        nextMoves.push({ key: "cancelled", label: "Cancelled" });
+      }
+      if (row.status === "confirmed") {
+        nextMoves.push({ key: "cancelled", label: "Cancelled" });
+      }
+
+      return `
+        <div class="task-board-card" style="--accent:${UnganiClientShared.attr(meta.fg)};" onclick="openOrderModal('${UnganiClientShared.attr(row.id)}')">
+          <div class="task-board-card-title">${UnganiClientShared.safe(row.order_number)} — ${UnganiClientShared.safe(row.customer_name)}</div>
+          <div class="task-board-card-meta">
+            <span>${row.expected_fulfillment_date ? "Expected " + UnganiClientShared.formatDate(row.expected_fulfillment_date) : "No expected date"}</span>
+            <span>${UnganiClientShared.formatKES(row.total_amount)}</span>
+          </div>
+          ${row.status === "partially_fulfilled" ? `<div class="task-board-card-badges"><span class="order-status-badge order-status-partially_fulfilled">Partially Fulfilled</span></div>` : ""}
+          <div class="task-board-card-actions">
+            ${nextMoves.map(function (m) {
+              return `<button type="button" class="ungani-btn small dark" onclick="event.stopPropagation(); setOrderStatus('${UnganiClientShared.attr(row.id)}', '${UnganiClientShared.attr(m.key)}')">→ ${UnganiClientShared.safe(m.label)}</button>`;
+            }).join("")}
+          </div>
+        </div>
+      `;
     }
 
     // ---- Add/Edit modal ----
