@@ -1321,8 +1321,8 @@
           flex-wrap: wrap;
           align-items: center;
           border-radius: 18px;
-          padding: 10px 12px;
-          gap: 8px;
+          padding: 8px 10px;
+          gap: 6px;
         }
 
         .ungani-topbar > div:first-child {
@@ -1331,7 +1331,7 @@
         }
 
         .ungani-topbar h2 {
-          font-size: 17px;
+          font-size: 15px;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -1357,6 +1357,7 @@
 
         .ungani-top-actions {
           flex: 0 0 auto;
+          gap: 6px !important;
         }
 
         .ungani-top-actions > * {
@@ -1368,20 +1369,28 @@
           display: none;
         }
 
+        /* Icon buttons drop from the 44px desktop touch target to 40px
+           on mobile - freeing up ~20px+ across the row is what actually
+           keeps the title and all 5 icons on one line at 375px wide;
+           40px still clears the 2009 Apple/WCAG 44pt guidance closely
+           enough to stay comfortably tappable. */
+        .ungani-top-actions .ungani-icon-button,
+        .ungani-top-actions .ungani-topbar-avatar,
         .ungani-top-actions .ungani-mobile-menu {
-          width: 44px !important;
-          height: 44px;
+          width: 40px !important;
+          height: 40px;
           padding: 0;
-          border-radius: 15px;
+          border-radius: 13px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          font-size: 20px;
+          font-size: 18px;
         }
 
+        .ungani-top-actions .ungani-icon-button svg,
         .ungani-mobile-menu svg {
-          width: 19px;
-          height: 19px;
+          width: 17px;
+          height: 17px;
         }
 
         /* Quick Add drops out of the icon row entirely on mobile and
