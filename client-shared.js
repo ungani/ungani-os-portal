@@ -1326,7 +1326,16 @@
         }
 
         .ungani-topbar > div:first-child {
-          flex: 1 1 auto;
+          /* flex-basis:0 (not auto) is deliberate - flex-wrap's line-
+             breaking decision is made using each item's hypothetical
+             (un-shrunk) size, which for basis:auto is the title's full
+             nowrap text width. That pushed the actions row onto a
+             second line even though min-width:0 would happily let the
+             title shrink once ON a line - the wrap decision itself
+             never got that far. Basis:0 makes the title's contribution
+             to that decision 0, so it only ever grows into whatever
+             space the fixed-size icon row leaves behind. */
+          flex: 1 1 0%;
           min-width: 0;
         }
 
