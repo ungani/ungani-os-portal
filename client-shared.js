@@ -1368,9 +1368,8 @@
           display: none;
         }
 
-        .ungani-mobile-menu,
-        .ungani-quickadd-holder .ungani-btn.gold {
-          width: 44px;
+        .ungani-top-actions .ungani-mobile-menu {
+          width: 44px !important;
           height: 44px;
           padding: 0;
           border-radius: 15px;
@@ -1383,6 +1382,36 @@
         .ungani-mobile-menu svg {
           width: 19px;
           height: 19px;
+        }
+
+        /* Quick Add drops out of the icon row entirely on mobile and
+           becomes a floating action button, matching client.html's own
+           .quickadd-fab exactly (client.html's mobile-header row only
+           ever had 5 icons: search/bell/chat/profile/hamburger - Quick
+           Add was never a 6th). Repositions the SAME holder+panel
+           (position:fixed override, not display:none) so
+           openQuickAdd()'s existing #unganiQuickAddPanel lookup and the
+           panel's own mobile "position:fixed;top:90px" rule both keep
+           working unmodified - only the trigger button's location
+           changes. Lifted above the always-present .ungani-bottom-nav
+           (62px tall, 10px from the bottom). */
+        .ungani-quickadd-holder {
+          position: fixed !important;
+          right: 16px;
+          bottom: 84px;
+          z-index: 55;
+        }
+
+        .ungani-quickadd-holder .ungani-btn.gold {
+          width: 56px;
+          height: 56px;
+          border-radius: 999px;
+          padding: 0;
+          font-size: 26px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 14px 34px rgba(212,166,58,0.45);
         }
 
         .ungani-grid,
