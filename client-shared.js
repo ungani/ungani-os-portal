@@ -534,6 +534,10 @@
         display: none;
       }
 
+      .ungani-mobile-quickadd-fab {
+        display: none;
+      }
+
       .ungani-global-search-wrap {
         position: relative;
         width: 100%;
@@ -1406,30 +1410,41 @@
            becomes a floating action button, matching client.html's own
            .quickadd-fab exactly (client.html's mobile-header row only
            ever had 5 icons: search/bell/chat/profile/hamburger - Quick
-           Add was never a 6th). Repositions the SAME holder+panel
-           (position:fixed override, not display:none) so
-           openQuickAdd()'s existing #unganiQuickAddPanel lookup and the
-           panel's own mobile "position:fixed;top:90px" rule both keep
-           working unmodified - only the trigger button's location
-           changes. Lifted above the always-present .ungani-bottom-nav
-           (62px tall, 10px from the bottom). */
-        .ungani-quickadd-holder {
-          position: fixed !important;
-          right: 16px;
-          bottom: 84px;
-          z-index: 55;
+           Add was never a 6th). Only the inline trigger BUTTON is
+           hidden here - the .ungani-quickadd-holder itself (and its
+           #unganiQuickAddPanel child) stays exactly where it was and
+           in-flow, because .ungani-topbar has backdrop-filter, which
+           creates a new containing block for any position:fixed
+           descendant - an earlier attempt at position:fixed on the
+           holder itself rendered ~600px off-screen above the viewport
+           for exactly that reason. The new standalone
+           .ungani-mobile-quickadd-fab button (a sibling of
+           .ungani-app-shell, outside the topbar's containing-block
+           reach) calls the same openQuickAdd(), which looks up
+           #unganiQuickAddPanel by ID regardless of which button
+           triggered it. */
+        .ungani-quickadd-holder .ungani-btn.gold {
+          display: none;
         }
 
-        .ungani-quickadd-holder .ungani-btn.gold {
+        .ungani-mobile-quickadd-fab {
+          display: flex;
+          position: fixed;
+          right: 16px;
+          bottom: 84px;
           width: 56px;
           height: 56px;
           border-radius: 999px;
-          padding: 0;
+          border: 0;
+          background: var(--ungani-gold);
+          color: #061C3D;
           font-size: 26px;
-          display: inline-flex;
+          font-weight: 900;
           align-items: center;
           justify-content: center;
           box-shadow: 0 14px 34px rgba(212,166,58,0.45);
+          z-index: 55;
+          cursor: pointer;
         }
 
         .ungani-grid,
@@ -2185,6 +2200,8 @@
           </div>
         </main>
       </div>
+
+      <button class="ungani-mobile-quickadd-fab" type="button" onclick="UnganiClientShared.openQuickAdd()" aria-label="Quick add">＋</button>
 
       ${renderBottomNav()}
     `;
