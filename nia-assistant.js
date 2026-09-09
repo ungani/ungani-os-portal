@@ -1330,6 +1330,20 @@
           height: 30px;
           font-size: 13px;
         }
+
+        /* On the ~19 client-shared.js pages, .ungani-bottom-nav sits at
+           bottom:10px and is 62px tall - the bottom:16px default above
+           put the fab almost entirely underneath it. renderFab() adds
+           this class only when that nav is present in the DOM (it
+           isn't on client.html, which has no bottom nav and keeps the
+           original position). */
+        .nia-fab.nia-above-bottom-nav {
+          bottom: 84px;
+        }
+
+        .nia-help-btn.nia-above-bottom-nav {
+          bottom: 96px;
+        }
       }
     `;
 
@@ -1339,9 +1353,16 @@
   function renderFab() {
     if (document.getElementById("niaFabBtn")) return;
 
+    // Only the ~19 client-shared.js pages render .ungani-bottom-nav
+    // (client.html has its own bespoke shell with no bottom nav) - on
+    // those pages the fab's default mobile position sits almost
+    // entirely underneath that 62px-tall nav bar, so it's lifted above
+    // it here rather than in CSS alone (CSS can't detect DOM presence).
+    const aboveBottomNav = document.querySelector(".ungani-bottom-nav") ? " nia-above-bottom-nav" : "";
+
     const btn = document.createElement("button");
     btn.id = "niaFabBtn";
-    btn.className = "nia-fab";
+    btn.className = "nia-fab" + aboveBottomNav;
     btn.type = "button";
     btn.title = "Nia — Your UNGANI Business Assistant";
     btn.innerHTML = '<span class="nia-avatar-graphic nia-fab-avatar">' + NIA_AVATAR_IMG + '</span>' + (hasSeenNia() ? "" : '<span class="nia-fab-dot"></span>');
@@ -1364,7 +1385,7 @@
     if (state.surface !== "admin") {
       const helpBtn = document.createElement("button");
       helpBtn.id = "niaHelpBtn";
-      helpBtn.className = "nia-help-btn";
+      helpBtn.className = "nia-help-btn" + aboveBottomNav;
       helpBtn.type = "button";
       helpBtn.title = "Take a guided tour of UNGANI OS";
       helpBtn.setAttribute("aria-label", "Take a guided tour of UNGANI OS");
