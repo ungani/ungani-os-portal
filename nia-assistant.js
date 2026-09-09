@@ -715,6 +715,34 @@
     }
   }
 
+  // Real per-industry vocabulary (itemTypes/peopleTypes/taskTypes/income
+  // and expenseCategories), narrowed to the tenant's selected sections
+  // when it has any - the same resolveWithSections() call client.html's
+  // own getQuickAddConfig()-based section vocab is a much thinner stand-in
+  // for. Deliberately does NOT call mergeWithGeneral() on top of this like
+  // getBusinessSectionLabels() does - GENERAL's own fallback lists include
+  // very generic words ("Asset", "Equipment", "Service", "Staff", "Other")
+  // that would false-positive against all kinds of unrelated messages
+  // (e.g. "how much have I paid staff this month" matching "Staff" in
+  // GENERAL.peopleTypes). Type-specific terms are specific enough on
+  // their own; a tenant with no resolvable type just gets null here and
+  // falls through to the existing generic phrase-based create actions,
+  // which is correct - "General Business Operations" has no bespoke
+  // vocabulary to match against in the first place. Works on every page,
+  // not just client.html, since state.tenant is populated by boot() via
+  // client-shared.js's own tenant load everywhere Nia is initialized.
+  function getTenantVocabulary() {
+    if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolveWithSections !== "function") {
+      return null;
+    }
+
+    try {
+      return UnganiBusinessConfig.resolveWithSections(state.tenant) || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   // Items is the one PAGE_CONFIGS entry that used to be hardcoded to Real
   // Estate wording ("Add Property"/"Find a Property") for every business
   // type - a Retail/Salon/Logistics/etc. tenant would see Nia suggest
@@ -2252,6 +2280,52 @@
     return null;
   }
 
+  // Maps a real vocabulary field (from getTenantVocabulary()) to the
+  // existing CREATE_ACTIONS entry that already knows where to send the
+  // user for that kind of record - reuses the same href/params/confirm
+  // every generic "add expense"/"add task" phrase match already produces,
+  // just triggered by a specific industry term instead. createProperty is
+  // the generic Items action despite its legacy name (confirmed via its
+  // own match list including "add item"/"create item").
+  const VOCAB_FIELD_TO_ACTION_KEY = {
+    itemTypes: "createProperty",
+    peopleTypes: "createCustomer",
+    taskTypes: "createTask",
+    incomeCategories: "income",
+    expenseCategories: "expense"
+  };
+
+  // The architectural fix: reaches the REAL per-industry vocabulary
+  // (itemTypes/peopleTypes/taskTypes/income+expenseCategories) for all 19
+  // business types, on every page - not just client.html's dashboard with
+  // a ?section= URL param (which only 8 of 19 types can ever set, since
+  // only those 8 have a nested `sections` array at all). Checked ahead of
+  // findCreateAction's generic phrase list, same "specific beats generic"
+  // ordering already established for findSectionCreateIntent above.
+  function findBusinessVocabCreateAction(text) {
+    if (state.surface === "admin") return null;
+    if (!/\b(add|create|new|log)\b/i.test(text) || /\bhow\b/i.test(text)) return null;
+
+    const vocab = getTenantVocabulary();
+    if (!vocab) return null;
+
+    const lower = text.toLowerCase();
+
+    for (const field of Object.keys(VOCAB_FIELD_TO_ACTION_KEY)) {
+      const terms = vocab[field] || [];
+
+      for (let i = 0; i < terms.length; i++) {
+        const termLower = String(terms[i] || "").toLowerCase();
+
+        if (termLower && lower.indexOf(termLower) !== -1) {
+          return CREATE_ACTIONS_BY_KEY[VOCAB_FIELD_TO_ACTION_KEY[field]] || null;
+        }
+      }
+    }
+
+    return null;
+  }
+
   // Full-phrase match against the CURRENT section's item/event label, e.g.
   // "menu item" or "order deadline" - deliberately matches the whole
   // label as a substring (same convention CREATE_ACTIONS/HOW_TO_TOPICS
@@ -2339,6 +2413,18 @@
       const sectionCreate = findSectionCreateIntent(text);
       if (sectionCreate) {
         return runSectionCreateIntent(sectionCreate);
+      }
+
+      // Universal per-industry vocabulary match (all 19 types, every
+      // page) - checked ahead of the generic phrase-based createAction
+      // below for the same "specific beats generic" reason as
+      // sectionCreate above, but after it since the dashboard's in-place
+      // Quick Add experience is richer when it's actually available.
+      const vocabCreateAction = findBusinessVocabCreateAction(text);
+      if (vocabCreateAction) {
+        addNiaMessage(safe(vocabCreateAction.confirm));
+        navigateWithParams(vocabCreateAction.href, vocabCreateAction.params);
+        return { spoken: vocabCreateAction.confirm };
       }
 
       const createAction = findCreateAction(text);
