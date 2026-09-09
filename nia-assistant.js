@@ -1336,13 +1336,16 @@
            put the fab almost entirely underneath it. renderFab() adds
            this class only when that nav is present in the DOM (it
            isn't on client.html, which has no bottom nav and keeps the
-           original position). */
+           original position). bottom:150px (not 84px, which is what
+           client-shared.js's own Quick Add FAB uses on these same
+           pages) clears that second floating button too - 84px placed
+           the two fabs exactly on top of each other. */
         .nia-fab.nia-above-bottom-nav {
-          bottom: 84px;
+          bottom: 150px;
         }
 
         .nia-help-btn.nia-above-bottom-nav {
-          bottom: 96px;
+          bottom: 162px;
         }
       }
     `;
