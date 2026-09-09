@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>System Announcements | UNGANI OS</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
+
+  <style>
+    .page-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .metric-card {
+      background: var(--ungani-card);
+      border: 1px solid var(--ungani-border);
+      border-left: 6px solid var(--ungani-gold);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 10px 24px var(--ungani-shadow);
+    }
+
+    .metric-card h3 {
+      margin: 0 0 8px;
+      color: var(--ungani-muted);
+      font-size: 14px;
+    }
+
+    .metric-card p {
+      margin: 0;
+      font-size: 28px;
+      font-weight: bold;
+      color: var(--ungani-text);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+
+    .form-grid-full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin: 8px 0 6px;
+      font-size: 14px;
+      color: var(--ungani-text);
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--ungani-border);
+      border-radius: 12px;
+      background: var(--ungani-card);
+      color: var(--ungani-text);
+      font-size: 15px;
+      font-family: Arial, sans-serif;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--ungani-gold);
+      color: var(--ungani-navy);
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn.dark { background: var(--ungani-card); color: var(--ungani-text); border: 1px solid var(--ungani-border); }
+    .btn.green { background: var(--ungani-green); color: #FFFFFF; }
+    .btn.red { background: var(--ungani-red); color: #FFFFFF; }
+
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .section-title-row h2 { margin: 0; }
+
+    .row-card {
+      background: var(--ungani-card);
+      border: 1px solid var(--ungani-border);
+      border-left: 6px solid var(--ungani-blue);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .row-card.severity-warning { border-left-color: var(--ungani-orange); }
+    .row-card.severity-critical { border-left-color: var(--ungani-red); }
+    .row-card.inactive { opacity: 0.55; }
+
+    .row-title {
+      font-weight: bold;
+      font-size: 17px;
+      margin-bottom: 6px;
+      color: var(--ungani-text);
+    }
+
+    .row-detail {
+      color: var(--ungani-muted);
+      margin: 5px 0;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--ungani-navy);
+      color: #FFFFFF;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      margin: 4px 4px 4px 0;
+      text-transform: capitalize;
+    }
+
+    .badge.blue { background: var(--ungani-blue); }
+    .badge.orange { background: var(--ungani-orange); }
+    .badge.red { background: var(--ungani-red); }
+    .badge.gray { background: var(--ungani-muted); color: var(--ungani-navy); }
+
+    .empty {
+      text-align: center;
+      padding: 28px;
+      background: var(--ungani-card);
+      border: 1px dashed var(--ungani-border);
+      border-radius: 18px;
+    }
+
+    .empty h3 { margin: 0 0 8px; color: var(--ungani-text); }
+    .empty p { margin: 0; color: var(--ungani-muted); }
+
+    .small-text {
+      color: var(--ungani-muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="adminRoot"></div>
+
+  <script>
+    let supabaseClient = null;
+    let currentAdmin = null;
+    let announcements = [];
+
+    const pageMainHtml = `
+      <section class="ungani-card ungani-hero-card">
+        <div style="position: relative; z-index: 1;">
+          <h2>System Announcements</h2>
+          <p>
+            Post a platform-wide message - scheduled maintenance, a new feature launch, or a general
+            heads-up. It shows as a dismissible banner on every client's dashboard and lands in their
+            notification bell. Reaches every tenant, including suspended/cancelled accounts.
+          </p>
+        </div>
+      </section>
+
+      <section class="page-grid" id="metricsGrid">
+        <div class="metric-card"><h3>Loading</h3><p>...</p></div>
+      </section>
+
+      <section class="ungani-card">
+        <div class="section-title-row">
+          <h2>Post New Announcement</h2>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-grid-full">
+            <label for="newTitle">Title</label>
+            <input id="newTitle" placeholder="Example: Scheduled maintenance tonight" />
+          </div>
+
+          <div class="form-grid-full">
+            <label for="newMessage">Message</label>
+            <textarea id="newMessage" placeholder="Example: UNGANI OS will be briefly unavailable tonight from 11pm-1am EAT for scheduled maintenance. Your data is safe - no action needed."></textarea>
+          </div>
+
+          <div>
+            <label for="newSeverity">Severity</label>
+            <select id="newSeverity">
+              <option value="info">Info (new feature, general update)</option>
+              <option value="warning">Warning (upcoming maintenance)</option>
+              <option value="critical">Critical (active outage/urgent)</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="newStartsAt">Starts (optional)</label>
+            <input id="newStartsAt" type="datetime-local" />
+          </div>
+
+          <div>
+            <label for="newEndsAt">Ends (optional)</label>
+            <input id="newEndsAt" type="datetime-local" />
+          </div>
+        </div>
+
+        <div class="button-row">
+          <button class="btn green" onclick="postAnnouncement()">Post to All Clients</button>
+          <button class="btn dark" onclick="clearAnnouncementForm()">Clear Form</button>
+        </div>
+
+        <p class="small-text">
+          Leave Starts/Ends blank to show immediately and indefinitely until you deactivate it below.
+        </p>
+      </section>
+
+      <section class="ungani-card">
+        <div class="section-title-row">
+          <h2>All Announcements</h2>
+          <button class="btn dark" onclick="loadPageData()">Refresh</button>
+        </div>
+
+        <div id="announcementsListBox">
+          <div class="empty"><h3>Loading...</h3></div>
+        </div>
+      </section>
+    `;
+
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "announcements",
+        pageTitle: "System Announcements",
+        pageSubtitle: "Notify clients of platform updates, maintenance, and new features.",
+        footerTitle: "System Announcements",
+        footerVersion: "Announcements v1",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "announcements",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "System Announcements",
+            footerVersion: "Announcements v1"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadPageData();
+        }
+      });
+    });
+
+    function safe(value) {
+      return UnganiAdminShared.safe(value);
+    }
+
+    async function loadPageData() {
+      const { data, error } = await supabaseClient.rpc("admin_list_ungani_platform_announcements");
+
+      if (error) {
+        document.getElementById("announcementsListBox").innerHTML = `
+          <div class="empty"><h3>Could not load announcements</h3><p>${safe(error.message)}</p></div>
+        `;
+        return;
+      }
+
+      announcements = data || [];
+      renderMetrics();
+      renderAnnouncementsList();
+    }
+
+    function renderMetrics() {
+      const now = new Date();
+      const active = announcements.filter(function (a) {
+        if (!a.is_active) return false;
+        if (a.starts_at && new Date(a.starts_at) > now) return false;
+        if (a.ends_at && new Date(a.ends_at) < now) return false;
+        return true;
+      }).length;
+
+      document.getElementById("metricsGrid").innerHTML = `
+        <div class="metric-card">
+          <h3>Currently Live</h3>
+          <p>${safe(String(active))}</p>
+        </div>
+        <div class="metric-card">
+          <h3>Total Posted</h3>
+          <p>${safe(String(announcements.length))}</p>
+        </div>
+      `;
+    }
+
+    function severityBadge(severity) {
+      const cls = severity === "critical" ? "red" : severity === "warning" ? "orange" : "blue";
+      return `<span class="badge ${cls}">${safe(severity)}</span>`;
+    }
+
+    function renderAnnouncementsList() {
+      const box = document.getElementById("announcementsListBox");
+
+      if (!announcements.length) {
+        box.innerHTML = `<div class="empty"><h3>No announcements yet</h3><p>Post your first one above.</p></div>`;
+        return;
+      }
+
+      const now = new Date();
+
+      box.innerHTML = announcements.map(function (a) {
+        const isLive = a.is_active && (!a.starts_at || new Date(a.starts_at) <= now) && (!a.ends_at || new Date(a.ends_at) >= now);
+
+        return `
+          <div class="row-card severity-${safe(a.severity)} ${a.is_active ? "" : "inactive"}">
+            <div class="row-title">${safe(a.title)}</div>
+            <p class="row-detail">${safe(a.message)}</p>
+            <p class="row-detail"><strong>Posted:</strong> ${safe(new Date(a.created_at).toLocaleString())}</p>
+            ${a.starts_at ? `<p class="row-detail"><strong>Starts:</strong> ${safe(new Date(a.starts_at).toLocaleString())}</p>` : ""}
+            ${a.ends_at ? `<p class="row-detail"><strong>Ends:</strong> ${safe(new Date(a.ends_at).toLocaleString())}</p>` : ""}
+            ${severityBadge(a.severity)}
+            <span class="badge ${isLive ? "blue" : "gray"}">${isLive ? "live" : (a.is_active ? "scheduled/expired" : "deactivated")}</span>
+            ${a.is_active ? `<div class="button-row"><button class="btn red" onclick="deactivateAnnouncement('${safe(a.id)}')">Deactivate</button></div>` : ""}
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function postAnnouncement() {
+      const title = document.getElementById("newTitle").value.trim();
+      const message = document.getElementById("newMessage").value.trim();
+      const severity = document.getElementById("newSeverity").value;
+      const startsAtRaw = document.getElementById("newStartsAt").value;
+      const endsAtRaw = document.getElementById("newEndsAt").value;
+
+      if (!title) {
+        alert("Please enter a title.");
+        return;
+      }
+
+      if (!message) {
+        alert("Please enter a message.");
+        return;
+      }
+
+      const startsAt = startsAtRaw ? new Date(startsAtRaw).toISOString() : null;
+      const endsAt = endsAtRaw ? new Date(endsAtRaw).toISOString() : null;
+
+      const response = await supabaseClient.rpc("admin_create_ungani_platform_announcement", {
+        p_title: title,
+        p_message: message,
+        p_severity: severity,
+        p_starts_at: startsAt,
+        p_ends_at: endsAt
+      });
+
+      if (response.error) {
+        alert(response.error.message);
+        return;
+      }
+
+      const result = response.data || {};
+
+      if (result.ok !== true) {
+        alert(result.message || "Could not post announcement.");
+        return;
+      }
+
+      UnganiAdminShared.showToast(`Announcement posted ✓ (${result.tenants_notified} tenants notified)`);
+      clearAnnouncementForm();
+      await loadPageData();
+    }
+
+    async function deactivateAnnouncement(announcementId) {
+      if (!confirm("Deactivate this announcement? It will stop showing to clients immediately.")) {
+        return;
+      }
+
+      const response = await supabaseClient.rpc("admin_deactivate_ungani_platform_announcement", {
+        p_announcement_id: announcementId
+      });
+
+      if (response.error) {
+        alert(response.error.message);
+        return;
+      }
+
+      UnganiAdminShared.showToast("Announcement deactivated ✓");
+      await loadPageData();
+    }
+
+    function clearAnnouncementForm() {
+      document.getElementById("newTitle").value = "";
+      document.getElementById("newMessage").value = "";
+      document.getElementById("newSeverity").value = "info";
+      document.getElementById("newStartsAt").value = "";
+      document.getElementById("newEndsAt").value = "";
+    }
+  </script>
+</body>
+</html>

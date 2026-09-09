@@ -3855,7 +3855,8 @@
       await Promise.all([
         loadDashboardData(),
         loadNotifications(),
-        loadClientReadOnlyAccess()
+        loadClientReadOnlyAccess(),
+        loadClientPlatformAnnouncements()
       ]);
 
       if (window.UnganiTeamChat) {
@@ -4159,6 +4160,94 @@
           banner.remove();
         });
       }
+    }
+
+    // System status / maintenance announcements. client.html doesn't
+    // load client-shared.js (own bespoke init, see comment above), so
+    // this mirrors client-shared.js's announcement block rather than
+    // sharing code with it - same RPCs, same rendering, same dismiss
+    // flow.
+    async function loadClientPlatformAnnouncements() {
+      if (!currentTenantId) return;
+
+      try {
+        const response = await supabaseClient.rpc("get_my_ungani_active_announcements");
+
+        if (!response.error && Array.isArray(response.data)) {
+          renderClientAnnouncementBanners(response.data);
+        }
+      } catch (error) {
+        console.warn("UNGANI platform announcements check skipped:", error.message);
+      }
+    }
+
+    function renderClientAnnouncementBanners(announcements) {
+      const topbar = document.querySelector(".topbar");
+      if (!topbar) return;
+
+      injectClientAnnouncementStyles();
+
+      announcements.slice().reverse().forEach(function (announcement) {
+        if (document.getElementById("clientAnnouncement-" + announcement.id)) return;
+
+        const banner = document.createElement("div");
+        banner.id = "clientAnnouncement-" + announcement.id;
+        banner.className = "client-readonly-banner client-announcement-banner client-announcement-" + safe(announcement.severity || "info");
+        banner.innerHTML = `
+          <div>
+            <strong>${safe(announcement.title)}</strong>
+            <p>${safe(announcement.message)}</p>
+          </div>
+          <button class="client-trial-warning-dismiss" type="button" title="Dismiss" aria-label="Dismiss">✕</button>
+        `;
+
+        topbar.insertAdjacentElement("afterend", banner);
+
+        const dismissBtn = banner.querySelector(".client-trial-warning-dismiss");
+        if (dismissBtn) {
+          dismissBtn.addEventListener("click", async function () {
+            banner.remove();
+            try {
+              await supabaseClient.rpc("dismiss_ungani_platform_announcement", {
+                p_announcement_id: announcement.id
+              });
+            } catch (error) {
+              console.warn("Could not record announcement dismissal:", error.message);
+            }
+          });
+        }
+      });
+    }
+
+    function injectClientAnnouncementStyles() {
+      if (document.getElementById("client-announcement-style")) return;
+
+      const style = document.createElement("style");
+      style.id = "client-announcement-style";
+      style.textContent = `
+        .client-announcement-banner {
+          border-color: rgba(37,99,235,0.35);
+          background:
+            radial-gradient(circle at top right, rgba(37,99,235,0.16), transparent 30%),
+            rgba(37,99,235,0.08);
+        }
+
+        .client-announcement-warning {
+          border-color: rgba(199,119,0,0.4);
+          background:
+            radial-gradient(circle at top right, rgba(199,119,0,0.18), transparent 30%),
+            rgba(199,119,0,0.1);
+        }
+
+        .client-announcement-critical {
+          border-color: rgba(185,28,28,0.4);
+          background:
+            radial-gradient(circle at top right, rgba(185,28,28,0.18), transparent 30%),
+            rgba(185,28,28,0.1);
+        }
+      `;
+
+      document.head.appendChild(style);
     }
 
     // Distinguishes "you're just waiting for admin approval" (normal,

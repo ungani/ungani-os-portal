@@ -1,22 +1,38 @@
--- Trial tenants are meant to be capped at 1 user (owner only, no staff)
--- per the new signup-flow decision - but owner_upsert_ungani_team_member's
--- existing limit check (sql/fix-user-limit-enforcement.sql) resolves the
--- limit purely from ungani_packages.user_limit via tenants.package_key.
--- A trial tenant with no package explicitly assigned falls back to
--- "starter" all over this codebase (see sql/fix-billing-table-split.sql,
--- sql/check-tenants-subscription-fallback-columns.sql), which has
--- user_limit=2 - so today a trial tenant can already add a 2nd user,
--- not the 1 they're meant to be capped at.
+-- CORRECTION to the migration run earlier tonight: that version copied
+-- owner_upsert_ungani_team_member's body from sql/fix-user-limit-enforcement.sql
+-- (Aug 5), a STALE 7-param signature from before multi-branch support was
+-- added. Running it recreated the exact overload conflict already fixed
+-- once (see sql/drop-stale-team-member-overload.sql, task #429) - the
+-- real, currently-used function is the 9-param version from
+-- sql/multi-branch-phase-a-schema-rls.sql (p_branch_id,
+-- p_can_access_all_branches), which my-team-access.html always calls.
+-- That version also has extended role validation ('accountant',
+-- 'frontdesk') and applies role presets via
+-- owner_apply_ungani_staff_role_preset() - none of which the stale
+-- 7-param body has, so simply "picking the other one" would have
+-- silently dropped that functionality for every future staff save.
 --
--- Fix: read ungani_subscriptions.subscription_status for this tenant
--- (keyed by tenant_id, confirmed unique via the "on conflict (tenant_id)"
--- constraint in sql/subscription-reminder-cadence-and-suspension.sql).
--- If it's 'trial', force the limit to 1 regardless of whatever the
--- package's own user_limit would otherwise allow - this only affects
--- the NEW-SEAT check (v_existing_id is null branch), so editing an
--- existing member during trial is still unaffected, matching the
--- existing "limit only applies to genuinely new seats" behavior.
--- Everything else is reproduced verbatim from the current live version.
+-- Fix, in order:
+-- 1. Drop the accidental 7-param overload this session created.
+-- 2. Redefine the REAL 9-param version, reproduced verbatim from
+--    sql/multi-branch-phase-a-schema-rls.sql, with the trial-cap check
+--    inserted in the same spot as before (right after the package
+--    user_limit lookup, before the existing "if v_user_limit is not
+--    null" block) - everything else byte-for-byte unchanged, including
+--    branch validation, role-preset application, and the email queue
+--    block.
+
+-- ============================================================
+-- STEP 1: drop the accidental 7-param overload.
+-- ============================================================
+
+drop function if exists public.owner_upsert_ungani_team_member(
+  text, text, text, text, text, numeric, text
+);
+
+-- ============================================================
+-- STEP 2: redefine the real 9-param version with the trial cap added.
+-- ============================================================
 
 create or replace function public.owner_upsert_ungani_team_member(
   p_full_name text,
@@ -25,7 +41,9 @@ create or replace function public.owner_upsert_ungani_team_member(
   p_role_key text default 'staff'::text,
   p_status text default 'active'::text,
   p_monthly_salary numeric default null,
-  p_pay_frequency text default null
+  p_pay_frequency text default null,
+  p_branch_id uuid default null,
+  p_can_access_all_branches boolean default false
 )
 returns jsonb
 language plpgsql
@@ -36,6 +54,7 @@ declare
   v_tenant_id uuid;
   v_member_id uuid;
   v_existing_id uuid;
+  v_old_role text;
   v_role text;
   v_status text;
   v_monthly_salary numeric;
@@ -45,6 +64,8 @@ declare
   v_email_queue_error text;
   v_user_limit int;
   v_active_members int;
+  v_is_new_member boolean;
+  v_branch_id uuid;
   v_subscription_status text;
 begin
   v_tenant_id := public.get_my_ungani_tenant_id();
@@ -56,7 +77,7 @@ begin
   end if;
   v_role := lower(trim(coalesce(p_role_key, 'staff')));
   v_status := lower(trim(coalesce(p_status, 'active')));
-  if v_role not in ('owner', 'manager', 'staff', 'viewer') then
+  if v_role not in ('owner', 'manager', 'staff', 'viewer', 'accountant', 'frontdesk') then
     v_role := 'staff';
   end if;
   if v_status not in ('active', 'invited', 'disabled') then
@@ -68,10 +89,20 @@ begin
     v_pay_frequency := null;
   end if;
 
-  -- determine up front whether this is an edit to an existing member
-  -- (matched by email) or a genuinely new seat.
+  -- verify the requested branch actually belongs to this tenant, same
+  -- pattern as owner_apply_ungani_staff_role_preset's team-member
+  -- ownership check - never trust a client-supplied ID without
+  -- re-checking it's actually this tenant's own row.
+  if p_branch_id is not null then
+    select id into v_branch_id
+    from public.ungani_branches
+    where id = p_branch_id and tenant_id = v_tenant_id;
+  else
+    v_branch_id := null;
+  end if;
+
   if p_email is not null then
-    select id into v_existing_id
+    select id, role_key into v_existing_id, v_old_role
     from public.ungani_team_members
     where tenant_id = v_tenant_id
       and lower(coalesce(email, '')) = lower(trim(p_email))
@@ -79,8 +110,6 @@ begin
     limit 1;
   end if;
 
-  -- enforce the package's user limit - only when this save would
-  -- actually add a new seat.
   if v_existing_id is null then
     select p.user_limit
     into v_user_limit
@@ -89,7 +118,10 @@ begin
     where t.id = v_tenant_id;
 
     -- NEW: trial tenants are capped at 1 user (owner only) regardless of
-    -- whatever the fallback package's own user_limit would allow.
+    -- whatever the fallback package's own user_limit would allow -
+    -- keyed off ungani_subscriptions.subscription_status (tenant_id is
+    -- unique on that table, confirmed via the "on conflict (tenant_id)"
+    -- constraint in sql/subscription-reminder-cadence-and-suspension.sql).
     select subscription_status
     into v_subscription_status
     from public.ungani_subscriptions
@@ -124,6 +156,8 @@ begin
     end if;
   end if;
 
+  v_is_new_member := v_existing_id is null;
+
   if v_existing_id is not null then
     v_member_id := v_existing_id;
 
@@ -135,6 +169,8 @@ begin
       status = v_status,
       monthly_salary = v_monthly_salary,
       pay_frequency = v_pay_frequency,
+      branch_id = v_branch_id,
+      can_access_all_branches = coalesce(p_can_access_all_branches, false),
       updated_at = now()
     where id = v_member_id;
   else
@@ -147,6 +183,8 @@ begin
       status,
       monthly_salary,
       pay_frequency,
+      branch_id,
+      can_access_all_branches,
       created_by
     )
     values (
@@ -158,9 +196,15 @@ begin
       v_status,
       v_monthly_salary,
       v_pay_frequency,
+      v_branch_id,
+      coalesce(p_can_access_all_branches, false),
       auth.uid()
     )
     returning id into v_member_id;
+  end if;
+
+  if v_member_id is not null and (v_is_new_member or coalesce(v_old_role, '') <> v_role) then
+    perform public.owner_apply_ungani_staff_role_preset(v_member_id, v_role);
   end if;
 
   perform public.log_ungani_activity(
@@ -219,24 +263,23 @@ begin
     exception
       when others then
         v_email_queue_error := sqlerrm;
-        raise warning 'Could not queue team-invitation email for member %: %', v_member_id, sqlerrm;
+        raise warning 'Could not queue team invitation email for member %: %', v_member_id, v_email_queue_error;
     end;
   end if;
 
-  return jsonb_build_object(
-    'ok', true,
-    'team_member_id', v_member_id,
-    'message', 'Staff member saved.',
-    'email_queue_error', v_email_queue_error
-  );
+  return jsonb_build_object('ok', true, 'id', v_member_id, 'team_member_id', v_member_id);
 end;
 $function$;
 
 -- ============================================================
--- Verification - confirm the redefinition landed.
+-- VERIFICATION - run this and confirm: exactly ONE row, 9 arguments,
+-- and it includes p_branch_id/p_can_access_all_branches.
 -- ============================================================
 
-select pg_get_functiondef(p.oid) as function_definition
+select
+  p.oid::regprocedure as signature,
+  pg_get_function_arguments(p.oid) as arguments
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
-where n.nspname = 'public' and p.proname = 'owner_upsert_ungani_team_member';
+where n.nspname = 'public'
+  and p.proname = 'owner_upsert_ungani_team_member';

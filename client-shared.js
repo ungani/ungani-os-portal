@@ -4559,6 +4559,171 @@
     document.head.appendChild(style);
   }
 
+  // System status / maintenance announcements. Independent of the
+  // read-only/trial-warning banners above - reads directly from
+  // get_my_ungani_active_announcements() (already filters by
+  // is_active/date-window/not-dismissed-by-me server-side) and posts
+  // dismissals through dismiss_ungani_platform_announcement(), so this
+  // block has no local state to keep in sync beyond "which banners are
+  // currently in the DOM".
+  function loadAndRenderAnnouncements() {
+    waitForSharedState(async function (state) {
+      if (!state || !state.supabaseClient || !state.tenantId) {
+        setTimeout(loadAndRenderAnnouncements, 800);
+        return;
+      }
+
+      try {
+        const response = await state.supabaseClient.rpc("get_my_ungani_active_announcements");
+
+        if (!response.error && Array.isArray(response.data)) {
+          renderAnnouncementBanners(response.data);
+        }
+      } catch (error) {
+        console.warn("UNGANI platform announcements check skipped:", error.message);
+      }
+    });
+  }
+
+  function renderAnnouncementBanners(announcements) {
+    const topbar = document.querySelector(".ungani-topbar");
+
+    if (!topbar) {
+      setTimeout(function () {
+        renderAnnouncementBanners(announcements);
+      }, 800);
+      return;
+    }
+
+    injectAnnouncementStyles();
+
+    // Reverse so the most recent announcement ends up closest to the
+    // topbar (each insertAdjacentElement("afterend", ...) pushes the
+    // previous one further down).
+    announcements.slice().reverse().forEach(function (announcement) {
+      if (document.getElementById("unganiAnnouncement-" + announcement.id)) {
+        return;
+      }
+
+      const banner = document.createElement("div");
+      banner.id = "unganiAnnouncement-" + announcement.id;
+      banner.className = "ungani-announcement-banner ungani-announcement-" + safe(announcement.severity || "info");
+      banner.innerHTML = `
+        <div>
+          <strong>${safe(announcement.title)}</strong>
+          <p>${safe(announcement.message)}</p>
+        </div>
+        <button class="ungani-icon-button ungani-announcement-dismiss" type="button" title="Dismiss" aria-label="Dismiss">✕</button>
+      `;
+
+      topbar.insertAdjacentElement("afterend", banner);
+
+      const dismissBtn = banner.querySelector(".ungani-announcement-dismiss");
+      if (dismissBtn) {
+        dismissBtn.addEventListener("click", async function () {
+          banner.remove();
+          try {
+            await state_dismissAnnouncement(announcement.id);
+          } catch (error) {
+            console.warn("Could not record announcement dismissal:", error.message);
+          }
+        });
+      }
+    });
+  }
+
+  function state_dismissAnnouncement(announcementId) {
+    return waitForSharedStatePromise().then(function (state) {
+      return state.supabaseClient.rpc("dismiss_ungani_platform_announcement", {
+        p_announcement_id: announcementId
+      });
+    });
+  }
+
+  function waitForSharedStatePromise() {
+    return new Promise(function (resolve) {
+      waitForSharedState(resolve);
+    });
+  }
+
+  function injectAnnouncementStyles() {
+    if (document.getElementById("ungani-announcement-style")) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "ungani-announcement-style";
+    style.textContent = `
+      .ungani-announcement-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin: -8px 0 18px;
+        padding: 15px 16px;
+        border-radius: 20px;
+        border: 1px solid rgba(43,108,176,0.35);
+        background:
+          radial-gradient(circle at top right, rgba(43,108,176,0.16), transparent 30%),
+          rgba(43,108,176,0.08);
+        color: var(--ungani-text);
+        box-shadow: var(--ungani-shadow);
+      }
+
+      .ungani-announcement-banner strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--ungani-text);
+      }
+
+      .ungani-announcement-banner p {
+        margin: 0;
+        color: var(--ungani-muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .ungani-announcement-warning {
+        border-color: rgba(212,119,0,0.4);
+        background:
+          radial-gradient(circle at top right, rgba(212,119,0,0.18), transparent 30%),
+          rgba(212,119,0,0.1);
+      }
+
+      .ungani-announcement-critical {
+        border-color: rgba(185,28,28,0.4);
+        background:
+          radial-gradient(circle at top right, rgba(185,28,28,0.18), transparent 30%),
+          rgba(185,28,28,0.1);
+      }
+
+      .ungani-announcement-dismiss {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        background: transparent;
+        box-shadow: none;
+        font-size: 13px;
+        line-height: 1;
+        flex-shrink: 0;
+      }
+
+      .ungani-announcement-dismiss:hover {
+        background: var(--ungani-card);
+        box-shadow: 0 6px 16px rgba(6,28,61,0.1);
+      }
+
+      @media (max-width: 720px) {
+        .ungani-announcement-banner {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
   function installReadOnlyGuard() {
     if (document.body.dataset.unganiReadOnlyGuardInstalled === "true") {
       return;
@@ -4687,8 +4852,10 @@
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", loadReadOnlyAccess);
+    document.addEventListener("DOMContentLoaded", loadAndRenderAnnouncements);
   } else {
     loadReadOnlyAccess();
+    loadAndRenderAnnouncements();
   }
 })();
 (function () {

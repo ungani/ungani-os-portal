@@ -79,7 +79,8 @@
           { key: "supportAccess", href: "admin-support-access.html", icon: "lock-open", label: "UNGANI Support Access", activeKey: "admin-support-access" },
           { key: "adminChat", href: "admin-chat.html", icon: "message-circle", label: "Client Chat", activeKey: "admin-chat" },
           { key: "notifications", href: "admin-notifications.html", icon: "bell", label: "Notifications", activeKey: "admin-notifications" },
-          { key: "notices", href: "notices.html", icon: "megaphone", label: "Notices", activeKey: "admin-notices" }
+          { key: "notices", href: "notices.html", icon: "megaphone", label: "Notices", activeKey: "admin-notices" },
+          { key: "announcements", href: "admin-announcements.html", icon: "radio", label: "System Announcements", activeKey: "admin-announcements" }
         ]
       },
       {
