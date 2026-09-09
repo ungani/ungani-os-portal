@@ -12,8 +12,10 @@
   // exactly the bug this file exists to prevent a recurrence of.
   //
   // Each group has a `collapsible` flag. Non-collapsible groups (Main,
-  // Operations, Finance, Sales, Inventory) are the daily-use core and
-  // always render fully expanded. Collapsible groups render a clickable
+  // Operations, Finance, Sales, Inventory, Insights & Activity) always
+  // render fully expanded, ordered by real usage frequency (see the
+  // reorder note above getSidebarGroups()) rather than department
+  // taxonomy. Collapsible groups render a clickable
   // header that shows/hides its items - `defaultExpanded` is the
   // fallback state before any per-user
   // localStorage preference or "I'm currently on a page inside this
@@ -32,32 +34,28 @@
   }
 
   function getSidebarGroups(tenant) {
-    // Split from one flat "Operations" list into four purpose-based
+    // Priority reorder (2026-09-09): items are now grouped by how often a
+    // business owner actually touches them, not by department taxonomy -
+    // Main is the real daily-use core (Dashboard/Team Chat/Tasks/Money/
+    // People/Documents/Notifications, evidenced by which modules got CSV
+    // export + duplicate-detection + the heaviest Nia FAQ coverage this
+    // session), Operations/Finance/Sales/Inventory below it are regular-
+    // but-less-frequent, and Insights & Activity is occasional/analytical.
+    // The old flat "Operations" list was split into four purpose-based
     // groups once enough modules existed (Quotations/Orders/Customer
     // Invoices, Stock Tracking/Price Lists, Debtors & Payables) that a
-    // single list stopped being scannable. Finance is kept separate from
-    // Sales deliberately - Money is bookkeeping (what actually happened),
-    // Sales is customer-facing document generation (what you're
-    // proposing/billing) - conflating them was the actual clarity
-    // problem being fixed here. All four stay non-collapsible, matching
-    // the pre-existing "daily-use core stays always visible" principle
-    // Main/Operations already used.
+    // single list stopped being scannable - that split is kept, just
+    // reordered and partly emptied into Main above. All non-collapsible
+    // groups can end up with zero items for a given tenant (e.g. Finance
+    // now holds only the two opt-in items) - filtered out at the bottom
+    // of this function rather than rendering an empty section header.
 
     const operationsItems = [
-      ["people", "my-people.html", "users", "People"],
       ["records", "my-records.html", "clipboard-list", "Business Records"],
-      ["tasks", "my-tasks.html", "square-check-big", "Tasks / Follow-ups"],
-      ["calendar", "my-calendar.html", "calendar", "Calendar"],
-      ["documents", "my-documents.html", "file-text", "Documents"]
+      ["calendar", "my-calendar.html", "calendar", "Calendar"]
     ];
 
-    if (isIntegrationsEligible(tenant)) {
-      operationsItems.push(["integrations", "my-integrations.html", "satellite", "Integrations"]);
-    }
-
-    const financeItems = [
-      ["money", "my-money.html", "wallet", "Money Records"]
-    ];
+    const financeItems = [];
 
     if (tenant && tenant.debtors_payables_enabled === true) {
       financeItems.push(["debtors-payables", "my-debtors-payables.html", "notebook", "Debtors & Payables"]);
@@ -85,7 +83,18 @@
       inventoryItems.push(["price-lists", "my-price-lists.html", "wallet", "Price Lists"]);
     }
 
-    return [
+    const insightsItems = [
+      ["overview", "my-overview.html", "pin", "Overview"],
+      ["charts", "my-charts.html", "chart-column", "Charts"],
+      ["activity", "my-activity.html", "clock", "Activity Feed"],
+      ["connect", "my-connect.html", "link-2", "Shared Files"]
+    ];
+
+    if (isIntegrationsEligible(tenant)) {
+      insightsItems.push(["integrations", "my-integrations.html", "satellite", "Integrations"]);
+    }
+
+    const allGroups = [
       {
         key: "main",
         title: "Main",
@@ -93,11 +102,11 @@
         items: [
           ["dashboard", "client.html", "house", "Dashboard"],
           ["team-chat", "my-team-chat.html", "users-round", "Team Chat"],
-          ["overview", "my-overview.html", "pin", "Overview"],
-          ["connect", "my-connect.html", "link-2", "Shared Files"],
-          ["notifications", "client-notifications.html", "bell", "Notifications"],
-          ["activity", "my-activity.html", "clock", "Activity Feed"],
-          ["charts", "my-charts.html", "chart-column", "Charts"]
+          ["tasks", "my-tasks.html", "square-check-big", "Tasks / Follow-ups"],
+          ["money", "my-money.html", "wallet", "Money Records"],
+          ["people", "my-people.html", "users", "People"],
+          ["documents", "my-documents.html", "file-text", "Documents"],
+          ["notifications", "client-notifications.html", "bell", "Notifications"]
         ]
       },
       {
@@ -125,15 +134,10 @@
         items: inventoryItems
       },
       {
-        key: "support",
-        title: "Support",
-        collapsible: true,
-        defaultExpanded: true,
-        items: [
-          ["support", "my-support.html", "life-buoy", "Support Issues"],
-          ["notices", "my-notices.html", "megaphone", "Notices"],
-          ["chat", "my-chat.html", "message-circle", "Chat with UNGANI"]
-        ]
+        key: "insights",
+        title: "Insights & Activity",
+        collapsible: false,
+        items: insightsItems
       },
       {
         key: "reports-account",
@@ -177,8 +181,29 @@
           ["onboarding", "my-onboarding.html", "rocket", "Onboarding"],
           ["my-tools", "my-tools.html", "toolbox", "My Tools"]
         ]
+      },
+      // Moved to the very bottom (2026-09-09) - previously sandwiched
+      // right after the daily-use groups, ahead of Reports/Security/
+      // Billing, which put a rarely-needed contact-support group above
+      // genuinely more page views. defaultExpanded stays true - only its
+      // position changed, not its default open/closed behavior.
+      {
+        key: "support",
+        title: "Support",
+        collapsible: true,
+        defaultExpanded: true,
+        items: [
+          ["support", "my-support.html", "life-buoy", "Support Issues"],
+          ["notices", "my-notices.html", "megaphone", "Notices"],
+          ["chat", "my-chat.html", "message-circle", "Chat with UNGANI"]
+        ]
       }
     ];
+
+    // Non-collapsible groups can end up empty for a given tenant (Finance
+    // now holds only the two opt-in items) - drop them rather than
+    // rendering a bare section header with nothing underneath it.
+    return allGroups.filter(function (group) { return group.items && group.items.length > 0; });
   }
 
   window.UnganiNavConfig = {
