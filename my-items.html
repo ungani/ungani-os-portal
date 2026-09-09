@@ -61,6 +61,7 @@
     // See my-money.html for the full rationale.
     const ITEM_PAGE_SIZE = 50;
     let itemSummaryRows = [];
+    let favoriteItemIds = new Set();
     let itemPageOffset = 0;
     let itemIsLoadingMore = false;
     let itemSearchDebounceTimer = null;
@@ -276,6 +277,7 @@
         return;
       }
 
+      favoriteItemIds = new Set(await UnganiClientShared.getMyFavoriteRecordIds("business_items"));
       renderItemsPage();
     }
 
@@ -296,6 +298,7 @@
         return;
       }
 
+      favoriteItemIds = new Set(await UnganiClientShared.getMyFavoriteRecordIds("business_items"));
       renderItemsPage();
 
       if (focusedId) {
@@ -529,7 +532,15 @@
           }
 
           .property-card {
+            position: relative;
             cursor: pointer;
+          }
+
+          .card-favorite-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 2;
           }
 
           .generic-item-grid {
@@ -1168,6 +1179,8 @@
 
       return `
         <article class="ungani-card generic-item-card" style="--accent:${UnganiClientShared.attr(statusAccentHex(status))};" onclick="openItemProfile('${UnganiClientShared.attr(id)}')">
+          <button class="ungani-btn small dark favorite-btn card-favorite-btn${favoriteItemIds.has(id) ? " active" : ""}" type="button" onclick="event.stopPropagation(); UnganiClientShared.toggleFavoriteRow(this, 'business_items', '${UnganiClientShared.attr(id)}')" title="${favoriteItemIds.has(id) ? "Remove from Favorites" : "Add to Favorites"}"><i data-lucide="star"></i></button>
+
           <div class="ungani-section-title">
             <div>
               <h3 style="font-size:18px;">${UnganiClientShared.safe(name)}</h3>
@@ -1400,6 +1413,8 @@
 
       return `
         <article class="ungani-card property-card" style="--accent:${UnganiClientShared.attr(statusAccentHex(status))};" onclick="openItemProfile('${UnganiClientShared.attr(id)}')">
+          <button class="ungani-btn small dark favorite-btn card-favorite-btn${favoriteItemIds.has(id) ? " active" : ""}" type="button" onclick="event.stopPropagation(); UnganiClientShared.toggleFavoriteRow(this, 'business_items', '${UnganiClientShared.attr(id)}')" title="${favoriteItemIds.has(id) ? "Remove from Favorites" : "Add to Favorites"}"><i data-lucide="star"></i></button>
+
           <div class="property-photo">
             ${photo ? `<img src="${UnganiClientShared.attr(photo)}" alt="${UnganiClientShared.attr(name)}" onerror="this.style.display='none';" />` : ""}
             <div class="property-photo-content">

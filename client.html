@@ -966,6 +966,91 @@
       .welcome-back-card .welcome-back-cta { display: none; }
     }
 
+    /* Favorites dashboard widget - injected generically after
+       .hero-greet-enter by renderFavoritesWidget() (called once from
+       startGreetingRotation(), the single hook that already runs at the
+       end of every one of the ~19 dashboard render paths) rather than
+       edited into each business type's own template, same approach as
+       initHeroExplainerToggle() above. */
+    .favorites-widget-card {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .favorites-widget-card .favorites-widget-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .favorites-widget-card .favorites-widget-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.85);
+    }
+
+    .favorites-widget-card .favorites-widget-title svg {
+      width: 15px;
+      height: 15px;
+      stroke-width: 2.1px;
+      color: var(--gold);
+      fill: var(--gold);
+    }
+
+    .favorites-widget-card .favorites-widget-view-all {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--gold);
+      text-decoration: none;
+    }
+
+    .favorites-widget-card .favorites-widget-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .favorites-widget-card .favorites-widget-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      color: rgba(255,255,255,0.82);
+      text-decoration: none;
+      font-size: 13px;
+      transition: background 0.15s ease;
+    }
+
+    .favorites-widget-card .favorites-widget-row:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .favorites-widget-card .favorites-widget-row-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .favorites-widget-card .favorites-widget-row-type {
+      flex: none;
+      font-size: 11px;
+      color: rgba(255,255,255,0.5);
+    }
+
+    .favorites-widget-card .favorites-widget-empty {
+      font-size: 12.5px;
+      color: rgba(255,255,255,0.55);
+    }
+
     /* Soft blue "help" treatment - distinct from gold (actionable) and
        navy (base), reuses --blue (#2563EB), already this app's
        established blue (calendar row "Open" tags, several quick-action
@@ -16504,8 +16589,95 @@
 
     let greetingRotationTimer = null;
 
+    const FAVORITES_WIDGET_TABLE_CONFIG = {
+      documents: { label: "Document", href: "my-documents.html", titleFields: ["document_title", "title", "file_name"] },
+      business_items: { label: "Item", href: "my-items.html", titleFields: ["property_name", "item_name", "name", "title"] },
+      client_people: { label: "Person", href: "my-people.html", titleFields: ["full_name", "name"] },
+      tasks: { label: "Task", href: "my-tasks.html", titleFields: ["task_title", "title", "name"] },
+      business_records: { label: "Record", href: "my-records.html", titleFields: ["record_title", "title", "name"] }
+    };
+
+    async function renderFavoritesWidget() {
+      const anchor = document.querySelector(".hero-greet-enter");
+      if (!anchor || anchor.dataset.favoritesWidget) return;
+      anchor.dataset.favoritesWidget = "1";
+
+      const card = document.createElement("div");
+      card.className = "favorites-widget-card";
+      card.innerHTML = `
+        <div class="favorites-widget-header">
+          <span class="favorites-widget-title"><i data-lucide="star"></i> Favorites</span>
+          <a class="favorites-widget-view-all" href="my-favorites.html">View all →</a>
+        </div>
+        <div class="favorites-widget-list"><p class="favorites-widget-empty">Loading...</p></div>
+      `;
+      anchor.appendChild(card);
+      if (window.lucide) lucide.createIcons();
+
+      const listEl = card.querySelector(".favorites-widget-list");
+
+      try {
+        const myUserId = currentUser ? currentUser.id : null;
+        if (!supabaseClient || !myUserId) { listEl.innerHTML = ""; return; }
+
+        const favoritesResponse = await supabaseClient
+          .from("ungani_favorites")
+          .select("record_table, record_id, created_at")
+          .eq("user_id", myUserId)
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        if (favoritesResponse.error) { listEl.innerHTML = ""; return; }
+
+        const favoriteRows = favoritesResponse.data || [];
+        if (!favoriteRows.length) {
+          listEl.innerHTML = `<p class="favorites-widget-empty">Tap the star icon on a document, item, person, task, or record to add it here.</p>`;
+          return;
+        }
+
+        const idsByTable = {};
+        favoriteRows.forEach(function (row) {
+          if (!idsByTable[row.record_table]) idsByTable[row.record_table] = [];
+          idsByTable[row.record_table].push(row.record_id);
+        });
+
+        const recordsByTable = {};
+        await Promise.all(Object.keys(idsByTable).map(async function (table) {
+          const response = await supabaseClient.from(table).select("*").in("id", idsByTable[table]);
+          recordsByTable[table] = {};
+          (response.data || []).forEach(function (row) { recordsByTable[table][row.id] = row; });
+        }));
+
+        const resolved = favoriteRows.map(function (favRow) {
+          const config = FAVORITES_WIDGET_TABLE_CONFIG[favRow.record_table];
+          const record = recordsByTable[favRow.record_table] ? recordsByTable[favRow.record_table][favRow.record_id] : null;
+          if (!config || !record) return null;
+
+          return {
+            label: config.label,
+            title: getValue(record, config.titleFields, config.label),
+            href: config.href + "?highlight=" + encodeURIComponent(favRow.record_id)
+          };
+        }).filter(Boolean);
+
+        listEl.innerHTML = resolved.length
+          ? resolved.map(function (item) {
+              return `
+                <a class="favorites-widget-row" href="${attr(item.href)}">
+                  <span class="favorites-widget-row-title">${safe(item.title)}</span>
+                  <span class="favorites-widget-row-type">${safe(item.label)}</span>
+                </a>
+              `;
+            }).join("")
+          : `<p class="favorites-widget-empty">Tap the star icon on a document, item, person, task, or record to add it here.</p>`;
+      } catch (error) {
+        listEl.innerHTML = "";
+      }
+    }
+
     function startGreetingRotation(count) {
       initHeroExplainerToggle();
+      renderFavoritesWidget();
 
       clearInterval(greetingRotationTimer);
       if (!count || count <= 1 || prefersReducedMotion()) return;

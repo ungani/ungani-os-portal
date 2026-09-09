@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Favorites</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let isRealEstate = false;
+    let favoriteItems = [];
+
+    // Same title-field/href/label mapping idiom as client-shared.js's
+    // runGlobalSearch() and client.html's runDashboardSearch() - kept as
+    // its own copy here (not shared) since this page also needs a
+    // per-table status-field guess those two don't, and pulling it out
+    // into a fourth shared copy wasn't worth it for one consumer.
+    const TABLE_CONFIG = {
+      documents: {
+        label: "Document",
+        href: "my-documents.html",
+        titleFields: ["document_title", "title", "file_name"],
+        statusFields: ["status"]
+      },
+      business_items: {
+        label: "Item / Property",
+        href: "my-items.html",
+        titleFields: ["property_name", "item_name", "name", "title"],
+        statusFields: ["property_status", "item_status", "status"]
+      },
+      client_people: {
+        label: "Person",
+        href: "my-people.html",
+        titleFields: ["full_name", "name"],
+        statusFields: ["relationship_status", "status"]
+      },
+      tasks: {
+        label: "Task",
+        href: "my-tasks.html",
+        titleFields: ["task_title", "title", "name"],
+        statusFields: ["status"]
+      },
+      business_records: {
+        label: "Business Record",
+        href: "my-records.html",
+        titleFields: ["record_title", "title", "name"],
+        statusFields: ["status"]
+      }
+    };
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "favorites",
+        pageTitle: "Favorites",
+        pageSubtitle: "Quick access to the documents, items, people, tasks, and records you've starred.",
+        onReady: startFavoritesPage
+      });
+    });
+
+    async function startFavoritesPage(context) {
+      currentContext = context;
+
+      const businessType = String(UnganiClientShared.getValue(context.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(context.tenant, ["business_type_key"], "")).toLowerCase();
+      isRealEstate = businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+
+      await loadFavoritesData();
+    }
+
+    async function loadFavoritesData() {
+      currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading favorites...");
+
+      try {
+        const myUserId = currentContext.authUser ? currentContext.authUser.id : null;
+
+        const favoritesResponse = await currentContext.supabaseClient
+          .from("ungani_favorites")
+          .select("record_table, record_id, created_at")
+          .eq("user_id", myUserId)
+          .order("created_at", { ascending: false });
+
+        if (favoritesResponse.error) {
+          UnganiClientShared.setContent(UnganiClientShared.errorCard("Could not load favorites", favoritesResponse.error.message));
+          return;
+        }
+
+        const favoriteRows = favoritesResponse.data || [];
+        const idsByTable = {};
+
+        favoriteRows.forEach(function (row) {
+          if (!idsByTable[row.record_table]) idsByTable[row.record_table] = [];
+          idsByTable[row.record_table].push(row.record_id);
+        });
+
+        const recordsByTable = {};
+
+        await Promise.all(Object.keys(idsByTable).map(async function (table) {
+          const response = await currentContext.supabaseClient
+            .from(table)
+            .select("*")
+            .in("id", idsByTable[table]);
+
+          recordsByTable[table] = {};
+          (response.data || []).forEach(function (row) { recordsByTable[table][row.id] = row; });
+        }));
+
+        // A favorited record that's since been deleted resolves to
+        // nothing in recordsByTable - skipped rather than shown as a
+        // broken entry, same "silently drop what no longer exists"
+        // judgment call as everywhere else favorited/linked ids are
+        // resolved against a live table in this app.
+        favoriteItems = favoriteRows.map(function (favRow) {
+          const config = TABLE_CONFIG[favRow.record_table];
+          const record = recordsByTable[favRow.record_table] ? recordsByTable[favRow.record_table][favRow.record_id] : null;
+          if (!config || !record) return null;
+
+          const title = UnganiClientShared.getValue(record, config.titleFields, config.label);
+          const status = UnganiClientShared.getValue(record, config.statusFields, "");
+
+          return {
+            table: favRow.record_table,
+            id: favRow.record_id,
+            label: config.label,
+            title: title,
+            status: status,
+            href: config.href + "?highlight=" + encodeURIComponent(favRow.record_id),
+            favoritedAt: favRow.created_at
+          };
+        }).filter(Boolean);
+
+        renderFavoritesPage();
+      } catch (error) {
+        UnganiClientShared.setContent(UnganiClientShared.errorCard("Could not load favorites", error.message));
+      }
+    }
+
+    function renderFavoritesPage() {
+      const filterValue = document.getElementById("favoritesTypeFilter") ? UnganiClientShared.value("favoritesTypeFilter") : "";
+      const filtered = filterValue ? favoriteItems.filter(function (item) { return item.table === filterValue; }) : favoriteItems;
+
+      UnganiClientShared.setContent(`
+        <section class="ungani-card ungani-hero">
+          <h2>Favorites</h2>
+          <p>Everything you've starred across Documents, Items, People, Tasks, and Business Records, in one place.</p>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn" onclick="loadFavoritesData()">Refresh</button>
+          </div>
+        </section>
+
+        <section class="ungani-grid">
+          ${UnganiClientShared.metricCard("Total Favorites", favoriteItems.length, "Starred across all record types", "gold")}
+          ${UnganiClientShared.metricCard("Documents", countByTable("documents"), "Starred documents", "blue")}
+          ${UnganiClientShared.metricCard("Items / Properties", countByTable("business_items"), "Starred items", "green")}
+          ${UnganiClientShared.metricCard("People", countByTable("client_people"), "Starred contacts", "orange")}
+          ${UnganiClientShared.metricCard("Tasks", countByTable("tasks"), "Starred tasks", "red")}
+        </section>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Filter</h3>
+              <p class="ungani-small">Show one record type only, or all of them.</p>
+            </div>
+          </div>
+
+          <div class="ungani-form-grid">
+            <div>
+              <label for="favoritesTypeFilter">Record Type</label>
+              <select id="favoritesTypeFilter" onchange="renderFavoritesPage()">
+                <option value="">All Types</option>
+                <option value="documents">Documents</option>
+                <option value="business_items">${isRealEstate ? "Properties / Listings" : "Items / Assets"}</option>
+                <option value="client_people">People</option>
+                <option value="tasks">Tasks</option>
+                <option value="business_records">Business Records</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section class="ungani-card">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Starred Records</h3>
+              <p class="ungani-small">${filtered.length} of ${favoriteItems.length} favorite(s) shown</p>
+            </div>
+          </div>
+
+          ${renderFavoritesList(filtered)}
+        </section>
+
+        <p class="ungani-small">
+          Favorites Version: v1 · ungani.com · info@ungani.com
+        </p>
+      `);
+
+      if (filterValue) document.getElementById("favoritesTypeFilter").value = filterValue;
+    }
+
+    function countByTable(table) {
+      return favoriteItems.filter(function (item) { return item.table === table; }).length;
+    }
+
+    function renderFavoritesList(rows) {
+      if (!rows || rows.length === 0) {
+        return `
+          <div class="ungani-empty">
+            <h3>No favorites yet</h3>
+            <p>Tap the star icon on a document, item, person, task, or business record to add it here for quick access.</p>
+          </div>
+        `;
+      }
+
+      return rows.map(function (item) {
+        return `
+          <div class="ungani-card" style="box-shadow:none;margin-bottom:12px;">
+            <div class="ungani-section-title">
+              <div>
+                <span class="ungani-badge blue">${UnganiClientShared.safe(item.label)}</span>
+                <h3 style="font-size:17px;margin:10px 0 5px;">${UnganiClientShared.safe(item.title)}</h3>
+                ${item.status ? `<p class="ungani-small">${UnganiClientShared.safe(item.status)}</p>` : ""}
+              </div>
+            </div>
+
+            <div class="ungani-button-row">
+              <a class="ungani-btn gold" href="${UnganiClientShared.attr(item.href)}">Open</a>
+              <button class="ungani-btn dark" type="button" onclick="removeFavorite('${UnganiClientShared.attr(item.table)}', '${UnganiClientShared.attr(item.id)}')">Remove from Favorites</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function removeFavorite(table, id) {
+      const newState = await UnganiClientShared.toggleFavorite(table, id, true);
+
+      if (newState === null) {
+        UnganiClientShared.showToast("Could not remove favorite. Please try again.");
+        return;
+      }
+
+      favoriteItems = favoriteItems.filter(function (item) { return !(item.table === table && String(item.id) === String(id)); });
+      renderFavoritesPage();
+      UnganiClientShared.showToast("Removed from Favorites");
+    }
+  </script>
+</body>
+</html>

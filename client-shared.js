@@ -1090,6 +1090,23 @@
       .ungani-btn.orange { background: var(--ungani-orange); color: #FFFFFF; }
       .ungani-btn.blue { background: var(--ungani-blue); color: #FFFFFF; }
 
+      /* Favorites star toggle - defined once here so every page using
+         client-shared.js's per-row action buttons (Documents/Items/
+         People/Tasks/Business Records) gets the same filled-gold-star
+         "favorited" look with no per-page CSS duplication. */
+      .ungani-btn.favorite-btn svg {
+        transition: fill 0.15s ease, color 0.15s ease;
+      }
+
+      .ungani-btn.favorite-btn.active {
+        color: var(--ungani-gold);
+        border-color: var(--ungani-gold);
+      }
+
+      .ungani-btn.favorite-btn.active svg {
+        fill: currentColor;
+      }
+
       .ungani-btn.small {
         min-height: 36px;
         padding: 0 13px;
@@ -3380,6 +3397,92 @@
     }
   }
 
+  // Favorites (sql/favorites-v1.sql) - a direct client insert/delete, no
+  // RPC layer, since favoriting is a private per-user flag with no
+  // cross-user visibility concern (unlike ungani_record_comments, which
+  // routes writes through a RPC because comments ARE shared content).
+  // Shared here rather than duplicated per page since the same toggle
+  // logic applies identically across Documents/Items/People/Tasks/
+  // Business Records.
+  async function getMyFavoriteRecordIds(recordTable) {
+    const myUserId = state.authUser ? state.authUser.id : null;
+    if (!state.supabaseClient || !myUserId) return [];
+
+    try {
+      const response = await state.supabaseClient
+        .from("ungani_favorites")
+        .select("record_id")
+        .eq("user_id", myUserId)
+        .eq("record_table", recordTable);
+
+      if (response.error) {
+        console.warn("Favorites load skipped:", response.error.message);
+        return [];
+      }
+
+      return (response.data || []).map(function (row) { return row.record_id; });
+    } catch (error) {
+      console.warn("Favorites load skipped:", error.message);
+      return [];
+    }
+  }
+
+  // Returns the new state (true = now favorited, false = now removed) so
+  // the caller can update its own UI, or null on failure (caller should
+  // leave the button state unchanged and show a toast).
+  async function toggleFavorite(recordTable, recordId, isCurrentlyFavorited) {
+    const myUserId = state.authUser ? state.authUser.id : null;
+    if (!state.supabaseClient || !state.tenantId || !myUserId) return null;
+
+    try {
+      if (isCurrentlyFavorited) {
+        const response = await state.supabaseClient
+          .from("ungani_favorites")
+          .delete()
+          .eq("user_id", myUserId)
+          .eq("record_table", recordTable)
+          .eq("record_id", recordId);
+
+        if (response.error) {
+          console.warn("Remove favorite skipped:", response.error.message);
+          return null;
+        }
+        return false;
+      }
+
+      const response = await state.supabaseClient
+        .from("ungani_favorites")
+        .insert([{ tenant_id: state.tenantId, user_id: myUserId, record_table: recordTable, record_id: recordId }]);
+
+      if (response.error) {
+        console.warn("Add favorite skipped:", response.error.message);
+        return null;
+      }
+      return true;
+    } catch (error) {
+      console.warn("Toggle favorite skipped:", error.message);
+      return null;
+    }
+  }
+
+  // DOM-updating wrapper for the star button's onclick - reads current
+  // state off the button's own "active" class rather than re-querying,
+  // since the page already knows it from the batch getMyFavoriteRecordIds()
+  // call used to render the button in the first place.
+  async function toggleFavoriteRow(buttonEl, recordTable, recordId) {
+    if (!buttonEl) return;
+    const wasFavorited = buttonEl.classList.contains("active");
+    const newState = await toggleFavorite(recordTable, recordId, wasFavorited);
+
+    if (newState === null) {
+      showToast("Could not update favorite. Please try again.");
+      return;
+    }
+
+    buttonEl.classList.toggle("active", newState);
+    buttonEl.title = newState ? "Remove from Favorites" : "Add to Favorites";
+  }
+
   // Passive error-monitoring log (sql/task-app-error-log.sql) - same
   // fire-and-forget/keepalive shape as logAuditEvent() above, deliberately
   // never throws or recurses into itself (a broken logger must never break
@@ -3914,6 +4017,9 @@
       logout,
       logAuditEvent,
       logAppError,
+      getMyFavoriteRecordIds,
+      toggleFavorite,
+      toggleFavoriteRow,
       renderLucideIcons,
       triggerEmailSendNow,
       triggerEventPush,

@@ -102,6 +102,7 @@
         items: [
           ["dashboard", "client.html", "house", "Dashboard"],
           ["team-chat", "my-team-chat.html", "users-round", "Team Chat"],
+          ["favorites", "my-favorites.html", "star", "Favorites"],
           ["tasks", "my-tasks.html", "square-check-big", "Tasks / Follow-ups"],
           ["money", "my-money.html", "wallet", "Money Records"],
           ["people", "my-people.html", "users", "People"],

@@ -52,6 +52,7 @@
     { key: "notifications", href: "client-notifications.html", icon: "bell", label: "Notifications", aliases: ["notifications", "notification center", "my notifications", "unread"] },
     { key: "notices", href: "my-notices.html", icon: "megaphone", label: "Notices", aliases: ["notices", "notice", "announcements"] },
     { key: "team-chat", href: "my-team-chat.html", icon: "users-round", label: "Team Chat", aliases: ["team chat", "chat with my team"] },
+    { key: "favorites", href: "my-favorites.html", icon: "star", label: "Favorites", aliases: ["favorites", "favourite", "favourites", "saved items", "starred", "starred items", "bookmarks"] },
     { key: "connect", href: "my-connect.html", icon: "link-2", label: "Shared Files", aliases: ["ungani connect", "connect", "shared files", "team documents"] },
     { key: "profile", href: "my-profile.html", icon: "building-2", label: "Business Profile", aliases: ["business profile", "company profile"] },
     { key: "my-settings", href: "my-settings.html", icon: "settings", label: "My Settings", aliases: ["settings", "account", "account settings", "preferences", "theme", "language", "business sections", "manage sections", "business settings", "quick settings"] },
