@@ -58,6 +58,7 @@
     let sectionOptions = [];
     let currentSectionFilter = "";
     let activeTaskCategory = "all";
+    let taskViewMode = sessionStorage.getItem("ungani_task_view_mode") === "board" ? "board" : "list";
     let lastStatusRows = [];
     let lastPriorityRows = [];
     let urlActionApplied = false;
@@ -630,6 +631,126 @@
             margin-top: 2px;
           }
 
+          .task-view-toggle {
+            display: inline-flex;
+            border: 1px solid var(--ungani-border);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-right: 4px;
+          }
+
+          .task-view-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: none;
+            background: transparent;
+            color: var(--ungani-muted);
+            font-size: 13px;
+            font-weight: 700;
+            padding: 8px 12px;
+            cursor: pointer;
+          }
+
+          .task-view-toggle-btn.active {
+            background: var(--ungani-gold);
+            color: #061C3D;
+          }
+
+          .task-view-toggle-btn svg {
+            width: 15px;
+            height: 15px;
+          }
+
+          .task-board {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            align-items: start;
+          }
+
+          .task-board-column {
+            background: var(--ungani-surface, rgba(0,0,0,0.02));
+            border: 1px solid var(--ungani-border);
+            border-radius: 16px;
+            padding: 12px;
+          }
+
+          .task-board-column-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--ungani-muted);
+            padding: 4px 4px 10px;
+          }
+
+          .task-board-column-count {
+            background: var(--ungani-border);
+            color: var(--ungani-text);
+            border-radius: 999px;
+            font-size: 11px;
+            padding: 2px 8px;
+          }
+
+          .task-board-column-body {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          }
+
+          .task-board-card {
+            position: relative;
+            overflow: hidden;
+            background: var(--ungani-card);
+            border: 1px solid var(--ungani-border);
+            border-radius: 12px;
+            padding: 12px 12px 12px 16px;
+            cursor: pointer;
+            box-shadow: var(--ungani-shadow);
+          }
+
+          .task-board-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: var(--accent);
+          }
+
+          .task-board-card-title {
+            font-weight: 750;
+            font-size: 14px;
+            margin-bottom: 6px;
+          }
+
+          .task-board-card-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            color: var(--ungani-muted);
+            font-size: 12px;
+            margin-bottom: 8px;
+          }
+
+          .task-board-card-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+          }
+
+          .task-board-card-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+          }
+
           @media (max-width: 1180px) {
             .tasks-hero-grid,
             .task-chart-grid {
@@ -649,6 +770,10 @@
 
             .task-form-grid .wide {
               grid-column: span 1;
+            }
+
+            .task-board {
+              grid-template-columns: 1fr;
             }
           }
 
@@ -761,15 +886,19 @@
             </div>
 
             <div class="ungani-button-row" style="margin-top:0;">
+              <div class="task-view-toggle">
+                <button type="button" class="task-view-toggle-btn${taskViewMode === "list" ? " active" : ""}" onclick="setTaskViewMode('list')"><i data-lucide="list"></i> List</button>
+                <button type="button" class="task-view-toggle-btn${taskViewMode === "board" ? " active" : ""}" onclick="setTaskViewMode('board')"><i data-lucide="columns-3"></i> Board</button>
+              </div>
               <button class="ungani-btn gold" onclick="openTaskModal()">+ Add Task</button>
               <button class="ungani-btn green" onclick="loadTaskRows()">Refresh</button>
               <button class="ungani-btn dark" onclick="exportTaskCsv()">Export CSV</button>
             </div>
           </div>
 
-          ${renderTaskList(filteredRows)}
+          ${taskViewMode === "board" ? renderTaskBoard(filteredRows) : renderTaskList(filteredRows)}
 
-          ${taskHasMoreRows() ? `
+          ${taskViewMode === "list" && taskHasMoreRows() ? `
             <div class="ungani-button-row" style="justify-content:center; margin-top:14px;">
               <button class="ungani-btn dark" id="taskLoadMoreBtn" onclick="loadMoreTaskRows()">Load More Tasks</button>
             </div>
@@ -995,6 +1124,124 @@
           </table>
         </div>
       `;
+    }
+
+    function setTaskViewMode(mode) {
+      taskViewMode = mode;
+      sessionStorage.setItem("ungani_task_view_mode", mode);
+      renderTasksPage();
+    }
+
+    // Click-to-move board (not drag-and-drop) - chosen over drag-and-drop
+    // for mobile reliability. Columns are the 3 statuses an owner
+    // actively moves work through; Cancelled is excluded from the board
+    // by default since it's an end state a task lands in, not one it
+    // gets dragged to, and would otherwise sit as a 4th mostly-empty
+    // column. Works off the same paginated filteredRows as the list view
+    // so it inherits the existing filters without a second data path.
+    const TASK_BOARD_COLUMNS = [
+      { key: "pending", label: "To Do", match: function (status) { return !status.includes("progress") && !status.includes("completed") && !status.includes("cancelled"); } },
+      { key: "in progress", label: "In Progress", match: function (status) { return status.includes("progress"); } },
+      { key: "completed", label: "Done", match: function (status) { return status.includes("completed"); } }
+    ];
+
+    function renderTaskBoard(rows) {
+      const visibleRows = (rows || []).filter(function (row) {
+        return String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase() !== "cancelled";
+      });
+
+      if (!visibleRows.length) {
+        return `
+          <div class="ungani-empty">
+            <h3>No tasks yet</h3>
+            <p>Add your first task, follow-up, reminder, or deadline.</p>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="task-board">
+          ${TASK_BOARD_COLUMNS.map(function (column) {
+            const columnRows = visibleRows.filter(function (row) {
+              return column.match(String(UnganiClientShared.getValue(row, ["status"], "pending")).toLowerCase());
+            });
+
+            return `
+              <div class="task-board-column">
+                <div class="task-board-column-head">
+                  <span>${UnganiClientShared.safe(column.label)}</span>
+                  <span class="task-board-column-count">${columnRows.length}</span>
+                </div>
+                <div class="task-board-column-body">
+                  ${columnRows.length ? columnRows.map(function (row) { return renderTaskBoardCard(row, column.key); }).join("") : `<p class="ungani-small" style="padding:4px 2px;">No tasks here.</p>`}
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function renderTaskBoardCard(row, columnKey) {
+      const title = getTaskTitle(row);
+      const type = getTaskType(row);
+      const priority = UnganiClientShared.getValue(row, ["priority"], "normal");
+      const status = UnganiClientShared.getValue(row, ["status"], "pending");
+      const due = UnganiClientShared.getValue(row, ["due_date"], "");
+      const assigned = UnganiClientShared.getValue(row, ["assigned_to"], "");
+
+      const otherColumns = TASK_BOARD_COLUMNS.filter(function (c) { return c.key !== columnKey; });
+
+      return `
+        <div class="task-board-card" style="--accent:${UnganiClientShared.attr(statusAccent(status, due))};" onclick="openTaskModal('${UnganiClientShared.attr(row.id)}')">
+          <div class="task-board-card-title">${UnganiClientShared.safe(title)}</div>
+          <div class="task-board-card-meta">
+            <span>${UnganiClientShared.safe(type)}</span>
+            ${due ? `<span>${UnganiClientShared.safe(UnganiClientShared.formatDate(due))}</span>` : ""}
+          </div>
+          <div class="task-board-card-badges">
+            ${priorityBadge(priority)}
+            ${assigned ? `<span class="ungani-badge blue">${UnganiClientShared.safe(assigned)}</span>` : ""}
+          </div>
+          <div class="task-board-card-actions">
+            ${otherColumns.map(function (c) {
+              return `<button type="button" class="ungani-btn small dark" onclick="event.stopPropagation(); moveTaskToStatus('${UnganiClientShared.attr(row.id)}', '${UnganiClientShared.attr(c.key)}', this)">→ ${UnganiClientShared.safe(c.label)}</button>`;
+            }).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    async function moveTaskToStatus(id, newStatus, buttonEl) {
+      const originalRow = taskRows.find(function (item) { return String(item.id) === String(id); });
+      const originalStatus = originalRow ? UnganiClientShared.getValue(originalRow, ["status"], "pending") : "pending";
+
+      await UnganiClientShared.withButtonLoading(buttonEl, async () => {
+        let response;
+
+        try {
+          response = await currentContext.supabaseClient
+            .from("tasks")
+            .update({ status: newStatus })
+            .eq("id", id)
+            .eq("tenant_id", currentContext.tenantId);
+        } catch (error) {
+          UnganiClientShared.showToast("Could not update task: " + (error.message || "Network error. Please check your connection."));
+          return;
+        }
+
+        if (response.error) {
+          UnganiClientShared.showToast("Could not update task: " + response.error.message);
+          return;
+        }
+
+        const columnLabel = (TASK_BOARD_COLUMNS.find(function (c) { return c.key === newStatus; }) || {}).label || newStatus;
+        const activityResult = await UnganiConnectPanel.logActivity(currentContext, "tasks", id, "status_changed", "Moved to " + columnLabel + ".");
+        UnganiConnectPanel.notifyStatusChange(currentContext, "tasks", id, activityResult && activityResult.activity_id, originalStatus, newStatus);
+
+        UnganiClientShared.showToast("Task moved to " + columnLabel + " ✓");
+        await loadTaskRows();
+      });
     }
 
     function taskKpi(title, value, subtitle, accent) {
