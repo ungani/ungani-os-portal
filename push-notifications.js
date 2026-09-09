@@ -266,8 +266,50 @@
       }
       .ungani-push-banner-enable { background: #D4A63A; color: #061C3D; }
       .ungani-push-banner-dismiss { background: rgba(255, 255, 255, 0.12); color: #F5F5F3; }
+      .ungani-push-banner-close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 22px;
+        height: 22px;
+        border: none;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        color: #F5F5F3;
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* On phone-sized screens the banner used to be a full paragraph +
+         2 full-width buttons pinned to the very bottom of the viewport -
+         on a 667px-tall screen that ate roughly a quarter of it and sat
+         directly on top of the shared-shell bottom nav bar (visible on
+         the ~19 client-shared.js pages). Collapsed here to a single
+         compact row (icon + short title + 2 small inline buttons, no
+         subtitle) and, when a bottom nav is present, lifted above it
+         via the .ungani-above-bottom-nav class set at show-time. */
       @media (max-width: 560px) {
-        .ungani-push-banner { left: 12px; right: 12px; bottom: 12px; width: auto; }
+        .ungani-push-banner {
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          width: auto;
+          grid-template-columns: 32px 1fr;
+          gap: 10px;
+          padding: 12px 30px 12px 12px;
+        }
+        .ungani-push-banner.ungani-above-bottom-nav {
+          bottom: 86px;
+        }
+        .ungani-push-banner-icon { width: 32px; height: 32px; }
+        .ungani-push-banner-icon svg { width: 16px; height: 16px; }
+        .ungani-push-banner-content span { display: none; }
+        .ungani-push-banner-content strong { font-size: 13px; }
+        .ungani-push-banner-actions { margin-top: 8px; }
+        .ungani-push-banner-actions button { padding: 7px 10px; font-size: 12px; }
       }
     `;
     document.head.appendChild(style);
@@ -283,8 +325,9 @@
 
     const banner = document.createElement("div");
     banner.id = "unganiPushBanner";
-    banner.className = "ungani-push-banner";
+    banner.className = "ungani-push-banner" + (document.querySelector(".ungani-bottom-nav") ? " ungani-above-bottom-nav" : "");
     banner.innerHTML =
+      '<button type="button" class="ungani-push-banner-close" aria-label="Close">✕</button>' +
       '<div class="ungani-push-banner-icon"><i data-lucide="bell"></i></div>' +
       '<div class="ungani-push-banner-content">' +
       "<strong>Turn on notifications?</strong>" +
@@ -294,6 +337,8 @@
       '<button type="button" class="ungani-push-banner-enable">Enable</button>' +
       '<button type="button" class="ungani-push-banner-dismiss">Not now</button>' +
       "</div>";
+
+    banner.querySelector(".ungani-push-banner-close").addEventListener("click", dismissBanner);
 
     banner.querySelector(".ungani-push-banner-enable").addEventListener("click", async function () {
       const result = await subscribe();

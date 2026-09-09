@@ -1302,10 +1302,87 @@
           padding-bottom: 90px;
         }
 
+        /* Compact mobile header (matches client.html's own .mobile-header
+           treatment) - collapses the 3-row wrapped desktop toolbar
+           (title+subtitle / full search bar / 4 wrapping action buttons)
+           into a single sticky icon row. The subtitle and button labels
+           are hidden rather than removed from markup, so this is a pure
+           CSS change with no risk to the ~19 pages sharing this
+           initPage() template. Search stays in the DOM but hidden by
+           default - UnganiClientShared.toggleMobileSearch() reveals it
+           as a full-width row below the icons, matching the "tap to
+           search" pattern client.html already uses for its own search
+           icon. */
         .ungani-topbar {
-          position: relative;
-          border-radius: 20px;
-          align-items: flex-start;
+          position: sticky;
+          top: 0;
+          z-index: 30;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          border-radius: 18px;
+          padding: 10px 12px;
+          gap: 8px;
+        }
+
+        .ungani-topbar > div:first-child {
+          flex: 1 1 auto;
+          min-width: 0;
+        }
+
+        .ungani-topbar h2 {
+          font-size: 17px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .ungani-topbar > div:first-child p {
+          display: none;
+        }
+
+        .ungani-mobile-search-toggle {
+          display: inline-flex;
+        }
+
+        .ungani-global-search-wrap {
+          display: none;
+          order: 4;
+          flex: 1 1 100%;
+        }
+
+        .ungani-global-search-wrap.ungani-mobile-search-open {
+          display: block;
+        }
+
+        .ungani-top-actions {
+          flex: 0 0 auto;
+        }
+
+        .ungani-top-actions > * {
+          margin: 0 !important;
+        }
+
+        .ungani-mobile-menu span,
+        .ungani-quickadd-label {
+          display: none;
+        }
+
+        .ungani-mobile-menu,
+        .ungani-quickadd-holder .ungani-btn.gold {
+          width: 44px;
+          height: 44px;
+          padding: 0;
+          border-radius: 15px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 20px;
+        }
+
+        .ungani-mobile-menu svg {
+          width: 19px;
+          height: 19px;
         }
 
         .ungani-grid,
@@ -2020,7 +2097,11 @@
             </div>
 
             <div class="ungani-top-actions">
-              <button class="ungani-btn dark ungani-mobile-menu" type="button" onclick="UnganiClientShared.toggleSidebar()">Menu</button>
+              <button class="ungani-icon-button ungani-mobile-search-toggle" type="button" onclick="UnganiClientShared.toggleMobileSearch()" title="Search" aria-label="Search">
+                <i data-lucide="search"></i>
+              </button>
+
+              <button class="ungani-btn dark ungani-mobile-menu" type="button" onclick="UnganiClientShared.toggleSidebar()"><i data-lucide="menu"></i><span class="ungani-mobile-menu-label">Menu</span></button>
 
               <div class="ungani-bell-holder">
                 <button id="unganiBellBtn" class="ungani-icon-button" type="button" onclick="UnganiClientShared.toggleNotifications()" title="Notifications">
@@ -2039,7 +2120,7 @@
               </div>
 
               <div class="ungani-quickadd-holder">
-                <button class="ungani-btn gold" type="button" onclick="UnganiClientShared.openQuickAdd()">＋ Quick Add</button>
+                <button class="ungani-btn gold" type="button" onclick="UnganiClientShared.openQuickAdd()" title="Quick Add">＋<span class="ungani-quickadd-label"> Quick Add</span></button>
                 <div id="unganiQuickAddPanel" class="ungani-quickadd-panel" style="display:none;"></div>
               </div>
 
@@ -2827,6 +2908,25 @@
     if (panel) {
       panel.style.display = "none";
       panel.innerHTML = "";
+    }
+  }
+
+  // Search stays hidden by default on the compact mobile topbar (see the
+  // .ungani-global-search-wrap mobile CSS) - this reveals it as a
+  // full-width row and focuses the input, mirroring client.html's own
+  // "tap the search icon" mobile pattern.
+  function toggleMobileSearch() {
+    const wrap = document.querySelector(".ungani-global-search-wrap");
+    if (!wrap) return;
+
+    const opening = !wrap.classList.contains("ungani-mobile-search-open");
+    wrap.classList.toggle("ungani-mobile-search-open", opening);
+
+    if (opening) {
+      const input = document.getElementById("unganiGlobalSearch");
+      if (input) setTimeout(function () { input.focus(); }, 50);
+    } else {
+      closeGlobalSearch();
     }
   }
 
@@ -4030,6 +4130,7 @@
       getBusinessTypeLabel,
       handleGlobalSearchInput,
       closeGlobalSearch,
+      toggleMobileSearch,
       toggleNotifications,
       openQuickAdd,
       closeQuickAdd,
