@@ -2302,6 +2302,16 @@
   // only those 8 have a nested `sections` array at all). Checked ahead of
   // findCreateAction's generic phrase list, same "specific beats generic"
   // ordering already established for findSectionCreateIntent above.
+  //
+  // Scans every field/term rather than returning on the first field with
+  // any hit, and keeps the LONGEST matching term across all of them - a
+  // shorter, more generic term from an earlier-checked field (e.g.
+  // peopleTypes' "Driver") would otherwise win over a longer, more
+  // precise one from a later-checked field (taskTypes' "Driver
+  // Follow-up") purely because of field iteration order, even though the
+  // longer term is the better match for what the user actually typed.
+  // Confirmed live: "create a driver follow-up" routed to my-people.html
+  // instead of my-tasks.html before this fix.
   function findBusinessVocabCreateAction(text) {
     if (state.surface === "admin") return null;
     if (!/\b(add|create|new|log)\b/i.test(text) || /\bhow\b/i.test(text)) return null;
@@ -2310,6 +2320,8 @@
     if (!vocab) return null;
 
     const lower = text.toLowerCase();
+    let bestField = null;
+    let bestLength = 0;
 
     for (const field of Object.keys(VOCAB_FIELD_TO_ACTION_KEY)) {
       const terms = vocab[field] || [];
@@ -2317,13 +2329,14 @@
       for (let i = 0; i < terms.length; i++) {
         const termLower = String(terms[i] || "").toLowerCase();
 
-        if (termLower && lower.indexOf(termLower) !== -1) {
-          return CREATE_ACTIONS_BY_KEY[VOCAB_FIELD_TO_ACTION_KEY[field]] || null;
+        if (termLower && termLower.length > bestLength && lower.indexOf(termLower) !== -1) {
+          bestField = field;
+          bestLength = termLower.length;
         }
       }
     }
 
-    return null;
+    return bestField ? (CREATE_ACTIONS_BY_KEY[VOCAB_FIELD_TO_ACTION_KEY[bestField]] || null) : null;
   }
 
   // Full-phrase match against the CURRENT section's item/event label, e.g.
