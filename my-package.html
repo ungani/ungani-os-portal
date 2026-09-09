@@ -1250,37 +1250,37 @@
             Picked a package above? Use "Select this package" on its card to fill this in automatically — or choose manually below.
           </p>
 
-          <h3>Request Package / Continue on Current Plan</h3>
+          <p class="ungani-small" style="opacity:0.75;">
+            Just renewing your current plan? Selecting your current package (above or below) takes you straight to <a href="my-billing.html" class="gold-link" style="color: var(--gold); font-weight: 800; text-decoration: none;">Billing</a> to pay instantly via M-Pesa — no request or admin review needed. The steps below only apply when you're moving to a <em>different</em> package.
+          </p>
+
+          <h3>Request a Different Package</h3>
           <p>
-            This isn't a single click-to-pay button — it's a few steps:
+            Moving to a different package isn't a single click-to-pay button — it's a few steps:
           </p>
 
           <ol class="process-steps">
             <li>
               <span class="process-step-num">1</span>
-              <span class="process-step-text"><strong>Request your plan</strong> — choose a package below (or keep your current one) and submit.</span>
+              <span class="process-step-text"><strong>Request your plan</strong> — choose the new package below and submit.</span>
             </li>
             <li>
               <span class="process-step-num">2</span>
-              <span class="process-step-text"><strong>UNGANI reviews it</strong> — admin checks your request.</span>
+              <span class="process-step-text"><strong>UNGANI reviews it</strong> — admin checks your request and updates your package.</span>
             </li>
             <li>
               <span class="process-step-num">3</span>
-              <span class="process-step-text"><strong>You'll receive payment instructions</strong> — once approved, UNGANI will tell you exactly how to pay (e.g. M-Pesa Paybill or bank transfer).</span>
+              <span class="process-step-text"><strong>Pay instantly via M-Pesa</strong> — once approved, head to <a href="my-billing.html" class="gold-link" style="color: var(--gold); font-weight: 800; text-decoration: none;">Billing</a> and pay with M-Pesa for automatic confirmation, or use bank transfer + proof upload as a fallback.</span>
             </li>
             <li>
               <span class="process-step-num">4</span>
-              <span class="process-step-text"><strong>Upload your proof of payment</strong> — on the <a href="my-billing.html" class="gold-link" style="color: var(--gold); font-weight: 800; text-decoration: none;">Billing</a> page, once you've paid.</span>
-            </li>
-            <li>
-              <span class="process-step-num">5</span>
-              <span class="process-step-text"><strong>UNGANI confirms it</strong> — your account is reactivated.</span>
+              <span class="process-step-text"><strong>UNGANI confirms it</strong> — your account is reactivated on the new plan.</span>
             </li>
           </ol>
 
           <div class="form-group">
             <label for="requestedPackage">Requested Package</label>
-            <select id="requestedPackage" class="form-select">
+            <select id="requestedPackage" class="form-select" onchange="handlePackageSelectionMaybeRedirect(this.value)">
               <option value="">Select package</option>
               <option value="starter">Starter — KSh 5,000/month</option>
               <option value="growth">Growth — KSh 8,500/month</option>
@@ -2118,11 +2118,32 @@
       }).join('');
     }
 
+    // A same-package "upgrade" is really a renewal - nothing about the
+    // tenant's package_id/user_limit needs to change, and M-Pesa
+    // (my-billing.html) already charges whatever the tenant's CURRENT
+    // package costs. Routing that case through the request form meant
+    // a client renewing Starter->Starter saw an upgrade-flavored
+    // "why do you want to upgrade" reason field and then had to wait on
+    // an admin who has nothing to actually approve. Redirecting straight
+    // to Billing skips the dead request/approval step entirely for
+    // renewals, while genuine different-package upgrades (which DO need
+    // admin review to change package_id before the new price applies)
+    // still go through the form below unchanged.
+    function handlePackageSelectionMaybeRedirect(packageKey) {
+      if (packageKey && packageKey === currentPackageKey) {
+        window.location.href = "my-billing.html";
+        return true;
+      }
+      return false;
+    }
+
     // Card "Select" button: fills the existing, real upgrade-request form
     // rather than bypassing it - the actual RPC/admin-review flow stays
     // exactly as-is, this just removes the need to hunt for the right
     // dropdown option manually.
     function selectTierCard(packageKey) {
+      if (handlePackageSelectionMaybeRedirect(packageKey)) return;
+
       const select = document.getElementById("requestedPackage");
       const reasonBox = document.getElementById("upgradeReason");
 

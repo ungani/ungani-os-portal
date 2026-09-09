@@ -290,11 +290,19 @@
          the ~19 client-shared.js pages). Collapsed here to a single
          compact row (icon + short title + 2 small inline buttons, no
          subtitle) and, when a bottom nav is present, lifted above it
-         via the .ungani-above-bottom-nav class set at show-time. */
+         via the .ungani-above-bottom-nav class set at show-time.
+
+         right:84px (not 12px) reserves room for nia-assistant.js's
+         floating chat bubble (.nia-fab, 58px wide, right:16px on
+         mobile) - confirmed via live screenshot that client.html
+         (which has no bottom nav, so the lift above doesn't help it)
+         showed the bubble rendered directly on top of this banner's
+         "Not now" button. The two never share horizontal space now,
+         regardless of which page loaded push-notifications.js. */
       @media (max-width: 560px) {
         .ungani-push-banner {
           left: 12px;
-          right: 12px;
+          right: 84px;
           bottom: 12px;
           width: auto;
           grid-template-columns: 32px 1fr;
