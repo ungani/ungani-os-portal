@@ -3487,6 +3487,12 @@
     valueLabel: "Estimated Value",
     statusOptions: ["available", "in use", "in maintenance", "retired", "inactive"],
     namePlaceholder: "Example: Truck KDA 123B, Delivery Van 2",
+    // Registration number is a genuine permanent unique identifier for a
+    // vehicle - drives the strong-match branch of the duplicate-detection
+    // RPC (check_my_ungani_duplicate_item). Field sets with no such
+    // identifier (real estate, hospitality, fashion, generic, etc.) omit
+    // this and fall back to name-only matching.
+    identityFieldId: "registration_number",
     fields: [
       { id: "registration_number", label: "Registration Number", type: "text", placeholder: "Example: KDA 123B" },
       { id: "capacity", label: "Capacity", type: "text", placeholder: "Example: 7 tonnes / 14 seats" },
@@ -3510,6 +3516,7 @@
     valueLabel: "Estimated Value",
     statusOptions: ["available", "in progress", "cleared", "on hold", "inactive"],
     namePlaceholder: "Example: Container MSKU1234567, Shipment #4521",
+    identityFieldId: "reference_number",
     fields: [
       { id: "reference_number", label: "Container / Reference Number", type: "text", placeholder: "Example: MSKU1234567" },
       { id: "origin", label: "Origin", type: "text", placeholder: "Example: Mombasa Port" },
@@ -3596,6 +3603,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Samsung TV 55-inch, HP Laptop 15s",
+    identityFieldId: "serial_number",
     fields: [
       { id: "serial_number", label: "Serial Number / IMEI", type: "text", placeholder: "Example: 356789104561234" },
       { id: "warranty_expiry", label: "Warranty Expiry", type: "date" },
@@ -3608,6 +3616,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: iPhone 13 Pro, Samsung Galaxy A14",
+    identityFieldId: "serial_number",
     fields: [
       { id: "serial_number", label: "Serial Number / IMEI", type: "text", placeholder: "Example: 356789104561234" },
       { id: "warranty_expiry", label: "Warranty Expiry", type: "date" },
@@ -3644,6 +3653,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Mathematics Textbook Form 3, A4 Notebook",
+    identityFieldId: "isbn",
     fields: [
       { id: "isbn", label: "ISBN", type: "text", placeholder: "Example: 978-3-16-148410-0" },
       { id: "author", label: "Author", type: "text" },
@@ -3658,6 +3668,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Sugar 2kg, Cooking Oil 1L",
+    identityFieldId: "sku",
     fields: [
       { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },
       { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 50" },
@@ -3670,6 +3681,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Hammer, Paint Bucket 20L",
+    identityFieldId: "sku",
     fields: [
       { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },
       { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 50" },
@@ -3687,6 +3699,7 @@
     // problem for whichever OTHER kind of shop picks this one - stays
     // genuinely generic on purpose, same reasoning as GENERIC_ITEM_FIELD_SET.
     namePlaceholder: "Example: Product name, SKU-00123",
+    identityFieldId: "sku",
     fields: [
       { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },
       { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 50" },

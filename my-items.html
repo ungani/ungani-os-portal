@@ -882,6 +882,28 @@
             font-size: 13.5px;
             font-weight: 700;
           }
+
+          .item-warning-box {
+            display: none;
+            margin-top: 14px;
+            padding: 14px 15px;
+            border-radius: 18px;
+            border: 1px solid rgba(212,166,58,0.45);
+            background: rgba(212,166,58,0.12);
+            color: var(--ungani-text);
+          }
+
+          .item-warning-box strong {
+            display: block;
+            margin-bottom: 4px;
+          }
+
+          .item-warning-box p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+            line-height: 1.5;
+          }
         </style>
 
         <section class="ungani-card ungani-hero">
@@ -1595,6 +1617,11 @@
           <label for="notes">Notes</label>
           <textarea id="notes" placeholder="Short property, project, or listing notes...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
 
+          <div id="itemWarningBox" class="item-warning-box">
+            <strong>Possible duplicate</strong>
+            <p id="itemWarningText"></p>
+          </div>
+
           <div class="ungani-button-row">
             <button class="ungani-btn green" type="submit">${row ? "Update Property" : "Save Property"}</button>
             ${row ? `<button class="ungani-btn gold" type="button" onclick="quickStatus('${UnganiClientShared.attr(row.id)}', 'available')">Available</button>` : ""}
@@ -1653,6 +1680,11 @@
 
           <label for="itemNotes">Notes</label>
           <textarea id="itemNotes" placeholder="Add notes, specifications, or details...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
+
+          <div id="itemWarningBox" class="item-warning-box">
+            <strong>Possible duplicate</strong>
+            <p id="itemWarningText"></p>
+          </div>
 
           <div class="ungani-button-row">
             <button class="ungani-btn green" type="submit">${row ? "Update Item" : "Save Item"}</button>
@@ -2392,6 +2424,12 @@
 
         payload.custom_fields = customFields;
 
+        hideItemWarning();
+        const identityFieldId = activeItemFieldSet.identityFieldId || null;
+        const identityValue = identityFieldId ? customFields[identityFieldId] : null;
+        const proceed = await confirmDuplicateItemIfNeeded(name, identityFieldId, identityValue, currentEditId);
+        if (!proceed) return;
+
         let response;
         const wasEdit = !!currentEditId;
 
@@ -2437,6 +2475,58 @@
       } catch (error) {
         alert((error && error.message) || "Could not save. Please check your connection and try again.");
       }
+    }
+
+    // Warn-not-block duplicate check, same idiom as my-money.html's
+    // confirmDuplicateIfNeeded() and my-people.html's
+    // confirmDuplicatePersonIfNeeded() - strong match on the business
+    // type's identity field (SKU/registration number/serial/ISBN, from
+    // ungani-business-config.js's ITEM_FIELD_SETS.identityFieldId), weak
+    // match on item name only if no identity match (or the field set has
+    // no identity field at all - real estate, hospitality, fashion, etc.
+    // fall straight to name-only). Fails open on any RPC error.
+    async function confirmDuplicateItemIfNeeded(itemName, identityFieldId, identityValue, excludeId) {
+      try {
+        const response = await currentContext.supabaseClient.rpc("check_my_ungani_duplicate_item", {
+          p_item_name: itemName,
+          p_identity_field_id: identityFieldId || null,
+          p_identity_value: identityValue || null,
+          p_exclude_id: excludeId || null
+        });
+
+        if (response.error) {
+          console.warn("Duplicate check skipped:", response.error.message);
+          return true;
+        }
+
+        const result = response.data;
+
+        if (result && result.is_duplicate === true) {
+          const message = result.message || "An item like this already exists. Please confirm this is not the same item.";
+          showItemWarning(message);
+
+          return confirm(message + "\n\nDo you still want to save this item?");
+        }
+      } catch (error) {
+        console.warn("Duplicate check skipped:", error.message);
+      }
+
+      return true;
+    }
+
+    function showItemWarning(message) {
+      const box = document.getElementById("itemWarningBox");
+      const text = document.getElementById("itemWarningText");
+
+      if (!box || !text) return;
+
+      text.textContent = message;
+      box.style.display = "block";
+    }
+
+    function hideItemWarning() {
+      const box = document.getElementById("itemWarningBox");
+      if (box) box.style.display = "none";
     }
 
     async function quickStatus(id, status) {

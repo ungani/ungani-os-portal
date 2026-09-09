@@ -616,6 +616,28 @@
               grid-column: span 1;
             }
           }
+
+          .person-warning-box {
+            display: none;
+            margin-top: 14px;
+            padding: 14px 15px;
+            border-radius: 18px;
+            border: 1px solid rgba(212,166,58,0.45);
+            background: rgba(212,166,58,0.12);
+            color: var(--ungani-text);
+          }
+
+          .person-warning-box strong {
+            display: block;
+            margin-bottom: 4px;
+          }
+
+          .person-warning-box p {
+            margin: 0;
+            color: var(--ungani-muted);
+            font-size: 13px;
+            line-height: 1.5;
+          }
         </style>
 
         <section class="ungani-card ungani-hero">
@@ -1268,6 +1290,11 @@
             </div>
           </div>
 
+          <div id="personWarningBox" class="person-warning-box">
+            <strong>Possible duplicate</strong>
+            <p id="personWarningText"></p>
+          </div>
+
           <div class="ungani-button-row" style="margin-top:16px;">
             <button class="ungani-btn gold" type="submit">${row ? "Update Person" : "Save Person"}</button>
             ${row ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal(); openPersonDiscussionPanel('${UnganiClientShared.attr(row.id)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
@@ -1337,6 +1364,10 @@
         payload.section_label = UnganiClientShared.value("personSection") || null;
       }
 
+      hidePersonWarning();
+      const proceed = await confirmDuplicatePersonIfNeeded(payload.full_name, payload.phone, payload.email, editingPersonId);
+      if (!proceed) return;
+
       let response;
 
       try {
@@ -1378,6 +1409,54 @@
       editingPersonId = null;
       UnganiClientShared.closeModal();
       await loadPeopleRows();
+    }
+
+    // Warn-not-block duplicate check, same idiom as my-money.html's
+    // confirmDuplicateIfNeeded() - strong match on phone/email, weak match
+    // on name only if no contact match. Fails open (returns true) on any
+    // RPC error so a check failure never blocks a real save.
+    async function confirmDuplicatePersonIfNeeded(fullName, phone, email, excludeId) {
+      try {
+        const response = await currentContext.supabaseClient.rpc("check_my_ungani_duplicate_person", {
+          p_full_name: fullName,
+          p_phone: phone,
+          p_email: email,
+          p_exclude_id: excludeId || null
+        });
+
+        if (response.error) {
+          console.warn("Duplicate check skipped:", response.error.message);
+          return true;
+        }
+
+        const result = response.data;
+
+        if (result && result.is_duplicate === true) {
+          const message = result.message || "Someone similar is already saved. Please confirm this is not the same person.";
+          showPersonWarning(message);
+
+          return confirm(message + "\n\nDo you still want to save this person?");
+        }
+      } catch (error) {
+        console.warn("Duplicate check skipped:", error.message);
+      }
+
+      return true;
+    }
+
+    function showPersonWarning(message) {
+      const box = document.getElementById("personWarningBox");
+      const text = document.getElementById("personWarningText");
+
+      if (!box || !text) return;
+
+      text.textContent = message;
+      box.style.display = "block";
+    }
+
+    function hidePersonWarning() {
+      const box = document.getElementById("personWarningBox");
+      if (box) box.style.display = "none";
     }
 
     // Ungani Connect Phase 3: reuses the shared ungani-connect-panel.js
