@@ -4298,15 +4298,41 @@
       return { thisMonth: thisMonth, lastMonth: lastMonth };
     }
 
-    function countLowStockItems(rows) {
+    function countLowStockItems(rows, tenantRows) {
       rows = rows || [];
+      // Real quantity lives at business_items.quantity (Stock Tracking
+      // enabled tenants) or custom_fields.stock_quantity (pre-Stock-Tracking
+      // default) - never at a flat top-level column read directly off row,
+      // mirroring client.html's getStockQuantity() dual-path logic.
+      var trackingByTenant = {};
+      (tenantRows || []).forEach(function (t) {
+        trackingByTenant[String(t.id)] = t.stock_tracking_enabled === true;
+      });
+
       return rows.filter(function (row) {
         var status = String(row.status || row.item_status || row.asset_status || row.stock_status || '').toLowerCase();
         if (status === 'low_stock') return true;
-        var rawQty = row.quantity !== undefined && row.quantity !== null ? row.quantity : (row.qty !== undefined && row.qty !== null ? row.qty : (row.stock_quantity !== undefined ? row.stock_quantity : row.count));
-        var qty = Number(rawQty);
+
+        var qty = null;
+        if (trackingByTenant[String(row.tenant_id)]) {
+          var tracked = row.quantity;
+          if (tracked !== undefined && tracked !== null && tracked !== '') {
+            var trackedNum = Number(tracked);
+            if (!isNaN(trackedNum)) qty = trackedNum;
+          }
+        }
+        if (qty === null) {
+          var customFields = row.custom_fields || {};
+          var customQty = customFields.stock_quantity;
+          if (customQty !== undefined && customQty !== null && customQty !== '') {
+            var customNum = Number(customQty);
+            if (!isNaN(customNum)) qty = customNum;
+          }
+        }
+        if (qty === null) return false;
+
         var type = String(row.item_type || row.asset_type || row.stock_type || row.type || row.category || 'other').toLowerCase();
-        return !isNaN(qty) && qty <= 2 && ['stock', 'item', 'other'].indexOf(type) !== -1;
+        return qty <= 2 && ['stock', 'item', 'other'].indexOf(type) !== -1;
       }).length;
     }
 
@@ -4598,7 +4624,7 @@
           supabaseClient.from('business_items').select('*').limit(10000),
           supabaseClient.from('tasks').select('status,due_date').neq('status', 'completed'),
           supabaseClient.from('ungani_audit_log').select('id', { count: 'exact', head: true }).is('actor_tenant_id', null).gte('created_at', sevenDaysAgo),
-          supabaseClient.from('tenants').select('created_at')
+          supabaseClient.from('tenants').select('id, created_at, stock_tracking_enabled')
         ]);
 
         var billingRes = results[0], itemsRes = results[1], tasksRes = results[2], auditRes = results[3], tenantsRes = results[4];
@@ -4615,7 +4641,7 @@
         var tenantsOk = !!(tenantsRes && !tenantsRes.error);
 
         var billing = processBillingRecords(billingOk ? billingRes.data.billing_records : []);
-        var lowStockCount = itemsOk ? countLowStockItems(itemsRes.data) : 0;
+        var lowStockCount = itemsOk ? countLowStockItems(itemsRes.data, tenantsOk ? tenantsRes.data : []) : 0;
 
         var overdueTasksCount = 0;
         if (tasksOk) {

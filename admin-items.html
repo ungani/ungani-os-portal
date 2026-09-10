@@ -565,7 +565,33 @@
       return String(getField(row, ["status", "item_status", "asset_status", "stock_status"], "active")).toLowerCase();
     }
 
+    function getTenantStockTrackingEnabled(tenantId) {
+      const tenant = tenants.find(row => String(row.id) === String(tenantId));
+      return !!(tenant && tenant.stock_tracking_enabled === true);
+    }
+
     function getItemQuantity(row) {
+      // Real quantity lives at business_items.quantity (when Stock Tracking
+      // is enabled for the tenant, managed via adjust_ungani_stock) or at
+      // custom_fields.stock_quantity (Phase 2's item field-set engine,
+      // pre-Stock-Tracking default) - never at a flat top-level column,
+      // mirroring the dual-path logic client.html's getStockQuantity()
+      // already uses correctly.
+      if (getTenantStockTrackingEnabled(row.tenant_id)) {
+        const tracked = row.quantity;
+        if (tracked !== undefined && tracked !== null && tracked !== "") {
+          const trackedNum = Number(tracked);
+          if (!isNaN(trackedNum)) return trackedNum;
+        }
+      }
+
+      const customFields = row.custom_fields || {};
+      const customQty = customFields.stock_quantity;
+      if (customQty !== undefined && customQty !== null && customQty !== "") {
+        const num = Number(customQty);
+        if (!isNaN(num)) return num;
+      }
+
       const raw = getField(row, ["quantity", "qty", "stock_quantity", "count"], 1);
       const num = Number(raw);
       return isNaN(num) ? raw : num;
