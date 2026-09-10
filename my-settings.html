@@ -1057,6 +1057,35 @@
         </div>
       </section>
 
+      <section class="panel full" id="pointOfSalePanel">
+        <div class="panel-head">
+          <h2>Point of Sale</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Turn this on to enable Quick Sale - a fast, tap-based checkout screen for in-person sales
+            (cash or M-Pesa). Once on, a Quick Sale page appears in your sidebar. Each sale creates a
+            real, paid Customer Invoice and deducts stock automatically if Stock Tracking is on.
+            Available on the Business and Custom packages.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--border); border-radius: 14px; cursor: pointer;">
+                <input type="checkbox" id="posEnabled" style="width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer;" />
+                <span style="color: var(--text);">Enable Quick Sale (Point of Sale)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="posMessage" class="action-msg"></span>
+            <button type="button" id="btnSavePos" class="ungani-btn gold" onclick="savePointOfSale()">Save Point of Sale Setting</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full" id="expenseApprovalPanel">
         <div class="panel-head">
           <h2>Expense Approval</h2>
@@ -2133,7 +2162,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled, price_lists_enabled, expense_approval_threshold_kes")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled, price_lists_enabled, pos_enabled, expense_approval_threshold_kes")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -2148,6 +2177,7 @@
       renderStockTrackingPanel(tenantRow);
       renderDebtorsPayablesPanel(tenantRow);
       renderPriceListsPanel(tenantRow);
+      renderPointOfSalePanel(tenantRow);
       renderExpenseApprovalPanel(tenantRow);
       renderBrandingPanel(tenantRow);
 
@@ -2401,6 +2431,46 @@
           msgSpan.className = "action-msg success";
           msgSpan.textContent = "Price Lists setting saved.";
         } catch (err) {
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
+    }
+
+    function renderPointOfSalePanel(tenantRow) {
+      const el = document.getElementById("posEnabled");
+      if (!el) return;
+      el.checked = !!(tenantRow && tenantRow.pos_enabled);
+    }
+
+    async function savePointOfSale() {
+      const msgSpan = document.getElementById("posMessage");
+      const btn = document.getElementById("btnSavePos");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const wantsEnabled = document.getElementById("posEnabled").checked;
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { data, error } = await supabaseClient.rpc(
+            wantsEnabled ? "enable_ungani_pos" : "disable_ungani_pos"
+          );
+
+          if (error) throw error;
+          if (!data || data.ok !== true) throw new Error((data && data.message) || "Could not save.");
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = wantsEnabled ? "Point of Sale enabled." : "Point of Sale disabled.";
+        } catch (err) {
+          document.getElementById("posEnabled").checked = !wantsEnabled;
           msgSpan.className = "action-msg error";
           msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
         }

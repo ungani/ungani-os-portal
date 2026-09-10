@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Quick Sale</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let quickSaleItems = [];
+    let quickSaleCategories = [];
+    let activeCategory = "all";
+    let searchTerm = "";
+    let cartLines = []; // [{item_id, description, unit_price, quantity}]
+    let priceListOptions = [];
+    let selectedPriceListId = "";
+    let activePriceListMap = null;
+    let customerNameSuggestions = [];
+    let mpesaPollTimer = null;
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "quickSale",
+        pageTitle: "Quick Sale",
+        pageSubtitle: "Fast, tap-based checkout for in-person sales.",
+        onReady: startQuickSalePage
+      });
+    });
+
+    async function startQuickSalePage(context) {
+      currentContext = context;
+
+      let eligibility = null;
+      try {
+        const response = await context.supabaseClient.rpc("get_my_ungani_pos_eligibility");
+        if (!response.error && response.data && response.data.ok === true) {
+          eligibility = response.data;
+        }
+      } catch (error) {
+        console.warn("Could not check Point of Sale eligibility:", error.message);
+      }
+
+      if (!eligibility || eligibility.eligible !== true) {
+        renderNotEligibleState(eligibility);
+        return;
+      }
+
+      await Promise.all([
+        loadQuickSaleItems(),
+        loadPriceListOptions(),
+        loadCustomerNameSuggestions()
+      ]);
+
+      buildCategoryList();
+      renderQuickSalePage();
+    }
+
+    function renderNotEligibleState(eligibility) {
+      const needsUpgrade = eligibility && eligibility.pos_enabled === true && eligibility.package_included !== true;
+
+      UnganiClientShared.setContent(`
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Quick Sale</span>
+          <h2 style="font-size:clamp(24px,3.6vw,36px);line-height:1.1;margin:16px 0 12px;">
+            ${needsUpgrade ? "Quick Sale needs the Business package." : "Quick Sale isn't turned on yet."}
+          </h2>
+          <p>
+            ${needsUpgrade
+              ? "Point of Sale is available on the Business and Custom packages. Upgrade your package to use Quick Sale."
+              : "Enable it from My Settings to start taking fast, in-person sales - cash or M-Pesa."}
+          </p>
+          <div class="ungani-button-row">
+            <a class="ungani-btn gold" href="${needsUpgrade ? "my-package.html" : "my-settings.html"}">
+              ${needsUpgrade ? "View Packages" : "Go to Settings"}
+            </a>
+          </div>
+        </section>
+      `);
+    }
+
+    // ---- Data loading ----
+
+    async function loadQuickSaleItems() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, title, property_name, property_price, quantity, custom_fields, item_category, category")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .limit(2000);
+
+        quickSaleItems = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load items for Quick Sale:", error.message);
+        quickSaleItems = [];
+      }
+    }
+
+    async function loadPriceListOptions() {
+      if (!currentContext.tenant || currentContext.tenant.price_lists_enabled !== true) {
+        priceListOptions = [];
+        return;
+      }
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_price_lists");
+        priceListOptions = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.price_lists || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load price lists:", error.message);
+        priceListOptions = [];
+      }
+    }
+
+    async function loadCustomerNameSuggestions() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_customer_name_suggestions");
+        customerNameSuggestions = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.customer_names || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load customer name suggestions:", error.message);
+        customerNameSuggestions = [];
+      }
+    }
+
+    // Same resolution order as Quotations/Orders/Invoices: price-list
+    // override for this item, then the item's own current price, then
+    // null (manual).
+    async function loadActivePriceListMap(priceListId) {
+      if (!priceListId) {
+        activePriceListMap = null;
+        return;
+      }
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_ungani_price_list_detail", { p_price_list_id: priceListId });
+        if (response.error || !response.data || response.data.ok !== true) {
+          activePriceListMap = null;
+          return;
+        }
+        activePriceListMap = new Map((response.data.entries || []).map(function (entry) { return [entry.item_id, entry.price]; }));
+      } catch (error) {
+        activePriceListMap = null;
+      }
+    }
+
+    function resolvePriceForItem(itemId) {
+      if (!itemId) return null;
+      if (activePriceListMap && activePriceListMap.has(itemId)) {
+        return activePriceListMap.get(itemId);
+      }
+      const item = quickSaleItems.find(function (it) { return String(it.id) === String(itemId); });
+      return item && item.property_price != null ? item.property_price : null;
+    }
+
+    function itemLabel(item) {
+      return item.item_name || item.name || item.title || item.property_name || "Item";
+    }
+
+    // Real category source, in priority order: custom_fields.category
+    // (a real, free-text field already on HOSPITALITY_FNB_FIELD_SET, e.g.
+    // "Drinks"/"Mains"/"Starters" - a restaurant can already fill this in
+    // today), then the broader item_category/category column, else no
+    // grouping at all.
+    function itemCategoryOf(item) {
+      const custom = item.custom_fields && item.custom_fields.category;
+      if (custom && String(custom).trim()) return String(custom).trim();
+
+      const broad = item.item_category || item.category;
+      if (broad && String(broad).trim()) return String(broad).trim();
+
+      return null;
+    }
+
+    function buildCategoryList() {
+      const seen = new Map();
+      quickSaleItems.forEach(function (item) {
+        const cat = itemCategoryOf(item);
+        if (!cat) return;
+        seen.set(cat, (seen.get(cat) || 0) + 1);
+      });
+      quickSaleCategories = Array.from(seen.keys()).sort();
+    }
+
+    // ---- Cart ----
+
+    function addToCart(itemId) {
+      const item = quickSaleItems.find(function (it) { return String(it.id) === String(itemId); });
+      if (!item) return;
+
+      const existing = cartLines.find(function (line) { return String(line.item_id) === String(itemId); });
+      if (existing) {
+        existing.quantity += 1;
+      } else {
+        cartLines.push({
+          item_id: item.id,
+          description: itemLabel(item),
+          unit_price: resolvePriceForItem(item.id) || 0,
+          quantity: 1
+        });
+      }
+      renderQuickSalePage();
+    }
+
+    function changeCartQuantity(itemId, delta) {
+      const line = cartLines.find(function (l) { return String(l.item_id) === String(itemId); });
+      if (!line) return;
+      line.quantity += delta;
+      if (line.quantity <= 0) {
+        cartLines = cartLines.filter(function (l) { return String(l.item_id) !== String(itemId); });
+      }
+      renderQuickSalePage();
+    }
+
+    function removeCartLine(itemId) {
+      cartLines = cartLines.filter(function (l) { return String(l.item_id) !== String(itemId); });
+      renderQuickSalePage();
+    }
+
+    function cartTotal() {
+      return cartLines.reduce(function (sum, line) { return sum + (line.quantity * line.unit_price); }, 0);
+    }
+
+    async function handlePricingSelectorChange() {
+      selectedPriceListId = document.getElementById("quickSalePricingSelector").value;
+      await loadActivePriceListMap(selectedPriceListId);
+      cartLines.forEach(function (line) {
+        const resolved = resolvePriceForItem(line.item_id);
+        if (resolved != null) line.unit_price = resolved;
+      });
+      renderQuickSalePage();
+    }
+
+    function setActiveCategory(category) {
+      activeCategory = category;
+      renderQuickSalePage();
+    }
+
+    function handleSearchInput(value) {
+      searchTerm = value.toLowerCase();
+      renderQuickSalePage();
+    }
+
+    function filteredItems() {
+      return quickSaleItems.filter(function (item) {
+        if (activeCategory !== "all" && itemCategoryOf(item) !== activeCategory) return false;
+        if (searchTerm && itemLabel(item).toLowerCase().indexOf(searchTerm) === -1) return false;
+        return true;
+      });
+    }
+
+    // ---- Checkout ----
+
+    async function checkout(paymentMethod) {
+      if (cartLines.length === 0) {
+        UnganiClientShared.showToast("Add at least one item first.");
+        return;
+      }
+
+      const customerName = document.getElementById("quickSaleCustomerName").value.trim();
+      if (!customerName) {
+        UnganiClientShared.showToast("Enter a customer name (or \"Walk-in\").");
+        return;
+      }
+
+      const btn = document.getElementById(paymentMethod === "cash" ? "btnCheckoutCash" : "btnCheckoutMpesa");
+
+      await UnganiClientShared.withButtonLoading(btn, async () => {
+        const items = cartLines.map(function (line) {
+          return {
+            item_id: line.item_id,
+            description: line.description,
+            quantity: line.quantity,
+            unit_price: line.unit_price
+          };
+        });
+
+        const response = await currentContext.supabaseClient.rpc("record_ungani_pos_sale", {
+          p_customer_name: customerName,
+          p_payment_method: paymentMethod,
+          p_items: items
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast((response.data && response.data.message) || "Could not record the sale.");
+          return;
+        }
+
+        const sale = response.data;
+
+        if (paymentMethod === "cash") {
+          showReceipt(sale, customerName, "Cash");
+          cartLines = [];
+          renderQuickSalePage();
+          return;
+        }
+
+        // M-Pesa: sale is a draft invoice - collect a phone number, kick
+        // off the real STK push, then poll for confirmation exactly like
+        // my-billing.html's subscription flow.
+        const phone = prompt("Customer's M-Pesa phone number (e.g. 0712345678):");
+        if (!phone) {
+          UnganiClientShared.showToast("Sale saved as unpaid - collect payment and try again.");
+          return;
+        }
+
+        await initiateQuickSaleMpesa(sale, phone, customerName);
+      });
+    }
+
+    async function initiateQuickSaleMpesa(sale, phone, customerName) {
+      const statusEl = document.getElementById("quickSaleMpesaStatus");
+      if (statusEl) statusEl.textContent = "Sending payment request...";
+
+      try {
+        const { data: sessionData } = await currentContext.supabaseClient.auth.getSession();
+        const accessToken = sessionData && sessionData.session ? sessionData.session.access_token : null;
+
+        if (!accessToken) {
+          if (statusEl) statusEl.textContent = "Your session has expired - please log in again.";
+          return;
+        }
+
+        const response = await fetch("/api/mpesa-stk-push", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + accessToken
+          },
+          body: JSON.stringify({ phone: phone, purpose: "pos_sale", invoiceId: sale.invoice_id })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          if (statusEl) statusEl.textContent = result.message || "Could not start the M-Pesa payment.";
+          return;
+        }
+
+        if (statusEl) statusEl.textContent = "Check the customer's phone - waiting for M-Pesa PIN...";
+        pollQuickSaleMpesa(sale, customerName, statusEl);
+      } catch (error) {
+        if (statusEl) statusEl.textContent = "Something went wrong: " + error.message;
+      }
+    }
+
+    function pollQuickSaleMpesa(sale, customerName, statusEl) {
+      if (mpesaPollTimer) {
+        clearInterval(mpesaPollTimer);
+        mpesaPollTimer = null;
+      }
+
+      let attempts = 0;
+      const maxAttempts = 30; // ~90 seconds - matches my-billing.html's subscription poll
+
+      mpesaPollTimer = setInterval(async () => {
+        attempts += 1;
+        try {
+          const { data, error } = await currentContext.supabaseClient
+            .from("ungani_customer_invoices")
+            .select("status")
+            .eq("id", sale.invoice_id)
+            .maybeSingle();
+
+          if (error || !data) return;
+
+          if (data.status === "paid") {
+            clearInterval(mpesaPollTimer);
+            mpesaPollTimer = null;
+            cartLines = [];
+            renderQuickSalePage();
+            showReceipt(sale, customerName, "M-Pesa");
+            return;
+          }
+        } catch (error) {
+          // Transient network error - keep polling.
+        }
+
+        if (attempts >= maxAttempts) {
+          clearInterval(mpesaPollTimer);
+          mpesaPollTimer = null;
+          if (statusEl) statusEl.textContent = "Still waiting on M-Pesa - if the customer paid, it will show as paid shortly.";
+        }
+      }, 3000);
+    }
+
+    function showReceipt(sale, customerName, paymentMethod) {
+      const lines = cartLines.length ? cartLines : [];
+      const total = sale.total_amount;
+      const businessName = (currentContext.tenant && currentContext.tenant.company_name) || "Your Business";
+      const now = new Date();
+
+      const modal = document.createElement("div");
+      modal.style.cssText = "position:fixed;inset:0;background:rgba(6,28,61,0.55);display:flex;align-items:center;justify-content:center;z-index:99998;padding:20px;";
+      modal.innerHTML = `
+        <div style="background:#fff;color:#1a1a1a;max-width:380px;width:100%;border-radius:16px;padding:24px;font-family:-apple-system,sans-serif;">
+          <div style="text-align:center;margin-bottom:16px;">
+            <div style="font-weight:800;font-size:18px;">${UnganiClientShared.safe(businessName)}</div>
+            <div style="font-size:12px;color:#666;">${now.toLocaleString()}</div>
+          </div>
+          <div style="border-top:1px dashed #ccc;border-bottom:1px dashed #ccc;padding:12px 0;margin-bottom:12px;">
+            <div style="font-size:13px;margin-bottom:6px;"><strong>Receipt:</strong> ${UnganiClientShared.safe(sale.invoice_number)}</div>
+            <div style="font-size:13px;margin-bottom:6px;"><strong>Customer:</strong> ${UnganiClientShared.safe(customerName)}</div>
+            <div style="font-size:13px;"><strong>Payment:</strong> ${UnganiClientShared.safe(paymentMethod)}</div>
+          </div>
+          <div style="font-size:24px;font-weight:800;text-align:center;margin-bottom:16px;">
+            KES ${UnganiClientShared.formatNumber(total)}
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="ungani-btn gold" style="flex:1;" onclick="window.print()">Print</button>
+            <button class="ungani-btn" style="flex:1;" onclick="this.closest('div[style*=fixed]').remove()">Close</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    // ---- Render ----
+
+    function renderQuickSalePage() {
+      const items = filteredItems();
+
+      UnganiClientShared.setContent(`
+        <style>
+          .qs-layout { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
+          @media (max-width: 900px) { .qs-layout { grid-template-columns: 1fr; } }
+          .qs-categories { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+          .qs-chip { padding: 8px 16px; border-radius: 999px; border: 1px solid var(--border); cursor: pointer; font-size: 13px; background: transparent; color: var(--text); }
+          .qs-chip.active { background: var(--gold); border-color: var(--gold); color: #061C3D; font-weight: 700; }
+          .qs-search { width: 100%; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 14px; font-size: 15px; }
+          .qs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+          .qs-tile { border: 1px solid var(--border); border-radius: 14px; padding: 14px 10px; text-align: center; cursor: pointer; background: var(--card-bg, rgba(255,255,255,0.02)); user-select: none; }
+          .qs-tile:active { transform: scale(0.96); background: rgba(212,166,58,0.15); }
+          .qs-tile-name { font-weight: 700; font-size: 14px; line-height: 1.25; margin-bottom: 6px; min-height: 34px; }
+          .qs-tile-price { font-size: 13px; color: var(--gold); font-weight: 700; }
+          .qs-cart { border: 1px solid var(--border); border-radius: 16px; padding: 16px; position: sticky; top: 16px; }
+          .qs-cart-line { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+          .qs-cart-line-name { flex: 1; font-size: 13px; }
+          .qs-qty-btn { width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; font-weight: 700; }
+          .qs-empty-cart { text-align: center; color: var(--muted); padding: 24px 0; font-size: 14px; }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Quick Sale</span>
+          <h2 style="font-size:clamp(24px,3.4vw,34px);line-height:1.1;margin:14px 0 8px;">Tap to add, then check out.</h2>
+          <p>Search is available below for anything not on-screen.</p>
+        </section>
+
+        <div class="qs-layout" style="margin-top:18px;">
+          <section class="ungani-card">
+            <input class="qs-search" type="text" placeholder="Search items..." value="${UnganiClientShared.attr(searchTerm)}" oninput="handleSearchInput(this.value)" />
+
+            ${quickSaleCategories.length ? `
+              <div class="qs-categories">
+                <button class="qs-chip ${activeCategory === "all" ? "active" : ""}" onclick="setActiveCategory('all')">All</button>
+                ${quickSaleCategories.map(function (cat) {
+                  return `<button class="qs-chip ${activeCategory === cat ? "active" : ""}" onclick="setActiveCategory('${cat.replace(/'/g, "\\'")}')">${UnganiClientShared.safe(cat)}</button>`;
+                }).join("")}
+              </div>
+            ` : ""}
+
+            <div class="qs-grid">
+              ${items.length === 0 ? `<p class="ungani-small" style="grid-column:1/-1;">No items match. Add items on the Items page first.</p>` : ""}
+              ${items.map(function (item) {
+                const price = resolvePriceForItem(item.id);
+                return `
+                  <div class="qs-tile" onclick="addToCart('${item.id}')">
+                    <div class="qs-tile-name">${UnganiClientShared.safe(itemLabel(item))}</div>
+                    <div class="qs-tile-price">${price != null ? "KES " + UnganiClientShared.formatNumber(price) : "Set price"}</div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </section>
+
+          <aside class="qs-cart">
+            <h3 style="margin:0 0 12px;">Current Sale</h3>
+
+            <input id="quickSaleCustomerName" list="quickSaleCustomerSuggestions" placeholder="Customer name (or Walk-in)" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);margin-bottom:12px;" />
+            <datalist id="quickSaleCustomerSuggestions">
+              ${customerNameSuggestions.map(function (name) { return `<option value="${UnganiClientShared.attr(name)}"></option>`; }).join("")}
+            </datalist>
+
+            ${priceListOptions.length ? `
+              <select id="quickSalePricingSelector" onchange="handlePricingSelectorChange()" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);margin-bottom:12px;">
+                <option value="">Default pricing</option>
+                ${priceListOptions.map(function (pl) {
+                  return `<option value="${UnganiClientShared.attr(pl.id)}" ${selectedPriceListId === pl.id ? "selected" : ""}>${UnganiClientShared.safe(pl.name)}</option>`;
+                }).join("")}
+              </select>
+            ` : ""}
+
+            ${cartLines.length === 0 ? `<div class="qs-empty-cart">Tap items to add them here.</div>` : cartLines.map(function (line) {
+              return `
+                <div class="qs-cart-line">
+                  <div class="qs-cart-line-name">
+                    ${UnganiClientShared.safe(line.description)}<br/>
+                    <span class="ungani-small">KES ${UnganiClientShared.formatNumber(line.unit_price)} each</span>
+                  </div>
+                  <button class="qs-qty-btn" onclick="changeCartQuantity('${line.item_id}', -1)">-</button>
+                  <span style="min-width:20px;text-align:center;">${line.quantity}</span>
+                  <button class="qs-qty-btn" onclick="changeCartQuantity('${line.item_id}', 1)">+</button>
+                  <button class="qs-qty-btn" onclick="removeCartLine('${line.item_id}')" title="Remove">&times;</button>
+                </div>
+              `;
+            }).join("")}
+
+            <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:800;margin:16px 0;">
+              <span>Total</span>
+              <span>KES ${UnganiClientShared.formatNumber(cartTotal())}</span>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <button id="btnCheckoutCash" class="ungani-btn gold" style="width:100%;" onclick="checkout('cash')">Cash</button>
+              <button id="btnCheckoutMpesa" class="ungani-btn green" style="width:100%;" onclick="checkout('mpesa')">M-Pesa</button>
+            </div>
+            <p id="quickSaleMpesaStatus" class="ungani-small" style="margin-top:10px;"></p>
+          </aside>
+        </div>
+      `);
+
+      if (typeof UnganiClientShared.renderLucideIcons === "function") {
+        UnganiClientShared.renderLucideIcons();
+      }
+    }
+  </script>
+</body>
+</html>

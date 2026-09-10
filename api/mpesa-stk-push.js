@@ -123,29 +123,86 @@ async function initiateStkPush(req, res) {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    // Resolve the real amount owed via the single canonical calculation
-    // function - package price (by billing_cycle) + branch add-on, with
-    // package_key resolved the same way this RPC always has
-    // (ungani_subscriptions.package_key, not the stale tenants.package_key).
-    // set_ungani_subscription_period_from_payment() calls this same
-    // function independently at confirmation time to detect (not block)
-    // any mismatch, so both sides of the flow always agree.
-    const { data: amountDue, error: amountError } = await supabaseAdmin.rpc(
-      "calculate_ungani_subscription_amount",
-      { p_tenant_id: caller.tenantId }
-    );
+    // POS Quick Sale reuses this same endpoint/mechanics (Daraja OAuth,
+    // STK push, callback matching, client poll) rather than a second
+    // parallel implementation - purpose/invoiceId is the discriminator.
+    // Everything below this block is the original, untouched subscription
+    // path.
+    const isPosSale = req.body && req.body.purpose === "pos_sale" && req.body.invoiceId;
 
-    if (amountError || !amountDue) {
-      return json(res, 500, { ok: false, message: "Could not resolve package pricing for this account." });
-    }
+    let packageKey = null;
+    let totalAmount = null;
+    let branchAddonAmount = 0;
+    let billableBranchCount = 0;
+    let transactionType = "subscription";
+    let relatedTable = null;
+    let relatedId = null;
+    let accountReference = "UNGANI-" + caller.tenantId.slice(0, 8);
+    let transactionDesc;
 
-    const packageKey = amountDue.package_key || "starter";
-    const totalAmount = amountDue.total_amount;
-    const branchAddonAmount = Number(amountDue.branch_addon_amount) || 0;
-    const billableBranchCount = Number(amountDue.billable_branch_count) || 0;
+    if (isPosSale) {
+      // Never trust a client-supplied amount - read the real invoice
+      // total, and re-verify it belongs to this tenant and hasn't
+      // already been paid (defense in depth on top of the eligibility
+      // check record_ungani_pos_sale already performed when the draft
+      // invoice was created).
+      const { data: invoice, error: invoiceError } = await supabaseAdmin
+        .from("ungani_customer_invoices")
+        .select("id, tenant_id, invoice_number, total_amount, status")
+        .eq("id", req.body.invoiceId)
+        .maybeSingle();
 
-    if (!totalAmount || totalAmount <= 0) {
-      return json(res, 500, { ok: false, message: "This package has no price configured yet - contact UNGANI support." });
+      if (invoiceError || !invoice || invoice.tenant_id !== caller.tenantId) {
+        return json(res, 404, { ok: false, message: "Sale not found." });
+      }
+
+      if (invoice.status !== "draft") {
+        return json(res, 400, { ok: false, message: "This sale has already been paid or is no longer awaiting payment." });
+      }
+
+      const { data: eligibility } = await supabaseAdmin.rpc("get_my_ungani_pos_eligibility");
+      // Defense in depth only - record_ungani_pos_sale already gated
+      // this when the draft invoice was created a moment earlier.
+      if (!eligibility || eligibility.eligible !== true) {
+        return json(res, 403, { ok: false, message: "Point of Sale is not available for this account." });
+      }
+
+      totalAmount = Number(invoice.total_amount);
+      transactionType = "pos_sale";
+      relatedTable = "ungani_customer_invoices";
+      relatedId = invoice.id;
+      accountReference = "UNGANI-POS-" + invoice.invoice_number;
+      transactionDesc = "UNGANI OS Quick Sale " + invoice.invoice_number;
+
+      if (!totalAmount || totalAmount <= 0) {
+        return json(res, 400, { ok: false, message: "This sale has no amount to charge." });
+      }
+    } else {
+      // Resolve the real amount owed via the single canonical calculation
+      // function - package price (by billing_cycle) + branch add-on, with
+      // package_key resolved the same way this RPC always has
+      // (ungani_subscriptions.package_key, not the stale tenants.package_key).
+      // set_ungani_subscription_period_from_payment() calls this same
+      // function independently at confirmation time to detect (not block)
+      // any mismatch, so both sides of the flow always agree.
+      const { data: amountDue, error: amountError } = await supabaseAdmin.rpc(
+        "calculate_ungani_subscription_amount",
+        { p_tenant_id: caller.tenantId }
+      );
+
+      if (amountError || !amountDue) {
+        return json(res, 500, { ok: false, message: "Could not resolve package pricing for this account." });
+      }
+
+      packageKey = amountDue.package_key || "starter";
+      totalAmount = amountDue.total_amount;
+      branchAddonAmount = Number(amountDue.branch_addon_amount) || 0;
+      billableBranchCount = Number(amountDue.billable_branch_count) || 0;
+      transactionDesc = "UNGANI OS " + packageKey + " package";
+
+      if (!totalAmount || totalAmount <= 0) {
+        return json(res, 500, { ok: false, message: "This package has no price configured yet - contact UNGANI support." });
+      }
     }
 
     const accessToken = await getDarajaAccessToken();
@@ -169,8 +226,8 @@ async function initiateStkPush(req, res) {
         PartyB: MPESA_SHORTCODE,
         PhoneNumber: phoneNumber,
         CallBackURL: APP_URL + "/api/mpesa-stk-push",
-        AccountReference: "UNGANI-" + caller.tenantId.slice(0, 8),
-        TransactionDesc: "UNGANI OS " + packageKey + " package"
+        AccountReference: accountReference,
+        TransactionDesc: transactionDesc
       })
     });
 
@@ -194,6 +251,9 @@ async function initiateStkPush(req, res) {
         branch_addon_amount: branchAddonAmount,
         billable_branch_count: billableBranchCount,
         package_key: packageKey,
+        transaction_type: transactionType,
+        related_table: relatedTable,
+        related_id: relatedId,
         merchant_request_id: stkData.MerchantRequestID || null,
         checkout_request_id: stkData.CheckoutRequestID || null,
         status: "pending"
@@ -275,7 +335,7 @@ async function handleStkCallback(req, res) {
     // nothing and is silently ignored below.
     const { data: transaction, error: lookupError } = await supabaseAdmin
       .from("ungani_mpesa_transactions")
-      .select("id, tenant_id, amount, branch_addon_amount, billable_branch_count, package_key, phone_number, status")
+      .select("id, tenant_id, amount, branch_addon_amount, billable_branch_count, package_key, phone_number, status, transaction_type, related_table, related_id")
       .eq("checkout_request_id", stkCallback.CheckoutRequestID)
       .maybeSingle();
 
@@ -298,6 +358,88 @@ async function handleStkCallback(req, res) {
       const transactionDateRaw = extractMetadataValue(items, "TransactionDate");
       const paidAt = parseDarajaTimestamp(transactionDateRaw) || new Date().toISOString();
       const amountPaid = extractMetadataValue(items, "Amount") || transaction.amount;
+
+      // POS Quick Sale branch - completely separate from the subscription
+      // path below. Stock deduction was deliberately deferred until now
+      // (record_ungani_pos_sale created the invoice as 'draft' with no
+      // stock touched) so a declined/cancelled/timed-out prompt never
+      // removes stock for a sale that didn't happen.
+      if (transaction.transaction_type === "pos_sale" && transaction.related_id) {
+        const invoiceId = transaction.related_id;
+
+        const { data: tenantRow } = await supabaseAdmin
+          .from("tenants")
+          .select("stock_tracking_enabled")
+          .eq("id", transaction.tenant_id)
+          .maybeSingle();
+
+        if (tenantRow && tenantRow.stock_tracking_enabled === true) {
+          const { data: invoiceItems } = await supabaseAdmin
+            .from("ungani_customer_invoice_items")
+            .select("item_id, quantity")
+            .eq("invoice_id", invoiceId);
+
+          for (const line of invoiceItems || []) {
+            if (!line.item_id) continue;
+
+            const { data: stockResult } = await supabaseAdmin.rpc("adjust_ungani_stock", {
+              p_item_id: line.item_id,
+              p_movement_type: "sale",
+              p_quantity_delta: -Number(line.quantity),
+              p_reason: "POS sale (M-Pesa)"
+            });
+
+            // Money was already received via M-Pesa - a stock shortfall
+            // here (e.g. sold elsewhere in the gap between sale creation
+            // and payment confirmation) must never block recording the
+            // payment. Flagged on the invoice for manual reconciliation
+            // instead of silently dropping either the payment or the
+            // discrepancy.
+            if (!stockResult || stockResult.ok !== true) {
+              const { data: currentInvoice } = await supabaseAdmin
+                .from("ungani_customer_invoices")
+                .select("notes")
+                .eq("id", invoiceId)
+                .maybeSingle();
+
+              const shortfallNote = "[STOCK RECONCILIATION NEEDED] Could not deduct " + line.quantity +
+                " unit(s) of item " + line.item_id + " after M-Pesa payment was received - " +
+                ((stockResult && stockResult.message) || "unknown stock error") + ".";
+              const updatedNotes = (currentInvoice && currentInvoice.notes)
+                ? currentInvoice.notes + "\n" + shortfallNote
+                : shortfallNote;
+
+              await supabaseAdmin
+                .from("ungani_customer_invoices")
+                .update({ notes: updatedNotes })
+                .eq("id", invoiceId);
+            }
+          }
+        }
+
+        await supabaseAdmin.rpc("record_ungani_invoice_payment", {
+          p_invoice_id: invoiceId,
+          p_amount: amountPaid,
+          p_method: "mpesa",
+          p_reference: mpesaReceiptNumber,
+          p_notes: "Quick Sale - M-Pesa"
+        });
+
+        await supabaseAdmin
+          .from("ungani_mpesa_transactions")
+          .update({
+            status: "success",
+            result_code: resultCode,
+            result_desc: resultDesc,
+            mpesa_receipt_number: mpesaReceiptNumber,
+            transaction_date: paidAt,
+            raw_callback: req.body,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", transaction.id);
+
+        return json(res, 200, { ResultCode: 0, ResultDesc: "Accepted." });
+      }
 
       const { data: payment, error: paymentError } = await supabaseAdmin
         .from("ungani_payments")

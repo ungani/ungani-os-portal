@@ -71,6 +71,16 @@
       ["customer-invoices", "my-customer-invoices.html", "banknote", "Customer Invoices"]
     ];
 
+    // POS is opt-in (tenant.pos_enabled) same as Stock Tracking/Price
+    // Lists/Debtors above - this is nav-visibility UX only, not the
+    // real enforcement. The real, server-side tier gate lives inside
+    // record_ungani_pos_sale()/enable_ungani_pos() - a tenant whose
+    // package no longer includes POS still gets a clear rejection
+    // there even if this link is still visible for a moment.
+    if (tenant && tenant.pos_enabled === true) {
+      salesItems.push(["quick-sale", "my-quick-sale.html", "shopping-bag", "Quick Sale"]);
+    }
+
     const inventoryItems = [
       ["items", "my-items.html", "tag", "Items / Assets / Stock"]
     ];
