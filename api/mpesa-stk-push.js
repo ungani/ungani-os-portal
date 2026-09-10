@@ -160,10 +160,36 @@ async function initiateStkPush(req, res) {
         return json(res, 400, { ok: false, message: "This sale has already been paid or is no longer awaiting payment." });
       }
 
-      const { data: eligibility } = await supabaseAdmin.rpc("get_my_ungani_pos_eligibility");
-      // Defense in depth only - record_ungani_pos_sale already gated
-      // this when the draft invoice was created a moment earlier.
-      if (!eligibility || eligibility.eligible !== true) {
+      // Defense in depth only - record_ungani_pos_sale already gated this
+      // when the draft invoice was created a moment earlier. Can't call
+      // get_my_ungani_pos_eligibility() here - it resolves the tenant via
+      // auth.uid(), which is null for the service-role client used in
+      // this file, so it would always fail closed. Query the same two
+      // conditions directly using the tenant_id already known from the
+      // invoice lookup above.
+      const { data: tenantRow } = await supabaseAdmin
+        .from("tenants")
+        .select("pos_enabled")
+        .eq("id", caller.tenantId)
+        .maybeSingle();
+
+      const { data: subscriptionRow } = await supabaseAdmin
+        .from("ungani_subscriptions")
+        .select("package_key")
+        .eq("tenant_id", caller.tenantId)
+        .maybeSingle();
+
+      const { data: packageRow } = subscriptionRow
+        ? await supabaseAdmin
+            .from("ungani_packages")
+            .select("pos_included")
+            .eq("package_key", subscriptionRow.package_key)
+            .maybeSingle()
+        : { data: null };
+
+      const posEligible = !!(tenantRow && tenantRow.pos_enabled === true && packageRow && packageRow.pos_included === true);
+
+      if (!posEligible) {
         return json(res, 403, { ok: false, message: "Point of Sale is not available for this account." });
       }
 
