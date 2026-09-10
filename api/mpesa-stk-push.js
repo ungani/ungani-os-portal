@@ -123,40 +123,28 @@ async function initiateStkPush(req, res) {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    // Resolve the real amount owed: current package_key (from
-    // ungani_subscriptions) x billing_cycle (from tenants) x real
-    // pricing (ungani_packages) - the exact same lookup
-    // set_ungani_subscription_period_from_payment() already relies on,
-    // so a successful payment here always lines up with what that
-    // function expects.
-    const { data: sub } = await supabaseAdmin
-      .from("ungani_subscriptions")
-      .select("package_key")
-      .eq("tenant_id", caller.tenantId)
-      .maybeSingle();
+    // Resolve the real amount owed via the single canonical calculation
+    // function - package price (by billing_cycle) + branch add-on, with
+    // package_key resolved the same way this RPC always has
+    // (ungani_subscriptions.package_key, not the stale tenants.package_key).
+    // set_ungani_subscription_period_from_payment() calls this same
+    // function independently at confirmation time to detect (not block)
+    // any mismatch, so both sides of the flow always agree.
+    const { data: amountDue, error: amountError } = await supabaseAdmin.rpc(
+      "calculate_ungani_subscription_amount",
+      { p_tenant_id: caller.tenantId }
+    );
 
-    const { data: tenant } = await supabaseAdmin
-      .from("tenants")
-      .select("billing_cycle")
-      .eq("id", caller.tenantId)
-      .maybeSingle();
-
-    const packageKey = (sub && sub.package_key) || "starter";
-    const billingCycle = (tenant && tenant.billing_cycle) || "monthly";
-
-    const { data: packageRow, error: packageError } = await supabaseAdmin
-      .from("ungani_packages")
-      .select("package_key, monthly_price_ksh, yearly_price_ksh")
-      .eq("package_key", packageKey)
-      .maybeSingle();
-
-    if (packageError || !packageRow) {
-      return json(res, 500, { ok: false, message: "Could not resolve package pricing for '" + packageKey + "'." });
+    if (amountError || !amountDue) {
+      return json(res, 500, { ok: false, message: "Could not resolve package pricing for this account." });
     }
 
-    const amount = billingCycle === "yearly" ? packageRow.yearly_price_ksh : packageRow.monthly_price_ksh;
+    const packageKey = amountDue.package_key || "starter";
+    const totalAmount = amountDue.total_amount;
+    const branchAddonAmount = Number(amountDue.branch_addon_amount) || 0;
+    const billableBranchCount = Number(amountDue.billable_branch_count) || 0;
 
-    if (!amount || amount <= 0) {
+    if (!totalAmount || totalAmount <= 0) {
       return json(res, 500, { ok: false, message: "This package has no price configured yet - contact UNGANI support." });
     }
 
@@ -176,7 +164,7 @@ async function initiateStkPush(req, res) {
         Password: password,
         Timestamp: timestamp,
         TransactionType: "CustomerPayBillOnline",
-        Amount: Math.round(amount),
+        Amount: Math.round(totalAmount),
         PartyA: phoneNumber,
         PartyB: MPESA_SHORTCODE,
         PhoneNumber: phoneNumber,
@@ -202,7 +190,9 @@ async function initiateStkPush(req, res) {
         tenant_id: caller.tenantId,
         initiated_by: caller.authUserId,
         phone_number: phoneNumber,
-        amount: amount,
+        amount: totalAmount,
+        branch_addon_amount: branchAddonAmount,
+        billable_branch_count: billableBranchCount,
         package_key: packageKey,
         merchant_request_id: stkData.MerchantRequestID || null,
         checkout_request_id: stkData.CheckoutRequestID || null,
@@ -285,7 +275,7 @@ async function handleStkCallback(req, res) {
     // nothing and is silently ignored below.
     const { data: transaction, error: lookupError } = await supabaseAdmin
       .from("ungani_mpesa_transactions")
-      .select("id, tenant_id, amount, package_key, phone_number, status")
+      .select("id, tenant_id, amount, branch_addon_amount, billable_branch_count, package_key, phone_number, status")
       .eq("checkout_request_id", stkCallback.CheckoutRequestID)
       .maybeSingle();
 
@@ -315,6 +305,8 @@ async function handleStkCallback(req, res) {
           tenant_id: transaction.tenant_id,
           package_key: transaction.package_key,
           amount: amountPaid,
+          branch_addon_amount: transaction.branch_addon_amount,
+          billable_branch_count: transaction.billable_branch_count,
           currency: "KES",
           paid_at: paidAt,
           payment_status: "paid",
