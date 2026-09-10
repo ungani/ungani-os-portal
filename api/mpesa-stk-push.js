@@ -153,7 +153,16 @@ async function initiateStkPush(req, res) {
         .maybeSingle();
 
       if (invoiceError || !invoice || invoice.tenant_id !== caller.tenantId) {
-        return json(res, 404, { ok: false, message: "Sale not found." });
+        return json(res, 404, {
+          ok: false,
+          message: "Sale not found.",
+          debug: {
+            invoiceError: invoiceError ? invoiceError.message : null,
+            invoice: invoice,
+            callerTenantId: caller.tenantId,
+            requestedInvoiceId: req.body.invoiceId
+          }
+        });
       }
 
       if (invoice.status !== "draft") {
