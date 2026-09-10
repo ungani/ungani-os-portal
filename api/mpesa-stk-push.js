@@ -408,7 +408,8 @@ async function handleStkCallback(req, res) {
           for (const line of invoiceItems || []) {
             if (!line.item_id) continue;
 
-            const { data: stockResult } = await supabaseAdmin.rpc("adjust_ungani_stock", {
+            const { data: stockResult } = await supabaseAdmin.rpc("service_adjust_ungani_stock", {
+              p_tenant_id: transaction.tenant_id,
               p_item_id: line.item_id,
               p_movement_type: "sale",
               p_quantity_delta: -Number(line.quantity),
@@ -443,7 +444,8 @@ async function handleStkCallback(req, res) {
           }
         }
 
-        await supabaseAdmin.rpc("record_ungani_invoice_payment", {
+        const { data: paymentResult } = await supabaseAdmin.rpc("service_record_ungani_invoice_payment", {
+          p_tenant_id: transaction.tenant_id,
           p_invoice_id: invoiceId,
           p_amount: amountPaid,
           p_method: "mpesa",
@@ -456,7 +458,9 @@ async function handleStkCallback(req, res) {
           .update({
             status: "success",
             result_code: resultCode,
-            result_desc: resultDesc,
+            result_desc: paymentResult && paymentResult.ok === true
+              ? resultDesc
+              : "Payment received but could not be recorded on the invoice: " + ((paymentResult && paymentResult.message) || "unknown error"),
             mpesa_receipt_number: mpesaReceiptNumber,
             transaction_date: paidAt,
             raw_callback: req.body,
