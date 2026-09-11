@@ -2550,6 +2550,21 @@
         return runInvoiceQueryIntent();
       }
 
+      // Live-data favorites question ("favorites", "starred", "bookmarks") -
+      // a bare mention is enough on its own, same reasoning as Price
+      // Lists' bare "price" check - this always answers with the real
+      // list rather than just navigating, since "show my favorites" and
+      // "what have I favorited" are both genuinely asking for the data,
+      // not just the page.
+      if (isFavoritesQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Favorites aren't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runFavoritesQueryIntent();
+      }
+
       // Live-data debtors/payables question ("debtors", "payables", "who
       // owes me") - same reasoning as invoices above, checked right after
       // it since both are financial live-data questions.
@@ -3844,6 +3859,108 @@
       spoken: "Pending fulfilment: " + formatNiaKES(pendingTotal) + " across " + pendingRows.length +
         " order" + (pendingRows.length === 1 ? "" : "s") + ". " + readyCount + " ready to invoice. " + overdueText + "."
     };
+  }
+
+  // ---- Favorites ----
+  // Mirrors my-favorites.html's own exact logic (no dedicated RPC exists -
+  // that page queries ungani_favorites directly, then resolves each
+  // favorited record against its real table) so Nia's list always matches
+  // what the page itself would show. "favorite"/"favourite"/"starred"/
+  // "bookmark" are safe bare-keyword matches - none collide with any
+  // other feature's vocabulary in this app.
+  function isFavoritesQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["favorite", "favourite", "starred", "bookmark"].some(function (word) { return lower.indexOf(word) !== -1; });
+  }
+
+  const NIA_FAVORITES_TABLE_CONFIG = {
+    documents: { label: "Document", titleFields: ["document_title", "title", "file_name"] },
+    business_items: { label: "Item / Property", titleFields: ["property_name", "item_name", "name", "title"] },
+    client_people: { label: "Person", titleFields: ["full_name", "name"] },
+    tasks: { label: "Task", titleFields: ["task_title", "title", "name"] },
+    business_records: { label: "Business Record", titleFields: ["record_title", "title", "name"] }
+  };
+
+  function niaFieldValue(record, fields, fallback) {
+    for (const field of fields) {
+      if (record && record[field]) return record[field];
+    }
+    return fallback;
+  }
+
+  async function runFavoritesQueryIntent() {
+    if (!state.supabaseClient || !state.userId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your favorites...");
+
+    let favoriteRows;
+    try {
+      const response = await state.supabaseClient
+        .from("ungani_favorites")
+        .select("record_table, record_id, created_at")
+        .eq("user_id", state.userId)
+        .order("created_at", { ascending: false });
+      if (response.error) throw response.error;
+      favoriteRows = response.data || [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (!favoriteRows.length) {
+      addNiaMessage("No favorites yet. Star anything from its record to save it here — " + goldLink("my-favorites.html", "Open Favorites") + ".");
+      return { spoken: "No favorites yet." };
+    }
+
+    const idsByTable = {};
+    favoriteRows.forEach(function (row) {
+      if (!idsByTable[row.record_table]) idsByTable[row.record_table] = [];
+      idsByTable[row.record_table].push(row.record_id);
+    });
+
+    const recordsByTable = {};
+    try {
+      await Promise.all(Object.keys(idsByTable).map(async function (table) {
+        const response = await state.supabaseClient.from(table).select("*").in("id", idsByTable[table]);
+        recordsByTable[table] = {};
+        (response.data || []).forEach(function (row) { recordsByTable[table][row.id] = row; });
+      }));
+    } catch (error) {
+      // Degrade gracefully - still report the count below even if a
+      // specific table lookup fails, same as the count-only fallback path.
+    }
+
+    const items = favoriteRows.map(function (favRow) {
+      const config = NIA_FAVORITES_TABLE_CONFIG[favRow.record_table];
+      const record = recordsByTable[favRow.record_table] ? recordsByTable[favRow.record_table][favRow.record_id] : null;
+      if (!config || !record) return null;
+      return { label: config.label, title: niaFieldValue(record, config.titleFields, config.label) };
+    }).filter(Boolean);
+
+    if (!items.length) {
+      addNiaMessage("You have " + favoriteRows.length + " favorite" + (favoriteRows.length === 1 ? "" : "s") + " saved, but I couldn't load the details right now. " + goldLink("my-favorites.html", "Open Favorites") + ".");
+      return { spoken: favoriteRows.length + " favorites saved." };
+    }
+
+    const shown = items.slice(0, 6);
+    const remaining = items.length - shown.length;
+
+    const listHtml = shown.map(function (item) {
+      return `<div style="margin-top:6px;"><i data-lucide="star"></i> ${safe(item.title)} <span style="opacity:0.7;">(${safe(item.label)})</span></div>`;
+    }).join("");
+
+    addNiaMessage(
+      `<strong>Favorites</strong>` +
+      `<div style="margin-top:8px;">${items.length} favorite${items.length === 1 ? "" : "s"}:</div>` +
+      listHtml +
+      (remaining > 0 ? `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="my-favorites.html">See ${remaining} more →</a></div>` : "") +
+      `<div style="margin-top:8px;">${goldLink("my-favorites.html", "Open Favorites →")}</div>`
+    );
+
+    return { spoken: items.length + " favorite" + (items.length === 1 ? "" : "s") + " saved." };
   }
 
   // ---- Price Lists (Task 7) ----
