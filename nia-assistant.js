@@ -4739,6 +4739,15 @@
   function isSummaryRequestPhrase(text) {
     const lower = text.toLowerCase();
 
+    // "export my VAT summary" / "P&L summary" etc. should reach the
+    // accounting-export HELP_TOPICS answer, not this general business
+    // summary intent - both share the bare word "summary", and this check
+    // runs well before findHelpTopic() in interpretMessage's dispatch
+    // order, so without this exclusion it would always win the collision.
+    if (lower.indexOf("vat") !== -1 || lower.indexOf("p&l") !== -1 || lower.indexOf("profit and loss") !== -1) {
+      return false;
+    }
+
     const phrases = [
       "summary", "how's business", "hows business", "how is business",
       "how did this week go", "how did this month go", "how did today go",
