@@ -1517,6 +1517,14 @@
 
     if (document.getElementById("unganiMemberPanelBackdrop")) return true;
 
+    // my-quick-sale.html's Cash/M-Pesa checkout buttons sit in the same
+    // bottom-right corner as Nia's tagline/FAB, and are static markup
+    // present for the page's whole lifetime (not just when the cart has
+    // items) - confirmed live that a click aimed at "Cash" was actually
+    // intercepted by the Nia tagline sitting on top of it, leaving the
+    // sale uncompleted. Same defer-to-the-real-control pattern as above.
+    if (document.getElementById("btnCheckoutCash")) return true;
+
     return false;
   }
 
