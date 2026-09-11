@@ -112,56 +112,8 @@
       color: var(--ungani-gold);
     }
 
-    .ungani-integration-reference-note {
-      margin: 6px 0 0;
-      font-size: 12px;
-      font-style: italic;
-      color: var(--ungani-muted);
-      line-height: 1.5;
-    }
-
     .ungani-integration-card-soon {
       opacity: 0.72;
-    }
-
-    .ungani-wizard-step {
-      display: none;
-    }
-
-    .ungani-wizard-step.active {
-      display: block;
-    }
-
-    .ungani-wizard-progress {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 16px;
-    }
-
-    .ungani-wizard-progress span {
-      flex: 1;
-      height: 4px;
-      border-radius: 4px;
-      background: rgba(6,28,61,0.10);
-    }
-
-    .ungani-wizard-progress span.done {
-      background: var(--ungani-gold);
-    }
-
-    .ungani-wizard-summary {
-      background: var(--ungani-soft);
-      border: 1px solid var(--ungani-border);
-      border-radius: 14px;
-      padding: 14px;
-      font-size: 13.5px;
-      line-height: 1.7;
-    }
-
-    .ungani-wizard-summary strong {
-      display: inline-block;
-      min-width: 130px;
-      color: var(--ungani-text);
     }
   </style>
 </head>
@@ -169,19 +121,30 @@
 <body>
   <script>
     let currentContext = null;
-    let tenantIntegrationRows = { gps: null, cctv: null };
     let cardStatusCache = {};
     let businessTypeLabel = "";
     let resolvedBusinessKey = "";
 
     // A registry, not per-integration page logic - adding a real M-Pesa/
-    // eTIMS/POS/Accounting integration later means adding one entry here
-    // and pointing it at that integration's own status source, not
+    // eTIMS/Accounting integration later means adding one entry here and
+    // pointing it at that integration's own status source, not
     // restructuring this page. Each integration keeps its own source of
-    // truth (Google Drive's own locked-down RPC, GPS/CCTV's own
-    // self-reported table) - this registry only unifies how their status
-    // is DISPLAYED, never how their credentials are stored. See the
-    // Integrations technical plan for the full security rationale.
+    // truth (Google Drive's own locked-down RPC) - this registry only
+    // unifies how their status is DISPLAYED, never how their credentials
+    // are stored. See the Integrations technical plan for the full
+    // security rationale.
+    //
+    // GPS Tracking and CCTV Monitoring were removed 2026-09-11 - they were
+    // self-reported reference cards only (no real device/API connection,
+    // by the wizard's own on-screen disclaimer), and were creating real
+    // confusion for business owners who expected live tracking/camera
+    // data. Revisit as a real integration only once a specific client's
+    // actual GPS/CCTV provider is known to build against. POS Systems was
+    // also removed the same day - it was a stale "integrate a third-party
+    // POS" concept from before UNGANI built its own native Quick Sale
+    // (my-quick-sale.html, gated by tenants.pos_enabled in Settings), and
+    // having two different "POS" entries in two different places was
+    // actively misleading.
     const INTEGRATIONS_REGISTRY = [
       {
         key: "google_drive",
@@ -191,29 +154,6 @@
         live: true,
         description: "Link your Google Drive so you can pick real files straight into Documents - no more pasting links by hand.",
         manageHref: "my-settings.html#googleDriveIntegrationPanel"
-      },
-      {
-        key: "gps",
-        label: "GPS Tracking",
-        icon: '<i data-lucide="satellite"></i>',
-        category: "Operations",
-        // Phase 1 eligibility, per the GPS/CCTV Integrations spec:
-        // Logistics, Property/Real Estate, and Warehouse are the primary
-        // business types this feature was designed for (fleet GPS,
-        // premises/unit CCTV). This is a UI-only gate - RLS still scopes
-        // every read/write to the caller's own tenant regardless.
-        eligibleTypes: ["logistics", "real_estate", "warehouse"],
-        description: "Connect the GPS/fleet-tracking provider you already use to keep vehicle and trip data visible from one place.",
-        referenceOnlyNote: "This reflects information you entered - UNGANI doesn't yet receive live data from this provider."
-      },
-      {
-        key: "cctv",
-        label: "CCTV Monitoring",
-        icon: '<i data-lucide="video"></i>',
-        category: "Operations",
-        eligibleTypes: ["logistics", "real_estate", "warehouse"],
-        description: "Connect the CCTV/security camera provider you already use for premises or site monitoring.",
-        referenceOnlyNote: "This reflects information you entered - UNGANI doesn't yet receive live data from this provider."
       },
       {
         key: "mpesa",
@@ -232,14 +172,6 @@
         description: "Report invoices to KRA directly from UNGANI."
       },
       {
-        key: "pos",
-        label: "POS Systems",
-        icon: '<i data-lucide="shopping-cart"></i>',
-        category: "Sales",
-        comingSoon: true,
-        description: "Pull sales and inventory from the POS system you already use."
-      },
-      {
         key: "accounting",
         label: "Accounting",
         icon: '<i data-lucide="book-open"></i>',
@@ -248,10 +180,6 @@
         description: "Send your UNGANI transactions to your accounting software."
       }
     ];
-
-    function getRegistryDef(key) {
-      return INTEGRATIONS_REGISTRY.filter(function (def) { return def.key === key; })[0] || null;
-    }
 
     function isEligible(def) {
       if (!def.eligibleTypes) return true;
@@ -283,35 +211,8 @@
     async function loadIntegrations() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading your integrations...");
 
-      // GPS/CCTV share one table - one query covers both cards.
-      let response;
-
-      try {
-        response = await currentContext.supabaseClient
-          .from("tenant_integrations")
-          .select("*")
-          .eq("tenant_id", currentContext.tenantId);
-      } catch (error) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load integrations", error.message || "Network error. Please check your connection.");
-        return;
-      }
-
-      if (response.error) {
-        currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load integrations", response.error.message);
-        return;
-      }
-
-      tenantIntegrationRows = { gps: null, cctv: null };
-
-      (response.data || []).forEach(function (row) {
-        if (row.integration_type === "gps" || row.integration_type === "cctv") {
-          tenantIntegrationRows[row.integration_type] = row;
-        }
-      });
-
       // Google Drive owns its own locked-down status RPC (see
-      // sql/google-drive-integration.sql) - fetched alongside the
-      // GPS/CCTV table, not instead of it. A failure here just means the
+      // sql/google-drive-integration.sql). A failure here just means the
       // card shows "Not Connected"; it never blocks the rest of the page.
       let driveStatus = { connected: false };
 
@@ -375,40 +276,9 @@
         `;
       }
 
-      // GPS/CCTV - reference-only, self-reported connections. The badge
-      // deliberately does NOT say "Connected" - that would imply a live,
-      // verified data feed which does not exist yet.
-      const row = tenantIntegrationRows[def.key];
-      const connected = !!(row && row.status === "connected");
-
-      const statusBadge = connected
-        ? `<span class="ungani-badge gold">Reference Saved</span>`
-        : `<span class="ungani-badge">Not Connected</span>`;
-
-      const detail = connected
-        ? `<p class="ungani-integration-detail"><strong>${UnganiClientShared.safe(row.provider_name)}</strong></p>
-           <p class="ungani-integration-meta">Saved ${UnganiClientShared.formatDate(row.connected_at)}</p>
-           <p class="ungani-integration-reference-note">${UnganiClientShared.safe(def.referenceOnlyNote)}</p>`
-        : `<p class="ungani-integration-detail">${UnganiClientShared.safe(def.description)}</p>`;
-
-      const actionButton = connected
-        ? `<button class="ungani-btn dark" type="button" onclick="openManageIntegration('${def.key}')">Manage</button>`
-        : `<button class="ungani-btn gold" type="button" onclick="openConnectWizard('${def.key}')">Connect</button>`;
-
-      return `
-        <div class="ungani-card ungani-integration-card">
-          <div class="ungani-integration-card-head">
-            <div class="ungani-integration-icon">${def.icon}</div>
-            ${statusBadge}
-          </div>
-          <div>
-            <p class="ungani-integration-category">${UnganiClientShared.safe(def.category)}</p>
-            <h3 style="margin:0 0 6px;">${UnganiClientShared.safe(def.label)}</h3>
-            ${detail}
-          </div>
-          ${actionButton}
-        </div>
-      `;
+      // Every remaining registry entry is either comingSoon or google_drive,
+      // both handled above - nothing else reaches this point.
+      return "";
     }
 
     function renderIntegrationsPage() {
@@ -429,236 +299,6 @@
       `);
     }
 
-    // ---- Connect wizard ----
-
-    let wizardState = { type: null, step: 1, providerName: "", accountReference: "", contactPerson: "", notes: "" };
-
-    function openConnectWizard(type) {
-      wizardState = { type: type, step: 1, providerName: "", accountReference: "", contactPerson: "", notes: "" };
-
-      UnganiClientShared.openModal({
-        title: "Connect " + getRegistryDef(type).label,
-        bodyHtml: buildWizardHtml(type)
-      });
-
-      goToWizardStep(1);
-    }
-
-    function buildWizardHtml(type) {
-      const def = getRegistryDef(type);
-
-      return `
-        <div class="ungani-wizard-progress">
-          <span id="wizardProgress1"></span>
-          <span id="wizardProgress2"></span>
-          <span id="wizardProgress3"></span>
-        </div>
-
-        <div id="wizardStep1" class="ungani-wizard-step">
-          <p class="ungani-small">Step 1 of 3 - Which ${UnganiClientShared.safe(def.label)} provider do you use?</p>
-          <p class="ungani-integration-reference-note" style="margin-bottom:14px;">
-            This saves your provider's details for your own reference. UNGANI doesn't verify or connect to this provider automatically yet.
-          </p>
-          <div class="ungani-form-grid">
-            <div style="grid-column: 1 / -1;">
-              <label for="wizardProviderName">Provider Name</label>
-              <input id="wizardProviderName" placeholder="Example: Your GPS or CCTV provider's name" />
-            </div>
-          </div>
-          <div class="ungani-button-row" style="margin-top:16px;">
-            <button class="ungani-btn gold" type="button" onclick="wizardNext()">Continue</button>
-            <button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeModal()">Cancel</button>
-          </div>
-        </div>
-
-        <div id="wizardStep2" class="ungani-wizard-step">
-          <p class="ungani-small">Step 2 of 3 - Connection details (optional, helps UNGANI support you faster)</p>
-          <div class="ungani-form-grid">
-            <div>
-              <label for="wizardAccountReference">Account / Device Reference</label>
-              <input id="wizardAccountReference" placeholder="Example: fleet account number, camera site name" />
-            </div>
-            <div>
-              <label for="wizardContactPerson">Provider Contact (optional)</label>
-              <input id="wizardContactPerson" placeholder="Example: your rep's name or phone number" />
-            </div>
-            <div style="grid-column: 1 / -1;">
-              <label for="wizardNotes">Notes (optional)</label>
-              <textarea id="wizardNotes" rows="3" placeholder="Anything else worth noting about this connection"></textarea>
-            </div>
-          </div>
-          <div class="ungani-button-row" style="margin-top:16px;">
-            <button class="ungani-btn gold" type="button" onclick="wizardNext()">Continue</button>
-            <button class="ungani-btn dark" type="button" onclick="wizardBack()">Back</button>
-          </div>
-        </div>
-
-        <div id="wizardStep3" class="ungani-wizard-step">
-          <p class="ungani-small">Step 3 of 3 - Confirm</p>
-          <div id="wizardSummary" class="ungani-wizard-summary"></div>
-          <div class="ungani-button-row" style="margin-top:16px;">
-            <button class="ungani-btn gold" type="button" id="wizardConfirmBtn" onclick="wizardConfirm()">Confirm &amp; Connect</button>
-            <button class="ungani-btn dark" type="button" onclick="wizardBack()">Back</button>
-          </div>
-        </div>
-      `;
-    }
-
-    function goToWizardStep(step) {
-      wizardState.step = step;
-
-      [1, 2, 3].forEach(function (n) {
-        const el = document.getElementById("wizardStep" + n);
-        if (el) el.classList.toggle("active", n === step);
-
-        const dot = document.getElementById("wizardProgress" + n);
-        if (dot) dot.classList.toggle("done", n <= step);
-      });
-
-      if (step === 1) {
-        document.getElementById("wizardProviderName").value = wizardState.providerName;
-      }
-
-      if (step === 2) {
-        document.getElementById("wizardAccountReference").value = wizardState.accountReference;
-        document.getElementById("wizardContactPerson").value = wizardState.contactPerson;
-        document.getElementById("wizardNotes").value = wizardState.notes;
-      }
-
-      if (step === 3) {
-        renderWizardSummary();
-      }
-    }
-
-    function renderWizardSummary() {
-      const def = getRegistryDef(wizardState.type);
-
-      document.getElementById("wizardSummary").innerHTML = `
-        <div><strong>Integration:</strong> ${UnganiClientShared.safe(def.label)}</div>
-        <div><strong>Provider:</strong> ${UnganiClientShared.safe(wizardState.providerName)}</div>
-        ${wizardState.accountReference ? `<div><strong>Reference:</strong> ${UnganiClientShared.safe(wizardState.accountReference)}</div>` : ""}
-        ${wizardState.contactPerson ? `<div><strong>Contact:</strong> ${UnganiClientShared.safe(wizardState.contactPerson)}</div>` : ""}
-        ${wizardState.notes ? `<div><strong>Notes:</strong> ${UnganiClientShared.safe(wizardState.notes)}</div>` : ""}
-      `;
-    }
-
-    function wizardNext() {
-      if (wizardState.step === 1) {
-        const providerName = document.getElementById("wizardProviderName").value.trim();
-
-        if (!providerName) {
-          alert("Please enter the provider name to continue.");
-          return;
-        }
-
-        wizardState.providerName = providerName;
-        goToWizardStep(2);
-        return;
-      }
-
-      if (wizardState.step === 2) {
-        wizardState.accountReference = document.getElementById("wizardAccountReference").value.trim();
-        wizardState.contactPerson = document.getElementById("wizardContactPerson").value.trim();
-        wizardState.notes = document.getElementById("wizardNotes").value.trim();
-        goToWizardStep(3);
-        return;
-      }
-    }
-
-    function wizardBack() {
-      if (wizardState.step > 1) {
-        goToWizardStep(wizardState.step - 1);
-      }
-    }
-
-    async function wizardConfirm() {
-      const btn = document.getElementById("wizardConfirmBtn");
-
-      await UnganiClientShared.withButtonLoading(btn, async function () {
-        const payload = {
-          tenant_id: currentContext.tenantId,
-          integration_type: wizardState.type,
-          provider_name: wizardState.providerName,
-          status: "connected",
-          config: {
-            account_reference: wizardState.accountReference || null,
-            contact_person: wizardState.contactPerson || null,
-            notes: wizardState.notes || null
-          },
-          connected_by_user_id: currentContext.authUser ? currentContext.authUser.id : null,
-          connected_at: new Date().toISOString(),
-          disconnected_at: null,
-          updated_at: new Date().toISOString()
-        };
-
-        const response = await currentContext.supabaseClient
-          .from("tenant_integrations")
-          .upsert(payload, { onConflict: "tenant_id,integration_type" });
-
-        if (response.error) {
-          alert("Could not save this connection: " + response.error.message);
-          return;
-        }
-
-        UnganiClientShared.closeModal();
-        await loadIntegrations();
-      });
-    }
-
-    // ---- Manage / disconnect ----
-
-    function openManageIntegration(type) {
-      const def = getRegistryDef(type);
-      const row = tenantIntegrationRows[type];
-
-      if (!row) return;
-
-      const config = row.config || {};
-
-      UnganiClientShared.openModal({
-        title: "Manage " + def.label,
-        bodyHtml: `
-          <div class="ungani-wizard-summary">
-            <div><strong>Provider:</strong> ${UnganiClientShared.safe(row.provider_name)}</div>
-            ${config.account_reference ? `<div><strong>Reference:</strong> ${UnganiClientShared.safe(config.account_reference)}</div>` : ""}
-            ${config.contact_person ? `<div><strong>Contact:</strong> ${UnganiClientShared.safe(config.contact_person)}</div>` : ""}
-            ${config.notes ? `<div><strong>Notes:</strong> ${UnganiClientShared.safe(config.notes)}</div>` : ""}
-            <div><strong>Connected:</strong> ${UnganiClientShared.formatDate(row.connected_at)}</div>
-          </div>
-          <div class="ungani-button-row" style="margin-top:16px;">
-            <button class="ungani-btn gold" type="button" onclick="UnganiClientShared.closeModal(); openConnectWizard('${type}');">Reconnect with a Different Provider</button>
-            <button class="ungani-btn red" type="button" id="disconnectBtn" onclick="disconnectIntegration('${type}')">Disconnect</button>
-          </div>
-        `
-      });
-    }
-
-    async function disconnectIntegration(type) {
-      const confirmed = confirm("Disconnect this integration? You can reconnect at any time.");
-      if (!confirmed) return;
-
-      const btn = document.getElementById("disconnectBtn");
-
-      await UnganiClientShared.withButtonLoading(btn, async function () {
-        const response = await currentContext.supabaseClient
-          .from("tenant_integrations")
-          .update({
-            status: "disconnected",
-            disconnected_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq("tenant_id", currentContext.tenantId)
-          .eq("integration_type", type);
-
-        if (response.error) {
-          alert("Could not disconnect: " + response.error.message);
-          return;
-        }
-
-        UnganiClientShared.closeModal();
-        await loadIntegrations();
-      });
-    }
   </script>
 </body>
 </html>
