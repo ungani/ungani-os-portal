@@ -1086,6 +1086,28 @@
         </div>
       </section>
 
+      <section class="panel full" id="sidebarCustomizationPanel">
+        <div class="panel-head">
+          <h2>Sidebar Customization</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Hide sidebar items your business doesn't use to keep things simple. The order and
+            structure stay the same for everyone - this only lets you declutter what's shown.
+            A few core items always stay visible: Dashboard, Notifications, Favorites,
+            Security &amp; Data, Team Access, Billing &amp; Setup, and Support.
+          </p>
+
+          <div id="sidebarCustomizationList"></div>
+
+          <div class="form-actions">
+            <span id="sidebarCustomMessage" class="action-msg"></span>
+            <button type="button" id="btnSaveSidebarCustom" class="ungani-btn gold" onclick="saveSidebarCustomization()">Save Sidebar Preferences</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full" id="expenseApprovalPanel">
         <div class="panel-head">
           <h2>Expense Approval</h2>
@@ -2162,7 +2184,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled, price_lists_enabled, pos_enabled, expense_approval_threshold_kes")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled, price_lists_enabled, pos_enabled, expense_approval_threshold_kes, hidden_nav_items")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -2178,6 +2200,7 @@
       renderDebtorsPayablesPanel(tenantRow);
       renderPriceListsPanel(tenantRow);
       renderPointOfSalePanel(tenantRow);
+      renderSidebarCustomizationPanel(tenantRow);
       renderExpenseApprovalPanel(tenantRow);
       renderBrandingPanel(tenantRow);
 
@@ -2471,6 +2494,88 @@
           msgSpan.textContent = wantsEnabled ? "Point of Sale enabled." : "Point of Sale disabled.";
         } catch (err) {
           document.getElementById("posEnabled").checked = !wantsEnabled;
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
+    }
+
+    function renderSidebarCustomizationPanel(tenantRow) {
+      const container = document.getElementById("sidebarCustomizationList");
+      if (!container) return;
+
+      if (!window.UnganiNavConfig || typeof UnganiNavConfig.getSidebarGroups !== "function") {
+        container.innerHTML = "";
+        return;
+      }
+
+      const protectedKeys = UnganiNavConfig.PROTECTED_NAV_ITEM_KEYS || [];
+      const hiddenNow = (tenantRow && Array.isArray(tenantRow.hidden_nav_items)) ? tenantRow.hidden_nav_items : [];
+
+      // Ask getSidebarGroups() for the FULL candidate set this tenant is
+      // eligible for (feature toggles / business type still apply) by
+      // passing hidden_nav_items as empty - the real hide-state is
+      // applied below via each checkbox's checked attribute instead, so
+      // an already-hidden item still shows up here (unchecked) and can
+      // be turned back on.
+      const fullTenant = Object.assign({}, tenantRow, { hidden_nav_items: [] });
+      const groups = UnganiNavConfig.getSidebarGroups(fullTenant);
+
+      const rows = [];
+      groups.forEach(function (group) {
+        const hideableItems = group.items.filter(function (item) { return protectedKeys.indexOf(item[0]) === -1; });
+        if (!hideableItems.length) return;
+
+        rows.push(
+          '<div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: ' +
+          (rows.length ? "16px" : "0") + ' 0 8px;">' + escapeHtml(group.title) + '</div>'
+        );
+
+        hideableItems.forEach(function (item) {
+          const key = item[0];
+          const label = item[3];
+          const checked = hiddenNow.indexOf(key) === -1;
+          rows.push(
+            '<label style="display: flex; align-items: center; gap: 12px; padding: 10px 15px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; margin-bottom: 8px;">' +
+              '<input type="checkbox" class="sidebar-custom-checkbox" data-nav-key="' + escapeHtml(key) + '" style="width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer;"' + (checked ? " checked" : "") + ' />' +
+              '<span style="color: var(--text);">' + escapeHtml(label) + '</span>' +
+            '</label>'
+          );
+        });
+      });
+
+      container.innerHTML = rows.length
+        ? rows.join("")
+        : '<p style="color: var(--muted); font-size: 14px;">Nothing available to customize yet.</p>';
+    }
+
+    async function saveSidebarCustomization() {
+      const msgSpan = document.getElementById("sidebarCustomMessage");
+      const btn = document.getElementById("btnSaveSidebarCustom");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const hiddenKeys = Array.from(document.querySelectorAll("#sidebarCustomizationList .sidebar-custom-checkbox"))
+        .filter(function (cb) { return !cb.checked; })
+        .map(function (cb) { return cb.getAttribute("data-nav-key"); });
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { data, error } = await supabaseClient.rpc("set_ungani_hidden_nav_items", { p_hidden_items: hiddenKeys });
+
+          if (error) throw error;
+          if (!data || data.ok !== true) throw new Error((data && data.message) || "Could not save.");
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = "Sidebar preferences saved.";
+        } catch (err) {
           msgSpan.className = "action-msg error";
           msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
         }

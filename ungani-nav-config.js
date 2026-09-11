@@ -24,6 +24,23 @@
 
   const INTEGRATIONS_ELIGIBLE_BUSINESS_TYPE_KEYS = ["logistics", "real_estate", "warehouse"];
 
+  // Sidebar Show/Hide (2026-09-10): businesses can hide items they never
+  // use via a Settings panel (tenants.hidden_nav_items) - this list is
+  // what's exempt from that, so a business can't accidentally hide its
+  // way into a corner of core account management or lose the "quick
+  // access" Favorites feature. Mirrors the server-side allow-list of
+  // HIDEABLE keys in set_ungani_hidden_nav_items() (sql/sidebar-show-
+  // hide.sql) - the two lists are complements of each other and must be
+  // kept in sync if the sidebar structure changes. Used both to filter
+  // hidden items below and by my-settings.html to decide which items get
+  // a checkbox at all.
+  const PROTECTED_NAV_ITEM_KEYS = [
+    "dashboard", "notifications", "favorites",
+    "security", "team-access",
+    "package", "billing", "account-status", "onboarding", "my-tools",
+    "support", "notices", "chat"
+  ];
+
   function isIntegrationsEligible(tenant) {
     if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") {
       return false;
@@ -211,14 +228,38 @@
       }
     ];
 
+    // Sidebar Show/Hide - a second, independent filter applied after
+    // everything above has already decided which items are candidates
+    // for this tenant (feature toggles, business-type eligibility, etc).
+    // Hiding an item is a user preference layered on top of whatever's
+    // already available to them - it never interacts with why an item
+    // was a candidate in the first place. hidden_nav_items is validated
+    // server-side against the same protected list on save (see
+    // set_ungani_hidden_nav_items()), so it should never actually contain
+    // a protected key - this only filters, it doesn't re-check protection.
+    const hiddenItems = (tenant && Array.isArray(tenant.hidden_nav_items)) ? tenant.hidden_nav_items : [];
+    const visibleGroups = hiddenItems.length
+      ? allGroups.map(function (group) {
+          return {
+            key: group.key,
+            title: group.title,
+            collapsible: group.collapsible,
+            defaultExpanded: group.defaultExpanded,
+            items: group.items.filter(function (item) { return hiddenItems.indexOf(item[0]) === -1; })
+          };
+        })
+      : allGroups;
+
     // Non-collapsible groups can end up empty for a given tenant (Finance
     // now holds only the two opt-in items) - drop them rather than
-    // rendering a bare section header with nothing underneath it.
-    return allGroups.filter(function (group) { return group.items && group.items.length > 0; });
+    // rendering a bare section header with nothing underneath it. A
+    // group can also now end up empty purely from hiding, same handling.
+    return visibleGroups.filter(function (group) { return group.items && group.items.length > 0; });
   }
 
   window.UnganiNavConfig = {
     getSidebarGroups: getSidebarGroups,
-    isIntegrationsEligible: isIntegrationsEligible
+    isIntegrationsEligible: isIntegrationsEligible,
+    PROTECTED_NAV_ITEM_KEYS: PROTECTED_NAV_ITEM_KEYS
   };
 })();
