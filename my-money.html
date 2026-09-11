@@ -1111,6 +1111,7 @@
               <button class="ungani-btn gold" onclick="openMoneyModal()">+ Add Money Record</button>
               <button class="ungani-btn green" onclick="loadMoneyRows()">Refresh</button>
               <button class="ungani-btn dark" onclick="exportMoneyCsv()">Export CSV</button>
+              <button class="ungani-btn dark" onclick="exportMoneyPnlSummary()">Export Summary (P&amp;L)</button>
             </div>
           </div>
 
@@ -1835,6 +1836,78 @@
         pending,
         balance: income - expenses
       };
+    }
+
+    // Income/Expense-by-category rollup for the P&L summary export - same
+    // KES-normalized amount and income/expense classification as
+    // calculateMoneySummary() above, just grouped by category instead of
+    // collapsed into two totals. Sorted largest-first within each side,
+    // matching how a real Income Statement is usually read (biggest
+    // drivers first, not alphabetical).
+    function calculateMoneyCategoryBreakdown(rows) {
+      const incomeByCategory = {};
+      const expenseByCategory = {};
+
+      rows.forEach(function (row) {
+        const amount = Number(UnganiClientShared.getValue(row, ["amount_kes", "amount"], 0) || 0);
+        const category = String(UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], "Uncategorized")) || "Uncategorized";
+
+        if (isIncomeRow(row)) {
+          incomeByCategory[category] = (incomeByCategory[category] || 0) + amount;
+        } else if (isExpenseRow(row)) {
+          expenseByCategory[category] = (expenseByCategory[category] || 0) + amount;
+        }
+      });
+
+      function toSortedList(byCategory) {
+        return Object.keys(byCategory)
+          .map(function (category) { return { category: category, amount: byCategory[category] }; })
+          .sort(function (a, b) { return b.amount - a.amount; });
+      }
+
+      return {
+        income: toSortedList(incomeByCategory),
+        expenses: toSortedList(expenseByCategory)
+      };
+    }
+
+    const MONEY_PNL_EXPORT_COLUMNS = [
+      { key: "section", label: "Section" },
+      { key: "category", label: "Category" },
+      { key: "amount", label: "Amount (KES)" }
+    ];
+
+    // Uses moneySummaryRows - the full section/status/search/date-range
+    // filtered set BEFORE the category-tile slice getMoneyCategoryFilteredIds()
+    // applies - a P&L needs every category on both sides, not just whichever
+    // tile happens to be selected on screen right now. Already in memory,
+    // no fetch needed (same dataset the KPI cards above are computed from).
+    function exportMoneyPnlSummary() {
+      const breakdown = calculateMoneyCategoryBreakdown(moneySummaryRows);
+      const totalIncome = breakdown.income.reduce(function (sum, row) { return sum + row.amount; }, 0);
+      const totalExpenses = breakdown.expenses.reduce(function (sum, row) { return sum + row.amount; }, 0);
+
+      const rows = [];
+
+      breakdown.income.forEach(function (row) {
+        rows.push({ section: "Income", category: row.category, amount: row.amount });
+      });
+      rows.push({ section: "Income", category: "Total Income", amount: totalIncome });
+
+      breakdown.expenses.forEach(function (row) {
+        rows.push({ section: "Expense", category: row.category, amount: row.amount });
+      });
+      rows.push({ section: "Expense", category: "Total Expenses", amount: totalExpenses });
+
+      rows.push({ section: "Summary", category: "Net Balance", amount: totalIncome - totalExpenses });
+
+      const dateFrom = getStoredOrInput("filterDateFrom", "ungani_money_filter_date_from");
+      const dateTo = getStoredOrInput("filterDateTo", "ungani_money_filter_date_to");
+      const periodLabel = (dateFrom || dateTo)
+        ? "money-pl-summary-" + (dateFrom || "start") + "_to_" + (dateTo || "now")
+        : "money-pl-summary-all-time";
+
+      UnganiClientShared.exportRowsToCsv(rows, periodLabel, MONEY_PNL_EXPORT_COLUMNS);
     }
 
     // "This month" = the calendar month containing today's date, scoped to

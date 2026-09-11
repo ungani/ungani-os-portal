@@ -3929,7 +3929,15 @@
   // (reports.html loads all 8 tables up front, unlike my-money.html's
   // paginated view) - just serializes what's already loaded instead of
   // re-fetching by id over the network like exportRecordsToCsv above.
-  function exportRowsToCsv(rows, filenamePrefix) {
+  //
+  // columns (optional, third param) - same shape as exportRecordsToCsv's
+  // columns option (see buildCsvFromRowsWithColumns above). Used by
+  // Money's P&L/VAT summary exports, which build small pre-aggregated
+  // row sets in a specific column order rather than raw records - the
+  // default auto-detected/alphabetized column set would scramble that
+  // order. Existing callers (reports.html, admin-money.html's own copy
+  // in admin-shared.js) omit this and are unaffected.
+  function exportRowsToCsv(rows, filenamePrefix, columns) {
     const list = Array.isArray(rows) ? rows : [];
 
     if (!list.length) {
@@ -3937,7 +3945,10 @@
       return;
     }
 
-    downloadCsvFile(buildCsvFromRows(list), buildCsvExportFilename(filenamePrefix));
+    downloadCsvFile(
+      Array.isArray(columns) ? buildCsvFromRowsWithColumns(list, columns) : buildCsvFromRows(list),
+      buildCsvExportFilename(filenamePrefix)
+    );
     showToast("Exported " + list.length + " record(s) ✓");
   }
 
