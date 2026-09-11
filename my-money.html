@@ -208,12 +208,64 @@
     // already use - matches every active filter (section/status/search)
     // plus the currently-selected category tile, so the export always
     // matches what's actually on screen.
+    // Curated for an accountant, not a raw table dump - the real
+    // `transactions` table (pulled live, 45 columns) is mostly internal
+    // plumbing an accountant has no use for: soft-delete bookkeeping
+    // (deleted_at/deleted_by/delete_reason/restored_at/restored_by, always
+    // empty on the active rows this ever exports), raw relational UUIDs
+    // with no resolved name (category_id, related_person_id,
+    // related_team_member_id, related_payee_id, related_invoice_id,
+    // related_invoice_payment_id, branch_id, business_section_id),
+    // audit timestamps (created_at/updated_at/created_by/recorded_by -
+    // transaction_date is the accounting date that matters), an always-
+    // near-empty metadata JSONB blob, and several columns this page's own
+    // form never even writes (payment_status, reference_no,
+    // reference_number, payment_reference, paid_to_or_from, related_person,
+    // vat_applies, vat_pricing_mode, the legacy `type` duplicate of
+    // transaction_type). Everything financially real is kept: amount,
+    // currency, exchange_rate, amount_kes, full VAT/WHT columns, and the
+    // business-type-specific fields (property/project/agent/commission)
+    // that ARE real accounting data for Real Estate/Logistics tenants even
+    // though they're blank for everyone else.
+    const MONEY_EXPORT_COLUMNS = [
+      { key: "id", label: "Record ID" },
+      { key: "transaction_date", label: "Date" },
+      { key: "transaction_type", label: "Type" },
+      {
+        key: "category",
+        label: "Category",
+        value: function (row) { return UnganiClientShared.getValue(row, ["category_name", "category", "category_key"], ""); }
+      },
+      { key: "description", label: "Description" },
+      { key: "amount", label: "Amount" },
+      { key: "currency", label: "Currency" },
+      { key: "exchange_rate", label: "Exchange Rate" },
+      { key: "amount_kes", label: "Amount (KES)" },
+      { key: "vat_applicable", label: "VAT Applicable" },
+      { key: "vat_rate", label: "VAT Rate" },
+      { key: "vat_amount", label: "VAT Amount" },
+      { key: "vat_amount_kes", label: "VAT Amount (KES)" },
+      { key: "withholding_applicable", label: "Withholding Applicable" },
+      { key: "withholding_rate", label: "Withholding Rate" },
+      { key: "withholding_amount", label: "Withholding Amount" },
+      { key: "withholding_amount_kes", label: "Withholding Amount (KES)" },
+      { key: "payment_method", label: "Payment Method" },
+      { key: "status", label: "Status" },
+      { key: "property_name", label: "Property" },
+      { key: "project_name", label: "Project" },
+      { key: "agent_name", label: "Agent" },
+      { key: "commission_amount", label: "Commission Amount" },
+      { key: "section_label", label: "Section" },
+      { key: "notes", label: "Notes" }
+    ];
+
     async function exportMoneyCsv() {
       await UnganiClientShared.exportRecordsToCsv({
         supabaseClient: currentContext.supabaseClient,
         table: "transactions",
         ids: getMoneyCategoryFilteredIds(),
-        filenamePrefix: "money-records"
+        filenamePrefix: "money-records",
+        columns: MONEY_EXPORT_COLUMNS
       });
     }
 

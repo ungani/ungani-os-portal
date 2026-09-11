@@ -3803,6 +3803,29 @@
     return lines.join("\r\n");
   }
 
+  // For callers that need a curated, human-readable export instead of a raw
+  // select("*") flatten (e.g. Money's accounting export - dozens of internal
+  // columns like soft-delete plumbing and raw relational UUIDs are noise to
+  // a business's own accountant). columns is an ordered array of
+  // { key, label, value } - value(row) is called if provided (for computed/
+  // fallback fields, e.g. preferring category_name over category), otherwise
+  // row[key] is used directly.
+  function buildCsvFromRowsWithColumns(rows, columns) {
+    if (!rows.length) return "";
+
+    const lines = [columns.map(function (col) { return csvEscape(col.label || col.key); }).join(",")];
+
+    rows.forEach(function (row) {
+      const line = columns.map(function (col) {
+        const value = typeof col.value === "function" ? col.value(row) : row[col.key];
+        return csvEscape(csvFormatValue(value));
+      });
+      lines.push(line.join(","));
+    });
+
+    return lines.join("\r\n");
+  }
+
   function buildCsvExportFilename(prefix) {
     const now = new Date();
     const y = now.getFullYear();
@@ -3825,13 +3848,18 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
-  // options: { supabaseClient, table, ids, filenamePrefix }
+  // options: { supabaseClient, table, ids, filenamePrefix, columns }
   //
   // ids should be the CURRENT full matching-id list for whatever the page
   // has filtered/searched/tile-selected down to right now (not just the
   // visible page) - every caller already has this in memory from its own
   // summary-fetch, so export matches exactly what "X of Y records shown"
   // on the page claims, not a bigger or smaller set behind the scenes.
+  //
+  // columns (optional) - see buildCsvFromRowsWithColumns() above. Omit to
+  // keep the default raw select("*") flatten (every caller before Money's
+  // curated export - Tasks/Items/Documents/Records/People - relies on this
+  // default and is unaffected by passing columns for a different caller).
   //
   // Fetches full row data in small chunks (CSV_EXPORT_CHUNK_SIZE) rather
   // than one unbounded query - a single large .in() risks silently hitting
@@ -3844,6 +3872,7 @@
     const table = opts.table;
     const ids = Array.isArray(opts.ids) ? opts.ids : [];
     const filenamePrefix = opts.filenamePrefix || "export";
+    const columns = Array.isArray(opts.columns) ? opts.columns : null;
 
     if (!supabaseClient || !table) return;
 
@@ -3882,7 +3911,10 @@
       return new Date(b.created_at || 0) - new Date(a.created_at || 0);
     });
 
-    downloadCsvFile(buildCsvFromRows(collected), buildCsvExportFilename(filenamePrefix));
+    downloadCsvFile(
+      columns ? buildCsvFromRowsWithColumns(collected, columns) : buildCsvFromRows(collected),
+      buildCsvExportFilename(filenamePrefix)
+    );
 
     if (incomplete) {
       showToast("Exported " + collected.length + " of " + targetIds.length + " matching records - some could not be loaded. Please try again.");
