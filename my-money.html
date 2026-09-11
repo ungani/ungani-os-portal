@@ -153,6 +153,19 @@
         query = query.or(UnganiClientShared.buildSearchOrFilter(["description", "category", "payment_method"], search));
       }
 
+      // Date range - filters on transaction_date (the date the money actually
+      // moved), not created_at (when the record was entered into the system).
+      // An accountant pulling "Q1" or "July" needs the former.
+      const dateFrom = getStoredOrInput("filterDateFrom", "ungani_money_filter_date_from");
+      if (dateFrom) {
+        query = query.gte("transaction_date", dateFrom);
+      }
+
+      const dateTo = getStoredOrInput("filterDateTo", "ungani_money_filter_date_to");
+      if (dateTo) {
+        query = query.lte("transaction_date", dateTo);
+      }
+
       return query;
     }
 
@@ -334,6 +347,11 @@
     }
 
     function onMoneyStatusChange() {
+      saveMoneyFilters();
+      refreshMoneyData();
+    }
+
+    function onMoneyDateRangeChange() {
       saveMoneyFilters();
       refreshMoneyData();
     }
@@ -1008,6 +1026,16 @@
             <div>
               <label for="filterSearch">Search</label>
               <input id="filterSearch" placeholder="Search category, notes, payment method..." oninput="onMoneySearchInput();" />
+            </div>
+
+            <div>
+              <label for="filterDateFrom">From date</label>
+              <input type="date" id="filterDateFrom" onchange="onMoneyDateRangeChange();" />
+            </div>
+
+            <div>
+              <label for="filterDateTo">To date</label>
+              <input type="date" id="filterDateTo" onchange="onMoneyDateRangeChange();" />
             </div>
           </div>
         </section>
@@ -1874,16 +1902,22 @@
     function saveMoneyFilters() {
       if (document.getElementById("filterStatus")) sessionStorage.setItem("ungani_money_filter_status", UnganiClientShared.value("filterStatus"));
       if (document.getElementById("filterSearch")) sessionStorage.setItem("ungani_money_filter_search", UnganiClientShared.value("filterSearch"));
+      if (document.getElementById("filterDateFrom")) sessionStorage.setItem("ungani_money_filter_date_from", UnganiClientShared.value("filterDateFrom"));
+      if (document.getElementById("filterDateTo")) sessionStorage.setItem("ungani_money_filter_date_to", UnganiClientShared.value("filterDateTo"));
     }
 
     function restoreMoneyFilters() {
       if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = sessionStorage.getItem("ungani_money_filter_status") || "";
       if (document.getElementById("filterSearch")) document.getElementById("filterSearch").value = sessionStorage.getItem("ungani_money_filter_search") || "";
+      if (document.getElementById("filterDateFrom")) document.getElementById("filterDateFrom").value = sessionStorage.getItem("ungani_money_filter_date_from") || "";
+      if (document.getElementById("filterDateTo")) document.getElementById("filterDateTo").value = sessionStorage.getItem("ungani_money_filter_date_to") || "";
     }
 
     function resetMoneyFilters() {
       sessionStorage.removeItem("ungani_money_filter_status");
       sessionStorage.removeItem("ungani_money_filter_search");
+      sessionStorage.removeItem("ungani_money_filter_date_from");
+      sessionStorage.removeItem("ungani_money_filter_date_to");
       activeMoneyCategory = "all";
 
       // Clear the live input values too, not just sessionStorage -
@@ -1892,8 +1926,12 @@
       // to the very refetch this triggers, until the next re-render.
       const statusEl = document.getElementById("filterStatus");
       const searchEl = document.getElementById("filterSearch");
+      const dateFromEl = document.getElementById("filterDateFrom");
+      const dateToEl = document.getElementById("filterDateTo");
       if (statusEl) statusEl.value = "";
       if (searchEl) searchEl.value = "";
+      if (dateFromEl) dateFromEl.value = "";
+      if (dateToEl) dateToEl.value = "";
 
       refreshMoneyData();
       UnganiClientShared.showToast("Money filters reset ✓");
