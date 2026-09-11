@@ -618,7 +618,14 @@
       // (moneySummaryRows), not summaryScopeRows - "VAT payable this
       // month" should reflect the whole business regardless of which
       // category tile (All/Income/Expense/Petty) happens to be selected.
-      const taxSummary = calculateTaxSummary(moneySummaryRows);
+      // moneySummaryRows is also now narrowed by the date-range filter
+      // (Phase 1) - when one is active, drop the additional "this month"
+      // restriction and label the cards by the real selected period
+      // instead, so an active filter never silently zeroes these out
+      // under a label that no longer matches what's being shown.
+      const hasActiveDateFilter = !!(getStoredOrInput("filterDateFrom", "ungani_money_filter_date_from") || getStoredOrInput("filterDateTo", "ungani_money_filter_date_to"));
+      const taxSummary = calculateTaxSummary(moneySummaryRows, hasActiveDateFilter);
+      const taxPeriodLabel = hasActiveDateFilter ? "Selected Period" : "This Month";
 
       lastTrend = trend;
       lastExpenseBreakdown = expenseBreakdown;
@@ -1041,13 +1048,13 @@
           ${moneyKpi("Balance", UnganiAnalytics.compactMoney(summary.balance), "Income minus expenses", summary.balance >= 0 ? "#16A34A" : "#DC2626")}
           ${moneyKpi("Pending", UnganiAnalytics.compactMoney(summary.pending), "Pending money records", "#DC2626")}
           ${currentContext.tenant && currentContext.tenant.vat_registered ? moneyKpi(
-            "VAT Payable This Month",
+            "VAT Payable (" + taxPeriodLabel + ")",
             UnganiAnalytics.compactMoney(taxSummary.vatPayable),
             "Output VAT minus input VAT, " + taxSummary.vatRecordCount + " tax-tagged record(s)",
             taxSummary.vatPayable >= 0 ? "#2563EB" : "#16A34A"
           ) : ""}
           ${moneyKpi(
-            "Withholding Tax Deducted This Month",
+            "Withholding Tax Deducted (" + taxPeriodLabel + ")",
             UnganiAnalytics.compactMoney(taxSummary.withholdingDeducted),
             "Tax withheld by payers on your income, " + taxSummary.withholdingRecordCount + " record(s)",
             "#7C3AED"
@@ -1112,6 +1119,7 @@
               <button class="ungani-btn green" onclick="loadMoneyRows()">Refresh</button>
               <button class="ungani-btn dark" onclick="exportMoneyCsv()">Export CSV</button>
               <button class="ungani-btn dark" onclick="exportMoneyPnlSummary()">Export Summary (P&amp;L)</button>
+              <button class="ungani-btn dark" onclick="exportMoneyVatSummary()">Export VAT Summary</button>
             </div>
           </div>
 
@@ -1919,7 +1927,16 @@
     // WHT deducted from payments this business made to its own suppliers
     // (acting as a withholding agent) is a separate liability, not covered
     // here (documented as out of scope in sql/tax-vat-withholding-tracking.sql).
-    function calculateTaxSummary(rows) {
+    //
+    // useFullRange (added with the Phase 1 date-range filter): moneySummaryRows
+    // is now itself narrowed to whatever date range the user has picked, at
+    // the DB query level - if this function ALSO restricted to the current
+    // calendar month on top of that, a range that excludes today's month
+    // would silently show KES 0 with no indication the filter is why. When
+    // true, skip the monthKey restriction entirely and treat every row
+    // already in `rows` as in-scope - the caller is responsible for using
+    // the right label ("This Month" vs "Selected Period") to match.
+    function calculateTaxSummary(rows, useFullRange) {
       const now = new Date();
       const monthKey = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
 
@@ -1931,7 +1948,7 @@
 
       rows.forEach(function (row) {
         const rowDate = String(UnganiClientShared.getValue(row, ["transaction_date", "created_at"], ""));
-        if (!rowDate.startsWith(monthKey)) return;
+        if (!useFullRange && !rowDate.startsWith(monthKey)) return;
 
         // Prefer the _kes twin so a mix of KES and USD transactions still
         // rolls up into one KRA-facing KES figure - falls back to the
@@ -1952,11 +1969,43 @@
       });
 
       return {
+        outputVat: outputVat,
+        inputVat: inputVat,
         vatPayable: outputVat - inputVat,
         withholdingDeducted: withholdingDeducted,
         vatRecordCount: vatRecordCount,
         withholdingRecordCount: withholdingRecordCount
       };
+    }
+
+    const MONEY_VAT_EXPORT_COLUMNS = [
+      { key: "metric", label: "Metric" },
+      { key: "amount", label: "Amount (KES)" }
+    ];
+
+    // Always uses the full selected range (useFullRange=true), never the
+    // dashboard KPI's "this month" restriction - an export should reflect
+    // whatever period the user has actually filtered to (or all-time, if
+    // no date filter is set), same reasoning as the P&L export above.
+    function exportMoneyVatSummary() {
+      const tax = calculateTaxSummary(moneySummaryRows, true);
+
+      const rows = [
+        { metric: "Output VAT (from Income)", amount: tax.outputVat },
+        { metric: "Input VAT (from Expenses)", amount: tax.inputVat },
+        { metric: "VAT Payable (Output minus Input)", amount: tax.vatPayable },
+        { metric: "VAT-Applicable Record Count", amount: tax.vatRecordCount },
+        { metric: "Withholding Tax Deducted (from Income)", amount: tax.withholdingDeducted },
+        { metric: "Withholding-Applicable Record Count", amount: tax.withholdingRecordCount }
+      ];
+
+      const dateFrom = getStoredOrInput("filterDateFrom", "ungani_money_filter_date_from");
+      const dateTo = getStoredOrInput("filterDateTo", "ungani_money_filter_date_to");
+      const periodLabel = (dateFrom || dateTo)
+        ? "money-vat-summary-" + (dateFrom || "start") + "_to_" + (dateTo || "now")
+        : "money-vat-summary-all-time";
+
+      UnganiClientShared.exportRowsToCsv(rows, periodLabel, MONEY_VAT_EXPORT_COLUMNS);
     }
 
     function calculateIncomeExpenseTrend(rows) {
