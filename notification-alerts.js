@@ -2,7 +2,14 @@
   const SUPABASE_URL = "https://ctmtjwklltnsmfdtvqhl.supabase.co";
   const SUPABASE_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 
-  const BASE_POLL_INTERVAL_MS = 15000; // Base interval: 15 seconds
+  // Was 15s base with backoff starting on the very first error - a single
+  // transient blip (one dropped request) meant every user sat at a 30s gap
+  // (15000 * 2^1) until the next successful check, which read as a
+  // consistent "~30 second lag" even though most checks succeed fine.
+  // Tightened base interval and now require 2 consecutive errors before
+  // backing off at all, so one-off blips no longer cost a full doubling.
+  const BASE_POLL_INTERVAL_MS = 10000; // Base interval: 10 seconds
+  const ERROR_TOLERANCE = 1; // Consecutive errors allowed before backing off
   const MAX_POLL_INTERVAL_MS = 300000; // Cap backoff at 5 minutes
   const STORAGE_KEY = "ungani_last_seen_notification_alert_id";
 
@@ -62,9 +69,15 @@
     } catch (error) {
       console.warn("UNGANI notification alert check failed:", error);
       errorCount++;
-      
-      // Exponential Backoff: Progressively slow down checking cadence if database errors strike
-      currentInterval = Math.min(BASE_POLL_INTERVAL_MS * Math.pow(2, errorCount), MAX_POLL_INTERVAL_MS);
+
+      // Tolerate the first ERROR_TOLERANCE consecutive errors at the base
+      // interval - a single dropped request shouldn't cost a full backoff
+      // step. Only once genuinely sustained failures exceed that tolerance
+      // does the interval start climbing (still capped at 5 minutes).
+      const backoffSteps = Math.max(0, errorCount - ERROR_TOLERANCE);
+      currentInterval = backoffSteps === 0
+        ? BASE_POLL_INTERVAL_MS
+        : Math.min(BASE_POLL_INTERVAL_MS * Math.pow(2, backoffSteps), MAX_POLL_INTERVAL_MS);
     }
 
     pollTimeoutId = setTimeout(runSmartPollLoop, currentInterval);
