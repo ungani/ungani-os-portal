@@ -918,6 +918,8 @@
         return;
       }
 
+      const referredByPartnerId = await resolvePartnerIdFromUrl();
+
       let authUserId = null;
 
       const signupResponse = await supabaseClient.auth.signUp({
@@ -955,7 +957,8 @@
         businessType,
         notes,
         authUserId,
-        selectedSections
+        selectedSections,
+        referredByPartnerId
       });
 
       setLoading(false);
@@ -1018,6 +1021,28 @@
       }
     }
 
+    // Reads ?partner=<code> from the URL (a partner's own referral link)
+    // and resolves it to a real partner_id via the one anon-safe RPC that
+    // exposes nothing about the partner except whether the code is valid.
+    // Best-effort - a lookup failure must never block registration itself,
+    // it just means the signup goes through unattributed.
+    async function resolvePartnerIdFromUrl() {
+      const code = new URLSearchParams(window.location.search).get("partner");
+      if (!code) return null;
+
+      try {
+        const { data, error } = await supabaseClient.rpc("resolve_ungani_partner_code", {
+          p_code: code
+        });
+
+        if (error || !data) return null;
+        return data;
+      } catch (error) {
+        console.warn("Could not resolve partner code:", error.message);
+        return null;
+      }
+    }
+
     async function insertRegistration(data) {
       // The id is generated here, client-side, and passed in explicitly -
       // rather than using .select().single() to read it back after insert.
@@ -1044,6 +1069,7 @@
         status: "pending",
         notes: data.notes,
         auth_user_id: data.authUserId,
+        referred_by_partner_id: data.referredByPartnerId || null,
         created_at: new Date().toISOString()
       };
 
