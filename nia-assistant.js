@@ -38,6 +38,7 @@
     { key: "customer-invoices", href: "my-customer-invoices.html", icon: "banknote", label: "Customer Invoices", aliases: ["customer invoices", "invoices", "invoice", "invoicing", "bill a customer"] },
     { key: "quotations", href: "my-quotations.html", icon: "file-pen", label: "Quotations", aliases: ["quotations", "quotation", "quote", "quotes", "estimate", "estimates"] },
     { key: "orders", href: "my-orders.html", icon: "shopping-cart", label: "Orders", aliases: ["orders", "order", "customer order", "sales order", "fulfilment", "fulfillment", "fulfil an order", "fulfill an order"] },
+    { key: "quick-sale", href: "my-quick-sale.html", icon: "shopping-bag", label: "Quick Sale (POS)", aliases: ["quick sale", "point of sale", "checkout", "cash register", "pos terminal"] },
     { key: "price-lists", href: "my-price-lists.html", icon: "wallet", label: "Price Lists", aliases: ["price lists", "price list", "prices", "price", "wholesale pricing"] },
     { key: "documents", href: "my-documents.html", icon: "file-text", label: "Documents", aliases: ["documents", "document", "docs", "files", "uploads"] },
     { key: "reports", href: "reports.html", icon: "file-text", label: "Reports", aliases: ["reports", "report", "export", "exports"] },
@@ -50,7 +51,7 @@
     { key: "overview", href: "my-overview.html", icon: "pin", label: "Overview", aliases: ["overview"] },
     { key: "activity", href: "my-activity.html", icon: "clock", label: "Activity Feed", aliases: ["activity", "activity feed", "history"] },
     { key: "notifications", href: "client-notifications.html", icon: "bell", label: "Notifications", aliases: ["notifications", "notification center", "my notifications", "unread"] },
-    { key: "notices", href: "my-notices.html", icon: "megaphone", label: "Notices", aliases: ["notices", "notice", "announcements"] },
+    { key: "notices", href: "my-notices.html", icon: "megaphone", label: "Notices", aliases: ["notices", "notice", "announcements", "announcement", "new updates", "system updates", "latest updates", "what's the latest"] },
     { key: "team-chat", href: "my-team-chat.html", icon: "users-round", label: "Team Chat", aliases: ["team chat", "chat with my team"] },
     { key: "favorites", href: "my-favorites.html", icon: "star", label: "Favorites", aliases: ["favorites", "favourite", "favourites", "saved items", "starred", "starred items", "bookmarks"] },
     { key: "connect", href: "my-connect.html", icon: "link-2", label: "Shared Files", aliases: ["ungani connect", "connect", "shared files", "team documents"] },
@@ -60,6 +61,7 @@
     { key: "print-report", href: "print-report.html", icon: "printer", label: "Print Report", aliases: ["print report", "printable report"] },
     { key: "security", href: "my-security.html", icon: "shield-check", label: "Security & Data", aliases: ["security", "data security", "2fa", "two-factor", "two factor"] },
     { key: "team-access", href: "my-team-access.html", icon: "user-cog", label: "Team Access", aliases: ["team access", "staff access", "invite staff", "add staff", "manage staff", "payroll", "staff salary", "staff salaries", "staff wages", "payee", "payees"] },
+    { key: "branches", href: "my-branches.html", icon: "store", label: "My Branches", aliases: ["branches", "branch", "multi-branch", "multi branch", "add a branch", "new branch"] },
     { key: "support-access", href: "my-support-access.html", icon: "lock-open", label: "UNGANI Support Access", aliases: ["support access", "ungani support", "grant access", "invite support", "revoke access", "temporary access"] },
     { key: "recently-deleted", href: "my-recently-deleted.html", icon: "trash", label: "Recently Deleted", aliases: ["recently deleted", "deleted", "recover", "recycle bin", "restore"] },
     { key: "package", href: "my-package.html", icon: "briefcase", label: "Package", aliases: ["package", "my package", "upgrade request", "upgrade requests"] },
@@ -164,6 +166,14 @@
       answer: "It's a few steps, not a single click-to-pay button: 1) Request your package on My Package (or select your current one to renew). 2) UNGANI reviews it. 3) Once approved, you'll receive payment instructions (e.g. M-Pesa Paybill or bank details). 4) Upload your proof of payment on Billing. 5) UNGANI confirms it and your full access is restored.",
       href: "my-package.html",
       linkLabel: "Open Package"
+    },
+    {
+      key: "accounting-export",
+      match: ["vat summary", "export vat", "vat export", "p&l export", "export p&l", "profit and loss", "accounting export", "export accounting"],
+      question: "How do I export my VAT summary or P&L?",
+      answer: "Open Money and use the export buttons at the top: \"Export Summary (P&L)\" for a profit-and-loss CSV, or \"Export VAT Summary\" for output VAT, input VAT, VAT payable, and withholding tax deducted - both respect whatever date range you've filtered to.",
+      href: "my-money.html",
+      linkLabel: "Open Money"
     },
     {
       key: "export",
@@ -332,6 +342,22 @@
       answer: "Turn this on in Settings and every item already has its usual price - Price Lists let you create named lists (e.g. \"Wholesale\", \"VIP Customers\") that override that price for specific situations. When creating a Quotation, Customer Invoice, or Order, pick which pricing applies, then link a line to a real item and the price fills in automatically from that list (or the item's usual price if you leave it on default) - always still editable by hand.",
       href: "my-price-lists.html",
       linkLabel: "Open Price Lists"
+    },
+    {
+      key: "pos-explained",
+      match: ["how do i use pos", "how does pos work", "use the pos", "how do i use quick sale", "how does quick sale work", "what is quick sale", "what is pos", "use point of sale"],
+      question: "How does Quick Sale (POS) work?",
+      answer: "Quick Sale is available on the Business and Custom packages - turn it on in Settings once you're on one of those. Tap items (or search) to add them to the cart, then check out with Cash or M-Pesa. Every sale becomes a real Customer Invoice behind the scenes - Cash marks it paid immediately and deducts stock (if Stock Tracking is on); M-Pesa starts a draft and only deducts stock once payment is actually confirmed.",
+      href: "my-quick-sale.html",
+      linkLabel: "Open Quick Sale"
+    },
+    {
+      key: "sidebar-customization",
+      match: ["hide sidebar", "hide menu items", "customize sidebar", "customise sidebar", "remove sidebar items", "declutter sidebar", "sidebar customization", "sidebar customisation", "show or hide"],
+      question: "Can I hide sidebar items I don't use?",
+      answer: "Yes - open Settings and scroll to Sidebar Customization. Hide any items your business doesn't use to keep things simple; a few core items (Dashboard, Notifications, Favorites, Security & Data, Team Access, Billing & Setup, Support) always stay visible. The order and structure stay the same for everyone - this only lets you declutter what's shown.",
+      href: "my-settings.html",
+      linkLabel: "Open Settings"
     }
   ];
 
@@ -2536,6 +2562,25 @@
         return runDebtorsQueryIntent();
       }
 
+      // "show my tasks/quotations/orders as a board" - checked ahead of the
+      // plain Quotations/Orders live-data checks below, since those trigger
+      // on a bare "quotations"/"orders" mention and would otherwise shadow
+      // this more specific request (e.g. "show my orders as a board" would
+      // just run the regular orders summary instead). Sets the same
+      // sessionStorage key each page's own view-mode toggle reads
+      // (ungani_task_view_mode / ungani_quotation_view_mode /
+      // ungani_order_view_mode), then navigates - sessionStorage survives
+      // the navigation since it's scoped to the tab, not the page.
+      const boardRequest = findBoardViewRequest(text);
+      if (boardRequest) {
+        if (state.surface === "admin") {
+          addNiaMessage("Board view isn't available on the admin side yet.");
+          return { spoken: "That's not available on the admin side yet." };
+        }
+
+        return runBoardViewIntent(boardRequest);
+      }
+
       // Live-data quotations question ("quote", "quotation", "estimate") -
       // same reasoning as invoices/debtors above, checked right after them
       // since all three are financial live-data questions.
@@ -2570,6 +2615,34 @@
         }
 
         return runPriceListQueryIntent();
+      }
+
+      // Live-data POS/Quick Sale question ("today's POS sales", "how much
+      // have I sold today") - checked ahead of the static pos-explained
+      // HELP_TOPICS answer, same reasoning as stock/debtors above. Uses a
+      // word-boundary regex for bare "pos" (not a plain substring check
+      // like the other live-data phrase matchers) since "pos" is a
+      // substring of many unrelated words (purpose, deposit, position,
+      // compose, expose) - a plain indexOf would false-positive constantly.
+      if (isPosSalesQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Quick Sale (POS) isn't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runPosSalesQueryIntent();
+      }
+
+      // Live-data branch billing question ("how much extra for branches",
+      // "branch surcharge") - client-only, same reasoning as the other
+      // financial live-data checks above.
+      if (isBranchBillingQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Branch billing isn't available on the admin side — check Branches instead.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runBranchBillingQueryIntent();
       }
 
       // Health score diagnosis - works on BOTH surfaces (client Business
@@ -2608,6 +2681,20 @@
         }
 
         return runAdminNotificationsQueryIntent();
+      }
+
+      // Live-data admin partner/referral question ("how many partners",
+      // "commissions owed") - admin-only, gated on surface BEFORE the
+      // phrase check (not after, unlike the other admin-only checks above)
+      // since "commission" is common enough in ordinary client speech
+      // (sales commissions, agent fees) that it shouldn't ever intercept a
+      // client message just to say "that's admin-only". Reads
+      // admin_get_ungani_partners_overview() directly, the same RPC the
+      // partner-referral system's own SQL exposes - there's no dedicated
+      // admin Partner UI page yet (flagged separately), so this answers
+      // straight from the RPC with no page link to offer.
+      if (state.surface === "admin" && isAdminPartnerQueryPhrase(text)) {
+        return runAdminPartnerQueryIntent();
       }
 
       // Ungani Connect digest ("what's new", "any mentions") - live-data
@@ -3821,6 +3908,236 @@
 
     return {
       spoken: priceLists.length + " price list" + (priceLists.length === 1 ? "" : "s") + ": " + summary + "."
+    };
+  }
+
+  // ---- Quick Sale (POS) sales query ----
+  // POS sales aren't a distinct table - record_ungani_pos_sale() creates a
+  // real Customer Invoice and (for cash) an immediate payment tagged with
+  // notes = 'Quick Sale' (see sql/pos-quick-sale-phase2.sql). Querying
+  // ungani_customer_invoice_payments for that tag is how this reads real
+  // POS activity without a parallel, possibly-drifting summary table.
+  function isPosSalesQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    const mentionsPos = /\bpos\b/.test(lower) || lower.indexOf("point of sale") !== -1 || lower.indexOf("quick sale") !== -1;
+    if (!mentionsPos) return false;
+
+    // Exclude how-to/explanatory phrasing so "how do I use POS" reaches
+    // the static pos-explained HELP_TOPICS answer instead of this query.
+    if (lower.indexOf("how do i") !== -1 || lower.indexOf("how does") !== -1 || lower.indexOf("how to") !== -1 || lower.indexOf("what is") !== -1) return false;
+
+    return lower.indexOf("sale") !== -1 && (
+      lower.indexOf("today") !== -1 || lower.indexOf("how much") !== -1 || lower.indexOf("how many") !== -1 ||
+      lower.indexOf("total") !== -1 || lower.indexOf("summary") !== -1
+    );
+  }
+
+  async function runPosSalesQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    if (!state.tenant || state.tenant.pos_enabled !== true) {
+      addNiaMessage(
+        `Quick Sale (POS) isn't turned on yet. It's available on the Business and Custom packages — enable it in Settings once you're on one of those — ${goldLink("my-settings.html", "Open Settings")}.`
+      );
+      return { spoken: "Quick Sale isn't turned on yet." };
+    }
+
+    addNiaMessage("Checking today's Quick Sale activity...");
+
+    const today = new Date().toISOString().slice(0, 10);
+    let rows;
+    try {
+      const response = await state.supabaseClient
+        .from("ungani_customer_invoice_payments")
+        .select("amount, method, paid_at, notes")
+        .eq("tenant_id", state.tenantId)
+        .eq("paid_at", today)
+        .ilike("notes", "%quick sale%");
+      if (response.error) throw response.error;
+      rows = Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (!rows.length) {
+      addNiaMessage("No Quick Sale sales recorded today yet. " + goldLink("my-quick-sale.html", "Open Quick Sale") + ".");
+      return { spoken: "No Quick Sale sales recorded today yet." };
+    }
+
+    const total = rows.reduce(function (sum, r) { return sum + (Number(r.amount) || 0); }, 0);
+    const cashCount = rows.filter(function (r) { return r.method === "cash"; }).length;
+    const mpesaCount = rows.filter(function (r) { return r.method === "mpesa"; }).length;
+
+    const html =
+      `<strong>Today's Quick Sale (POS)</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="shopping-bag"></i> ${rows.length} sale${rows.length === 1 ? "" : "s"} — ${formatNiaKES(total)}</div>` +
+      `<div style="margin-top:6px;">Cash: ${cashCount} · M-Pesa: ${mpesaCount}</div>` +
+      `<div style="margin-top:8px;">${goldLink("my-quick-sale.html", "Open Quick Sale →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: rows.length + " Quick Sale sale" + (rows.length === 1 ? "" : "s") + " today, totalling " + formatNiaKES(total) + "."
+    };
+  }
+
+  // ---- Branch billing query ----
+  // Reuses ungani_get_branch_addon_amount() and
+  // get_my_ungani_multi_branch_status() - the exact functions
+  // my-billing.html/my-package.html are meant to display this from (per
+  // sql/branch-billing-phase1-schema-and-helpers.sql's own comment), so
+  // Nia's number always matches the real billing math, not a re-derived
+  // estimate.
+  function isBranchBillingQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    if (lower.indexOf("branch") === -1) return false;
+    return lower.indexOf("extra") !== -1 || lower.indexOf("surcharge") !== -1 || lower.indexOf("cost") !== -1 ||
+      lower.indexOf("pay for") !== -1 || lower.indexOf("how much") !== -1 || lower.indexOf("billing") !== -1 ||
+      lower.indexOf("charge") !== -1;
+  }
+
+  async function runBranchBillingQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your branch billing...");
+
+    let statusData, addonAmount;
+    try {
+      const statusResponse = await state.supabaseClient.rpc("get_my_ungani_multi_branch_status");
+      if (statusResponse.error) throw statusResponse.error;
+      statusData = statusResponse.data || {};
+
+      const addonResponse = await state.supabaseClient.rpc("ungani_get_branch_addon_amount", { p_tenant_id: state.tenantId });
+      if (addonResponse.error) throw addonResponse.error;
+      addonAmount = Number(addonResponse.data) || 0;
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (statusData.multi_branch_enabled !== true) {
+      addNiaMessage(
+        `Multi-branch isn't enabled for your account, so there's no branch surcharge. ${goldLink("my-branches.html", "Open My Branches")}.`
+      );
+      return { spoken: "Multi-branch isn't enabled, so there's no branch surcharge." };
+    }
+
+    const branchCount = Array.isArray(statusData.branches) ? statusData.branches.length : 0;
+
+    const html = addonAmount > 0
+      ? `<strong>Branch Billing</strong>` +
+        `<div style="margin-top:8px;"><i data-lucide="store"></i> ${branchCount} branch${branchCount === 1 ? "" : "es"} — ${formatNiaKES(addonAmount)}/month extra</div>` +
+        `<div style="margin-top:6px;">Your first branch is free; it's KSh 3,000/month per branch after that.</div>` +
+        `<div style="margin-top:8px;">${goldLink("my-branches.html", "Open My Branches →")}</div>`
+      : `<strong>Branch Billing</strong>` +
+        `<div style="margin-top:8px;"><i data-lucide="store"></i> ${branchCount} branch${branchCount === 1 ? "" : "es"} — no extra charge (covered by your free branch allowance)</div>` +
+        `<div style="margin-top:8px;">${goldLink("my-branches.html", "Open My Branches →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: addonAmount > 0
+        ? "Your branch surcharge is " + formatNiaKES(addonAmount) + " per month."
+        : "No branch surcharge right now — you're within your free branch allowance."
+    };
+  }
+
+  // ---- Kanban/status board view requests ----
+  // Tasks/Quotations/Orders each store their own list-vs-board choice in
+  // sessionStorage (ungani_task_view_mode / ungani_quotation_view_mode /
+  // ungani_order_view_mode) rather than a URL param - setting the key here
+  // before navigating works because sessionStorage survives navigation
+  // within the same tab.
+  const BOARD_VIEW_TARGETS = [
+    { key: "ungani_task_view_mode", href: "my-tasks.html", label: "Tasks", match: ["task"] },
+    { key: "ungani_quotation_view_mode", href: "my-quotations.html", label: "Quotations", match: ["quotation", "quote"] },
+    { key: "ungani_order_view_mode", href: "my-orders.html", label: "Orders", match: ["order"] }
+  ];
+
+  function findBoardViewRequest(text) {
+    const lower = text.toLowerCase();
+    const mentionsBoard = lower.indexOf("board") !== -1 || lower.indexOf("kanban") !== -1;
+    if (!mentionsBoard) return null;
+
+    for (const target of BOARD_VIEW_TARGETS) {
+      if (target.match.some(function (word) { return lower.indexOf(word) !== -1; })) return target;
+    }
+
+    // A bare "show me the board" with no subject defaults to Tasks, the
+    // only board view every business type has (Quotations/Orders are
+    // sales-specific features that aren't universally on).
+    return BOARD_VIEW_TARGETS[0];
+  }
+
+  function runBoardViewIntent(target) {
+    sessionStorage.setItem(target.key, "board");
+    addNiaMessage("Opening " + safe(target.label) + " as a board...");
+
+    setTimeout(function () {
+      window.location.href = target.href;
+    }, 500);
+
+    return { spoken: "Opening " + target.label + " as a board." };
+  }
+
+  // ---- Admin: Partner/Referral overview ----
+  // Reads admin_get_ungani_partners_overview() directly - the real RPC the
+  // partner-referral system exposes (sql/partner-referral-system.sql).
+  // There's no dedicated admin Partner UI page yet (flagged separately as
+  // follow-up work), so this answers straight from the RPC with no page
+  // link to offer, same shape as the other admin live-data intents.
+  function isAdminPartnerQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["partner", "referral", "commission"].some(function (word) { return lower.indexOf(word) !== -1; });
+  }
+
+  async function runAdminPartnerQueryIntent() {
+    if (!state.supabaseClient) {
+      addNiaMessage("I'm still loading — please try that again in a moment.");
+      return { spoken: "I'm still loading." };
+    }
+
+    addNiaMessage("Checking partners...");
+
+    let partners;
+    try {
+      const response = await state.supabaseClient.rpc("admin_get_ungani_partners_overview");
+      if (response.error) throw response.error;
+      if (!response.data || response.data.ok !== true) throw new Error(response.data && response.data.message);
+      partners = Array.isArray(response.data.partners) ? response.data.partners : [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (!partners.length) {
+      addNiaMessage("No partners set up yet.");
+      return { spoken: "No partners set up yet." };
+    }
+
+    const totalOwed = partners.reduce(function (sum, p) { return sum + (Number(p.owed_total) || 0); }, 0);
+    const totalPaid = partners.reduce(function (sum, p) { return sum + (Number(p.paid_total) || 0); }, 0);
+
+    const rows = partners.map(function (p) {
+      return `<div style="margin-top:6px;"><i data-lucide="user"></i> ${safe(p.full_name)} (${safe(p.partner_code)}) — ${p.tenant_count} client${p.tenant_count === 1 ? "" : "s"}, ${formatNiaKES(p.owed_total || 0)} owed</div>`;
+    }).join("");
+
+    const html =
+      `<strong>Partners</strong>` +
+      `<div style="margin-top:8px;">${partners.length} partner${partners.length === 1 ? "" : "s"} — ${formatNiaKES(totalOwed)} owed total, ${formatNiaKES(totalPaid)} paid to date</div>` +
+      rows;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: partners.length + " partner" + (partners.length === 1 ? "" : "s") + ", " + formatNiaKES(totalOwed) + " owed in commissions total."
     };
   }
 
