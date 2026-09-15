@@ -140,7 +140,7 @@
         padding:24px;
         background:
           radial-gradient(circle at top right, rgba(212,166,58,0.18), transparent 32%),
-          linear-gradient(135deg, #061C3D 0%, #092B58 55%, #0F172A 100%);
+          linear-gradient(135deg, #061C3D 0%, #092B58 55%, #092A59 100%);
         font-family:Inter, Arial, sans-serif;
         color:white;
       ">
