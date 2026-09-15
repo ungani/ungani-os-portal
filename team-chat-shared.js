@@ -31,9 +31,15 @@
     activeKey: "team",
     isOpen: false,
     pollTimer: null,
+    heartbeatTimer: null,
     firstLoadDone: false,
     roster: { owner: null, members: [] },
     rosterLoaded: false,
+    // Presence (Team Chat redesign Phase 5) - authUserId -> last_seen_at
+    // ISO string, refreshed by loadPresence() every poll tick. Own
+    // heartbeat is sent by pingPresence(), separately, on a slower
+    // interval (see startHeartbeat()).
+    presence: {},
     // Set via setRenderCallback() by a host page that wants to render its
     // own layout (e.g. the dedicated my-team-chat.html page) instead of
     // this module's own popup DOM. When set, every place that would
@@ -472,6 +478,29 @@
       .utc-toast.show { transform: translateY(0); opacity: 1; }
       .utc-toast strong { display: block; color: #D4A63A; font-size: 13px; margin-bottom: 3px; }
       .utc-toast p { margin: 0; font-size: 13px; color: #F5F5F3; line-height: 1.4; }
+
+      /* Presence (Team Chat redesign Phase 5) - a small colored corner
+         dot on a real person's avatar (never on "team"/"channel" avatars,
+         which have no single presence state). Positioned/sized relative
+         to the avatar wrapper via .ungani-chat-avatar-wrap so it scales
+         with whatever sizePx avatarHtml() was called with. */
+      .ungani-chat-avatar-wrap { position: relative; display: inline-flex; flex: none; }
+      .ungani-chat-presence-dot {
+        position: absolute;
+        right: -1px;
+        bottom: -1px;
+        width: 30%;
+        height: 30%;
+        min-width: 8px;
+        min-height: 8px;
+        border-radius: 50%;
+        border: 2px solid #FFFFFF;
+        box-sizing: content-box;
+      }
+      body[data-theme="dark"] .ungani-chat-presence-dot { border-color: #0B2346; }
+      .ungani-chat-presence-dot.online { background: #16A34A; }
+      .ungani-chat-presence-dot.away { background: #D4A63A; }
+      .ungani-chat-presence-dot.offline { background: #9CA3AF; }
     `;
     document.head.appendChild(style);
   }
@@ -554,6 +583,28 @@
     return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
   }
 
+  // Thresholds for turning a last_seen_at timestamp into a status - online
+  // covers a bit more than the 45s heartbeat interval to absorb normal
+  // network/poll latency; away covers "stepped away but the tab's still
+  // open somewhere"; anything older (or never seen) reads as offline.
+  const PRESENCE_ONLINE_MS = 2 * 60 * 1000;
+  const PRESENCE_AWAY_MS = 15 * 60 * 1000;
+
+  // Returns null for "team"/"channel" (no single presence state) or a key
+  // this tenant has no presence row for yet (never opened Team Chat/any
+  // page loading this module since the presence table was introduced).
+  function presenceStatusFor(authId) {
+    if (!authId || authId === "team" || authId === "channel") return null;
+
+    const lastSeenIso = state.presence[authId];
+    if (!lastSeenIso) return null;
+
+    const ageMs = Date.now() - new Date(lastSeenIso).getTime();
+    if (ageMs <= PRESENCE_ONLINE_MS) return "online";
+    if (ageMs <= PRESENCE_AWAY_MS) return "away";
+    return "offline";
+  }
+
   // key: a stable identity string - a real auth_user_id for an actual
   // person, or the literal "team"/"channel" for a header representing the
   // whole conversation rather than one sender. name is only used to derive
@@ -562,7 +613,12 @@
     const size = sizePx || 32;
     const color = avatarColorFor(key);
     const initials = key === "team" ? "T" : key === "channel" ? "#" : avatarInitials(name);
-    return `<div class="ungani-chat-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.4)}px;background:${color.bg};color:${color.fg};">${safe(initials)}</div>`;
+    const avatar = `<div class="ungani-chat-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.4)}px;background:${color.bg};color:${color.fg};">${safe(initials)}</div>`;
+
+    const status = presenceStatusFor(key);
+    if (!status) return avatar;
+
+    return `<span class="ungani-chat-avatar-wrap" style="width:${size}px;height:${size}px;">${avatar}<span class="ungani-chat-presence-dot ${status}" title="${status.charAt(0).toUpperCase() + status.slice(1)}"></span></span>`;
   }
 
   // Resolves a conversationList()/peerLabel() bucket key ("team", "owner",
@@ -598,6 +654,55 @@
     injectStylesOnce();
     await loadRoster();
     await loadMessages(true);
+    await loadPresence();
+    pingPresence();
+    startHeartbeat();
+  }
+
+  // Fire-and-forget heartbeat - called once immediately from init() (so a
+  // user shows online right away, not just after the first 45s tick) and
+  // then on its own interval for as long as any page with this module
+  // loaded stays open. Deliberately separate from startPolling()'s 12s
+  // message-refresh timer - a much lower cadence is enough for "is this
+  // person around right now" and there's no reason to hit the DB at the
+  // same rate as message polling.
+  async function pingPresence() {
+    const ctx = getContext();
+    if (!ctx || !ctx.supabaseClient) return;
+
+    try {
+      await ctx.supabaseClient.rpc("ping_my_ungani_presence");
+    } catch (error) {
+      // Non-critical - worst case this user's dot reads one heartbeat
+      // staler than reality until the next successful tick.
+    }
+  }
+
+  function startHeartbeat() {
+    if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+    state.heartbeatTimer = setInterval(pingPresence, 45000);
+  }
+
+  // Refreshes state.presence for every person in the caller's tenant in
+  // one call - cheap enough to piggyback on the existing 12s message-poll
+  // tick (see startPolling()) rather than needing its own fast timer.
+  async function loadPresence() {
+    const ctx = getContext();
+    if (!ctx || !ctx.supabaseClient) return;
+
+    try {
+      const response = await ctx.supabaseClient.rpc("get_my_ungani_team_presence");
+      if (!response.error && Array.isArray(response.data)) {
+        const nextPresence = {};
+        response.data.forEach(function (row) {
+          if (row && row.auth_user_id) nextPresence[row.auth_user_id] = row.last_seen_at;
+        });
+        state.presence = nextPresence;
+      }
+    } catch (error) {
+      // Non-critical - avatars just render without a dot until the next
+      // successful refresh.
+    }
   }
 
   async function loadRoster() {
@@ -1358,7 +1463,16 @@
   function startPolling() {
     if (state.pollTimer) clearInterval(state.pollTimer);
     loadMessages(true);
-    state.pollTimer = setInterval(function () { loadMessages(true); }, 12000);
+    state.pollTimer = setInterval(function () {
+      loadMessages(true);
+      // Piggybacked on the same 12s tick rather than its own timer - see
+      // loadPresence()'s own comment. Refreshes dots for everyone else;
+      // this user's own row is kept fresh separately by the heartbeat
+      // (startHeartbeat(), 45s). notifyRender() re-runs after the fetch
+      // resolves so updated dots actually reach the DOM even on a tick
+      // where loadMessages() itself found nothing new to render.
+      loadPresence().then(notifyRender);
+    }, 12000);
   }
 
   // Registers a host page's own render function in place of this module's
