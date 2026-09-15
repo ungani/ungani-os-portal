@@ -1660,17 +1660,6 @@
         // never conflicts with the fresh/continuous logic below).
         addNiaMessage(buildFirstTimeGreeting());
         markSeenNia();
-
-        const offerWalkthrough = await shouldOfferWalkthrough();
-
-        if (offerWalkthrough) {
-          replyWithDelay(function () {
-            addNiaMessage("Want a quick tour to get you started? I'll walk you through the key parts of the system in a few short steps.");
-            showWalkthroughOfferChips();
-          });
-        } else {
-          showQuickActions();
-        }
       } else if (state.isFreshSession && state.surface !== "admin" && state.supabaseClient && state.tenantId && !hasSeenTodayBriefing()) {
         // Fresh session, first open today - richer once-a-day briefing
         // instead of a plain greeting. Still gated on freshness so a
@@ -1689,7 +1678,6 @@
         }
 
         markSeenTodayBriefing();
-        showQuickActions();
       } else {
         // Fresh session but already had today's briefing (or admin surface,
         // which has no briefing) -> time-based "Welcome back". Continuous
@@ -1709,7 +1697,31 @@
           }
           markSeenTodayAdminHealthNote();
         }
+      }
 
+      // Walkthrough-offer eligibility is tracked per TENANT
+      // (tenants.nia_walkthrough_offered_at), not per browser like
+      // hasSeenNia() above - deliberately checked here, outside the
+      // greeting branches, so it fires on THIS TENANT's first-ever Nia
+      // open on any device, not just "the first device that ever opened
+      // Nia" (the wrong dimension for "is this business new"). Fixes two
+      // real bugs from the old hasSeenNia()+onboarding-checklist gate:
+      // 1) a genuinely new business sharing a browser with an
+      // already-seen tenant (e.g. a reseller onboarding several clients
+      // from one laptop) never got offered the tour at all; 2) an
+      // established business that simply hadn't finished 2+ onboarding
+      // checklist items (the old proxy this replaces) got re-offered the
+      // tour every time it opened Nia from a new or cleared device -
+      // which read as the tour "auto-repeating."
+      const offerWalkthrough = await shouldOfferWalkthrough();
+
+      if (offerWalkthrough) {
+        markWalkthroughOffered();
+        replyWithDelay(function () {
+          addNiaMessage("Want a quick tour to get you started? I'll walk you through the key parts of the system in a few short steps.");
+          showWalkthroughOfferChips();
+        });
+      } else {
         showQuickActions();
       }
 
@@ -1983,22 +1995,32 @@
     return `<a href="${attr(href)}" style="color:${BRAND.gold};font-weight:800;text-decoration:none;">${safe(label)}</a>`;
   }
 
+  // Eligibility used to be "onboarding checklist mostly incomplete"
+  // (doneCount <= 1 from get_my_ungani_onboarding_progress) - a proxy for
+  // "still looks new," not an actual record of whether this tenant was
+  // ever offered the tour. Replaced with a direct per-tenant flag
+  // (tenants.nia_walkthrough_offered_at) set once by markWalkthroughOffered()
+  // below - state.tenant already carries every tenants column via
+  // client-shared.js's loadTenant() `select("*")`, so this needs no extra
+  // network round-trip.
   async function shouldOfferWalkthrough() {
-    if (state.surface === "admin" || !state.supabaseClient || !state.tenantId) return false;
+    if (state.surface === "admin" || !state.tenantId || !state.tenant) return false;
+    return state.tenant.nia_walkthrough_offered_at == null;
+  }
+
+  // Fire-and-forget: worst case on failure is the offer might show again
+  // next session, which is still strictly better than the pre-fix
+  // behavior (repeating indefinitely for established businesses, or never
+  // showing at all for a new one sharing a device with an older tenant).
+  async function markWalkthroughOffered() {
+    if (!state.supabaseClient || !state.tenantId) return;
 
     try {
-      const { data, error } = await state.supabaseClient.rpc("get_my_ungani_onboarding_progress");
-      // Real shape is { ok, items, tenant_id } (confirmed against
-      // my-onboarding.html's own handling of this same RPC) - data itself
-      // is never an array, so the old `!Array.isArray(data)` check was
-      // always true and this function silently always returned false,
-      // meaning the proactive tour offer never fired for anyone.
-      if (error || !data || !Array.isArray(data.items)) return false;
-
-      const doneCount = data.items.filter(function (row) { return row && row.is_done === true; }).length;
-      return doneCount <= 1;
+      const nowIso = new Date().toISOString();
+      await state.supabaseClient.from("tenants").update({ nia_walkthrough_offered_at: nowIso }).eq("id", state.tenantId);
+      if (state.tenant) state.tenant.nia_walkthrough_offered_at = nowIso;
     } catch (error) {
-      return false;
+      // Ignore - see comment above.
     }
   }
 
