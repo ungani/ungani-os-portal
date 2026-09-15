@@ -3155,6 +3155,18 @@
     let currentUserFullName = "";
     let currentUserIsOwner = true;
 
+    // Branch UX Phase B (see get_my_ungani_staff_access/get_my_ungani_
+    // multi_branch_status - the same RPCs Nia/my-branches.html/my-team-
+    // access.html already use, so this always matches what those pages
+    // show). currentUserBranchId is only ever set for a staff member
+    // confined to one branch - null for the owner and for staff with
+    // full cross-branch access, both of which see everything already.
+    let currentUserBranchId = null;
+    let multiBranchEnabled = false;
+    let tenantBranches = [];
+    let selectedBranchId = null; // owner's own filter choice, dashboard-only
+    let rawDashboardData = null; // last unfiltered fetch, so switching branches doesn't need a refetch
+
     async function loadUserRole() {
       if (!currentUser) return;
 
@@ -3182,12 +3194,25 @@
         // never went through Team Access has no team_members row at all,
         // so an empty/missing response must NOT be read as "not owner."
         currentUserIsOwner = access.is_owner === true || !isConfirmedStaffRecord;
+        currentUserBranchId = access.branch_id || null;
       } catch (error) {
         currentUserIsOwner = true;
+        currentUserBranchId = null;
+      }
+
+      try {
+        const branchResponse = await supabaseClient.rpc("get_my_ungani_multi_branch_status");
+        const branchData = (branchResponse && !branchResponse.error && branchResponse.data) || {};
+        multiBranchEnabled = branchData.multi_branch_enabled === true;
+        tenantBranches = Array.isArray(branchData.branches) ? branchData.branches : [];
+      } catch (error) {
+        multiBranchEnabled = false;
+        tenantBranches = [];
       }
 
       renderProfileBlock();
       refreshHeroGreetingName();
+      injectBranchIndicator();
     }
 
     // loadUserRole() isn't awaited before the dashboard's own render fires,
@@ -3199,6 +3224,101 @@
     function refreshHeroGreetingName() {
       const heading = document.querySelector(".hero-greet-enter h3");
       if (heading) heading.textContent = getGreeting() + ", " + shortPersonName();
+    }
+
+    // Branch UX Phase B - a single shared injection point rather than
+    // editing all 19 bespoke dashboard render functions. Every one of
+    // them renders exactly one (or two, for multi-section Overview pages)
+    // <span class="badge gold"> in its hero - this finds the LAST one in
+    // the DOM (so it lands after any "Viewing: <section>" pill too, not
+    // wedged in the middle of the badge row) and appends either a static
+    // read-only branch badge (a branch-confined staff member) or an
+    // interactive branch filter <select> (the owner). Invisible for the
+    // ~95% of tenants with multi-branch off - matches the same
+    // invisible-by-default pattern my-team-access.html's branch dropdown
+    // already uses. Called once from loadUserRole() (self-correcting,
+    // same as refreshHeroGreetingName() above) and again after every
+    // renderDashboard() call so it survives the hero being rebuilt.
+    function injectBranchIndicator() {
+      const existing = document.getElementById("branchIndicator");
+      if (existing) existing.remove();
+
+      if (!multiBranchEnabled) return;
+
+      const goldBadges = document.querySelectorAll(".badge.gold");
+      if (!goldBadges.length) return;
+
+      const anchor = goldBadges[goldBadges.length - 1];
+
+      if (currentUserIsOwner) {
+        const options = ['<option value="">All Branches</option>'].concat(
+          tenantBranches.map(function (b) {
+            const label = b.branch_name || b.name || b.location || "Branch";
+            const selected = String(b.id) === String(selectedBranchId || "") ? " selected" : "";
+            return `<option value="${attr(b.id)}"${selected}>${safe(label)}</option>`;
+          })
+        );
+
+        const wrap = document.createElement("span");
+        wrap.id = "branchIndicator";
+        wrap.className = "badge";
+        wrap.title = "Filters Money, Tasks, and People to one location. Items, Records, and Documents aren't branch-tagged yet, so they always show everything.";
+        wrap.innerHTML =
+          '<i data-lucide="store" style="width:14px;height:14px;"></i>' +
+          `<select onchange="onBranchFilterChange(this.value)" style="background:transparent;border:none;color:inherit;font:inherit;font-weight:950;cursor:pointer;outline:none;">${options.join("")}</select>`;
+        anchor.insertAdjacentElement("afterend", wrap);
+      } else if (currentUserBranchId) {
+        const branch = tenantBranches.find(function (b) { return String(b.id) === String(currentUserBranchId); });
+        const label = branch ? (branch.branch_name || branch.name || branch.location || "Your Branch") : "Your Branch";
+
+        const badge = document.createElement("span");
+        badge.id = "branchIndicator";
+        badge.className = "badge";
+        badge.title = "The branch you're assigned to.";
+        badge.innerHTML = `<i data-lucide="store" style="width:14px;height:14px;"></i> ${safe(label)}`;
+        anchor.insertAdjacentElement("afterend", badge);
+      }
+
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    // Re-filters from the last unfiltered fetch (no refetch needed) and
+    // re-renders - mirrors the exact section-switcher pattern already
+    // used elsewhere on this dashboard (buildSectionScopedData()), just
+    // scoped to a branch instead of a section, and owner-only (a staff
+    // member's own branch confinement is already enforced server-side by
+    // Phase A's RLS, so their fetch never contained other branches' rows
+    // to filter in the first place).
+    function onBranchFilterChange(newBranchId) {
+      selectedBranchId = newBranchId || null;
+      applyBranchFilterToDashboardData();
+      renderDashboard();
+      injectBranchIndicator();
+    }
+
+    // Only Money (transactions), Tasks, and People carry branch_id today
+    // (Phase A's scope) - Items/Records/Documents/Calendar/Support are
+    // deliberately left untouched rather than silently pretending to
+    // filter data that was never tagged.
+    function applyBranchFilterToDashboardData() {
+      if (!rawDashboardData) return;
+
+      if (!selectedBranchId) {
+        dashboardData.transactions = rawDashboardData.transactions;
+        dashboardData.tasks = rawDashboardData.tasks;
+        dashboardData.people = rawDashboardData.people;
+        return;
+      }
+
+      function byBranch(rows) {
+        return (rows || []).filter(function (row) {
+          return String(getValue(row, ["branch_id"], "")) === String(selectedBranchId);
+        });
+      }
+
+      dashboardData.transactions = byBranch(rawDashboardData.transactions);
+      dashboardData.tasks = byBranch(rawDashboardData.tasks);
+      dashboardData.people = byBranch(rawDashboardData.people);
     }
 
     function derivePersonNameFromEmail(email) {
@@ -4586,6 +4706,17 @@
       dashboardData.support = responses[7];
       dashboardData.invoices = responses[8];
 
+      // Branch UX Phase B - keep an unfiltered snapshot of the 3 tables
+      // Phase A actually tags (transactions/tasks/people), then re-apply
+      // whatever branch the owner already had selected (e.g. a manual
+      // refresh shouldn't silently reset their filter back to "All").
+      rawDashboardData = {
+        transactions: dashboardData.transactions,
+        tasks: dashboardData.tasks,
+        people: dashboardData.people
+      };
+      applyBranchFilterToDashboardData();
+
       try {
         renderDashboard();
       } catch (renderError) {
@@ -4598,6 +4729,7 @@
         `;
       }
 
+      injectBranchIndicator();
       lastDashboardLoadTime = new Date();
       updateLastUpdatedIndicator();
     }
