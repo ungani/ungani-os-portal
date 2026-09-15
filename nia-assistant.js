@@ -2638,12 +2638,13 @@
       // Live-data approvals question ("approval", "approvals", "needs my
       // approval") - client-only, checked right after Payees since all
       // three (Debtors/Payees/Approvals) are financial oversight questions.
-      if (isApprovalsQueryPhrase(text)) {
-        if (state.surface === "admin") {
-          addNiaMessage("Expense Approval isn't available on the admin side — check Approvals under the client account instead.");
-          return { spoken: "That's not available on the admin side." };
-        }
-
+      // Gated OUT of admin surface entirely (not just told "unavailable")
+      // since ADMIN_NAV_ITEMS already has its own distinct, live
+      // "admin-approvals" entry (reviewing pending business registrations)
+      // whose "approvals" alias this would otherwise shadow - letting this
+      // check simply not match on admin lets findNavMatch reach that
+      // existing entry normally instead.
+      if (state.surface !== "admin" && isApprovalsQueryPhrase(text)) {
         return runApprovalsQueryIntent();
       }
 
