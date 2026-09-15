@@ -292,17 +292,24 @@
          subtitle) and, when a bottom nav is present, lifted above it
          via the .ungani-above-bottom-nav class set at show-time.
 
-         right:84px (not 12px) reserves room for nia-assistant.js's
-         floating chat bubble (.nia-fab, 58px wide, right:16px on
-         mobile) - confirmed via live screenshot that client.html
-         (which has no bottom nav, so the lift above doesn't help it)
-         showed the bubble rendered directly on top of this banner's
-         "Not now" button. The two never share horizontal space now,
-         regardless of which page loaded push-notifications.js. */
+         right:120px (not 84px) reserves room for BOTH of nia-assistant.js's
+         floating buttons - the main chat bubble (.nia-fab, 58px wide,
+         right:16px on mobile - footprint ends at right:74) and the
+         smaller permanent walkthrough "?" button added later
+         (.nia-help-btn, 30px wide, right:82px on mobile - its own
+         footprint ends at right:112, further left than the fab's).
+         84px only cleared the fab; live-screenshot testing on
+         my-tasks.html (which has a bottom nav, so the .ungani-above-
+         bottom-nav lift applies) showed the "?" button rendered
+         completely hidden underneath this banner because 84px left an
+         18px gap short of the button's actual 112px-from-edge footprint.
+         120px clears both with a small margin, on the lifted and
+         non-lifted variant alike (neither nia-fab nor nia-help-btn moves
+         horizontally between those two states, only vertically). */
       @media (max-width: 560px) {
         .ungani-push-banner {
           left: 12px;
-          right: 84px;
+          right: 120px;
           bottom: 12px;
           width: auto;
           grid-template-columns: 32px 1fr;
