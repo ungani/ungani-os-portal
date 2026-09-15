@@ -107,7 +107,18 @@
     return clean;
   }
 
+  // Set the moment a human explicitly toggles the theme, so a slower
+  // in-flight syncFromServer() (see below) knows not to stomp on that
+  // choice with a stale DB read that started before the toggle - found
+  // live while testing the cross-account fix: initClientDashboard()'s
+  // initial correction call can still be awaiting its network round-trip
+  // when a user clicks the toggle, and without this guard its late
+  // resolution silently reverted the manual toggle back to the old value
+  // a moment later.
+  var userToggledThisPageLoad = false;
+
   function toggle(scopeId) {
+    userToggledThisPageLoad = true;
     return apply(get(scopeId) === "dark" ? "light" : "dark", scopeId);
   }
 
@@ -134,6 +145,8 @@
         .eq("user_id", userId)
         .maybeSingle();
 
+      if (userToggledThisPageLoad) return get(userId);
+
       if (!response.error && response.data && response.data.theme) {
         return apply(response.data.theme, userId);
       }
@@ -141,6 +154,7 @@
       // Fall through to the local cache below.
     }
 
+    if (userToggledThisPageLoad) return get(userId);
     return apply(get(userId), userId);
   }
 
