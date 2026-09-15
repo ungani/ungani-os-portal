@@ -1016,13 +1016,16 @@
 
       /* Permanent (not one-shot, not localStorage-gated) re-trigger for
          the guided walkthrough - separate from nia-fab-dot, which only
-         ever shows once per browser. Sits just above/left of the main
-         bubble so it never overlaps it. Client-only, same as the
-         walkthrough itself (see shouldOfferWalkthrough()). */
+         ever shows once per browser. Sits directly above the main bubble
+         (not beside it) - the "beside" position used to sit almost
+         exactly on top of .nia-tagline (right:88/bottom:34, the "Ask Nia
+         anything!" bubble that's visible by default before the panel is
+         first opened), so the two rendered as one merged blob. Client-
+         only, same as the walkthrough itself (see shouldOfferWalkthrough()). */
       .nia-help-btn {
         position: fixed;
-        right: 86px;
-        bottom: 34px;
+        right: 32px;
+        bottom: 92px;
         z-index: 99997;
         width: 34px;
         height: 34px;
@@ -1380,8 +1383,8 @@
         }
 
         .nia-help-btn {
-          right: 82px;
-          bottom: 28px;
+          right: 30px;
+          bottom: 84px;
           width: 30px;
           height: 30px;
           font-size: 13px;
@@ -1401,7 +1404,7 @@
         }
 
         .nia-help-btn.nia-above-bottom-nav {
-          bottom: 162px;
+          bottom: 218px;
         }
       }
     `;
