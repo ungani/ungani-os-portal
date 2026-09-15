@@ -2518,30 +2518,21 @@
     }
   }
 
+  // Was reading client_settings, tenant-scoped - confirmed dead (nothing
+  // in the whole codebase ever writes to that table; see memory
+  // theme_cross_account_bleed_fix), so this "correction" step never
+  // actually corrected anything in practice. The REAL, already-live
+  // per-account store is user_preferences (per auth user_id - see
+  // my-settings.html's own fetchUserPreferences()/savePreferences(),
+  // which this now shares via UnganiTheme.syncFromServer()). Called here,
+  // right after state.authUser/state.tenantId/state.tenant all resolve,
+  // to correct the unscoped pre-auth paint from initPage()'s earlier
+  // applyTheme(state.currentTheme) call to THIS account's own saved
+  // theme, cached under a key namespaced to it from now on.
   async function loadSavedSettings() {
-    const localTheme = localStorage.getItem("ungani_theme") || localStorage.getItem("ungani_client_theme");
-
-    if (localTheme) {
-      applyTheme(localTheme);
-    }
-
-    try {
-      const response = await state.supabaseClient
-        .from("client_settings")
-        .select("*")
-        .eq("tenant_id", state.tenantId)
-        .limit(1)
-        .maybeSingle();
-
-      if (!response.error && response.data) {
-        const theme = getValue(response.data, ["theme", "appearance", "selected_theme"], null);
-
-        if (theme) {
-          applyTheme(theme);
-        }
-      }
-    } catch (error) {
-      console.warn("Client settings skipped:", error.message);
+    if (window.UnganiTheme && state.authUser) {
+      const cleanTheme = await window.UnganiTheme.syncFromServer(state.supabaseClient, state.authUser.id);
+      state.currentTheme = cleanTheme;
     }
   }
 
@@ -3527,7 +3518,8 @@
   }
 
   function applyTheme(theme) {
-    const cleanTheme = window.UnganiTheme ? window.UnganiTheme.apply(theme) : String(theme || "light").toLowerCase().includes("dark") ? "dark" : "light";
+    const scopeId = state.authUser ? state.authUser.id : null;
+    const cleanTheme = window.UnganiTheme ? window.UnganiTheme.apply(theme, scopeId) : String(theme || "light").toLowerCase().includes("dark") ? "dark" : "light";
     state.currentTheme = cleanTheme;
   }
 
@@ -3535,6 +3527,10 @@
     const nextTheme = state.currentTheme === "dark" ? "light" : "dark";
     applyTheme(nextTheme);
     showToast(nextTheme === "dark" ? "Dark mode enabled" : "Light mode enabled");
+
+    if (window.UnganiTheme && state.authUser) {
+      window.UnganiTheme.persistToServer(state.supabaseClient, state.authUser.id, nextTheme);
+    }
   }
 
   function toggleSidebar() {

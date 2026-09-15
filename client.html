@@ -3950,6 +3950,14 @@
         return;
       }
 
+      // Corrects the pre-auth UnganiTheme.init() paint (unscoped, since no
+      // identity was known yet) to this specific account's own saved
+      // theme, and re-caches it under a key namespaced to this user - see
+      // ungani-theme.js's header comment for why the bare init() above
+      // can't already know this.
+      await UnganiTheme.syncFromServer(supabaseClient, currentUser.id);
+      updateThemeButton();
+
       await resolveTenant();
 
       if (!currentTenantId) {
@@ -17049,8 +17057,10 @@
     }
 
     function toggleTheme() {
-      UnganiTheme.toggle();
+      const userId = currentUser ? currentUser.id : null;
+      const newTheme = UnganiTheme.toggle(userId);
       updateThemeButton();
+      if (userId) UnganiTheme.persistToServer(supabaseClient, userId, newTheme);
     }
 
     function updateThemeButton() {

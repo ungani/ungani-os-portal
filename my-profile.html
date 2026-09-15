@@ -740,8 +740,9 @@
     }
 
     function toggleTheme() {
-      UnganiTheme.toggle();
+      const newTheme = UnganiTheme.toggle(currentUserId);
       updateThemeToggleLabel();
+      if (currentUserId) UnganiTheme.persistToServer(supabaseClient, currentUserId, newTheme);
     }
 
     document.addEventListener("DOMContentLoaded", updateThemeToggleLabel);
@@ -929,6 +930,11 @@
       if (!currentUserId) {
         return;
       }
+
+      // Corrects the pre-auth UnganiTheme.init() paint (unscoped) to this
+      // account's own saved theme - see ungani-theme.js's header comment.
+      await UnganiTheme.syncFromServer(supabaseClient, currentUserId);
+      updateThemeToggleLabel();
 
       const { data: userData, error } = await supabaseClient
         .from("users")
