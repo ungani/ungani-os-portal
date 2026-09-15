@@ -1407,6 +1407,26 @@
     document.head.appendChild(style);
   }
 
+  // A rotating pool rather than one fixed string, so the tagline reads as
+  // a gentle, present check-in rather than a robotic identical line every
+  // single day - client-only (admin surface keeps the neutral wording,
+  // since "need help with anything today?" reads odd for internal staff).
+  // Picked once per page load, not tied to session-freshness state (not
+  // resolved yet this early in boot()), so plain randomness is enough to
+  // satisfy "occasionally varies" without adding timing complexity here.
+  const NIA_TAGLINE_VARIANTS = [
+    "Ask Nia anything!",
+    "Need help with anything today?",
+    "Good morning! Need a hand?",
+    "Hi — I'm here if you need me.",
+    "Stuck on something? Just ask."
+  ];
+
+  function pickNiaTaglineText() {
+    if (state.surface === "admin") return "Ask Nia anything!";
+    return NIA_TAGLINE_VARIANTS[Math.floor(Math.random() * NIA_TAGLINE_VARIANTS.length)];
+  }
+
   function renderFab() {
     if (document.getElementById("niaFabBtn")) return;
 
@@ -1430,7 +1450,7 @@
     tagline.id = "niaTagline";
     tagline.className = "nia-tagline";
     tagline.type = "button";
-    tagline.textContent = "Ask Nia anything!";
+    tagline.textContent = pickNiaTaglineText();
     tagline.addEventListener("click", toggleNia);
     document.body.appendChild(tagline);
 

@@ -959,34 +959,47 @@
       text-decoration: underline;
     }
 
-    /* Pulled out of the greeting-rotator's cycling text (which stays for
-       every OTHER contextual tip, e.g. "3 tasks due today") into its own
-       persistent "welcome back" card - a rotating card would either force
-       every other tip into the same heavy visual weight, or jump in and
-       out of this treatment every 5s, so it lives outside the rotation
-       instead. */
-    .welcome-back-card {
+    /* Dismissible "welcome back" toast - dashboard-decluttering pass.
+       Used to be a persistent card living permanently inside the hero
+       (see git history); now a floating toast that appears once per
+       session, a beat after the page settles, and disappears on its own
+       or on dismiss - useful the moment you log in, not useful sitting
+       there the rest of the session. */
+    .welcome-back-toast {
+      position: fixed;
+      top: 84px;
+      right: 18px;
+      z-index: 9997;
       display: flex;
       align-items: center;
       gap: 14px;
-      margin: 6px 0 16px;
-      padding: 16px 18px;
-      background: rgba(255,255,255,0.06);
+      width: min(360px, calc(100vw - 36px));
+      padding: 14px 16px;
+      background: var(--navy);
       border: 1px solid rgba(212,166,58,0.4);
       border-left: 3px solid var(--gold);
       border-radius: 16px;
+      box-shadow: 0 18px 40px rgba(6,28,61,0.28);
       text-decoration: none;
       color: white;
-      transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+      transform: translateY(-12px);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 0.26s ease, opacity 0.26s ease;
     }
 
-    .welcome-back-card:hover {
-      background: rgba(255,255,255,0.10);
+    .welcome-back-toast.show {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .welcome-back-toast:hover {
+      background: var(--navy2, #0A2A54);
       border-color: var(--gold);
-      transform: translateY(-1px);
     }
 
-    .welcome-back-card .welcome-back-icon {
+    .welcome-back-toast .welcome-back-icon {
       flex: none;
       width: 40px;
       height: 40px;
@@ -998,12 +1011,12 @@
       font-size: 18px;
     }
 
-    .welcome-back-card .welcome-back-body {
+    .welcome-back-toast .welcome-back-body {
       min-width: 0;
       flex: 1;
     }
 
-    .welcome-back-card .welcome-back-eyebrow {
+    .welcome-back-toast .welcome-back-eyebrow {
       margin: 0 0 3px;
       font-size: 11px;
       font-weight: 800;
@@ -1012,9 +1025,9 @@
       color: rgba(255,255,255,0.82);
     }
 
-    .welcome-back-card .welcome-back-title {
+    .welcome-back-toast .welcome-back-title {
       margin: 0;
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 700;
       color: white;
       white-space: nowrap;
@@ -1022,18 +1035,64 @@
       text-overflow: ellipsis;
     }
 
-    .welcome-back-card .welcome-back-cta {
+    .welcome-back-toast .welcome-back-toast-close {
       flex: none;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--gold);
-      display: flex;
-      align-items: center;
-      gap: 4px;
+      color: rgba(255,255,255,0.6);
+      font-size: 15px;
+      line-height: 1;
+      padding: 2px;
+    }
+
+    .welcome-back-toast .welcome-back-toast-close:hover {
+      color: white;
     }
 
     @media (max-width: 640px) {
-      .welcome-back-card .welcome-back-cta { display: none; }
+      .welcome-back-toast { top: 72px; right: 12px; }
+    }
+
+    /* Dashboard "one clear focus" card - the single most urgent real
+       record, promoted above the equally-weighted metric cards instead
+       of being buried as a small text line. "urgent" (red) for anything
+       overdue/needing action; the plain (blue-ish) variant is for
+       same-day, non-overdue items like "3 trips today". */
+    .dashboard-focus-card {
+      margin: 0 0 18px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: rgba(37,99,235,0.06);
+      border: 1.5px solid rgba(37,99,235,0.30);
+    }
+
+    .dashboard-focus-card.urgent {
+      background: rgba(185,28,28,0.06);
+      border-color: rgba(185,28,28,0.35);
+    }
+
+    .dashboard-focus-tag {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #2563EB;
+      margin-bottom: 6px;
+    }
+
+    .dashboard-focus-card.urgent .dashboard-focus-tag {
+      color: var(--red);
+    }
+
+    .dashboard-focus-headline {
+      font-size: 19px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .dashboard-focus-sub {
+      font-size: 13.5px;
+      color: var(--muted);
+      margin-bottom: 14px;
     }
 
     /* Favorites dashboard widget - injected generically after
@@ -5624,6 +5683,8 @@
           </section>
         `}
 
+        ${content.focusCardHtml || ""}
+
         <section class="kpi-grid">
           ${content.kpisHtml}
         </section>
@@ -6206,6 +6267,89 @@
       return renderAttentionGroups(groups, "#16A34A", "All caught up ✓", "No deliveries, trips, or maintenance need attention right now.");
     }
 
+    // ---- Dashboard "one clear focus" card (Logistics overview only for
+    // now) ----
+    // Picks the single most urgent real record, in the exact same
+    // priority order renderLogisticsAttentionList already uses (overdue
+    // deliveries first, then maintenance, then unconfirmed outcomes, then
+    // today's trips) - reusing that established order rather than
+    // inventing a new one, so this card always agrees with whatever's
+    // listed first in "Needs Attention Today" below it. Extending this
+    // same pattern to the other 18 business-type dashboards is separate
+    // follow-up work, not done in this pass.
+    function getLogisticsFocusItem(overdueDeliveries, todaysTrips, tripsNeedingOutcome, maintenanceDue, ctx) {
+      if (overdueDeliveries.length > 0) {
+        const task = overdueDeliveries[0];
+        const title = getValue(task, ["task_title", "title"], "Delivery");
+        const due = formatDate(getValue(task, ["due_date"], ""));
+        const extra = overdueDeliveries.length > 1 ? " (+" + (overdueDeliveries.length - 1) + " more overdue)" : "";
+        return {
+          tag: "Needs you first",
+          headline: overdueDeliveries.length === 1 ? "1 delivery is overdue" : overdueDeliveries.length + " deliveries are overdue",
+          sub: "“" + title + "” was due " + due + extra,
+          actionLabel: "Open it →",
+          href: ctx.tasksHref + "?highlight=" + task.id
+        };
+      }
+
+      if (maintenanceDue.length > 0) {
+        const task = maintenanceDue[0];
+        const title = getValue(task, ["task_title", "title"], "Maintenance");
+        const due = formatDate(getValue(task, ["due_date", "created_at"], ""));
+        const extra = maintenanceDue.length > 1 ? " (+" + (maintenanceDue.length - 1) + " more due)" : "";
+        return {
+          tag: "Needs you first",
+          headline: maintenanceDue.length === 1 ? "1 vehicle needs maintenance" : maintenanceDue.length + " vehicles need maintenance",
+          sub: "“" + title + "” was due " + due + extra,
+          actionLabel: "Open it →",
+          href: ctx.tasksHref + "?highlight=" + task.id
+        };
+      }
+
+      if (tripsNeedingOutcome.length > 0) {
+        const event = tripsNeedingOutcome[0];
+        const title = getValue(event, ["event_title", "title", "name"], "Trip / Delivery");
+        const date = formatDate(getValue(event, ["event_date", "date", "start_date"], ""));
+        const extra = tripsNeedingOutcome.length > 1 ? " (+" + (tripsNeedingOutcome.length - 1) + " more unconfirmed)" : "";
+        return {
+          tag: "Needs you first",
+          headline: tripsNeedingOutcome.length === 1 ? "1 trip needs an outcome confirmed" : tripsNeedingOutcome.length + " trips need an outcome confirmed",
+          sub: "“" + title + "” from " + date + extra,
+          actionLabel: "Confirm it →",
+          href: ctx.calendarHref + "?highlight=" + event.id
+        };
+      }
+
+      if (todaysTrips.length > 0) {
+        const event = todaysTrips[0];
+        const title = getValue(event, ["event_title", "title", "name"], "Trip / Delivery");
+        const extra = todaysTrips.length > 1 ? " (+" + (todaysTrips.length - 1) + " more today)" : "";
+        return {
+          tag: "Today",
+          headline: todaysTrips.length === 1 ? "1 trip or delivery today" : todaysTrips.length + " trips or deliveries today",
+          sub: "“" + title + "”" + extra,
+          actionLabel: "View it →",
+          href: ctx.calendarHref + "?highlight=" + event.id
+        };
+      }
+
+      return null;
+    }
+
+    function renderDashboardFocusCard(item) {
+      if (!item) return "";
+      const isUrgent = item.tag === "Needs you first";
+
+      return `
+        <section class="dashboard-focus-card${isUrgent ? " urgent" : ""}">
+          <div class="dashboard-focus-tag">${safe(item.tag)}</div>
+          <div class="dashboard-focus-headline">${safe(item.headline)}</div>
+          <div class="dashboard-focus-sub">${safe(item.sub)}</div>
+          <a class="ungani-btn dark" href="${attr(item.href)}">${safe(item.actionLabel)}</a>
+        </section>
+      `;
+    }
+
     function buildLogisticsCalendarPreview(today, scopedData) {
       const data = scopedData || dashboardData;
       const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -6372,6 +6516,7 @@
         attentionTitle: "Needs Attention Today",
         attentionSubtitle: "Overdue deliveries, today's trips, trips awaiting an outcome, and vehicle maintenance due — in priority order.",
         attentionHtml: renderLogisticsAttentionList(overdueDeliveries, todaysTrips, tripsNeedingOutcome, maintenanceDue, null),
+        focusCardHtml: renderDashboardFocusCard(getLogisticsFocusItem(overdueDeliveries, todaysTrips, tripsNeedingOutcome, maintenanceDue, ctx)),
         quickActionsHtml: [
           quickAction("truck", "New Trip", "Log a new trip or delivery run", ctx.itemsHref, "#D4A63A"),
           quickAction("fuel", "Log Fuel Entry", "Record a fuel or operating cost", ctx.moneyHref, "#16A34A"),
@@ -6721,6 +6866,8 @@
             </div>
           </section>
         `}
+
+        ${content.focusCardHtml || ""}
 
         <section class="kpi-grid">
           ${content.kpisHtml}
@@ -7767,6 +7914,8 @@
           </section>
         `}
 
+        ${content.focusCardHtml || ""}
+
         <section class="kpi-grid">
           ${content.kpisHtml}
         </section>
@@ -8393,6 +8542,8 @@
             </div>
           </section>
         `}
+
+        ${content.focusCardHtml || ""}
 
         <section class="kpi-grid">
           ${content.kpisHtml}
@@ -10865,6 +11016,8 @@
           </section>
         `}
 
+        ${content.focusCardHtml || ""}
+
         <section class="kpi-grid">
           ${content.kpisHtml}
         </section>
@@ -11633,6 +11786,8 @@
           </section>
         `}
 
+        ${content.focusCardHtml || ""}
+
         <section class="kpi-grid">
           ${content.kpisHtml}
         </section>
@@ -12218,6 +12373,8 @@
             </div>
           </section>
         `}
+
+        ${content.focusCardHtml || ""}
 
         <section class="kpi-grid">
           ${content.kpisHtml}
@@ -12812,6 +12969,8 @@
             </div>
           </section>
         `}
+
+        ${content.focusCardHtml || ""}
 
         <section class="kpi-grid">
           ${content.kpisHtml}
@@ -16675,11 +16834,14 @@
     }
 
     const WELCOME_BACK_PREFIX = "Pick up where you left off: ";
+    const WELCOME_BACK_TOAST_SEEN_KEY = "ungani_welcome_toast_shown";
 
-    // The "welcome back" message is pulled out of the cycling rotator (see
-    // .welcome-back-card CSS) into its own persistent card - every OTHER
-    // contextual tip (task counts, alerts, etc.) keeps rotating below it
-    // exactly as before. Detected by its stable, unique text prefix rather
+    // The "welcome back" message used to be pulled out of the cycling
+    // rotator into its own PERSISTENT card sitting in the hero permanently
+    // (see the old .welcome-back-card comment history) - moved to a
+    // dismissible toast per the dashboard-decluttering pass: useful the
+    // moment you log in, not useful sitting there for the rest of the
+    // session. Still detected by its stable, unique text prefix rather
     // than a separate flag, since every one of the ~19 dashboard render
     // paths already builds it as a plain {text, href} greeting message.
     function buildGreetingRotatorHtml(messages) {
@@ -16688,21 +16850,9 @@
       const remaining = welcomeBackMsg ? all.filter(function (m) { return m !== welcomeBackMsg; }) : all;
       const rows = remaining.length ? remaining : [{ text: "Everything's on track today", href: null }];
 
-      const cardHtml = welcomeBackMsg
-        ? `
-          <a class="welcome-back-card" href="${attr(welcomeBackMsg.href)}">
-            <span class="welcome-back-icon" aria-hidden="true">↻</span>
-            <span class="welcome-back-body">
-              <span class="welcome-back-eyebrow">Pick up where you left off</span>
-              <span class="welcome-back-title">${safe(welcomeBackMsg.text.slice(WELCOME_BACK_PREFIX.length))}</span>
-            </span>
-            <span class="welcome-back-cta">Open →</span>
-          </a>
-        `
-        : "";
+      scheduleWelcomeBackToast(welcomeBackMsg);
 
       return `
-        ${cardHtml}
         <div class="greeting-rotator" id="greetingRotator">
           ${rows.map(function (m, i) {
             return m.href
@@ -16711,6 +16861,47 @@
           }).join("")}
         </div>
       `;
+    }
+
+    // Shows once per browser session (sessionStorage, not localStorage -
+    // a genuinely new login the next day should be able to show it again).
+    // Re-renders of the dashboard within the same session (switching
+    // sections, a data refresh) call buildGreetingRotatorHtml again with
+    // the same message, so this guard is what keeps it from reappearing
+    // every time rather than truly once per login.
+    function scheduleWelcomeBackToast(welcomeBackMsg) {
+      if (!welcomeBackMsg || sessionStorage.getItem(WELCOME_BACK_TOAST_SEEN_KEY)) return;
+      sessionStorage.setItem(WELCOME_BACK_TOAST_SEEN_KEY, "1");
+
+      setTimeout(function () {
+        const toast = document.createElement("a");
+        toast.className = "welcome-back-toast";
+        toast.href = welcomeBackMsg.href;
+        toast.innerHTML = `
+          <span class="welcome-back-icon" aria-hidden="true">↻</span>
+          <span class="welcome-back-body">
+            <span class="welcome-back-eyebrow">Pick up where you left off</span>
+            <span class="welcome-back-title">${safe(welcomeBackMsg.text.slice(WELCOME_BACK_PREFIX.length))}</span>
+          </span>
+          <span class="welcome-back-toast-close" role="button" aria-label="Dismiss">✕</span>
+        `;
+        document.body.appendChild(toast);
+
+        toast.querySelector(".welcome-back-toast-close").addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dismissWelcomeBackToast(toast);
+        });
+
+        requestAnimationFrame(function () { toast.classList.add("show"); });
+        setTimeout(function () { dismissWelcomeBackToast(toast); }, 9000);
+      }, 900);
+    }
+
+    function dismissWelcomeBackToast(toast) {
+      if (!toast || !toast.isConnected) return;
+      toast.classList.remove("show");
+      setTimeout(function () { toast.remove(); }, 300);
     }
 
     // Collapses the hero's long desktop-only explainer paragraph into a
