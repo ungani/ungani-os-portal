@@ -55,6 +55,7 @@
     { key: "team-chat", href: "my-team-chat.html", icon: "users-round", label: "Team Chat", aliases: ["team chat", "chat with my team"] },
     { key: "favorites", href: "my-favorites.html", icon: "star", label: "Favorites", aliases: ["favorites", "favourite", "favourites", "saved items", "starred", "starred items", "bookmarks"] },
     { key: "connect", href: "my-connect.html", icon: "link-2", label: "Shared Files", aliases: ["ungani connect", "connect", "shared files", "team documents"] },
+    { key: "approvals", href: "my-approvals.html", icon: "check-check", label: "Approvals", aliases: ["approvals", "approval requests", "expense approval", "needs my approval", "pending approval", "awaiting approval", "awaiting my approval"] },
     { key: "profile", href: "my-profile.html", icon: "building-2", label: "Business Profile", aliases: ["business profile", "company profile"] },
     { key: "my-settings", href: "my-settings.html", icon: "settings", label: "My Settings", aliases: ["settings", "account", "account settings", "preferences", "theme", "language", "business sections", "manage sections", "business settings", "quick settings"] },
     { key: "support", href: "my-support.html", icon: "life-buoy", label: "Contact Support", aliases: ["support", "contact support", "help desk", "get help"] },
@@ -65,7 +66,8 @@
     { key: "support-access", href: "my-support-access.html", icon: "lock-open", label: "UNGANI Support Access", aliases: ["support access", "ungani support", "grant access", "invite support", "revoke access", "temporary access"] },
     { key: "recently-deleted", href: "my-recently-deleted.html", icon: "trash", label: "Recently Deleted", aliases: ["recently deleted", "deleted", "recover", "recycle bin", "restore"] },
     { key: "package", href: "my-package.html", icon: "briefcase", label: "Package", aliases: ["package", "my package", "upgrade request", "upgrade requests"] },
-    { key: "billing", href: "my-billing.html", icon: "banknote", label: "Billing", aliases: ["billing", "invoice", "invoices", "payment proof", "upload payment"] },
+    { key: "billing", href: "my-billing.html", icon: "banknote", label: "Billing", aliases: ["billing", "payment proof", "upload payment"] },
+    { key: "my-invoice", href: "my-invoice.html", icon: "file-text", label: "My Invoice", aliases: ["my invoice", "my ungani invoice", "subscription invoice", "billing invoice", "download my invoice", "view my invoice"] },
     { key: "account-status", href: "my-account-status.html", icon: "search", label: "Account Status", aliases: ["account status", "access status"] },
     { key: "onboarding", href: "my-onboarding.html", icon: "rocket", label: "Onboarding", aliases: ["onboarding", "setup checklist", "getting started"] },
     { key: "my-tools", href: "my-tools.html", icon: "toolbox", label: "My Tools", aliases: ["my tools", "tools"] },
@@ -2559,6 +2561,29 @@
         return runPayrollQueryIntent(text);
       }
 
+      // "invoice"/"bill"/"receipt" phrased in the tenant's OWN subscription
+      // context ("my ungani invoice", "invoice for my subscription") -
+      // checked ahead of isInvoiceQueryPhrase below since a bare "invoice"
+      // there would otherwise win and return Customer Invoicing data,
+      // misleading someone actually asking about their UNGANI bill.
+      // my-invoice.html (the real per-payment invoice/receipt document,
+      // linked from My Billing) is the right destination, not the generic
+      // subscription HELP_TOPICS answer, which explains the payment
+      // PROCESS rather than surfacing the document itself.
+      if (isSubscriptionBillingInvoicePhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("That's a client-side feature — each tenant's own invoice/receipt lives on their My Billing page.");
+          return { spoken: "That's a client-side feature." };
+        }
+
+        addNiaMessage(
+          "Your UNGANI subscription invoices/receipts are on My Billing — each payment has its own invoice you can view or print." +
+          `<br><a class="nia-link-btn" href="my-invoice.html">Open My Invoice</a>` +
+          `<br><a class="nia-link-btn" href="my-billing.html">Open My Billing</a>`
+        );
+        return { spoken: "Your UNGANI subscription invoices are on My Billing." };
+      }
+
       // Live-data customer invoicing question ("who owes me", "overdue
       // invoices") - same reasoning as payroll above.
       if (isInvoiceQueryPhrase(text)) {
@@ -2595,6 +2620,31 @@
         }
 
         return runDebtorsQueryIntent();
+      }
+
+      // Live-data payee question ("payee", "payees") - checked right after
+      // Debtors since both are people-you-pay questions, but answers with
+      // the real payee list/count (get_my_ungani_payees) rather than the
+      // expense-derived "who I owe" total above.
+      if (isPayeeQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Payees aren't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runPayeeQueryIntent();
+      }
+
+      // Live-data approvals question ("approval", "approvals", "needs my
+      // approval") - client-only, checked right after Payees since all
+      // three (Debtors/Payees/Approvals) are financial oversight questions.
+      if (isApprovalsQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Expense Approval isn't available on the admin side — check Approvals under the client account instead.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runApprovalsQueryIntent();
       }
 
       // "show my tasks/quotations/orders as a board" - checked ahead of the
@@ -2678,6 +2728,21 @@
         }
 
         return runBranchBillingQueryIntent();
+      }
+
+      // Bare branch count/list question ("how many branches do I have",
+      // "which branches do I have") - checked right after branch billing
+      // since isBranchBillingQueryPhrase only fires when a billing
+      // qualifier (cost/charge/extra/how much) is also present, so a
+      // plain count question never reached it and fell through to the
+      // generic fallback.
+      if (isBranchCountQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Branch counts aren't available on the admin side — check Branches instead.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runBranchCountQueryIntent();
       }
 
       // Health score diagnosis - works on BOTH surfaces (client Business
@@ -3304,10 +3369,15 @@
   // A bare mention of "stock"/"stock tracking"/"inventory" is enough on
   // its own - computeAssetAttentionEntries() already works whether or not
   // Stock Tracking is turned on (it falls back to custom_fields.stock_quantity
-  // when it's off), so there's always a real answer to give.
+  // when it's off), so there's always a real answer to give. Also covers
+  // natural phrasing that avoids the literal word "stock" entirely
+  // ("what's running low", "what am I running out of", "low on cooking
+  // oil") - a real owner is at least as likely to ask it that way as with
+  // the word "stock" itself.
   function isStockQueryPhrase(text) {
     const lower = text.toLowerCase();
-    return ["stock", "inventory", "restock", "reorder level"].some(function (word) { return lower.indexOf(word) !== -1; });
+    return ["stock", "inventory", "restock", "reorder level", "running low", "running out", "run out", "low on"]
+      .some(function (word) { return lower.indexOf(word) !== -1; });
   }
 
   async function runStockQueryIntent() {
@@ -3566,8 +3636,27 @@
   // page itself uses (get_my_ungani_customer_invoices), not a canned
   // answer. Client-only, matching the payroll/asset checks - invoicing
   // has no admin surface.
+  // "invoice" is genuinely ambiguous in this app: it's both the feature
+  // a business uses to bill ITS OWN customers (Customer Invoicing) and,
+  // in ordinary speech, the bill/receipt UNGANI itself sends the tenant
+  // for their subscription - which this app actually surfaces via My
+  // Package/My Billing, not a literal "invoice" document. Before this
+  // fix, a bare "invoice" always won and returned customer-invoice data,
+  // which actively misleads someone asking about their own UNGANI
+  // subscription bill. When the message also names that context
+  // (subscription/plan/package/ungani/renew/upgrade/account/payment),
+  // route to the subscription HELP_TOPICS answer instead.
+  function isSubscriptionBillingInvoicePhrase(text) {
+    const lower = text.toLowerCase();
+    if (lower.indexOf("invoice") === -1 && lower.indexOf("receipt") === -1 && lower.indexOf("bill") === -1) return false;
+    return ["subscription", "my plan", "my package", "ungani", "renew", "upgrade", "my account", "this month's payment", "my payment", "paybill"]
+      .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
   function isInvoiceQueryPhrase(text) {
     const lower = text.toLowerCase();
+
+    if (isSubscriptionBillingInvoicePhrase(text)) return false;
 
     // A bare mention of the topic ("invoice", "invoicing") is enough on
     // its own - runInvoiceQueryIntent() already returns a general status
@@ -3744,6 +3833,135 @@
 
     return {
       spoken: "Owed to you: " + formatNiaKES(owedToMe) + " across " + debtorCount + " invoice" + (debtorCount === 1 ? "" : "s") + ". You owe: " + formatNiaKES(iOwe) + "."
+    };
+  }
+
+  // ---- Payee list/count (part of Payee Tracking, sql/payee-tracking.sql) ----
+  // Reuses get_my_ungani_payees() - the exact RPC my-money.html's payee
+  // dropdown and my-team-access.html's payee list both already call -
+  // rather than deriving a count indirectly from expense transactions
+  // (which is what the Debtors & Payables answer above does for "who I
+  // owe"). A bare mention of "payee(s)" is enough on its own, same
+  // reasoning as every other module in this audit. Checked ahead of
+  // isDebtorsQueryPhrase's own payee-adjacent language wouldn't matter
+  // here since "payee"/"payees" isn't in that phrase list, but is placed
+  // right after Debtors since both are people-you-pay questions.
+  function isPayeeQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["payee", "payees"].some(function (word) { return lower.indexOf(word) !== -1; });
+  }
+
+  async function runPayeeQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your payees...");
+
+    let payees = [];
+    try {
+      const response = await state.supabaseClient.rpc("get_my_ungani_payees");
+      payees = (!response.error && response.data && response.data.ok === true) ? (response.data.payees || []) : [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (!payees.length) {
+      addNiaMessage(
+        "No payees yet. Add one from " + goldLink("my-team-access.html", "Team Access") + " - e.g. a driver, cleaner, or supplier who doesn't need a login."
+      );
+      return { spoken: "No payees yet." };
+    }
+
+    const activePayees = payees.filter(function (p) { return p.status !== "inactive"; });
+    const shown = activePayees.slice(0, 6);
+    const remaining = activePayees.length - shown.length;
+
+    const listHtml = shown.map(function (p) {
+      return `<div style="margin-top:6px;"><i data-lucide="user"></i> ${safe(p.full_name)}${p.job_title ? " — " + safe(p.job_title) : ""}</div>`;
+    }).join("");
+
+    const html =
+      `<strong>Payees</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="users"></i> ${activePayees.length} active payee${activePayees.length === 1 ? "" : "s"}</div>` +
+      listHtml +
+      (remaining > 0 ? `<div style="margin-top:6px;">+ ${remaining} more</div>` : "") +
+      `<div style="margin-top:8px;">${goldLink("my-team-access.html", "Open Team Access →")}</div>`;
+
+    addNiaMessage(html);
+
+    return { spoken: activePayees.length + " active payee" + (activePayees.length === 1 ? "" : "s") + "." };
+  }
+
+  // ---- Approvals (internal controls v1, sql/approvals-internal-controls-v1.sql) ----
+  // Reads ungani_approval_requests directly, same as my-approvals.html's
+  // own loadApprovalRows() - RLS already scopes it correctly (owner sees
+  // every request for the tenant, a staff member sees only their own),
+  // so there's no extra client-side filtering needed to keep this
+  // permission-safe. A bare mention is enough on its own; "needs my
+  // approval"/"pending approval" phrasing is included since that's the
+  // most natural way an owner would actually ask this.
+  function isApprovalsQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["approval", "approvals", "needs approving", "waiting for my approval"]
+      .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  async function runApprovalsQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    if (!state.tenant || state.tenant.expense_approval_threshold_kes == null) {
+      addNiaMessage(
+        `Expense Approval isn't turned on yet. Set a KES threshold in Settings to require your approval before a staff expense hits Money — ${goldLink("my-settings.html", "Open Settings")}.`
+      );
+      return { spoken: "Expense Approval isn't turned on yet." };
+    }
+
+    addNiaMessage("Checking approval requests...");
+
+    let rows = [];
+    try {
+      const response = await state.supabaseClient
+        .from("ungani_approval_requests")
+        .select("id, amount_kes, description, status, created_at")
+        .eq("tenant_id", state.tenantId)
+        .order("created_at", { ascending: false });
+      rows = (!response.error && response.data) ? response.data : [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const pending = rows.filter(function (row) { return row.status === "pending"; });
+    const pendingTotal = pending.reduce(function (sum, row) { return sum + (Number(row.amount_kes) || 0); }, 0);
+
+    if (!pending.length) {
+      addNiaMessage("Nothing waiting on approval right now.");
+      return { spoken: "Nothing waiting on approval right now." };
+    }
+
+    const shown = pending.slice(0, 5);
+    const remaining = pending.length - shown.length;
+    const listHtml = shown.map(function (row) {
+      return `<div style="margin-top:6px;">${severityDotHtml("gold")}${safe(row.description || "Expense request")} — ${safe(formatNiaKES(Number(row.amount_kes) || 0))}</div>`;
+    }).join("");
+
+    const html =
+      `<strong>Approvals</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="check-check"></i> ${pending.length} pending, totalling ${safe(formatNiaKES(pendingTotal))}</div>` +
+      listHtml +
+      (remaining > 0 ? `<div style="margin-top:6px;">+ ${remaining} more</div>` : "") +
+      `<div style="margin-top:8px;">${goldLink("my-approvals.html", "Open Approvals →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: pending.length + " pending approval" + (pending.length === 1 ? "" : "s") + ", totalling " + formatNiaKES(pendingTotal) + "."
     };
   }
 
@@ -4184,6 +4402,64 @@
         ? "Your branch surcharge is " + formatNiaKES(addonAmount) + " per month."
         : "No branch surcharge right now — you're within your free branch allowance."
     };
+  }
+
+  // ---- Bare branch count/list ("how many branches do I have", "which
+  // branches do I have") - isBranchBillingQueryPhrase above only fires
+  // when the message also names a billing qualifier (cost/charge/extra/
+  // how much), so a plain count question with none of those words never
+  // reached it and fell through to the generic fallback. Reuses the same
+  // get_my_ungani_multi_branch_status() RPC, just without the billing
+  // math, so the branch count always matches what My Branches shows.
+  function isBranchCountQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    if (lower.indexOf("branch") === -1) return false;
+    return ["how many", "which branches", "what branches", "list my branches", "list branches", "number of branches", "do i have"]
+      .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  async function runBranchCountQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your branches...");
+
+    let statusData;
+    try {
+      const statusResponse = await state.supabaseClient.rpc("get_my_ungani_multi_branch_status");
+      if (statusResponse.error) throw statusResponse.error;
+      statusData = statusResponse.data || {};
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const branches = Array.isArray(statusData.branches) ? statusData.branches : [];
+    const branchCount = branches.length || 1;
+
+    if (!statusData.multi_branch_enabled) {
+      addNiaMessage(
+        `You have 1 branch. Multi-branch isn't enabled, so this is your only location — ${goldLink("my-branches.html", "Open My Branches")} to add more.`
+      );
+      return { spoken: "You have 1 branch." };
+    }
+
+    const listHtml = branches.slice(0, 8).map(function (b) {
+      return `<div style="margin-top:6px;"><i data-lucide="store"></i> ${safe(b.branch_name || b.name || "Branch")}</div>`;
+    }).join("");
+    const remaining = branches.length - 8;
+
+    addNiaMessage(
+      `<strong>Your Branches</strong>` +
+      `<div style="margin-top:8px;">${branchCount} branch${branchCount === 1 ? "" : "es"}:</div>` +
+      listHtml +
+      (remaining > 0 ? `<div style="margin-top:6px;">+ ${remaining} more</div>` : "") +
+      `<div style="margin-top:8px;">${goldLink("my-branches.html", "Open My Branches →")}</div>`
+    );
+
+    return { spoken: "You have " + branchCount + " branch" + (branchCount === 1 ? "" : "es") + "." };
   }
 
   // ---- Kanban/status board view requests ----
