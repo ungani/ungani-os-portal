@@ -25,7 +25,26 @@
     "client-notifications.html": "notifications",
     "my-tools.html": "tools",
     "my-onboarding.html": "tools",
-    "my-account-status.html": "tools"
+    "my-account-status.html": "tools",
+    // Added when these pages were found to have no view-permission
+    // enforcement at all - their RLS select policies are tenant-scoped
+    // only (see task5/6/7/2 SQL), so without this map entry any staff
+    // account could view them regardless of granted permissions. Mapped
+    // onto the closest existing section, matching the same "money"/
+    // "items" choice the server-side RPCs in
+    // staff-permission-enforcement-v1.sql already made for create/edit.
+    "my-quotations.html": "money",
+    "my-orders.html": "money",
+    "my-price-lists.html": "money",
+    "my-debtors-payables.html": "money",
+    "my-customer-invoices.html": "money",
+    "my-quick-sale.html": "money",
+    "my-stock-tracking.html": "items",
+    "my-item-label.html": "items",
+    "my-item-profile.html": "items",
+    "my-recently-deleted.html": "records",
+    "my-connect.html": "documents",
+    "my-integrations.html": "settings"
   };
 
   const exemptPages = [
