@@ -1279,6 +1279,24 @@
 
         if (!existingMember) {
           logMemberActivity(savedMemberId, "created", "Staff member added.");
+
+          // owner_upsert_ungani_team_member saves role_key on the member
+          // row but doesn't seed ungani_staff_section_permissions from it -
+          // a brand-new staff member silently got the generic "staff"
+          // preset (money/items/records/documents/support all viewable)
+          // regardless of the role picked here, and only got the real
+          // role-specific grants if the owner separately clicked "Reset to
+          // X Defaults" afterward. Apply the selected role's preset right
+          // away so the dropdown choice actually takes effect on creation,
+          // reusing the same RPC that button already calls successfully.
+          const presetResponse = await supabaseClient.rpc("owner_apply_ungani_staff_role_preset", {
+            p_team_member_id: savedMemberId,
+            p_role_key: payload.p_role_key
+          });
+
+          if (presetResponse.error || !presetResponse.data || presetResponse.data.ok !== true) {
+            console.warn("Could not apply role default permissions to new staff:", presetResponse.error ? presetResponse.error.message : presetResponse.data);
+          }
         } else if (payload.p_status !== (existingMember.status || "active")) {
           logMemberActivity(savedMemberId, "status_changed", "Status changed from " + toTitleMember(existingMember.status || "active") + " to " + toTitleMember(payload.p_status) + ".");
         }
