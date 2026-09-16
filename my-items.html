@@ -260,12 +260,35 @@
       return { error: null };
     }
 
+    // Offline Tier 1 - see my-money.html's tryRenderMoneyFromCache() for the
+    // full rationale. Falls back to the last cached snapshot for THIS
+    // tenant when the failure looks like a real connectivity issue.
+    function tryRenderItemsFromCache(errorMessage) {
+      if (!UnganiClientShared.isLikelyOfflineError(errorMessage)) return false;
+
+      const cached = UnganiClientShared.getOfflineSnapshot("items", currentContext.tenantId);
+      if (!cached) return false;
+
+      itemSummaryRows = cached.payload.itemSummaryRows || [];
+      items = cached.payload.items || [];
+
+      renderItemsPage();
+
+      if (currentContext.contentEl) {
+        currentContext.contentEl.insertAdjacentHTML("afterbegin", UnganiClientShared.offlineBannerHtml(cached.cachedAt));
+      }
+
+      return true;
+    }
+
     async function loadItems() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading properties and listings...");
 
       const summaryResult = await loadItemSummaryRows();
 
       if (summaryResult.error) {
+        if (tryRenderItemsFromCache(summaryResult.error)) return;
+
         currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load properties", summaryResult.error);
         return;
       }
@@ -273,12 +296,19 @@
       const pageResult = await loadItemPage(true);
 
       if (pageResult.error) {
+        if (tryRenderItemsFromCache(pageResult.error)) return;
+
         currentContext.contentEl.innerHTML = UnganiClientShared.errorCard("Could not load properties", pageResult.error);
         return;
       }
 
       favoriteItemIds = new Set(await UnganiClientShared.getMyFavoriteRecordIds("business_items"));
       renderItemsPage();
+
+      UnganiClientShared.cacheOfflineSnapshot("items", currentContext.tenantId, {
+        itemSummaryRows: itemSummaryRows,
+        items: items
+      });
     }
 
     async function refreshItemData() {

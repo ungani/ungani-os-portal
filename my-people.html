@@ -212,12 +212,35 @@
       return { error: null };
     }
 
+    // Offline Tier 1 - see my-money.html's tryRenderMoneyFromCache() for the
+    // full rationale. Falls back to the last cached snapshot for THIS
+    // tenant when the failure looks like a real connectivity issue.
+    function tryRenderPeopleFromCache(errorMessage) {
+      if (!UnganiClientShared.isLikelyOfflineError(errorMessage)) return false;
+
+      const cached = UnganiClientShared.getOfflineSnapshot("people", currentContext.tenantId);
+      if (!cached) return false;
+
+      peopleSummaryRows = cached.payload.peopleSummaryRows || [];
+      peopleRows = cached.payload.peopleRows || [];
+
+      renderPeoplePage();
+
+      if (currentContext.contentEl) {
+        currentContext.contentEl.insertAdjacentHTML("afterbegin", UnganiClientShared.offlineBannerHtml(cached.cachedAt));
+      }
+
+      return true;
+    }
+
     async function loadPeopleRows() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading people records...");
 
       const summaryResult = await loadPeopleSummaryRows();
 
       if (summaryResult.error) {
+        if (tryRenderPeopleFromCache(summaryResult.error)) return;
+
         UnganiClientShared.setContent(
           UnganiClientShared.errorCard("Could not load people records", summaryResult.error)
         );
@@ -227,6 +250,8 @@
       const pageResult = await loadPeoplePage(true);
 
       if (pageResult.error) {
+        if (tryRenderPeopleFromCache(pageResult.error)) return;
+
         UnganiClientShared.setContent(
           UnganiClientShared.errorCard("Could not load people records", pageResult.error)
         );
@@ -239,6 +264,11 @@
 
       favoritePeopleIds = new Set(await UnganiClientShared.getMyFavoriteRecordIds("client_people"));
       renderPeoplePage();
+
+      UnganiClientShared.cacheOfflineSnapshot("people", currentContext.tenantId, {
+        peopleSummaryRows: peopleSummaryRows,
+        peopleRows: peopleRows
+      });
     }
 
     async function refreshPeopleData() {

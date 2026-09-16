@@ -2602,6 +2602,87 @@
     `;
   }
 
+  // --- Offline Tier 1 (2026-09-16) -------------------------------------
+  // Read-only cached views for Money/Tasks/People/Items/Dashboard: the
+  // last successfully-fetched dataset for a page is kept in localStorage
+  // (small JSON blobs, well within its ~5MB limit for the row counts these
+  // pages fetch - no need for IndexedDB's async complexity here), keyed by
+  // BOTH page and tenantId. Scoping by tenantId is deliberate, not
+  // optional - without it, one business's cached Money/Tasks/People data
+  // could render for a completely different business sharing the same
+  // browser, the exact class of bug the theme-bleed fix earlier this
+  // session existed to prevent.
+  function offlineCacheKey(pageKey, tenantId) {
+    return "ungani_offline_cache::" + String(pageKey) + "::" + String(tenantId || "");
+  }
+
+  function cacheOfflineSnapshot(pageKey, tenantId, payload) {
+    if (!tenantId) return;
+
+    try {
+      window.localStorage.setItem(
+        offlineCacheKey(pageKey, tenantId),
+        JSON.stringify({ payload: payload, cachedAt: new Date().toISOString() })
+      );
+    } catch (error) {
+      // Private-browsing/quota-exceeded - offline caching is a nice-to-have,
+      // never worth surfacing an error over.
+      console.warn("Offline cache write skipped:", error.message);
+    }
+  }
+
+  function getOfflineSnapshot(pageKey, tenantId) {
+    if (!tenantId) return null;
+
+    try {
+      const raw = window.localStorage.getItem(offlineCacheKey(pageKey, tenantId));
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.payload || !parsed.cachedAt) return null;
+
+      return parsed;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // Distinguishes "your internet is down" from a real Supabase/RLS error -
+  // only the former should ever fall back to stale cached data instead of
+  // the normal error card. navigator.onLine is the primary signal (most
+  // reliable case: airplane mode, wifi off); the message-pattern check
+  // catches the remaining case where the browser still reports "online"
+  // but the actual fetch() call throws (captive portal, DNS failure,
+  // request timeout) - supabase-js surfaces these as a thrown error whose
+  // message passes through fetch's own wording.
+  function isLikelyOfflineError(errorMessage) {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+    return /network|fetch|failed to fetch|timeout/i.test(String(errorMessage || ""));
+  }
+
+  function offlineCacheAgeLabel(cachedAtIso) {
+    const then = new Date(cachedAtIso).getTime();
+    if (isNaN(then)) return "earlier";
+
+    const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) return Math.round(seconds / 60) + "m ago";
+    if (seconds < 86400) return Math.round(seconds / 3600) + "h ago";
+    return Math.round(seconds / 86400) + "d ago";
+  }
+
+  function offlineBannerHtml(cachedAtIso) {
+    return `
+      <div class="ungani-offline-banner">
+        <i data-lucide="wifi-off"></i>
+        <div>
+          <strong>You're offline</strong>
+          <span>Showing data from ${safe(offlineCacheAgeLabel(cachedAtIso))}. New changes won't save until you're back online.</span>
+        </div>
+      </div>
+    `;
+  }
+
   function showFatalError(title, message) {
     document.body.innerHTML = `
       <div class="ungani-preloader">
@@ -4210,6 +4291,10 @@
       loadingCard,
       errorCard,
       metricCard,
+      cacheOfflineSnapshot,
+      getOfflineSnapshot,
+      isLikelyOfflineError,
+      offlineBannerHtml,
       safe,
       cleanText,
       attr,
@@ -4563,6 +4648,51 @@
 
       @media (max-width: 720px) {
         .ungani-readonly-banner {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+
+      /* Offline Tier 1 (2026-09-16) - same visual language as
+         .ungani-readonly-banner (gold/amber accent), shown above the last
+         successfully-cached render when a page's live fetch fails while
+         genuinely offline. Never replaces the content below it - the
+         cached rows still render normally underneath. */
+      .ungani-offline-banner {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 0 0 18px;
+        padding: 15px 16px;
+        border-radius: 20px;
+        border: 1px solid rgba(212,166,58,0.45);
+        background:
+          radial-gradient(circle at top right, rgba(212,166,58,0.22), transparent 30%),
+          rgba(212,166,58,0.12);
+        color: var(--ungani-text);
+        box-shadow: var(--ungani-shadow);
+      }
+
+      .ungani-offline-banner i {
+        flex: none;
+        color: var(--ungani-gold);
+      }
+
+      .ungani-offline-banner strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--ungani-text);
+      }
+
+      .ungani-offline-banner span {
+        display: block;
+        color: var(--ungani-muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 720px) {
+        .ungani-offline-banner {
           flex-direction: column;
           align-items: flex-start;
         }

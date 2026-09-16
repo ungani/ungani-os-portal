@@ -3061,6 +3061,14 @@
 
     let notifications = [];
 
+    // Offline Tier 1 - safeSelect() below catches its own errors and always
+    // resolves to [] (so one failed table never breaks the whole
+    // Promise.all), which means a genuine network failure is otherwise
+    // indistinguishable from "this tenant just has zero rows in this
+    // table." This flag is the signal loadDashboardData() needs to tell
+    // the two apart before deciding whether to fall back to cached data.
+    let dashboardHadNetworkFailure = false;
+
     window.addEventListener("load", initClientDashboard);
 
     // Lucide icon auto-hydration: client.html has 40+ separate innerHTML
@@ -4703,8 +4711,53 @@
       el.title = "Last refreshed at " + lastDashboardLoadTime.toLocaleTimeString();
     }
 
+    // Offline Tier 1 - see my-money.html's tryRenderMoneyFromCache() for the
+    // full rationale. Unlike the other 4 pages, safeSelect() here never
+    // surfaces an error string (it always resolves to [] on failure so one
+    // bad table doesn't break the whole Promise.all), so dashboardHadNetwork
+    // Failure - set directly inside safeSelect's catch block - is the real
+    // signal instead of a message-pattern check.
+    function tryRenderDashboardFromCache() {
+      const cached = UnganiClientShared.getOfflineSnapshot("dashboard", currentTenantId);
+      if (!cached) return false;
+
+      dashboardData.transactions = cached.payload.transactions || [];
+      dashboardData.items = cached.payload.items || [];
+      dashboardData.people = cached.payload.people || [];
+      dashboardData.records = cached.payload.records || [];
+      dashboardData.tasks = cached.payload.tasks || [];
+      dashboardData.documents = cached.payload.documents || [];
+      dashboardData.events = cached.payload.events || [];
+      dashboardData.support = cached.payload.support || [];
+      dashboardData.invoices = cached.payload.invoices || [];
+
+      rawDashboardData = {
+        transactions: dashboardData.transactions,
+        tasks: dashboardData.tasks,
+        people: dashboardData.people
+      };
+      applyBranchFilterToDashboardData();
+
+      try {
+        renderDashboard();
+      } catch (renderError) {
+        return false;
+      }
+
+      injectBranchIndicator();
+
+      const contentEl = document.getElementById("content");
+      if (contentEl) {
+        contentEl.insertAdjacentHTML("afterbegin", UnganiClientShared.offlineBannerHtml(cached.cachedAt));
+      }
+
+      return true;
+    }
+
     async function loadDashboardData() {
       document.getElementById("content").innerHTML = skeletonMarkup();
+
+      dashboardHadNetworkFailure = false;
 
       const responses = await Promise.all([
         safeSelect("transactions", 250),
@@ -4717,6 +4770,12 @@
         safeSelect("support_issues", 250),
         safeInvoicesForHealth()
       ]);
+
+      if (dashboardHadNetworkFailure && tryRenderDashboardFromCache()) {
+        lastDashboardLoadTime = new Date();
+        updateLastUpdatedIndicator();
+        return;
+      }
 
       dashboardData.transactions = responses[0];
       dashboardData.items = responses[1];
@@ -4752,6 +4811,25 @@
       }
 
       injectBranchIndicator();
+
+      // Cache the UNFILTERED versions of transactions/tasks/people (from
+      // rawDashboardData, not dashboardData - the latter may have just been
+      // narrowed by applyBranchFilterToDashboardData() above if the owner
+      // has a branch selected). tryRenderDashboardFromCache() re-applies
+      // whatever filter is active on top of this raw snapshot, the same as
+      // a normal online load does.
+      UnganiClientShared.cacheOfflineSnapshot("dashboard", currentTenantId, {
+        transactions: rawDashboardData.transactions,
+        items: dashboardData.items,
+        people: rawDashboardData.people,
+        records: dashboardData.records,
+        tasks: rawDashboardData.tasks,
+        documents: dashboardData.documents,
+        events: dashboardData.events,
+        support: dashboardData.support,
+        invoices: dashboardData.invoices
+      });
+
       lastDashboardLoadTime = new Date();
       updateLastUpdatedIndicator();
     }
@@ -5029,6 +5107,7 @@
         return response.data || [];
       } catch (error) {
         console.warn(tableName, error.message);
+        dashboardHadNetworkFailure = true;
         return [];
       }
     }

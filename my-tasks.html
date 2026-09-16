@@ -264,12 +264,35 @@
       return { error: null };
     }
 
+    // Offline Tier 1 - see my-money.html's tryRenderMoneyFromCache() for the
+    // full rationale. Falls back to the last cached snapshot for THIS
+    // tenant when the failure looks like a real connectivity issue.
+    function tryRenderTasksFromCache(errorMessage) {
+      if (!UnganiClientShared.isLikelyOfflineError(errorMessage)) return false;
+
+      const cached = UnganiClientShared.getOfflineSnapshot("tasks", currentContext.tenantId);
+      if (!cached) return false;
+
+      taskSummaryRows = cached.payload.taskSummaryRows || [];
+      taskRows = cached.payload.taskRows || [];
+
+      renderTasksPage();
+
+      if (currentContext.contentEl) {
+        currentContext.contentEl.insertAdjacentHTML("afterbegin", UnganiClientShared.offlineBannerHtml(cached.cachedAt));
+      }
+
+      return true;
+    }
+
     async function loadTaskRows() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading tasks...");
 
       const summaryResult = await loadTaskSummaryRows();
 
       if (summaryResult.error) {
+        if (tryRenderTasksFromCache(summaryResult.error)) return;
+
         UnganiClientShared.setContent(
           UnganiClientShared.errorCard("Could not load tasks", summaryResult.error)
         );
@@ -279,6 +302,8 @@
       const pageResult = await loadTaskPage(true);
 
       if (pageResult.error) {
+        if (tryRenderTasksFromCache(pageResult.error)) return;
+
         UnganiClientShared.setContent(
           UnganiClientShared.errorCard("Could not load tasks", pageResult.error)
         );
@@ -287,6 +312,11 @@
 
       favoriteTaskIds = new Set(await UnganiClientShared.getMyFavoriteRecordIds("tasks"));
       renderTasksPage();
+
+      UnganiClientShared.cacheOfflineSnapshot("tasks", currentContext.tenantId, {
+        taskSummaryRows: taskSummaryRows,
+        taskRows: taskRows
+      });
     }
 
     async function refreshTaskData() {

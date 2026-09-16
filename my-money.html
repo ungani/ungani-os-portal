@@ -308,12 +308,39 @@
       return { error: null };
     }
 
+    // Offline Tier 1 - if the live fetch fails while genuinely offline (not
+    // a real Supabase/RLS error), falls back to the last successfully
+    // cached snapshot for THIS tenant and renders it read-only with a
+    // banner, instead of replacing the whole page with an error card.
+    // Returns true if it handled the failure (caller should stop), false
+    // if this wasn't an offline situation (caller should show its normal
+    // error card).
+    function tryRenderMoneyFromCache(errorMessage) {
+      if (!UnganiClientShared.isLikelyOfflineError(errorMessage)) return false;
+
+      const cached = UnganiClientShared.getOfflineSnapshot("money", currentContext.tenantId);
+      if (!cached) return false;
+
+      moneySummaryRows = cached.payload.moneySummaryRows || [];
+      moneyRows = cached.payload.moneyRows || [];
+
+      renderMoneyPage();
+
+      if (currentContext.contentEl) {
+        currentContext.contentEl.insertAdjacentHTML("afterbegin", UnganiClientShared.offlineBannerHtml(cached.cachedAt));
+      }
+
+      return true;
+    }
+
     async function loadMoneyRows() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading money records...");
 
       const summaryResult = await loadMoneySummaryRows();
 
       if (summaryResult.error) {
+        if (tryRenderMoneyFromCache(summaryResult.error)) return;
+
         UnganiClientShared.setContent(
           UnganiClientShared.errorCard("Could not load money records", summaryResult.error)
         );
@@ -323,6 +350,8 @@
       const pageResult = await loadMoneyPage(true);
 
       if (pageResult.error) {
+        if (tryRenderMoneyFromCache(pageResult.error)) return;
+
         UnganiClientShared.setContent(
           UnganiClientShared.errorCard("Could not load money records", pageResult.error)
         );
@@ -340,6 +369,11 @@
       await Promise.all(loaders);
 
       renderMoneyPage();
+
+      UnganiClientShared.cacheOfflineSnapshot("money", currentContext.tenantId, {
+        moneySummaryRows: moneySummaryRows,
+        moneyRows: moneyRows
+      });
     }
 
     // Re-runs the summary + first-page fetch (tenant/section unchanged,
