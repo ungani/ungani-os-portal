@@ -30,6 +30,28 @@
       const user = userResponse && userResponse.data ? userResponse.data.user : null;
 
       if (!user) {
+        // Offline Tier 1 (2026-09-16) - getUser() verifies the JWT against
+        // the Supabase Auth server over the network, unlike getSession()
+        // (a synchronous, local-storage-only read). A genuine connectivity
+        // failure surfaces here identically to "actually logged out": both
+        // resolve with data.user === null. Redirecting unconditionally used
+        // to send an offline user straight to the login page before their
+        // page's own cached-data fallback ever got a chance to run. Only
+        // redirect when this really does look like "no session" - fall
+        // back to the locally-cached session first when it looks like a
+        // network failure instead.
+        const looksOffline = (typeof navigator !== "undefined" && navigator.onLine === false) ||
+          /network|fetch|failed to fetch|timeout/i.test((userResponse.error && userResponse.error.message) || "");
+
+        if (looksOffline) {
+          const sessionResponse = await supabaseClient.auth.getSession();
+          const cachedUser = sessionResponse && sessionResponse.data && sessionResponse.data.session
+            ? sessionResponse.data.session.user
+            : null;
+
+          if (cachedUser) return;
+        }
+
         window.location.href = "login.html?mode=client";
         return;
       }
