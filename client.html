@@ -5248,6 +5248,18 @@
       return `<span class="status gold">Normal</span>`;
     }
 
+    // A network failure on a GET-based .from().select() call resolves
+    // the promise with an error field (e.g. "TypeError: Failed to fetch")
+    // rather than rejecting it - confirmed via a live network trace.
+    // safeSelect()'s catch block alone never caught this, so
+    // dashboardHadNetworkFailure never got set offline and the dashboard
+    // silently rendered with all-empty data instead of falling back to
+    // the cached snapshot.
+    function looksLikeOfflineSelectError(message) {
+      return (typeof navigator !== "undefined" && navigator.onLine === false) ||
+        /network|fetch|failed to fetch|timeout/i.test(message || "");
+    }
+
     async function safeSelect(tableName, limitCount) {
       try {
         let response = await supabaseClient
@@ -5256,6 +5268,11 @@
           .eq("tenant_id", currentTenantId)
           .order("created_at", { ascending: false })
           .limit(limitCount || 250);
+
+        if (response.error && looksLikeOfflineSelectError(response.error.message)) {
+          dashboardHadNetworkFailure = true;
+          return [];
+        }
 
         if (response.error) {
           response = await supabaseClient
@@ -5267,6 +5284,11 @@
 
         if (response.error) {
           console.warn(tableName, response.error.message);
+
+          if (looksLikeOfflineSelectError(response.error.message)) {
+            dashboardHadNetworkFailure = true;
+          }
+
           return [];
         }
 
