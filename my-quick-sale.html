@@ -127,7 +127,7 @@
       try {
         const response = await currentContext.supabaseClient
           .from("business_items")
-          .select("id, item_name, name, title, property_name, property_price, quantity, custom_fields, item_category, category")
+          .select("id, item_name, name, title, property_name, property_price, quantity, custom_fields, item_category, category, variant_group")
           .eq("tenant_id", currentContext.tenantId)
           .is("deleted_at", null)
           .limit(2000);
@@ -291,6 +291,45 @@
         if (searchTerm && itemLabel(item).toLowerCase().indexOf(searchTerm) === -1) return false;
         return true;
       });
+    }
+
+    // Clusters items sharing a variant_group (e.g. "Soda" -> Coke/Fanta/
+    // Sprite) under one header tile, same grouping rule as the line-item
+    // pickers in Quotations/Orders/Invoices. Items with no variant_group
+    // render exactly as before - a plain tile, same order - so a
+    // business that never uses this field sees no change at all.
+    function buildTileSectionsHtml(items) {
+      const groups = {};
+      const ungrouped = [];
+
+      items.forEach(function (item) {
+        const group = String(item.variant_group || "").trim();
+        if (group) {
+          if (!groups[group]) groups[group] = [];
+          groups[group].push(item);
+        } else {
+          ungrouped.push(item);
+        }
+      });
+
+      function tileHtml(item) {
+        const price = resolvePriceForItem(item.id);
+        return `
+          <div class="qs-tile" onclick="addToCart('${item.id}')">
+            <div class="qs-tile-name">${UnganiClientShared.safe(itemLabel(item))}</div>
+            <div class="qs-tile-price">${price != null ? "KES " + UnganiClientShared.formatNumber(price) : "Set price"}</div>
+          </div>
+        `;
+      }
+
+      const groupedHtml = Object.keys(groups).sort().map(function (groupName) {
+        return `
+          <div class="qs-variant-group-label" style="grid-column:1/-1;font-weight:800;font-size:13px;opacity:0.75;margin-top:6px;">${UnganiClientShared.safe(groupName)}</div>
+          ${groups[groupName].map(tileHtml).join("")}
+        `;
+      }).join("");
+
+      return groupedHtml + ungrouped.map(tileHtml).join("");
     }
 
     // ---- Checkout ----
@@ -505,15 +544,7 @@
 
             <div class="qs-grid">
               ${items.length === 0 ? `<p class="ungani-small" style="grid-column:1/-1;">No items match. Add items on the Items page first.</p>` : ""}
-              ${items.map(function (item) {
-                const price = resolvePriceForItem(item.id);
-                return `
-                  <div class="qs-tile" onclick="addToCart('${item.id}')">
-                    <div class="qs-tile-name">${UnganiClientShared.safe(itemLabel(item))}</div>
-                    <div class="qs-tile-price">${price != null ? "KES " + UnganiClientShared.formatNumber(price) : "Set price"}</div>
-                  </div>
-                `;
-              }).join("")}
+              ${buildTileSectionsHtml(items)}
             </div>
           </section>
 

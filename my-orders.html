@@ -159,7 +159,7 @@
       try {
         const response = await currentContext.supabaseClient
           .from("business_items")
-          .select("id, item_name, name, title, property_name, quantity, custom_fields, units_available, property_price")
+          .select("id, item_name, name, title, property_name, quantity, custom_fields, units_available, property_price, variant_group")
           .eq("tenant_id", currentContext.tenantId)
           .is("deleted_at", null)
           .limit(1000);
@@ -670,13 +670,43 @@
       return `<option value="">— Type customer details manually below —</option>${options}`;
     }
 
+    // Groups items sharing a variant_group (e.g. "Soda" -> Coke/Fanta/
+    // Sprite) under an <optgroup>, so a business selling many product
+    // variants doesn't get one long flat list. Items with no
+    // variant_group render exactly as before - a plain top-level
+    // <option>, same order, same label - so this is purely additive.
+    function buildGroupedStockOptionsHtml(items, selectedId, renderLabelFn) {
+      const groups = {};
+      const ungrouped = [];
+
+      items.forEach(function (item) {
+        const group = String(item.variant_group || "").trim();
+        if (group) {
+          if (!groups[group]) groups[group] = [];
+          groups[group].push(item);
+        } else {
+          ungrouped.push(item);
+        }
+      });
+
+      function optionHtml(item) {
+        const selected = String(item.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(item.id)}"${selected}>${UnganiClientShared.safe(renderLabelFn(item))}</option>`;
+      }
+
+      const groupedHtml = Object.keys(groups).sort().map(function (groupName) {
+        return `<optgroup label="${UnganiClientShared.attr(groupName)}">${groups[groupName].map(optionHtml).join("")}</optgroup>`;
+      }).join("");
+
+      return groupedHtml + ungrouped.map(optionHtml).join("");
+    }
+
     function stockItemOptionsHtml(selectedId) {
-      const options = stockItemOptions.map(function (item) {
+      const options = buildGroupedStockOptionsHtml(stockItemOptions, selectedId, function (item) {
         const available = getOrderLineAvailableStock(item);
         const stockHint = available !== null ? " (" + available + " in stock)" : "";
-        const selected = String(item.id) === String(selectedId) ? " selected" : "";
-        return `<option value="${UnganiClientShared.attr(item.id)}"${selected}>${UnganiClientShared.safe(stockItemLabel(item))}${UnganiClientShared.safe(stockHint)}</option>`;
-      }).join("");
+        return stockItemLabel(item) + stockHint;
+      });
 
       return `<option value="">— Not linked to a stock item —</option>${options}`;
     }
