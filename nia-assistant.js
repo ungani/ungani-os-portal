@@ -132,12 +132,39 @@
 
   const SEARCH_TABLES = [
     { table: "business_items", label: "Property / Item", href: "my-items.html", titleFields: ["property_name", "item_name", "name", "title"], detailFields: ["property_status", "item_status", "status", "property_location"] },
-    { table: "tasks", label: "Task", href: "my-tasks.html", titleFields: ["task_title", "title", "name"], detailFields: ["status", "priority", "due_date"] },
+    { table: "tasks", label: "Task", href: "my-tasks.html", titleFields: ["task_title", "title", "name"], detailFields: ["status", "priority", "due_date", "assignee_name"] },
     { table: "client_people", label: "Person / Lead", href: "my-people.html", titleFields: ["full_name", "name"], detailFields: ["person_type", "status", "phone", "email"] },
     { table: "documents", label: "Document", href: "my-documents.html", titleFields: ["document_title", "title", "file_name"], detailFields: ["document_type", "status"] },
     { table: "business_records", label: "Record", href: "my-records.html", titleFields: ["record_title", "title", "name"], detailFields: ["record_type", "status"] },
     { table: "transactions", label: "Money Record", href: "my-money.html", titleFields: ["category_name", "category", "description"], detailFields: ["transaction_type", "type", "status", "amount"] }
   ];
+
+  // Phase 2 conversational retrieval: humanizes a raw column name into a
+  // display label ("due_date" -> "Due Date") for the generic detail-line
+  // renderer below, so SEARCH_TABLES' existing detailFields arrays can be
+  // reused as-is instead of needing a second, parallel label config.
+  function humanizeFieldLabel(field) {
+    return String(field || "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  }
+
+  // Shared presenter for every Phase 2 "show me the real record" answer -
+  // one field-label-value line per non-empty field, skipping anything
+  // missing rather than showing "Status: " with nothing after it.
+  function buildDetailLinesHtml(pairs) {
+    return pairs
+      .filter(function (pair) { return pair[1] !== null && pair[1] !== undefined && pair[1] !== ""; })
+      .map(function (pair) { return "<div style=\"margin-top:4px;\"><strong>" + safe(pair[0]) + ":</strong> " + safe(pair[1]) + "</div>"; })
+      .join("");
+  }
+
+  function formatNiaDate(value) {
+    if (!value) return "";
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString("en-KE", { month: "short", day: "numeric", year: "numeric" });
+  }
 
   const HELP_TOPICS = [
     {
@@ -2560,6 +2587,15 @@
         return runAssetCountIntent(text);
       }
 
+      // Phase 2 conversational retrieval: named-item stock lookup ("stock
+      // of X") - checked ahead of the aggregate isStockQueryPhrase below
+      // since a bare mention of "stock" would otherwise always win first
+      // and return the low/out-of-stock list instead of this specific
+      // item's real quantity. Only fires when a name is extractable.
+      if (isItemStockDetailPhrase(text)) {
+        return runItemStockDetailIntent(text);
+      }
+
       // Live-data stock question ("stock", "inventory", "restock") -
       // checked ahead of the static Stock Tracking HELP_TOPICS answer so
       // a bare mention gets real low/out-of-stock numbers, not just an
@@ -2705,6 +2741,15 @@
         return runBoardViewIntent(boardRequest);
       }
 
+      // Phase 2 conversational retrieval: quotation detail by customer
+      // name or reference number ("quotation for John", "Q-2024-014") -
+      // checked ahead of the aggregate isQuotationQueryPhrase below for
+      // the same collision-avoidance reason as the stock-detail check
+      // above. Only fires when a name/reference is extractable.
+      if (isQuotationDetailPhrase(text)) {
+        return runQuotationDetailIntent(text);
+      }
+
       // Live-data quotations question ("quote", "quotation", "estimate") -
       // same reasoning as invoices/debtors above, checked right after them
       // since all three are financial live-data questions.
@@ -2715,6 +2760,13 @@
         }
 
         return runQuotationQueryIntent();
+      }
+
+      // Phase 2 conversational retrieval: order detail by customer name
+      // or reference number - same reasoning as the quotation-detail
+      // check above, checked ahead of the aggregate isOrderQueryPhrase.
+      if (isOrderDetailPhrase(text)) {
+        return runOrderDetailIntent(text);
       }
 
       // Live-data orders question ("order", "orders", "fulfilment") - same
@@ -3043,6 +3095,15 @@
       return { spoken: "I couldn't find anything matching that." };
     }
 
+    // Phase 2 conversational retrieval: a single strong match is exactly
+    // what "find me this person" / "bring me this client's record" is
+    // asking for - present its real details in the chat, not just a link
+    // to click. Two or more matches keeps the existing list-of-links
+    // behavior below (browsing, not a single answer to give).
+    if (results.length === 1) {
+      return presentSingleSearchResult(results[0]);
+    }
+
     const listHtml = results.slice(0, 6).map(function (item) {
       const url = item.id ? item.href + "?highlight=" + encodeURIComponent(item.id) : item.href;
       const sectionBadge = item.matchesSection ? ` <span style="color:${BRAND.gold};font-weight:800;">· ${safe(state.section)}</span>` : "";
@@ -3090,7 +3151,9 @@
             href: config.href,
             title: pickField(row, config.titleFields, config.label),
             detail: detail,
-            matchesSection: !!(state.section && row.section_label === state.section)
+            matchesSection: !!(state.section && row.section_label === state.section),
+            row: row,
+            config: config
           });
         });
       } catch (error) {
@@ -3109,6 +3172,38 @@
     }
 
     return results.slice(0, 12);
+  }
+
+  // Phase 2 conversational retrieval - presents ONE matched record's real
+  // details inline in the chat (name/status/contact info/etc, whatever
+  // SEARCH_TABLES' own detailFields already lists for that table) rather
+  // than just a link to click. Stock quantity gets a special-cased extra
+  // line for items, since "find <item>" and "what's the stock of <item>"
+  // are effectively the same question for that one table.
+  function presentSingleSearchResult(result) {
+    const row = result.row;
+    const config = result.config;
+    const lines = (config.detailFields || []).map(function (field) {
+      return [humanizeFieldLabel(field), pickField(row, [field], "")];
+    });
+
+    if (config.table === "business_items") {
+      const qty = niaGetStockQuantity(row);
+      if (qty !== null) {
+        lines.push(["Current Stock", String(qty) + (row.custom_fields && row.custom_fields.unit ? " " + row.custom_fields.unit : "")]);
+        lines.push(["Reorder Level", String(niaGetReorderLevel(row))]);
+      }
+    }
+
+    const url = result.id ? result.href + "?highlight=" + encodeURIComponent(result.id) : result.href;
+
+    addNiaMessage(
+      "<strong>" + safe(result.label) + ": " + safe(result.title) + "</strong>" +
+      buildDetailLinesHtml(lines) +
+      "<div style=\"margin-top:8px;\">" + goldLink(url, "Open Full Record") + "</div>"
+    );
+
+    return { spoken: "Here are the details for " + result.title + "." };
   }
 
   function pickField(row, fields, fallback) {
@@ -3899,6 +3994,299 @@
     }, 400);
 
     return { spoken: "Opening " + invoice.customer_name + "'s invoice to print." };
+  }
+
+  // ---- Phase 2 conversational retrieval: named-item stock lookup ----
+  // "what's the stock of X" / "how much X do we have" is a different
+  // question from the existing bare-keyword isStockQueryPhrase (the
+  // aggregate low/out-of-stock list) - this one needs a specific item
+  // name to answer, and must be checked BEFORE that aggregate check in
+  // interpretMessage, same collision-avoidance shape as
+  // isInvoicePrintRequestPhrase vs isInvoiceQueryPhrase above: a bare
+  // "how's stock looking" has no extractable name and correctly falls
+  // through to the aggregate answer.
+  function extractStockItemQuery(text) {
+    let m = text.match(/stock\s+(?:of|for)\s+([^.?!]+)/i);
+    let name = m && m[1] ? m[1].trim() : null;
+
+    if (!name) {
+      m = text.match(/(?:how much|how many)\s+([^.?!]+?)\s+(?:do (?:we|i) have|is left|are left|left|in stock)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/([^.?!]+?)(?:'s|s')\s+stock/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/(?:quantity|inventory)\s+(?:of|for)\s+([^.?!]+)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    return name || null;
+  }
+
+  function isItemStockDetailPhrase(text) {
+    const lower = text.toLowerCase();
+    if (!["stock", "inventory", "quantity", "how much", "how many"].some(function (w) { return lower.indexOf(w) !== -1; })) {
+      return false;
+    }
+    return !!extractStockItemQuery(text);
+  }
+
+  async function runItemStockDetailIntent(text) {
+    if (state.surface === "admin") {
+      addNiaMessage("Item stock levels aren't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    const itemNameQuery = extractStockItemQuery(text);
+
+    addNiaMessage("Checking stock for " + safe(itemNameQuery) + "...");
+
+    let rows;
+    try {
+      rows = await fetchAssetRowsForTenant();
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    // matchRecordsByName needs one nameField to compare against, but a
+    // row's real name could live in any of several columns depending on
+    // business type (property_name/item_name/name/title) - computing a
+    // single synthetic field up front lets the existing generic matcher
+    // work unchanged instead of needing an item-specific variant of it.
+    const withNames = rows.map(function (row) {
+      return Object.assign({}, row, { _niaItemName: pickField(row, ["property_name", "item_name", "name", "title"], "") });
+    });
+    const matched = matchRecordsByName(withNames, "_niaItemName", itemNameQuery);
+
+    if (!matched.length) {
+      addNiaMessage(
+        "I couldn't find an item called \"" + safe(itemNameQuery) + "\". Check the spelling, or open " +
+        goldLink("my-items.html", "Items") + "."
+      );
+      return { spoken: "I couldn't find an item by that name." };
+    }
+
+    const shown = matched.slice(0, 5);
+    const listHtml = shown.map(function (row) {
+      const qty = niaGetStockQuantity(row);
+      const reorderLevel = niaGetReorderLevel(row);
+      const url = "my-item-profile.html?id=" + encodeURIComponent(row.id);
+      const qtyText = qty !== null ? qty + " in stock (reorder level " + reorderLevel + ")" : "no numeric stock tracked for this item";
+      return "<div style=\"margin-top:6px;\">" + goldLink(url, row._niaItemName) + " — " + safe(qtyText) + "</div>";
+    }).join("");
+
+    const remaining = matched.length - shown.length;
+
+    addNiaMessage(
+      (matched.length === 1 ? "Here's the stock for " + safe(matched[0]._niaItemName) + ":" : matched.length + " items matched \"" + safe(itemNameQuery) + "\":") +
+      listHtml +
+      (remaining > 0 ? "<div style=\"margin-top:8px;\">" + goldLink("my-items.html", "See " + remaining + " more →") + "</div>" : "")
+    );
+
+    return { spoken: matched.length === 1 ? "Stock details for " + matched[0]._niaItemName + "." : matched.length + " items matched that name." };
+  }
+
+  // ---- Phase 2 conversational retrieval: Quotation detail by name/reference ----
+  // Checked before the existing bare-keyword isQuotationQueryPhrase
+  // (aggregate summary) for the same collision-avoidance reason as
+  // isItemStockDetailPhrase above - only fires when a customer name or
+  // quotation number is actually extractable.
+  function extractQuotationDetailQuery(text) {
+    let m = text.match(/quot(?:e|ation)s?\s+(?:for|from)\s+([^.?!]+)/i);
+    let name = m && m[1] ? m[1].trim() : null;
+
+    if (!name) {
+      m = text.match(/([^.?!]+?)(?:'s|s')\s+quot(?:e|ation)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/quot(?:e|ation)\s+([A-Za-z0-9-]{3,})/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/details?\s+(?:of|on|for|about)\s+(?:quot(?:e|ation)\s+)?([^.?!]+)/i);
+      if (m && m[1] && /quot(?:e|ation)/i.test(text)) name = m[1].trim();
+    }
+
+    if (!name) return null;
+
+    name = name.replace(/^(customer|client)\s+/i, "").trim();
+    return name || null;
+  }
+
+  function isQuotationDetailPhrase(text) {
+    return /quot(?:e|ation)/i.test(text) && !!extractQuotationDetailQuery(text);
+  }
+
+  async function runQuotationDetailIntent(text) {
+    if (state.surface === "admin") {
+      addNiaMessage("Quotations aren't available on the admin side.");
+      return { spoken: "That's not available on the admin side." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    const query = extractQuotationDetailQuery(text);
+
+    addNiaMessage("Looking for that quotation...");
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_quotations");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const quotations = (response && !response.error && response.data && response.data.ok === true)
+      ? (response.data.quotations || [])
+      : [];
+
+    // Try the reference number first (a specific code like "Q-2024-014"
+    // is a much stronger signal than a customer name), then fall back to
+    // matching by customer.
+    let matched = matchRecordsByName(quotations, "quotation_number", query);
+    if (!matched.length) matched = matchRecordsByName(quotations, "customer_name", query);
+
+    if (!matched.length) {
+      addNiaMessage(
+        "I couldn't find a quotation matching \"" + safe(query) + "\". Check the spelling, or open " +
+        goldLink("my-quotations.html", "Quotations") + " to browse them."
+      );
+      return { spoken: "I couldn't find a quotation matching that." };
+    }
+
+    if (matched.length > 1) {
+      const listHtml = matched.slice(0, 5).map(function (q) {
+        return "<div style=\"margin-top:6px;\">" + safe(q.quotation_number) + " — " + safe(q.customer_name) + " · " + safe((q.effective_status || "").replace("_", " ")) + " · " + safe(formatNiaKES(q.total_amount)) + "</div>";
+      }).join("");
+      addNiaMessage(matched.length + " quotations matched \"" + safe(query) + "\" — which one?" + listHtml);
+      return { spoken: matched.length + " quotations matched that. Which one did you mean?" };
+    }
+
+    const q = matched[0];
+    addNiaMessage(
+      "<strong>Quotation " + safe(q.quotation_number) + "</strong>" +
+      buildDetailLinesHtml([
+        ["Customer", q.customer_name],
+        ["Status", (q.effective_status || q.status || "").replace("_", " ")],
+        ["Issued", formatNiaDate(q.issue_date)],
+        ["Total", formatNiaKES(q.total_amount)]
+      ]) +
+      "<div style=\"margin-top:8px;\">" + goldLink("my-quotations.html", "Open Quotations") + "</div>"
+    );
+
+    return { spoken: "Quotation " + q.quotation_number + " for " + q.customer_name + ", " + (q.effective_status || q.status) + ", total " + formatNiaKES(q.total_amount) + "." };
+  }
+
+  // ---- Phase 2 conversational retrieval: Order detail by name/reference ----
+  // Same shape and collision-avoidance reasoning as the quotation detail
+  // intent above, checked before the existing bare-keyword
+  // isOrderQueryPhrase.
+  function extractOrderDetailQuery(text) {
+    let m = text.match(/orders?\s+(?:for|from)\s+([^.?!]+)/i);
+    let name = m && m[1] ? m[1].trim() : null;
+
+    if (!name) {
+      m = text.match(/([^.?!]+?)(?:'s|s')\s+order/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/\border\s+([A-Za-z0-9-]{3,})/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/details?\s+(?:of|on|for|about)\s+(?:order\s+)?([^.?!]+)/i);
+      if (m && m[1] && /\border\b/i.test(text)) name = m[1].trim();
+    }
+
+    if (!name) return null;
+
+    name = name.replace(/^(customer|client)\s+/i, "").trim();
+    return name || null;
+  }
+
+  function isOrderDetailPhrase(text) {
+    const lower = text.toLowerCase();
+    if (!/\border\b/.test(lower) || lower.indexOf("order to") !== -1) return false;
+    return !!extractOrderDetailQuery(text);
+  }
+
+  async function runOrderDetailIntent(text) {
+    if (state.surface === "admin") {
+      addNiaMessage("Orders aren't available on the admin side.");
+      return { spoken: "That's not available on the admin side." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    const query = extractOrderDetailQuery(text);
+
+    addNiaMessage("Looking for that order...");
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_orders");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const orders = (response && !response.error && response.data && response.data.ok === true)
+      ? (response.data.orders || [])
+      : [];
+
+    let matched = matchRecordsByName(orders, "order_number", query);
+    if (!matched.length) matched = matchRecordsByName(orders, "customer_name", query);
+
+    if (!matched.length) {
+      addNiaMessage(
+        "I couldn't find an order matching \"" + safe(query) + "\". Check the spelling, or open " +
+        goldLink("my-orders.html", "Orders") + " to browse them."
+      );
+      return { spoken: "I couldn't find an order matching that." };
+    }
+
+    if (matched.length > 1) {
+      const listHtml = matched.slice(0, 5).map(function (o) {
+        return "<div style=\"margin-top:6px;\">" + safe(o.order_number) + " — " + safe(o.customer_name) + " · " + safe((o.effective_status || "").replace("_", " ")) + " · " + safe(formatNiaKES(o.total_amount)) + "</div>";
+      }).join("");
+      addNiaMessage(matched.length + " orders matched \"" + safe(query) + "\" — which one?" + listHtml);
+      return { spoken: matched.length + " orders matched that. Which one did you mean?" };
+    }
+
+    const o = matched[0];
+    addNiaMessage(
+      "<strong>Order " + safe(o.order_number) + "</strong>" +
+      buildDetailLinesHtml([
+        ["Customer", o.customer_name],
+        ["Status", (o.effective_status || o.status || "").replace("_", " ")],
+        ["Total", formatNiaKES(o.total_amount)]
+      ]) +
+      "<div style=\"margin-top:8px;\">" + goldLink("my-orders.html", "Open Orders") + "</div>"
+    );
+
+    return { spoken: "Order " + o.order_number + " for " + o.customer_name + ", " + (o.effective_status || o.status) + ", total " + formatNiaKES(o.total_amount) + "." };
   }
 
   // ---- Debtors & Payables (Task 4) ----
