@@ -119,6 +119,12 @@
         --ungani-soft: rgba(6, 28, 61, 0.045);
         --ungani-shadow: 0 18px 45px rgba(6, 28, 61, 0.10);
         --ungani-shadow-hover: 0 24px 60px rgba(6, 28, 61, 0.18);
+
+        /* Same app-wide card-gap standard as client.html's dashboard
+           (16px desktop, redefined to 12px under the existing 1180px
+           breakpoint below) - one deliberate value for every card-to-card
+           gap on these shared-shell pages, not a per-grid pick. */
+        --card-gap: 16px;
       }
 
       html[data-ungani-theme="dark"] {
@@ -799,14 +805,14 @@
       .ungani-grid {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 16px;
+        gap: var(--card-gap);
         margin-bottom: 18px;
       }
 
       .ungani-two-col {
         display: grid;
         grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-        gap: 18px;
+        gap: var(--card-gap);
         align-items: start;
         margin-bottom: 18px;
       }
@@ -1249,6 +1255,10 @@
       }
 
       @media (max-width: 1180px) {
+        :root {
+          --card-gap: 12px;
+        }
+
         .ungani-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
