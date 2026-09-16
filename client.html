@@ -4127,9 +4127,11 @@
       // before concluding this is a real logout, so an offline reload
       // reaches the dashboard's own cached-data fallback instead of a
       // "please log in" dead end.
+      let dashboardLooksOffline = (typeof navigator !== "undefined" && navigator.onLine === false) ||
+        /network|fetch|failed to fetch|timeout/i.test((userResponse.error && userResponse.error.message) || "");
+
       if (!currentUser) {
-        const looksOffline = (typeof navigator !== "undefined" && navigator.onLine === false) ||
-          /network|fetch|failed to fetch|timeout/i.test((userResponse.error && userResponse.error.message) || "");
+        const looksOffline = dashboardLooksOffline;
 
         if (looksOffline) {
           // getSession() is documented as a fast local-storage read, but was
@@ -4165,25 +4167,50 @@
       // identity was known yet) to this specific account's own saved
       // theme, and re-caches it under a key namespaced to this user - see
       // ungani-theme.js's header comment for why the bare init() above
-      // can't already know this.
-      await UnganiTheme.syncFromServer(supabaseClient, currentUser.id);
+      // can't already know this. syncFromServer() falls back to the local
+      // theme cache on any error anyway, so when offline is already
+      // suspected, skip straight to that local read/apply instead of
+      // waiting out the same slow-failing-GET pattern documented below.
+      if (dashboardLooksOffline && window.UnganiTheme) {
+        UnganiTheme.apply(UnganiTheme.get(currentUser.id), currentUser.id);
+      } else {
+        await UnganiTheme.syncFromServer(supabaseClient, currentUser.id);
+      }
       updateThemeButton();
 
-      await resolveTenant();
+      // Offline Tier 1 follow-up (2026-09-16) - confirmed via a live
+      // network trace that Chrome silently retries a failed GET fetch
+      // with its own exponential backoff (~1s, 2s, 4s...) before finally
+      // rejecting, while POST/rpc() calls fail in milliseconds.
+      // resolveTenant()'s fallback and loadTenant() are both GETs, adding
+      // 10-15+ seconds of invisible delay on top of the already-bounded
+      // getUser()/getSession() calls above - long enough to look
+      // identical to "no business profile found." Caches the
+      // last-resolved identity per user so a suspected-offline reload can
+      // skip straight past those slow GETs instead of waiting them out.
+      const cachedDashboardIdentity = dashboardLooksOffline ? getCachedDashboardIdentity(currentUser.id) : null;
 
-      if (!currentTenantId) {
-        const pendingMessage = await checkPendingApproval();
+      if (cachedDashboardIdentity) {
+        currentTenantId = cachedDashboardIdentity.tenantId;
+        currentTenant = cachedDashboardIdentity.tenant;
+      } else {
+        await resolveTenant();
 
-        if (pendingMessage) {
-          showAccessMessage("Approval Required", pendingMessage);
+        if (!currentTenantId) {
+          const pendingMessage = await checkPendingApproval();
+
+          if (pendingMessage) {
+            showAccessMessage("Approval Required", pendingMessage);
+            return;
+          }
+
+          showAccessMessage("Business account not found.", "Your login is active, but no business profile was found for this user.");
           return;
         }
 
-        showAccessMessage("Business account not found.", "Your login is active, but no business profile was found for this user.");
-        return;
+        await loadTenant();
+        cacheDashboardIdentity(currentUser.id, currentTenantId, currentTenant);
       }
-
-      await loadTenant();
       setupBusinessLabels();
       loadUserRole();
 
@@ -4772,6 +4799,37 @@
     // these being byte-identical implementations, just compatible ones.
     function dashboardCacheKey(tenantId) {
       return "ungani_offline_cache::dashboard::" + String(tenantId || "");
+    }
+
+    // Mirrors client-shared.js's identityCacheKey()/cacheResolvedIdentity()/
+    // getCachedIdentity() - same local duplication reasoning as above, this
+    // page has no access to that file's copies.
+    function dashboardIdentityCacheKey(userId) {
+      return "ungani_offline_identity::" + String(userId || "");
+    }
+
+    function cacheDashboardIdentity(userId, tenantId, tenant) {
+      if (!userId || !tenantId || !tenant) return;
+
+      try {
+        window.localStorage.setItem(dashboardIdentityCacheKey(userId), JSON.stringify({ tenantId: tenantId, tenant: tenant }));
+      } catch (error) {
+        console.warn("Identity cache write skipped:", error.message);
+      }
+    }
+
+    function getCachedDashboardIdentity(userId) {
+      try {
+        const raw = window.localStorage.getItem(dashboardIdentityCacheKey(userId));
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.tenantId || !parsed.tenant) return null;
+
+        return parsed;
+      } catch (error) {
+        return null;
+      }
     }
 
     function cacheDashboardSnapshot(tenantId, payload) {
