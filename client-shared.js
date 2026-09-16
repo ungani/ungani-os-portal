@@ -1879,6 +1879,29 @@
     return pushScriptLoadPromise;
   }
 
+  // Fallback for when getSession() times out (see initPage() below) rather
+  // than actually confirming no session exists. supabase-js v2 stores the
+  // session under "sb-<project-ref>-auth-token" by default; the ref is
+  // derived from SUPABASE_URL instead of hardcoded so this can't drift out
+  // of sync if the project URL ever changes. Deliberately minimal - this
+  // only needs to answer "is there a plausible cached session to trust
+  // while offline," not fully re-validate the token (that's what the
+  // normal online path already does via Supabase itself).
+  function readLocallyStoredSession() {
+    try {
+      const projectRef = SUPABASE_URL.replace(/^https?:\/\//, "").split(".")[0];
+      const raw = window.localStorage.getItem("sb-" + projectRef + "-auth-token");
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.user) return parsed;
+
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   async function initPage(config) {
     state.currentPageKey = config.pageKey || "";
     state.currentPageTitle = config.pageTitle || "UNGANI OS";
@@ -1896,8 +1919,31 @@
 
       state.supabaseClient = window.getUnganiSupabaseClient ? window.getUnganiSupabaseClient() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-      const sessionResponse = await state.supabaseClient.auth.getSession();
-      const session = sessionResponse && sessionResponse.data ? sessionResponse.data.session : null;
+      // Offline Tier 1 (2026-09-16) - getSession() is documented as a
+      // synchronous local-storage read in the common case, but confirmed
+      // live (Playwright, genuinely unreachable network) to hang
+      // indefinitely instead of rejecting when the token needs a refresh
+      // it can't complete - supabase-js's internal retry/lock logic has no
+      // bound of its own. Left unguarded, this stalled "Loading UNGANI
+      // OS..." forever on every one of the ~19 pages built on this
+      // function, with no path to the offline-cache fallback each page
+      // just gained. A bounded race lets the real, fast, local-storage-hit
+      // case resolve exactly as before (never touches the timeout branch);
+      // only a genuine hang falls through to trusting the raw stored token
+      // directly instead of treating "couldn't verify in time" as "not
+      // logged in."
+      const sessionResponse = await Promise.race([
+        state.supabaseClient.auth.getSession(),
+        new Promise(function (resolve) {
+          setTimeout(function () { resolve({ data: { session: null }, error: null, unganiTimedOut: true }); }, 6000);
+        })
+      ]);
+
+      let session = sessionResponse && sessionResponse.data ? sessionResponse.data.session : null;
+
+      if (!session && sessionResponse.unganiTimedOut) {
+        session = readLocallyStoredSession();
+      }
 
       if (!session || !session.user) {
         renderLoginScreen();

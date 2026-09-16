@@ -4100,11 +4100,61 @@
       }
     }
 
+    function readLocallyStoredSupabaseSession() {
+      try {
+        const projectRef = SUPABASE_URL.replace(/^https?:\/\//, "").split(".")[0];
+        const raw = window.localStorage.getItem("sb-" + projectRef + "-auth-token");
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.user) return parsed;
+        return null;
+      } catch (error) {
+        return null;
+      }
+    }
+
     async function initClientDashboard() {
       updateThemeButton();
 
       const userResponse = await supabaseClient.auth.getUser();
       currentUser = userResponse && userResponse.data ? userResponse.data.user : null;
+
+      // Offline Tier 1 (2026-09-16) - getUser() verifies the JWT against
+      // Supabase's Auth server over the network; a genuine connectivity
+      // failure resolves identically to "actually logged out" (data.user
+      // is null either way). Falls back to getSession() - a local-storage
+      // read that only hits the network if the token needs refreshing -
+      // before concluding this is a real logout, so an offline reload
+      // reaches the dashboard's own cached-data fallback instead of a
+      // "please log in" dead end.
+      if (!currentUser) {
+        const looksOffline = (typeof navigator !== "undefined" && navigator.onLine === false) ||
+          /network|fetch|failed to fetch|timeout/i.test((userResponse.error && userResponse.error.message) || "");
+
+        if (looksOffline) {
+          // getSession() is documented as a fast local-storage read, but was
+          // empirically confirmed (live Playwright test, 20s poll) to hang
+          // indefinitely under real offline conditions - theorized to be
+          // supabase-js's internal AuthRetryableFetchError retry loop having
+          // no bound. Bounded here the same way as client-shared.js's
+          // initPage(), with a direct localStorage read as the fallback.
+          const sessionResponse = await Promise.race([
+            supabaseClient.auth.getSession(),
+            new Promise(function (resolve) {
+              setTimeout(function () { resolve({ data: { session: null }, error: null, unganiTimedOut: true }); }, 6000);
+            })
+          ]);
+
+          currentUser = sessionResponse && sessionResponse.data && sessionResponse.data.session
+            ? sessionResponse.data.session.user
+            : null;
+
+          if (!currentUser && sessionResponse.unganiTimedOut) {
+            const locallyStoredSession = readLocallyStoredSupabaseSession();
+            currentUser = locallyStoredSession ? locallyStoredSession.user : null;
+          }
+        }
+      }
 
       if (!currentUser) {
         showAccessMessage("Please log in first.", "Use the client login page to open your UNGANI OS dashboard.");
