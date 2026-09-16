@@ -2609,6 +2609,19 @@
         return { spoken: "Your UNGANI subscription invoices are on My Billing." };
       }
 
+      // "print customer X's invoice" - checked BEFORE the generic invoice
+      // query just below, since both match on the bare word "invoice" and
+      // isInvoiceQueryPhrase() treats a bare mention as sufficient on its
+      // own. Without this ordering, "print Acme's invoice" always won as
+      // a generic "here's your outstanding invoice status" answer instead
+      // of actually opening Acme's invoice to print - confirmed live
+      // before this fix moved the check here (isInvoicePrintRequestPhrase
+      // was originally only checked much later, alongside isPrintRequestPhrase,
+      // by which point isInvoiceQueryPhrase had already claimed it).
+      if (isInvoicePrintRequestPhrase(text)) {
+        return runInvoicePrintIntent(text);
+      }
+
       // Live-data customer invoicing question ("who owes me", "overdue
       // invoices") - same reasoning as payroll above.
       if (isInvoiceQueryPhrase(text)) {
@@ -2845,16 +2858,6 @@
       // just navigate to the page instead of answering.
       if (isTeamChatQueryPhrase(text)) {
         return runTeamChatQueryIntent();
-      }
-
-      // "print customer X's invoice" / "print invoice for X" - checked
-      // BEFORE the generic print-report phrase just below, since both
-      // match on the bare word "print" and the generic one is checked
-      // first in file order otherwise; a specific-record print request
-      // must win over the generic "print my report" intent whenever both
-      // could technically match the same text.
-      if (isInvoicePrintRequestPhrase(text)) {
-        return runInvoicePrintIntent(text);
       }
 
       // "print this for me" / "give me a report" - checked ahead of the
