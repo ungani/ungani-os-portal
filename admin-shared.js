@@ -468,8 +468,8 @@
         background: var(--ungani-card);
         color: var(--ungani-text);
         border: 1px solid var(--ungani-border);
-        border-radius: 22px;
-        padding: 22px;
+        border-radius: 24px;
+        padding: 20px;
         margin-bottom: 18px;
         box-shadow: var(--ungani-shadow);
       }
