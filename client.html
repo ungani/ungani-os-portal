@@ -4711,14 +4711,72 @@
       el.title = "Last refreshed at " + lastDashboardLoadTime.toLocaleTimeString();
     }
 
-    // Offline Tier 1 - see my-money.html's tryRenderMoneyFromCache() for the
-    // full rationale. Unlike the other 4 pages, safeSelect() here never
-    // surfaces an error string (it always resolves to [] on failure so one
-    // bad table doesn't break the whole Promise.all), so dashboardHadNetwork
-    // Failure - set directly inside safeSelect's catch block - is the real
-    // signal instead of a message-pattern check.
+    // Offline Tier 1 - client.html has no <script src="client-shared.js">
+    // tag at all (it's a standalone bespoke shell, not one of the ~19
+    // pages built on UnganiClientShared.initPage()), so unlike the other 4
+    // pages this can't call UnganiClientShared's cache helpers - that
+    // global genuinely doesn't exist here. Duplicated locally instead of
+    // adding a cross-file dependency on a shared-shell script this page
+    // was never wired to load. Same localStorage key format and tenant
+    // scoping as client-shared.js's version, so nothing else depends on
+    // these being byte-identical implementations, just compatible ones.
+    function dashboardCacheKey(tenantId) {
+      return "ungani_offline_cache::dashboard::" + String(tenantId || "");
+    }
+
+    function cacheDashboardSnapshot(tenantId, payload) {
+      if (!tenantId) return;
+
+      try {
+        window.localStorage.setItem(
+          dashboardCacheKey(tenantId),
+          JSON.stringify({ payload: payload, cachedAt: new Date().toISOString() })
+        );
+      } catch (error) {
+        console.warn("Offline cache write skipped:", error.message);
+      }
+    }
+
+    function getDashboardSnapshot(tenantId) {
+      if (!tenantId) return null;
+
+      try {
+        const raw = window.localStorage.getItem(dashboardCacheKey(tenantId));
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.payload || !parsed.cachedAt) return null;
+
+        return parsed;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function dashboardOfflineCacheAgeLabel(cachedAtIso) {
+      const then = new Date(cachedAtIso).getTime();
+      if (isNaN(then)) return "earlier";
+
+      const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+      if (seconds < 60) return "just now";
+      if (seconds < 3600) return Math.round(seconds / 60) + "m ago";
+      if (seconds < 86400) return Math.round(seconds / 3600) + "h ago";
+      return Math.round(seconds / 86400) + "d ago";
+    }
+
+    function dashboardOfflineBannerHtml(cachedAtIso) {
+      return `
+        <div class="client-readonly-banner" style="margin:0 0 18px;">
+          <div>
+            <strong>You're offline</strong>
+            <p>Showing data from ${safe(dashboardOfflineCacheAgeLabel(cachedAtIso))}. New changes won't save until you're back online.</p>
+          </div>
+        </div>
+      `;
+    }
+
     function tryRenderDashboardFromCache() {
-      const cached = UnganiClientShared.getOfflineSnapshot("dashboard", currentTenantId);
+      const cached = getDashboardSnapshot(currentTenantId);
       if (!cached) return false;
 
       dashboardData.transactions = cached.payload.transactions || [];
