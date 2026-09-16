@@ -8,6 +8,7 @@ const CACHE_NAME = "ungani-os-cache-v2";
 const CORE_ASSETS = [
   "/",
   "/login.html",
+  "/offline.html",
   "/manifest.json",
   "/ungani-logo.png"
 ];
@@ -128,7 +129,22 @@ self.addEventListener("fetch", (event) => {
       })
       .catch(() => {
         return caches.match(request).then((cached) => {
-          return cached || caches.match("/login.html");
+          if (cached) return cached;
+
+          // A full-page navigation (clicking a link, typing a URL, hitting
+          // a page that was never visited online so nothing was ever
+          // cached for it) used to fall through to cached login.html here -
+          // confusing (wrong page, not obviously "you're offline") and, if
+          // even login.html somehow wasn't cached yet, an outright blank
+          // browser error page. request.mode distinguishes this case from
+          // sub-resource fetches (scripts/styles/images), which should
+          // keep failing normally rather than being swapped for an HTML
+          // document.
+          if (request.mode === "navigate") {
+            return caches.match("/offline.html");
+          }
+
+          return caches.match("/login.html");
         });
       })
   );

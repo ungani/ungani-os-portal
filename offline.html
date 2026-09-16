@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>UNGANI OS - You're Offline</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background:
+      radial-gradient(circle at top right, rgba(212,166,58,0.18), transparent 32%),
+      linear-gradient(135deg, #061C3D 0%, #092B58 55%, #092A59 100%);
+    font-family: Inter, -apple-system, Arial, sans-serif;
+    color: white;
+  }
+  .card {
+    width: min(520px, 100%);
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 28px;
+    padding: 32px 28px;
+    box-shadow: 0 30px 90px rgba(0,0,0,0.35);
+    text-align: center;
+  }
+  .card img {
+    width: 76px;
+    height: 76px;
+    object-fit: contain;
+    background: white;
+    border-radius: 20px;
+    padding: 10px;
+    margin-bottom: 18px;
+  }
+  h1 {
+    margin: 0;
+    color: #D4A63A;
+    font-size: 28px;
+    letter-spacing: -0.03em;
+  }
+  p {
+    color: rgba(255,255,255,0.82);
+    line-height: 1.55;
+    margin: 14px auto 0;
+    max-width: 420px;
+  }
+  .status-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 22px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.10);
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.75);
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #D4A63A;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.35; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+  .actions {
+    margin-top: 24px;
+  }
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 999px;
+    padding: 12px 22px;
+    background: #D4A63A;
+    color: #061C3D;
+    font-weight: 950;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:active { transform: translateY(1px); }
+  .footnote {
+    color: rgba(255,255,255,0.55);
+    font-size: 12px;
+    margin-top: 24px;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img src="/ungani-logo.png" alt="UNGANI" />
+    <h1>You're offline</h1>
+    <p>UNGANI OS can't reach the network right now. We'll bring you back automatically the moment your connection returns.</p>
+
+    <div class="status-row">
+      <span class="dot"></span>
+      <span id="statusText">Reconnecting&hellip;</span>
+    </div>
+
+    <div class="actions">
+      <button type="button" onclick="location.reload()">Try Again</button>
+    </div>
+
+    <p class="footnote">UNGANI OS &middot; ungani.com &middot; info@ungani.com</p>
+  </div>
+
+  <script>
+    function goHomeIfBackOnline() {
+      document.getElementById("statusText").textContent = "Back online — reloading…";
+      setTimeout(function () { location.reload(); }, 400);
+    }
+
+    window.addEventListener("online", goHomeIfBackOnline);
+
+    // Belt-and-braces for browsers that don't fire "online" reliably in a
+    // service-worker-served document (notably some in-app/PWA contexts) -
+    // a lightweight periodic real-connectivity probe against our own
+    // same-origin manifest.json, cache-busted so a cached response can't
+    // produce a false positive.
+    setInterval(function () {
+      if (!navigator.onLine) return;
+
+      fetch("/manifest.json?ping=" + Date.now(), { cache: "no-store" })
+        .then(function (res) { if (res.ok) goHomeIfBackOnline(); })
+        .catch(function () {});
+    }, 5000);
+  </script>
+</body>
+</html>
