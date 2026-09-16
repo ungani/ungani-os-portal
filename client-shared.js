@@ -1902,6 +1902,45 @@
     }
   }
 
+  // Offline Tier 1 follow-up - discovered live (Playwright network trace)
+  // that Chrome silently retries a failed GET fetch with its own
+  // exponential backoff (~1s, 2s, 4s...) before finally rejecting, while
+  // POST-based rpc() calls fail in milliseconds. loadUserProfile() makes up
+  // to 4 SEQUENTIAL GET attempts and loadTenant() makes one more, so
+  // offline this added 20-30+ seconds of silent, invisible delay on top of
+  // the already-fixed getSession() hang - long enough to look identical to
+  // a permanent stall. Caching the last-resolved identity (tenantId + full
+  // tenant row, everything renderShell()/downstream code reads off
+  // state.tenant) lets a suspected-offline reload skip straight past all
+  // of those slow GETs instead of waiting them out.
+  function identityCacheKey(userId) {
+    return "ungani_offline_identity::" + String(userId || "");
+  }
+
+  function cacheResolvedIdentity(userId, tenantId, tenant) {
+    if (!userId || !tenantId || !tenant) return;
+
+    try {
+      window.localStorage.setItem(identityCacheKey(userId), JSON.stringify({ tenantId: tenantId, tenant: tenant }));
+    } catch (error) {
+      console.warn("Identity cache write skipped:", error.message);
+    }
+  }
+
+  function getCachedIdentity(userId) {
+    try {
+      const raw = window.localStorage.getItem(identityCacheKey(userId));
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.tenantId || !parsed.tenant) return null;
+
+      return parsed;
+    } catch (error) {
+      return null;
+    }
+  }
+
   async function initPage(config) {
     state.currentPageKey = config.pageKey || "";
     state.currentPageTitle = config.pageTitle || "UNGANI OS";
@@ -1951,35 +1990,62 @@
       }
 
       state.authUser = session.user;
-      state.userProfile = await loadUserProfile(session.user);
-      state.tenantId = await resolveTenantId(session.user, state.userProfile);
 
-      if (!state.tenantId) {
-        const pendingMessage = await checkPendingApproval();
+      // A hung/timed-out getSession() (or navigator.onLine already false)
+      // is a strong enough offline signal to skip the normal, slow
+      // (offline: 20-30+ second) profile/tenant network resolution and go
+      // straight to whatever identity was cached from the last successful
+      // online load - only when one exists; otherwise falls through to
+      // the normal path exactly as before.
+      const looksOffline = !!sessionResponse.unganiTimedOut ||
+        (typeof navigator !== "undefined" && navigator.onLine === false);
+      const cachedIdentity = looksOffline ? getCachedIdentity(session.user.id) : null;
 
-        if (pendingMessage) {
-          renderLoginProblem("Approval Required", pendingMessage);
+      if (cachedIdentity) {
+        state.tenantId = cachedIdentity.tenantId;
+        state.tenant = cachedIdentity.tenant;
+      } else {
+        state.userProfile = await loadUserProfile(session.user);
+        state.tenantId = await resolveTenantId(session.user, state.userProfile);
+
+        if (!state.tenantId) {
+          const pendingMessage = await checkPendingApproval();
+
+          if (pendingMessage) {
+            renderLoginProblem("Approval Required", pendingMessage);
+            return;
+          }
+
+          renderLoginProblem(
+            "Your account is signed in, but no business workspace was found.",
+            "Please contact UNGANI so your user can be connected to the correct business."
+          );
           return;
         }
 
-        renderLoginProblem(
-          "Your account is signed in, but no business workspace was found.",
-          "Please contact UNGANI so your user can be connected to the correct business."
-        );
-        return;
+        state.tenant = await loadTenant(state.tenantId);
+
+        if (!state.tenant) {
+          renderLoginProblem(
+            "Business workspace not found.",
+            "Please contact UNGANI support to confirm your client account."
+          );
+          return;
+        }
+
+        cacheResolvedIdentity(state.authUser.id, state.tenantId, state.tenant);
       }
 
-      state.tenant = await loadTenant(state.tenantId);
-
-      if (!state.tenant) {
-        renderLoginProblem(
-          "Business workspace not found.",
-          "Please contact UNGANI support to confirm your client account."
-        );
-        return;
+      // loadSavedSettings() -> UnganiTheme.syncFromServer() is the same
+      // slow-failing GET pattern (offline: several seconds, not the
+      // milliseconds a POST/rpc() call fails in) - already falls back to
+      // the local theme cache internally on any error, so skip straight to
+      // that local read/apply instead of waiting out the network attempt.
+      if (looksOffline && window.UnganiTheme && state.authUser) {
+        state.currentTheme = window.UnganiTheme.apply(window.UnganiTheme.get(state.authUser.id), state.authUser.id);
+      } else {
+        await loadSavedSettings();
       }
-
-      await loadSavedSettings();
 
       renderShell(config);
       refreshNotificationBadgeSafe();
