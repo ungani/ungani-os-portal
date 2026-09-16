@@ -2272,7 +2272,7 @@
               <input
                 id="unganiGlobalSearch"
                 class="ungani-global-search"
-                placeholder="Search properties, tasks, leads, documents..."
+                placeholder="Search money, tasks, customers, items..."
                 autocomplete="off"
                 oninput="UnganiClientShared.handleGlobalSearchInput()"
                 onfocus="UnganiClientShared.handleGlobalSearchInput()"
