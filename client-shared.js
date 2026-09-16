@@ -5262,6 +5262,83 @@
 
     countEl.textContent = String(unread);
     countEl.style.display = unread > 0 ? "inline-flex" : "none";
+
+    maybePlayNotificationSound(unread);
+  }
+
+  // A fresh page load (or a page navigation, since this whole script
+  // re-executes on every page) must never itself trigger the sound - only
+  // a genuine rise in the unread count while a baseline is already known.
+  // sessionStorage (not an in-memory var) carries that baseline across
+  // navigations within the same tab, since an in-memory var would reset
+  // to null - and re-arm as "first check, stay quiet" - on every page.
+  function maybePlayNotificationSound(unread) {
+    if (typeof unread !== "number" || unread < 0) {
+      return;
+    }
+
+    const shared = window.UnganiClientShared;
+    const state = shared && typeof shared.getState === "function" ? shared.getState() : null;
+    const tenantId = state && state.tenantId ? state.tenantId : "unknown";
+    const baselineKey = "ungani_notif_sound_baseline::" + tenantId;
+
+    let baseline = null;
+    try {
+      const stored = sessionStorage.getItem(baselineKey);
+      baseline = stored === null ? null : parseInt(stored, 10);
+    } catch (error) {
+      // sessionStorage unavailable (private mode etc.) - skip sound, no crash.
+      return;
+    }
+
+    const shouldPlay = baseline !== null && !Number.isNaN(baseline) && unread > baseline;
+
+    try {
+      sessionStorage.setItem(baselineKey, String(unread));
+    } catch (error) {
+      // Ignore - worst case the sound fires again next check.
+    }
+
+    if (shouldPlay) {
+      playNotificationChime();
+    }
+  }
+
+  var unganiNotificationAudioCtx = null;
+
+  function playNotificationChime() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+
+      if (!unganiNotificationAudioCtx) {
+        unganiNotificationAudioCtx = new Ctx();
+      }
+      const ctx = unganiNotificationAudioCtx;
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(function () {});
+      }
+
+      const now = ctx.currentTime;
+      // Soft two-note ascending chime - a fifth apart, short enough to
+      // read as "notice" rather than "alarm."
+      [[880, now, 0.14], [1174.66, now + 0.1, 0.16]].forEach(function (tone) {
+        const freq = tone[0], start = tone[1], duration = tone[2];
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.15, start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + duration + 0.02);
+      });
+    } catch (error) {
+      // Sound is a nicety, never worth surfacing an error for.
+    }
   }
 
   async function toggleEngineNotifications() {

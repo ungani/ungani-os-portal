@@ -5152,6 +5152,65 @@
           ? unread + " unread notification(s)."
           : "No unread notifications.";
       }
+
+      maybePlayNotificationSound(unread);
+    }
+
+    // Mirrors client-shared.js's identical helper (client.html deliberately
+    // doesn't load client-shared.js, see the "own bespoke init" comments
+    // above) - same sessionStorage key format so the baseline is shared
+    // across a tab's navigation between this dashboard and the my-*.html
+    // pages, and the same "first check this tab just arms the baseline,
+    // never sounds" rule so login/refresh never fires it, only a genuine
+    // rise in the unread count while a baseline is already known.
+    function maybePlayNotificationSound(unread) {
+      if (typeof unread !== "number" || unread < 0) return;
+
+      const baselineKey = "ungani_notif_sound_baseline::" + (currentTenantId || "unknown");
+      let baseline = null;
+      try {
+        const stored = sessionStorage.getItem(baselineKey);
+        baseline = stored === null ? null : parseInt(stored, 10);
+      } catch (error) {
+        return;
+      }
+
+      const shouldPlay = baseline !== null && !Number.isNaN(baseline) && unread > baseline;
+
+      try {
+        sessionStorage.setItem(baselineKey, String(unread));
+      } catch (error) {}
+
+      if (shouldPlay) playNotificationChime();
+    }
+
+    let clientNotificationAudioCtx = null;
+
+    function playNotificationChime() {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+
+        if (!clientNotificationAudioCtx) clientNotificationAudioCtx = new Ctx();
+        const ctx = clientNotificationAudioCtx;
+        if (ctx.state === "suspended") ctx.resume().catch(function () {});
+
+        const now = ctx.currentTime;
+        [[880, now, 0.14], [1174.66, now + 0.1, 0.16]].forEach(function (tone) {
+          const freq = tone[0], start = tone[1], duration = tone[2];
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0, start);
+          gain.gain.linearRampToValueAtTime(0.15, start + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + duration + 0.02);
+        });
+      } catch (error) {}
     }
 
     // action_url on ungani_notifications rows is free-text database
