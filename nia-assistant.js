@@ -2494,6 +2494,23 @@
     return /^(find|search|search for|look up|where is|where's)\b/i.test(text.trim());
   }
 
+  // Broader record-request phrasing ("show me X", "bring me X", "pull up
+  // X", "give me X") - kept separate from isSearchPhrase/runSearchIntent's
+  // main trigger since these verbs are used generically elsewhere ("show
+  // me my favorites", "show me around") and would wrongly hijack those if
+  // checked early. Only ever consulted as the last resort in
+  // interpretMessage, once every specific intent has already failed to
+  // match. Strips a trailing generic noun ("variant", "record", "details")
+  // so "show me the Fanta Orange variant" searches for "Fanta Orange", not
+  // the literal phrase including "variant".
+  function extractBroadRecordQuery(text) {
+    const m = text.trim().match(/^(?:show me|bring me|pull up|give me|get me)\s+(?:the\s+|my\s+)?(.+)/i);
+    if (!m || !m[1]) return null;
+
+    const cleaned = m[1].replace(/\s+(record|records|detail|details|profile|variant|item|entry)s?[.?!]*$/i, "").trim();
+    return cleaned || null;
+  }
+
   function interpretMessage(text) {
     try {
       if (isGreeting(text)) {
@@ -2942,6 +2959,22 @@
       const navMatch = findNavMatch(text);
       if (navMatch) {
         return navigateTo(navMatch.key);
+      }
+
+      // Last-resort record lookup: "show me the Fanta Orange variant",
+      // "bring me this client's record", "pull up John Mwangi" - the exact
+      // phrasings from the Phase 2 conversational-retrieval brief, which
+      // isSearchPhrase() above doesn't cover (it only fires on a
+      // find/search/look-up prefix). Deliberately checked dead last, after
+      // every specific keyword-based intent above has already had its
+      // chance, so it can never shadow something like "show my favorites"
+      // or "show me my dashboard" - those are handled earlier by their own
+      // more specific checks and never reach this point.
+      if (state.surface !== "admin") {
+        const broadQuery = extractBroadRecordQuery(text);
+        if (broadQuery) {
+          return runSearchIntent(broadQuery);
+        }
       }
 
       return showFallback();
