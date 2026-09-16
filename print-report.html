@@ -65,6 +65,7 @@
     };
 
     const RANGE_LABELS = {
+      yesterday: "Yesterday",
       day: "Today",
       week: "This Week",
       month: "This Month",
@@ -93,11 +94,27 @@
         const diffToMonday = day === 0 ? 6 : day - 1;
         from.setDate(from.getDate() - diffToMonday);
         from.setHours(0, 0, 0, 0);
+      } else if (range === "yesterday") {
+        from.setDate(from.getDate() - 1);
+        from.setHours(0, 0, 0, 0);
       } else {
         from.setHours(0, 0, 0, 0);
       }
 
       return from.toISOString();
+    }
+
+    // Every other range is open-ended ("since X, through now") - only
+    // "yesterday" is a single closed calendar day, so it's the one range
+    // that needs an exclusive upper bound too (today's midnight), or it
+    // would silently include today's records as well via the plain .gte()
+    // every other range relies on in safeSelect().
+    function getRangeUpperBoundISO(range) {
+      if (range !== "yesterday") return null;
+
+      const to = new Date();
+      to.setHours(0, 0, 0, 0);
+      return to.toISOString();
     }
 
     window.addEventListener("load", function () {
@@ -150,16 +167,17 @@
       // last month is still relevant to a "this week" report, and hiding
       // it would be actively misleading. Every other table uses created_at.
       const cutoffISO = getRangeCutoffISO(currentRange);
+      const upperBoundISO = getRangeUpperBoundISO(currentRange);
 
       const responses = await Promise.all([
-        safeSelect("transactions", "transaction_date", cutoffISO),
-        safeSelect("business_items", "created_at", cutoffISO),
-        safeSelect("client_people", "created_at", cutoffISO),
-        safeSelect("business_records", "created_at", cutoffISO),
+        safeSelect("transactions", "transaction_date", cutoffISO, upperBoundISO),
+        safeSelect("business_items", "created_at", cutoffISO, upperBoundISO),
+        safeSelect("client_people", "created_at", cutoffISO, upperBoundISO),
+        safeSelect("business_records", "created_at", cutoffISO, upperBoundISO),
         safeSelect("tasks", null, null),
-        safeSelect("documents", "created_at", cutoffISO),
-        safeSelect("business_events", "created_at", cutoffISO),
-        safeSelect("support_issues", "created_at", cutoffISO)
+        safeSelect("documents", "created_at", cutoffISO, upperBoundISO),
+        safeSelect("business_events", "created_at", cutoffISO, upperBoundISO),
+        safeSelect("support_issues", "created_at", cutoffISO, upperBoundISO)
       ]);
 
       printData.transactions = responses[0];
@@ -174,7 +192,7 @@
       renderPrintReport();
     }
 
-    async function safeSelect(tableName, dateColumn, cutoffISO) {
+    async function safeSelect(tableName, dateColumn, cutoffISO, upperBoundISO) {
       try {
         let query = currentContext.supabaseClient
           .from(tableName)
@@ -183,6 +201,10 @@
 
         if (dateColumn && cutoffISO) {
           query = query.gte(dateColumn, cutoffISO.slice(0, 10));
+        }
+
+        if (dateColumn && upperBoundISO) {
+          query = query.lt(dateColumn, upperBoundISO.slice(0, 10));
         }
 
         const response = await query.order("created_at", { ascending: false });

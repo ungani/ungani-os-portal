@@ -2847,6 +2847,16 @@
         return runTeamChatQueryIntent();
       }
 
+      // "print customer X's invoice" / "print invoice for X" - checked
+      // BEFORE the generic print-report phrase just below, since both
+      // match on the bare word "print" and the generic one is checked
+      // first in file order otherwise; a specific-record print request
+      // must win over the generic "print my report" intent whenever both
+      // could technically match the same text.
+      if (isInvoicePrintRequestPhrase(text)) {
+        return runInvoicePrintIntent(text);
+      }
+
       // "print this for me" / "give me a report" - checked ahead of the
       // generic summary phrase below, since a print request should always
       // win over a conversational one even if both phrase lists could
@@ -3756,6 +3766,136 @@
       spoken: "Outstanding: " + formatNiaKES(outstandingTotal) + " across " + invoices.length +
         " invoice" + (invoices.length === 1 ? "" : "s") + ". " + overdueText + "."
     };
+  }
+
+  // ---- Print-on-request: generic name/reference lookup pattern ----
+  // Phase 1 (this) implements it once for customer invoices. Phase 2 reuses
+  // matchRecordsByName() unchanged for Tasks/People/Documents/Quotations/
+  // Orders - only the record fetch, name field, and target print URL
+  // differ per record type, so this is the one piece worth sharing rather
+  // than writing four near-identical matchers later.
+  //
+  // Exact case-insensitive match wins whenever one exists (e.g. "Acme"
+  // typed against a customer literally named "Acme"); only falls back to
+  // a substring match (e.g. "acme" matching "Acme Ltd") when no exact
+  // match exists, so a short, common name never shadows an exact one.
+  function matchRecordsByName(records, nameField, query) {
+    const target = String(query || "").trim().toLowerCase();
+    if (!target) return [];
+
+    const exact = records.filter(function (r) {
+      return String(pickField(r, [nameField], "")).trim().toLowerCase() === target;
+    });
+    if (exact.length) return exact;
+
+    return records.filter(function (r) {
+      return String(pickField(r, [nameField], "")).toLowerCase().indexOf(target) !== -1;
+    });
+  }
+
+  // Two shapes: "print invoice for X" (name follows "for") and "print X's
+  // invoice" / "print customer X's invoice" (name precedes "invoice",
+  // optionally with a leading "customer"/"client" qualifier and/or a
+  // trailing possessive to strip). Returns null rather than a guess when
+  // neither shape matches, so the caller can ask a clarifying question
+  // instead of acting on a wrong name.
+  function extractInvoiceCustomerName(text) {
+    let m = text.match(/invoice\s+for\s+([^.?!]+)/i);
+    let name = m && m[1] ? m[1].trim() : null;
+
+    if (!name) {
+      m = text.match(/print\s+(?:the\s+|an\s+|a\s+)?([^.?!]+?)(?:'s|s')?\s+invoice/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) return null;
+
+    name = name.replace(/^(customer|client)\s+/i, "").trim();
+    return name || null;
+  }
+
+  // Checked before the generic isPrintRequestPhrase() (both match on the
+  // bare word "print") - requires "invoice" AND an extractable name, so
+  // "print my report" or "print this week's report" never falls in here.
+  function isInvoicePrintRequestPhrase(text) {
+    const lower = text.toLowerCase();
+    if (lower.indexOf("invoice") === -1) return false;
+    if (!["print", "printout"].some(function (w) { return lower.indexOf(w) !== -1; })) return false;
+    return !!extractInvoiceCustomerName(text);
+  }
+
+  async function runInvoicePrintIntent(text) {
+    if (state.surface === "admin") {
+      addNiaMessage("Printing customer invoices isn't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    const customerNameQuery = extractInvoiceCustomerName(text);
+
+    if (!customerNameQuery) {
+      addNiaMessage("Which customer's invoice would you like to print?");
+      return { spoken: "Which customer's invoice would you like to print?" };
+    }
+
+    addNiaMessage("Looking for " + safe(customerNameQuery) + "'s invoice...");
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_customer_invoices");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const invoices = (response && !response.error && response.data && response.data.ok === true)
+      ? (response.data.invoices || [])
+      : [];
+
+    // Cancelled/draft invoices are real records but not something a
+    // customer-facing print request should ever surface - a draft has no
+    // invoice_number yet and a cancelled one shouldn't be handed to a
+    // customer, matching the same exclusion Debtors & Payables already
+    // applies when deciding what's a genuine outstanding invoice.
+    const printable = invoices.filter(function (inv) {
+      return inv.status !== "cancelled" && inv.status !== "draft";
+    });
+
+    const matched = matchRecordsByName(printable, "customer_name", customerNameQuery);
+
+    if (!matched.length) {
+      addNiaMessage(
+        "I couldn't find an invoice for \"" + safe(customerNameQuery) + "\". Check the spelling, or open " +
+        goldLink("my-customer-invoices.html", "Customer Invoices") + " to browse them."
+      );
+      return { spoken: "I couldn't find an invoice for that customer." };
+    }
+
+    // Ambiguity policy: more than one invoice for the same customer prints
+    // the most recent (by issue_date) rather than asking a follow-up
+    // question - matches this app's existing bias toward the single most
+    // likely answer (e.g. runInvoicePrintIntent's own sibling intents)
+    // over an extra clarification round-trip, while still telling the
+    // user this happened so they're not surprised which one opened.
+    matched.sort(function (a, b) {
+      return new Date(pickField(b, ["issue_date"], 0)) - new Date(pickField(a, ["issue_date"], 0));
+    });
+    const invoice = matched[0];
+    const multipleNote = matched.length > 1
+      ? " They have " + matched.length + " invoices — opening the most recent, " + safe(invoice.invoice_number || "") + "."
+      : "";
+
+    addNiaMessage("Opening " + safe(invoice.customer_name) + "'s invoice to print." + multipleNote);
+
+    setTimeout(function () {
+      window.open("my-customer-invoices.html?print=" + encodeURIComponent(invoice.id) + "&autoprint=1", "_blank");
+    }, 400);
+
+    return { spoken: "Opening " + invoice.customer_name + "'s invoice to print." };
   }
 
   // ---- Debtors & Payables (Task 4) ----
@@ -5124,6 +5264,7 @@
     const now = new Date();
     const to = new Date(now);
     const from = new Date(now);
+    let upperBoundISO = null;
 
     if (rangeKey === "year") {
       from.setMonth(0, 1);
@@ -5136,6 +5277,16 @@
       const diffToMonday = day === 0 ? 6 : day - 1;
       from.setDate(from.getDate() - diffToMonday);
       from.setHours(0, 0, 0, 0);
+    } else if (rangeKey === "yesterday") {
+      // The one range that isn't "since X, through now" - a single closed
+      // calendar day, so it needs an upper bound too (today's midnight) or
+      // fetchNiaMoneyRows()'s plain .gte() would silently include today's
+      // rows as well, same fix as print-report.html's own yesterday range.
+      from.setDate(from.getDate() - 1);
+      from.setHours(0, 0, 0, 0);
+      const upper = new Date(now);
+      upper.setHours(0, 0, 0, 0);
+      upperBoundISO = upper.toISOString();
     } else {
       from.setHours(0, 0, 0, 0);
     }
@@ -5144,12 +5295,13 @@
       return d.toLocaleDateString("en-KE", { month: "short", day: "numeric" });
     };
 
-    const labels = { year: "This Year", month: "This Month", week: "This Week", day: "Today" };
+    const labels = { year: "This Year", month: "This Month", week: "This Week", day: "Today", yesterday: "Yesterday" };
 
     return {
       cutoffISO: from.toISOString(),
+      upperBoundISO: upperBoundISO,
       label: labels[rangeKey] || "This Week",
-      rangeText: rangeKey === "day" ? fmt(to) : fmt(from) + " – " + fmt(to)
+      rangeText: (rangeKey === "day" || rangeKey === "yesterday") ? fmt(from) : fmt(from) + " – " + fmt(to)
     };
   }
 
@@ -5160,6 +5312,7 @@
   // match inside an unrelated word.
   function detectSummaryRangeFromText(text) {
     const lower = text.toLowerCase();
+    if (/\byesterday\b/.test(lower)) return "yesterday";
     if (/\b(year|yearly|annual|annually)\b/.test(lower)) return "year";
     if (/\b(month|monthly)\b/.test(lower)) return "month";
     if (/\b(today|day|daily)\b/.test(lower)) return "day";
@@ -5220,12 +5373,18 @@
     return hasReportNoun && (lower.indexOf("download") !== -1 || lower.indexOf("export") !== -1);
   }
 
-  async function fetchNiaMoneyRows(cutoffISO) {
-    const response = await state.supabaseClient
+  async function fetchNiaMoneyRows(cutoffISO, upperBoundISO) {
+    let query = state.supabaseClient
       .from("transactions")
       .select("id, amount, transaction_type, type, transaction_date, created_at, status")
       .eq("tenant_id", state.tenantId)
-      .gte("transaction_date", cutoffISO.slice(0, 10))
+      .gte("transaction_date", cutoffISO.slice(0, 10));
+
+    if (upperBoundISO) {
+      query = query.lt("transaction_date", upperBoundISO.slice(0, 10));
+    }
+
+    const response = await query
       .order("transaction_date", { ascending: false })
       .limit(1000);
 
@@ -5333,7 +5492,7 @@
     let moneyRows, taskRows;
     try {
       [moneyRows, taskRows] = await Promise.all([
-        fetchNiaMoneyRows(meta.cutoffISO),
+        fetchNiaMoneyRows(meta.cutoffISO, meta.upperBoundISO),
         fetchNiaTaskRows()
       ]);
     } catch (error) {
