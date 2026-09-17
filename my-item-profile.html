@@ -373,6 +373,188 @@
       renderItemProfile(currentItem);
     }
 
+    // Property -> Units hierarchy (real client feedback: a building needs
+    // its own snapshot of floors/units, each unit's own tenant/status, and
+    // a rollup of income). parent_item_id is a plain nullable self-FK on
+    // business_items (same shape as ungani_order_items.order_id), not a
+    // stored "is this a building" flag - so "is this row a building" is
+    // derived at render time by checking whether anything points at it.
+    async function loadPropertyHierarchy(itemId) {
+      if (!isRealEstate) return;
+
+      const [childrenResponse, tenantResponse, parentResponse] = await Promise.all([
+        currentContext.supabaseClient
+          .from("business_items")
+          .select("*")
+          .eq("tenant_id", currentContext.tenantId)
+          .eq("parent_item_id", itemId)
+          .is("deleted_at", null)
+          .order("item_name", { ascending: true }),
+        currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, name, phone, lease_start_date, lease_end_date")
+          .eq("tenant_id", currentContext.tenantId)
+          .eq("linked_item_id", itemId)
+          .is("deleted_at", null),
+        currentItem.parent_item_id
+          ? currentContext.supabaseClient
+              .from("business_items")
+              .select("id, property_name, item_name, name")
+              .eq("id", currentItem.parent_item_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null })
+      ]);
+
+      const units = (childrenResponse && childrenResponse.data) || [];
+      const tenants = (tenantResponse && tenantResponse.data) || [];
+      const parent = parentResponse ? parentResponse.data : null;
+
+      renderPropertyParentLink(parent);
+      renderCurrentTenantCard(tenants);
+
+      if (units.length > 0) {
+        renderUnitsCard(units);
+        await loadPropertyRollup(itemId, units.map(function (u) { return u.id; }));
+      }
+    }
+
+    function renderPropertyParentLink(parent) {
+      const el = document.getElementById("propertyParentLink");
+      if (!el) return;
+
+      if (!parent) {
+        el.innerHTML = "";
+        return;
+      }
+
+      const parentName = UnganiClientShared.getValue(parent, ["property_name", "item_name", "name"], "Property");
+      el.innerHTML = `<a class="ungani-small" href="my-item-profile.html?id=${encodeURIComponent(parent.id)}">&larr; Belongs to: ${UnganiClientShared.safe(parentName)}</a>`;
+    }
+
+    function renderCurrentTenantCard(tenants) {
+      const el = document.getElementById("currentTenantCard");
+      if (!el) return;
+
+      if (!tenants.length) {
+        el.innerHTML = "";
+        return;
+      }
+
+      const rowsHtml = tenants.map(function (person) {
+        const name = UnganiClientShared.getValue(person, ["full_name", "name"], "Tenant");
+        const lease = person.lease_start_date || person.lease_end_date
+          ? `${person.lease_start_date ? UnganiClientShared.formatDate(person.lease_start_date) : "—"} to ${person.lease_end_date ? UnganiClientShared.formatDate(person.lease_end_date) : "—"}`
+          : "No lease dates set";
+
+        return `
+          <div class="detail-row">
+            <span>${UnganiClientShared.safe(name)}</span>
+            <span class="ungani-small">${UnganiClientShared.safe(person.phone || "No phone")} · ${UnganiClientShared.safe(lease)}</span>
+          </div>
+        `;
+      }).join("");
+
+      el.innerHTML = `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title"><div><h3>Current Tenant</h3></div></div>
+          ${rowsHtml}
+        </div>
+      `;
+    }
+
+    function renderUnitsCard(units) {
+      const el = document.getElementById("propertyUnitsCard");
+      if (!el) return;
+
+      const rowsHtml = units.map(function (unit) {
+        const name = getItemName(unit);
+        const status = getStatus(unit);
+        const bedrooms = UnganiClientShared.getValue(unit, ["bedrooms"], "");
+        const price = Number(UnganiClientShared.getValue(unit, ["property_price"], 0) || 0);
+
+        return `
+          <tr onclick="window.location.href='my-item-profile.html?id=${encodeURIComponent(unit.id)}'" style="cursor:pointer;">
+            <td>${UnganiClientShared.safe(name)}</td>
+            <td>${bedrooms !== "" ? UnganiClientShared.safe(bedrooms) + " bed" : "—"}</td>
+            <td>${statusBadge(status)}</td>
+            <td>${price > 0 ? UnganiClientShared.safe(UnganiClientShared.formatKES(price)) : "—"}</td>
+          </tr>
+        `;
+      }).join("");
+
+      el.innerHTML = `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Units</h3>
+              <p class="ungani-small">${units.length} unit(s) in this property. Click one to see its own details.</p>
+            </div>
+          </div>
+          <div class="people-table-wrap">
+            <table class="ungani-table">
+              <thead><tr><th>Unit</th><th>Bedrooms</th><th>Status</th><th>Price</th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    async function loadPropertyRollup(buildingId, unitIds) {
+      const el = document.getElementById("propertyRollupCard");
+      if (!el) return;
+
+      const allIds = [buildingId].concat(unitIds);
+
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("transactions")
+          .select("transaction_type, amount, amount_kes")
+          .eq("tenant_id", currentContext.tenantId)
+          .in("related_item_id", allIds)
+          .is("deleted_at", null);
+      } catch (error) {
+        el.innerHTML = '<div class="ungani-card" style="margin-top:18px;"><p class="ungani-small">Could not load financial rollup: ' + UnganiClientShared.safe(error.message) + "</p></div>";
+        return;
+      }
+
+      const rows = (response && response.data) || [];
+
+      let grossRevenue = 0;
+      let expenses = 0;
+
+      rows.forEach(function (row) {
+        const amount = Number(UnganiClientShared.getValue(row, ["amount_kes", "amount"], 0) || 0);
+        const type = String(UnganiClientShared.getValue(row, ["transaction_type"], "") || "").toLowerCase();
+        if (type.indexOf("income") !== -1 || type.indexOf("revenue") !== -1) grossRevenue += amount; else expenses += amount;
+      });
+
+      const commissionType = UnganiClientShared.getValue(currentItem, ["management_commission_type"], "");
+      const commissionValue = Number(UnganiClientShared.getValue(currentItem, ["management_commission_value"], 0) || 0);
+      const commission = commissionType === "percentage" ? grossRevenue * (commissionValue / 100) : (commissionType === "flat" ? commissionValue : 0);
+      const netToOwner = grossRevenue - commission - expenses;
+
+      el.innerHTML = `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Financial Rollup</h3>
+              <p class="ungani-small">Automatically calculated from every payment linked to this property and its units.</p>
+            </div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-row"><span>Gross Revenue</span><span>${UnganiClientShared.safe(UnganiClientShared.formatKES(grossRevenue))}</span></div>
+            <div class="detail-row"><span>Management Commission${commissionType ? " (" + (commissionType === "percentage" ? commissionValue + "%" : UnganiClientShared.formatKES(commissionValue)) + ")" : " (not set)"}</span><span>- ${UnganiClientShared.safe(UnganiClientShared.formatKES(commission))}</span></div>
+            <div class="detail-row"><span>Expenses</span><span>- ${UnganiClientShared.safe(UnganiClientShared.formatKES(expenses))}</span></div>
+            <div class="detail-row" style="font-weight:800;border-top:1px solid var(--border,#e2e5ea);padding-top:8px;margin-top:4px;"><span>Net to Owner</span><span>${UnganiClientShared.safe(UnganiClientShared.formatKES(netToOwner))}</span></div>
+          </div>
+          ${!commissionType ? '<p class="ungani-small" style="margin-top:8px;opacity:.75;">Set a management commission rate on this property\'s Edit Details to include it here.</p>' : ""}
+        </div>
+      `;
+    }
+
     function renderItemProfile(row) {
       const name = getItemName(row);
       const status = getStatus(row);
@@ -391,6 +573,7 @@
 
       currentContext.contentEl.innerHTML = `
         <a class="profile-back" href="${UnganiClientShared.attr(backHref)}">&larr; ${isRealEstate ? "Back to Properties" : "Back to Items"}</a>
+        <div id="propertyParentLink" style="margin-bottom:8px;"></div>
 
         <div class="ungani-card">
           <div class="profile-hero">
@@ -429,6 +612,10 @@
             ${renderFieldRows(row, fieldSet)}
           </div>
         </div>
+
+        <div id="currentTenantCard"></div>
+        <div id="propertyUnitsCard"></div>
+        <div id="propertyRollupCard"></div>
 
         <div class="ungani-card" style="margin-top:18px;">
           <div class="ungani-section-title">
@@ -491,6 +678,7 @@
 
       loadItemTimeline(row.id);
       loadItemDocuments(row.id);
+      loadPropertyHierarchy(row.id);
     }
 
     async function loadItemDocuments(itemId) {

@@ -50,6 +50,7 @@
     let currentContext = null;
     let businessPreset = null;
     let items = [];
+    let parentPropertyOptions = [];
     let currentEditId = null;
     let isRealEstate = false;
     let activeItemCategory = "all";
@@ -1658,6 +1659,38 @@
               <input id="propertyPrice" type="number" min="0" step="1" placeholder="Amount in Ksh" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], "")) : ""}" />
             </div>
 
+            <div>
+              <label for="propertyParent">Parent Property (leave blank if this IS a building/property)</label>
+              <select id="propertyParent" onchange="toggleBuildingFieldsVisibility()">
+                <option value="">Standalone property (not a unit)</option>
+                ${parentPropertyOptions
+                  .filter(function (candidate) { return !row || String(candidate.id) !== String(row.id); })
+                  .map(function (candidate) {
+                    const label = UnganiClientShared.getValue(candidate, ["property_name", "item_name", "name"], "Property");
+                    return `<option value="${UnganiClientShared.attr(candidate.id)}">${UnganiClientShared.safe(label)}</option>`;
+                  }).join("")}
+              </select>
+            </div>
+
+            <div id="buildingFieldsWrap" style="display:none;">
+              <label for="propertyTotalFloors">Total Floors</label>
+              <input id="propertyTotalFloors" type="number" min="0" step="1" placeholder="Example: 6" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["total_floors"], "")) : ""}" />
+            </div>
+
+            <div id="commissionTypeWrap" style="display:none;">
+              <label for="propertyCommissionType">Management Commission</label>
+              <select id="propertyCommissionType">
+                <option value="">No commission agreement</option>
+                <option value="percentage">Percentage of revenue</option>
+                <option value="flat">Flat amount</option>
+              </select>
+            </div>
+
+            <div id="commissionValueWrap" style="display:none;">
+              <label for="propertyCommissionValue">Commission Value</label>
+              <input id="propertyCommissionValue" type="number" min="0" step="0.01" placeholder="e.g. 10 for 10%, or a flat Ksh amount" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["management_commission_value"], "")) : ""}" />
+            </div>
+
             ${renderSectionFieldHtml(formSectionLabel)}
 
             <div id="itemExtraFieldsContainer" class="ungani-form-grid" style="grid-column:1/-1;padding:0;margin:0;">
@@ -2233,7 +2266,29 @@
       return UnganiClientShared.formatDate(timestamp);
     }
 
-    function openItemModal(id) {
+    // Loaded fresh each modal-open (not reused from the possibly-paginated
+    // `items` list) so every eligible parent shows up regardless of
+    // pagination, same reasoning as my-people.html's unitOptions. Scoped to
+    // parent_item_id is null so hierarchy stays exactly two levels deep
+    // (building -> units), no nested buildings-within-buildings.
+    async function loadParentPropertyOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, property_name, item_name, name")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("parent_item_id", null)
+          .is("deleted_at", null)
+          .order("property_name", { ascending: true });
+
+        parentPropertyOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Could not load parent property options:", error.message);
+        parentPropertyOptions = [];
+      }
+    }
+
+    async function openItemModal(id) {
       const row = id ? items.find(function (item) { return String(item.id) === String(id); }) : null;
 
       if (id && !row) {
@@ -2249,6 +2304,10 @@
 
       activeItemFieldSet = UnganiBusinessConfig.resolveItemFieldSet(currentContext.tenant, formSectionLabel);
 
+      if (isRealEstate) {
+        await loadParentPropertyOptions();
+      }
+
       const bodyHtml = isRealEstate
         ? buildRealEstateFormHtml(row, formSectionLabel)
         : buildGenericItemFormHtml(row, formSectionLabel);
@@ -2262,6 +2321,9 @@
           if (isRealEstate) {
             document.getElementById("listingType").value = row ? getListingType(row) : "sale";
             document.getElementById("propertyStatus").value = row ? getStatus(row) : (activeItemFieldSet.statusOptions[0] || "available");
+            document.getElementById("propertyParent").value = row ? UnganiClientShared.getValue(row, ["parent_item_id"], "") : "";
+            document.getElementById("propertyCommissionType").value = row ? UnganiClientShared.getValue(row, ["management_commission_type"], "") : "";
+            toggleBuildingFieldsVisibility();
           } else {
             document.getElementById("itemTypeSelect").value = row ? UnganiClientShared.getValue(row, ["item_type", "type"], "") : (businessPreset.itemTypes[0] || "Item");
             document.getElementById("itemStatusSelect").value = row ? getStatus(row) : (activeItemFieldSet.statusOptions[0] || "available");
@@ -2387,6 +2449,20 @@
       `;
     }
 
+    function toggleBuildingFieldsVisibility() {
+      const parentSelect = document.getElementById("propertyParent");
+      if (!parentSelect) return;
+
+      const isBuilding = !parentSelect.value;
+      const floorsWrap = document.getElementById("buildingFieldsWrap");
+      const commissionTypeWrap = document.getElementById("commissionTypeWrap");
+      const commissionValueWrap = document.getElementById("commissionValueWrap");
+
+      if (floorsWrap) floorsWrap.style.display = isBuilding ? "" : "none";
+      if (commissionTypeWrap) commissionTypeWrap.style.display = isBuilding ? "" : "none";
+      if (commissionValueWrap) commissionValueWrap.style.display = isBuilding ? "" : "none";
+    }
+
     async function saveItem(event) {
       event.preventDefault();
 
@@ -2443,6 +2519,23 @@
           payload.item_category = listingType;
           payload.category = listingType;
           payload.listing_type = listingType;
+
+          const parentPropertyId = UnganiClientShared.value("propertyParent") || null;
+          payload.parent_item_id = parentPropertyId;
+
+          if (!parentPropertyId) {
+            payload.total_floors = UnganiClientShared.value("propertyTotalFloors") || null;
+            payload.management_commission_type = UnganiClientShared.value("propertyCommissionType") || null;
+            payload.management_commission_value = UnganiClientShared.value("propertyCommissionValue") || null;
+          } else {
+            // A unit doesn't carry its own management agreement - that's
+            // the parent building's concern. Clearing these keeps a unit
+            // that used to be a standalone building (then got assigned a
+            // parent) from leaving stale commission data behind.
+            payload.total_floors = null;
+            payload.management_commission_type = null;
+            payload.management_commission_value = null;
+          }
         } else {
           const itemType = UnganiClientShared.value("itemTypeSelect") || (businessPreset.itemTypes[0] || "Item");
           payload.item_type = itemType;

@@ -3465,7 +3465,7 @@
 
   const REAL_ESTATE_ITEM_FIELD_SET = {
     valueLabel: "Price / Value",
-    statusOptions: ["available", "reserved", "under negotiation", "sold", "rented", "maintenance", "inactive"],
+    statusOptions: ["available", "occupied", "vacant", "reserved", "under negotiation", "sold", "rented", "maintenance", "inactive"],
     fields: [
       { id: "property_location", label: "Location", type: "text", column: "property_location", placeholder: "Example: Nyali, Mombasa" },
       { id: "bedrooms", label: "Bedrooms", type: "number", column: "bedrooms", placeholder: "Example: 3" },

@@ -58,6 +58,7 @@
     let editingMoneyOriginalStatus = "";
     let isRealEstate = false;
     let personOptions = [];
+    let propertyItemOptions = [];
     let teamMemberOptions = [];
     let payeeOptions = [];
     let sectionOptions = [];
@@ -366,6 +367,10 @@
         loadPersonOptions()
       ];
 
+      if (isRealEstate) {
+        loaders.push(loadPropertyItemOptions());
+      }
+
       await Promise.all(loaders);
 
       renderMoneyPage();
@@ -458,6 +463,29 @@
       } catch (error) {
         console.warn("Person options skipped:", error.message);
         personOptions = [];
+      }
+    }
+
+    // Property/Unit financial rollup (real client feedback): a transaction
+    // needs to be linkable to a specific building or unit, not just a
+    // person, so the property's own rollup can sum real payments instead
+    // of relying on the free-text property_name column. Real estate only
+    // for now - the underlying related_item_id column and pattern are
+    // generic, so this can extend to other hierarchical-inventory business
+    // types later without a new migration.
+    async function loadPropertyItemOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, property_name, item_name, name, parent_item_id")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("property_name", { ascending: true });
+
+        propertyItemOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Property item options skipped:", error.message);
+        propertyItemOptions = [];
       }
     }
 
@@ -556,6 +584,62 @@
         }
       } catch (error) {
         console.warn("Could not load linked payee:", error.message);
+      }
+    }
+
+    // M-Pesa auto-matching, Phase 1 (real client feedback): the client's
+    // prior system auto-matched an incoming M-Pesa payment's code to the
+    // correct tenant/person, showing "Not assigned" when nothing matched.
+    // No inbound webhook exists yet (that needs the tenant's own Daraja
+    // credentials - not built) so this phase matches on manual entry:
+    // owner types the phone the SMS shows, we suggest the person, never
+    // guess if it's ambiguous. Same normalizer shape as
+    // api/mpesa-stk-push.js's normalizePhoneNumber() so "0712345678",
+    // "712345678", and "+254712345678" all resolve to one canonical form.
+    function normalizeMoneyPhone(raw) {
+      const digits = String(raw || "").replace(/[^\d]/g, "");
+      if (!digits) return "";
+      if (digits.length === 9) return "254" + digits;
+      if (digits.length === 10 && digits.charAt(0) === "0") return "254" + digits.slice(1);
+      if (digits.length === 12 && digits.slice(0, 3) === "254") return digits;
+      return digits;
+    }
+
+    function toggleMpesaFieldsVisibility() {
+      const isMpesa = UnganiClientShared.value("moneyMethod") === "M-Pesa";
+      const codeWrap = document.getElementById("moneyMpesaCodeWrap");
+      const phoneWrap = document.getElementById("moneyPayerPhoneWrap");
+      if (codeWrap) codeWrap.style.display = isMpesa ? "" : "none";
+      if (phoneWrap) phoneWrap.style.display = isMpesa ? "" : "none";
+    }
+
+    function handlePayerPhoneChange() {
+      const statusEl = document.getElementById("moneyPayerPhoneMatchStatus");
+      const relatedSelect = document.getElementById("moneyRelatedPerson");
+      if (!statusEl || !relatedSelect) return;
+
+      const normalizedInput = normalizeMoneyPhone(UnganiClientShared.value("moneyPayerPhone"));
+
+      if (!normalizedInput) {
+        statusEl.textContent = "";
+        return;
+      }
+
+      const matches = personOptions.filter(function (person) {
+        const personPhone = normalizeMoneyPhone(UnganiClientShared.getValue(person, ["phone", "phone_number"], ""));
+        return personPhone && personPhone === normalizedInput;
+      });
+
+      if (matches.length === 1) {
+        relatedSelect.value = matches[0].id;
+        statusEl.style.color = "#1e9e5a";
+        statusEl.textContent = "Matched to " + UnganiClientShared.getValue(matches[0], ["full_name", "name"], "this person") + ".";
+      } else if (matches.length === 0) {
+        statusEl.style.color = "#b58900";
+        statusEl.textContent = "Not assigned — no person with this phone number found. Select one manually below, or leave unassigned to reconcile later.";
+      } else {
+        statusEl.style.color = "#b58900";
+        statusEl.textContent = matches.length + " people share this phone number — please select the correct one below rather than guess.";
       }
     }
 
@@ -1822,7 +1906,10 @@
                       ${row.vat_applicable ? `<div><span class="ungani-badge blue" style="margin-top:4px;" title="VAT ${UnganiClientShared.safe(row.vat_rate)}% included (${UnganiClientShared.safe(formatNative(row.vat_amount || 0, row.currency))})">VAT</span></div>` : ""}
                       ${row.withholding_applicable ? `<div><span class="ungani-badge gold" style="margin-top:4px;" title="Withholding tax deducted (${UnganiClientShared.safe(formatNative(row.withholding_amount || 0, row.currency))})">WHT</span></div>` : ""}
                     </td>
-                    <td>${UnganiClientShared.safe(method || "—")}</td>
+                    <td>
+                      ${UnganiClientShared.safe(method || "—")}
+                      ${method === "M-Pesa" && UnganiClientShared.getValue(row, ["payer_phone"], "") && !relatedPersonId ? '<div><span class="ungani-badge" style="margin-top:4px;background:#fdf0d5;color:#9a6a00;" title="M-Pesa payment received but no matching person found - link it manually.">Not assigned</span></div>' : ""}
+                    </td>
                     <td>${statusBadge(status)}</td>
                     <td>${UnganiClientShared.safe(notes || (relatedPersonLabel ? "Tenant: " + relatedPersonLabel : (relatedTeamMemberLabel ? "Staff: " + relatedTeamMemberLabel : (relatedPayeeLabel ? "Payee: " + relatedPayeeLabel : "—"))))}</td>
                     <td>
@@ -2232,7 +2319,7 @@
 
             <div>
               <label for="moneyMethod">Payment Method</label>
-              <select id="moneyMethod">
+              <select id="moneyMethod" onchange="toggleMpesaFieldsVisibility()">
                 <option value="">Select Method</option>
                 <option value="M-Pesa">M-Pesa</option>
                 <option value="Bank Transfer">Bank Transfer</option>
@@ -2241,6 +2328,17 @@
                 <option value="Cheque">Cheque</option>
                 <option value="Other">Other</option>
               </select>
+            </div>
+
+            <div id="moneyMpesaCodeWrap" style="display:none;">
+              <label for="moneyMpesaCode">M-Pesa Code</label>
+              <input id="moneyMpesaCode" autocomplete="off" placeholder="Example: QCE7X8YZ12" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["reference_no"], "")) : ""}" />
+            </div>
+
+            <div id="moneyPayerPhoneWrap" style="display:none;">
+              <label for="moneyPayerPhone">Payer Phone Number</label>
+              <input id="moneyPayerPhone" autocomplete="off" placeholder="+254..." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["payer_phone"], "")) : ""}" onchange="handlePayerPhoneChange()" />
+              <p id="moneyPayerPhoneMatchStatus" class="ungani-small" style="margin-top:4px;"></p>
             </div>
 
             <div>
@@ -2264,6 +2362,20 @@
                 }).join("")}
               </select>
             </div>
+
+            ${isRealEstate ? `
+              <div>
+                <label for="moneyRelatedProperty">Related Property / Unit</label>
+                <select id="moneyRelatedProperty">
+                  <option value="">Not linked</option>
+                  ${propertyItemOptions.map(function (candidate) {
+                    const label = UnganiClientShared.getValue(candidate, ["property_name", "item_name", "name"], "Property");
+                    const suffix = candidate.parent_item_id ? " (Unit)" : "";
+                    return `<option value="${UnganiClientShared.attr(candidate.id)}">${UnganiClientShared.safe(label + suffix)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
 
             <div id="moneyTeamMemberWrap">
               <label for="moneyPaidTo">Paid To (optional)</label>
@@ -2378,9 +2490,14 @@
 
           document.getElementById("moneyMethod").value = row ? UnganiClientShared.getValue(row, ["payment_method"], "") : "";
           document.getElementById("moneyStatus").value = row ? UnganiClientShared.getValue(row, ["status"], "completed") : "completed";
+          toggleMpesaFieldsVisibility();
 
           if (document.getElementById("moneyRelatedPerson")) {
             document.getElementById("moneyRelatedPerson").value = row ? UnganiClientShared.getValue(row, ["related_person_id"], "") : "";
+          }
+
+          if (document.getElementById("moneyRelatedProperty")) {
+            document.getElementById("moneyRelatedProperty").value = row ? UnganiClientShared.getValue(row, ["related_item_id"], "") : "";
           }
 
           if (document.getElementById("moneyPaidTo")) {
@@ -2717,6 +2834,15 @@ const payload = {
 };
 
       payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
+      payload.related_item_id = isRealEstate ? (UnganiClientShared.value("moneyRelatedProperty") || null) : null;
+
+      if (payload.payment_method === "M-Pesa") {
+        payload.reference_no = UnganiClientShared.value("moneyMpesaCode") || null;
+        payload.payer_phone = UnganiClientShared.value("moneyPayerPhone") || null;
+      } else {
+        payload.reference_no = null;
+        payload.payer_phone = null;
+      }
 
       const paidToValue = broadType === "expense" ? (UnganiClientShared.value("moneyPaidTo") || "") : "";
       payload.related_team_member_id = paidToValue.indexOf("payee:") !== 0 ? (paidToValue || null) : null;
