@@ -2613,6 +2613,24 @@
         return runItemStockDetailIntent(text);
       }
 
+      // Payments-People feedback (real client meeting, universal across
+      // every business type): "payment history for X" / "how much has X
+      // paid" - same named-lookup shape as item stock detail above, so
+      // checked before any bare "payment"/"paid" aggregate phrase for the
+      // same collision-avoidance reason. related_person_id already links
+      // transactions to client_people for any tenant type.
+      if (isPaymentHistoryDetailPhrase(text)) {
+        return runPaymentHistoryDetailIntent(text);
+      }
+
+      // Property/Unit financial rollup (real estate only): "rollup for X"
+      // / "how much does X make" / "net income for X" - reads the same
+      // Gross Revenue -> Commission -> Expenses -> Net figures shown on
+      // the property's own profile page, via related_item_id.
+      if (isRealEstateBusiness() && isPropertyRollupPhrase(text)) {
+        return runPropertyRollupIntent(text);
+      }
+
       // Live-data stock question ("stock", "inventory", "restock") -
       // checked ahead of the static Stock Tracking HELP_TOPICS answer so
       // a bare mention gets real low/out-of-stock numbers, not just an
@@ -2724,6 +2742,13 @@
         }
 
         return runPayeeQueryIntent();
+      }
+
+      // M-Pesa unassigned-payment aggregate (M-Pesa auto-matching, real
+      // client meeting feedback) - bare-keyword aggregate check, grouped
+      // with the other financial-oversight checks above.
+      if (isUnassignedMpesaPhrase(text)) {
+        return runUnassignedMpesaIntent();
       }
 
       // Live-data approvals question ("approval", "approvals", "needs my
@@ -4129,6 +4154,257 @@
     return { spoken: matched.length === 1 ? "Stock details for " + matched[0]._niaItemName + "." : matched.length + " items matched that name." };
   }
 
+  // ---- Payments <-> People conversational lookup (real client meeting
+  // feedback, universal across every business type) ----
+  // "payment history for X" / "how much has X paid" - same named-lookup
+  // shape as isItemStockDetailPhrase above, checked ahead of any bare
+  // payment/paid phrase for the same collision-avoidance reason.
+  // related_person_id already links transactions to client_people for
+  // any tenant type.
+  function extractPaymentHistoryQuery(text) {
+    let m = text.match(/payment(?:s)?\s+history\s+(?:for|of|with)\s+([^.?!]+)/i);
+    let name = m && m[1] ? m[1].trim() : null;
+
+    if (!name) {
+      m = text.match(/how much has\s+([^.?!]+?)\s+paid/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/payments?\s+(?:from|to)\s+([^.?!]+)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/([^.?!]+?)(?:'s|s')\s+payment(?:s)?(?:\s+history)?/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    return name || null;
+  }
+
+  function isPaymentHistoryDetailPhrase(text) {
+    const lower = text.toLowerCase();
+    if (!["payment", "paid"].some(function (w) { return lower.indexOf(w) !== -1; })) return false;
+    return !!extractPaymentHistoryQuery(text);
+  }
+
+  async function runPaymentHistoryDetailIntent(text) {
+    if (state.surface === "admin") {
+      addNiaMessage("Payment history lookups aren't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    const nameQuery = extractPaymentHistoryQuery(text);
+
+    addNiaMessage("Checking payment history for " + safe(nameQuery) + "...");
+
+    let people;
+    try {
+      const response = await state.supabaseClient
+        .from("client_people")
+        .select("id, full_name")
+        .eq("tenant_id", state.tenantId)
+        .limit(500);
+      if (response.error) throw new Error(response.error.message);
+      people = response.data || [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const matched = matchRecordsByName(people, "full_name", nameQuery);
+
+    if (!matched.length) {
+      addNiaMessage(
+        "I couldn't find anyone called \"" + safe(nameQuery) + "\". Check the spelling, or open " +
+        goldLink("my-people.html", "People") + "."
+      );
+      return { spoken: "I couldn't find anyone by that name." };
+    }
+
+    const person = matched[0];
+    const multipleNote = matched.length > 1 ? " (matched the first of " + matched.length + " similar names)" : "";
+
+    let transactions;
+    try {
+      const response = await state.supabaseClient
+        .from("transactions")
+        .select("transaction_type, type, amount, amount_kes")
+        .eq("tenant_id", state.tenantId)
+        .eq("related_person_id", person.id)
+        .is("deleted_at", null)
+        .limit(1000);
+      if (response.error) throw new Error(response.error.message);
+      transactions = response.data || [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (!transactions.length) {
+      addNiaMessage(
+        "No payments recorded yet for " + safe(person.full_name) + multipleNote + ". Add one from " +
+        goldLink("my-money.html", "Money") + "."
+      );
+      return { spoken: "No payments recorded yet for " + person.full_name + "." };
+    }
+
+    let totalIn = 0;
+    let totalOut = 0;
+    transactions.forEach(function (row) {
+      const amount = Number(pickField(row, ["amount_kes", "amount"], 0) || 0);
+      const type = String(pickField(row, ["transaction_type", "type"], "") || "").toLowerCase();
+      if (type.indexOf("expense") !== -1) totalOut += amount; else totalIn += amount;
+    });
+    const net = totalIn - totalOut;
+
+    const html =
+      "<strong>" + safe(person.full_name) + "'s payment history</strong>" + multipleNote +
+      "<div style=\"margin-top:8px;\"><i data-lucide=\"wallet\"></i> Total In: " + safe(formatNiaKES(totalIn)) + "</div>" +
+      "<div style=\"margin-top:6px;\"><i data-lucide=\"wallet\"></i> Total Out: " + safe(formatNiaKES(totalOut)) + "</div>" +
+      "<div style=\"margin-top:6px;font-weight:800;\">Net: " + safe(formatNiaKES(net)) + "</div>" +
+      "<div style=\"margin-top:8px;\">" + goldLink("my-people.html?highlight=" + encodeURIComponent(person.id), "See full payment history →") + "</div>";
+
+    addNiaMessage(html);
+
+    return { spoken: person.full_name + "'s net payments: " + formatNiaKES(net) + "." };
+  }
+
+  // ---- Property/Unit financial rollup conversational lookup (real
+  // estate only) ----
+  // "rollup for X" / "net income for X" / "how much does X make" - reuses
+  // the exact Gross Revenue -> Commission -> Expenses -> Net computation
+  // already shown on the property's own profile page
+  // (my-item-profile.html's loadPropertyRollup()), driven by
+  // related_item_id (Property/Unit hierarchy, real client meeting
+  // feedback). Real-estate only, so the caller in interpretMessage gates
+  // this behind isRealEstateBusiness() before ever checking the phrase.
+  function extractPropertyRollupQuery(text) {
+    let m = text.match(/(?:financial\s+)?roll[\s-]?up\s+(?:for|of)\s+([^.?!]+)/i);
+    let name = m && m[1] ? m[1].trim() : null;
+
+    if (!name) {
+      m = text.match(/net\s+(?:income|revenue|to owner)\s+(?:for|of)\s+([^.?!]+)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/how much does\s+([^.?!]+?)\s+(?:make|net|earn)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/([^.?!]+?)(?:'s|s')\s+(?:roll[\s-]?up|net income)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    return name || null;
+  }
+
+  function isPropertyRollupPhrase(text) {
+    const lower = text.toLowerCase();
+    if (!["rollup", "roll-up", "roll up", "net income", "net to owner", "how much does"].some(function (w) { return lower.indexOf(w) !== -1; })) {
+      return false;
+    }
+    return !!extractPropertyRollupQuery(text);
+  }
+
+  async function runPropertyRollupIntent(text) {
+    if (state.surface === "admin") {
+      addNiaMessage("Property financial rollups aren't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    const nameQuery = extractPropertyRollupQuery(text);
+
+    addNiaMessage("Pulling the financial rollup for " + safe(nameQuery) + "...");
+
+    let items;
+    try {
+      const response = await state.supabaseClient
+        .from("business_items")
+        .select("id, property_name, item_name, name, parent_item_id, management_commission_type, management_commission_value")
+        .eq("tenant_id", state.tenantId)
+        .limit(500);
+      if (response.error) throw new Error(response.error.message);
+      items = response.data || [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const withNames = items.map(function (row) {
+      return Object.assign({}, row, { _niaItemName: pickField(row, ["property_name", "item_name", "name"], "") });
+    });
+    const matched = matchRecordsByName(withNames, "_niaItemName", nameQuery);
+
+    if (!matched.length) {
+      addNiaMessage(
+        "I couldn't find a property called \"" + safe(nameQuery) + "\". Check the spelling, or open " +
+        goldLink("my-items.html", "Items") + "."
+      );
+      return { spoken: "I couldn't find a property by that name." };
+    }
+
+    const property = matched[0];
+    const multipleNote = matched.length > 1 ? " (matched the first of " + matched.length + " similar names)" : "";
+
+    const unitIds = withNames.filter(function (row) { return row.parent_item_id === property.id; }).map(function (row) { return row.id; });
+    const allIds = [property.id].concat(unitIds);
+
+    let transactions;
+    try {
+      const response = await state.supabaseClient
+        .from("transactions")
+        .select("transaction_type, amount, amount_kes")
+        .eq("tenant_id", state.tenantId)
+        .in("related_item_id", allIds)
+        .is("deleted_at", null)
+        .limit(1000);
+      if (response.error) throw new Error(response.error.message);
+      transactions = response.data || [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    let grossRevenue = 0;
+    let expenses = 0;
+    transactions.forEach(function (row) {
+      const amount = Number(pickField(row, ["amount_kes", "amount"], 0) || 0);
+      const type = String(pickField(row, ["transaction_type"], "") || "").toLowerCase();
+      if (type.indexOf("income") !== -1 || type.indexOf("revenue") !== -1) grossRevenue += amount; else expenses += amount;
+    });
+
+    const commissionType = property.management_commission_type || "";
+    const commissionValue = Number(property.management_commission_value || 0);
+    const commission = commissionType === "percentage" ? grossRevenue * (commissionValue / 100) : (commissionType === "flat" ? commissionValue : 0);
+    const netToOwner = grossRevenue - commission - expenses;
+
+    const html =
+      "<strong>" + safe(property._niaItemName) + "'s financial rollup</strong>" + multipleNote +
+      "<div style=\"margin-top:8px;\">Gross Revenue: " + safe(formatNiaKES(grossRevenue)) + "</div>" +
+      "<div style=\"margin-top:6px;\">Management Commission" + (commissionType ? " (" + (commissionType === "percentage" ? commissionValue + "%" : formatNiaKES(commissionValue)) + ")" : " (not set)") + ": - " + safe(formatNiaKES(commission)) + "</div>" +
+      "<div style=\"margin-top:6px;\">Expenses: - " + safe(formatNiaKES(expenses)) + "</div>" +
+      "<div style=\"margin-top:6px;font-weight:800;\">Net to Owner: " + safe(formatNiaKES(netToOwner)) + "</div>" +
+      "<div style=\"margin-top:8px;\">" + goldLink("my-item-profile.html?id=" + encodeURIComponent(property.id), "Open full profile →") + "</div>";
+
+    addNiaMessage(html);
+
+    return { spoken: property._niaItemName + "'s net to owner: " + formatNiaKES(netToOwner) + "." };
+  }
+
   // ---- Phase 2 conversational retrieval: Quotation detail by name/reference ----
   // Checked before the existing bare-keyword isQuotationQueryPhrase
   // (aggregate summary) for the same collision-avoidance reason as
@@ -4483,6 +4759,75 @@
     addNiaMessage(html);
 
     return { spoken: activePayees.length + " active payee" + (activePayees.length === 1 ? "" : "s") + "." };
+  }
+
+  // ---- M-Pesa unassigned-payment aggregate (M-Pesa auto-matching, real
+  // client meeting feedback) ----
+  // Bare-keyword aggregate, no name to extract, so it lives with the
+  // other financial-oversight checks (Debtors/Payees) rather than the
+  // named-lookup group above.
+  function isUnassignedMpesaPhrase(text) {
+    const lower = text.toLowerCase();
+    const mentionsMpesa = lower.indexOf("m-pesa") !== -1 || lower.indexOf("mpesa") !== -1;
+    const mentionsUnassigned = lower.indexOf("unassigned") !== -1 || lower.indexOf("not assigned") !== -1 || lower.indexOf("unmatched") !== -1;
+    return mentionsMpesa && mentionsUnassigned;
+  }
+
+  async function runUnassignedMpesaIntent() {
+    if (state.surface === "admin") {
+      addNiaMessage("M-Pesa matching isn't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking for M-Pesa payments that haven't been matched to anyone...");
+
+    let rows;
+    try {
+      const response = await state.supabaseClient
+        .from("transactions")
+        .select("id, amount, amount_kes, payer_phone, reference_no, transaction_date")
+        .eq("tenant_id", state.tenantId)
+        .eq("payment_method", "M-Pesa")
+        .not("payer_phone", "is", null)
+        .is("related_person_id", null)
+        .is("deleted_at", null)
+        .order("transaction_date", { ascending: false })
+        .limit(200);
+      if (response.error) throw new Error(response.error.message);
+      rows = response.data || [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    if (!rows.length) {
+      addNiaMessage("Every M-Pesa payment is matched to someone right now — nothing unassigned.");
+      return { spoken: "No unassigned M-Pesa payments." };
+    }
+
+    const total = rows.reduce(function (sum, row) { return sum + (Number(pickField(row, ["amount_kes", "amount"], 0)) || 0); }, 0);
+    const shown = rows.slice(0, 5);
+    const listHtml = shown.map(function (row) {
+      const amount = Number(pickField(row, ["amount_kes", "amount"], 0) || 0);
+      return "<div style=\"margin-top:6px;\">" + safe(row.payer_phone) + " — " + safe(formatNiaKES(amount)) + (row.reference_no ? " (" + safe(row.reference_no) + ")" : "") + "</div>";
+    }).join("");
+    const remaining = rows.length - shown.length;
+
+    const html =
+      "<strong>Unassigned M-Pesa payments</strong>" +
+      "<div style=\"margin-top:8px;\">" + rows.length + " payment" + (rows.length === 1 ? "" : "s") + " totalling " + safe(formatNiaKES(total)) + " with no matching person</div>" +
+      listHtml +
+      (remaining > 0 ? "<div style=\"margin-top:6px;\">+ " + remaining + " more</div>" : "") +
+      "<div style=\"margin-top:8px;\">" + goldLink("my-money.html", "Open Money to assign them →") + "</div>";
+
+    addNiaMessage(html);
+
+    return { spoken: rows.length + " unassigned M-Pesa payment" + (rows.length === 1 ? "" : "s") + " totalling " + formatNiaKES(total) + "." };
   }
 
   // ---- Approvals (internal controls v1, sql/approvals-internal-controls-v1.sql) ----
