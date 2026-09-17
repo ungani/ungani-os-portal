@@ -500,6 +500,35 @@
       `;
     }
 
+    // Sale-side categories come from the real estate "Sales" section's own
+    // incomeCategories/expenseCategories (ungani-business-config.js) -
+    // single source of truth, not a second hardcoded list, so this stays
+    // correct if that section's categories ever change. Anything not in
+    // this set (Rental Income, Booking Deposit, Management Fee, Property
+    // Maintenance, or a freeform category) is treated as recurring rather
+    // than a one-time sale.
+    function getRealEstateSalesCategorySets() {
+      const fallback = { income: ["Property Sale"], expense: ["Agent Commission", "Marketing / Advertising", "Legal / Documentation Fees"] };
+      if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") return fallback;
+
+      const type = UnganiBusinessConfig.resolve(currentContext.tenant);
+      const salesSection = type && Array.isArray(type.sections)
+        ? type.sections.filter(function (s) { return s.key === "sales"; })[0]
+        : null;
+
+      return {
+        income: (salesSection && salesSection.incomeCategories) || fallback.income,
+        expense: (salesSection && salesSection.expenseCategories) || fallback.expense
+      };
+    }
+
+    // Split into two blocks rather than one blended "Gross Revenue" figure -
+    // a one-time property sale and recurring monthly rent are financially
+    // different things and blending them (the old behavior) made a single
+    // big sale look like an ongoing rental run-rate. Agent Commission is
+    // its own line (real client meeting feedback) rather than a % rate,
+    // since a sale commission is a real negotiated expense that's already
+    // recorded, not a stored rate like the rental management commission.
     async function loadPropertyRollup(buildingId, unitIds) {
       const el = document.getElementById("propertyRollupCard");
       if (!el) return;
@@ -511,7 +540,7 @@
       try {
         response = await currentContext.supabaseClient
           .from("transactions")
-          .select("transaction_type, amount, amount_kes")
+          .select("transaction_type, amount, amount_kes, category")
           .eq("tenant_id", currentContext.tenantId)
           .in("related_item_id", allIds)
           .is("deleted_at", null);
@@ -521,38 +550,77 @@
       }
 
       const rows = (response && response.data) || [];
+      const salesCategories = getRealEstateSalesCategorySets();
 
-      let grossRevenue = 0;
-      let expenses = 0;
+      let rentalIncome = 0;
+      let rentalExpenses = 0;
+      let saleProceeds = 0;
+      let agentCommission = 0;
+      let otherSaleCosts = 0;
 
       rows.forEach(function (row) {
         const amount = Number(UnganiClientShared.getValue(row, ["amount_kes", "amount"], 0) || 0);
         const type = String(UnganiClientShared.getValue(row, ["transaction_type"], "") || "").toLowerCase();
-        if (type.indexOf("income") !== -1 || type.indexOf("revenue") !== -1) grossRevenue += amount; else expenses += amount;
+        const category = String(UnganiClientShared.getValue(row, ["category"], "") || "");
+        const isIncome = type.indexOf("income") !== -1 || type.indexOf("revenue") !== -1;
+
+        if (isIncome && salesCategories.income.indexOf(category) !== -1) {
+          saleProceeds += amount;
+        } else if (!isIncome && category === "Agent Commission") {
+          agentCommission += amount;
+        } else if (!isIncome && salesCategories.expense.indexOf(category) !== -1) {
+          otherSaleCosts += amount;
+        } else if (isIncome) {
+          rentalIncome += amount;
+        } else {
+          rentalExpenses += amount;
+        }
       });
 
       const commissionType = UnganiClientShared.getValue(currentItem, ["management_commission_type"], "");
       const commissionValue = Number(UnganiClientShared.getValue(currentItem, ["management_commission_value"], 0) || 0);
-      const commission = commissionType === "percentage" ? grossRevenue * (commissionValue / 100) : (commissionType === "flat" ? commissionValue : 0);
-      const netToOwner = grossRevenue - commission - expenses;
+      const rentalCommission = commissionType === "percentage" ? rentalIncome * (commissionValue / 100) : (commissionType === "flat" ? commissionValue : 0);
+      const netRentalIncome = rentalIncome - rentalCommission - rentalExpenses;
 
-      el.innerHTML = `
+      const netSaleProceeds = saleProceeds - agentCommission - otherSaleCosts;
+      const hasSaleActivity = saleProceeds > 0 || agentCommission > 0 || otherSaleCosts > 0;
+
+      const rentalBlockHtml = `
         <div class="ungani-card" style="margin-top:18px;">
           <div class="ungani-section-title">
             <div>
-              <h3>Financial Rollup</h3>
-              <p class="ungani-small">Automatically calculated from every payment linked to this property and its units.</p>
+              <h3>Rental Performance</h3>
+              <p class="ungani-small">Recurring rent, deposits and management fees linked to this property and its units.</p>
             </div>
           </div>
           <div class="detail-grid">
-            <div class="detail-row"><span>Gross Revenue</span><span>${UnganiClientShared.safe(UnganiClientShared.formatKES(grossRevenue))}</span></div>
-            <div class="detail-row"><span>Management Commission${commissionType ? " (" + (commissionType === "percentage" ? commissionValue + "%" : UnganiClientShared.formatKES(commissionValue)) + ")" : " (not set)"}</span><span>- ${UnganiClientShared.safe(UnganiClientShared.formatKES(commission))}</span></div>
-            <div class="detail-row"><span>Expenses</span><span>- ${UnganiClientShared.safe(UnganiClientShared.formatKES(expenses))}</span></div>
-            <div class="detail-row" style="font-weight:800;border-top:1px solid var(--border,#e2e5ea);padding-top:8px;margin-top:4px;"><span>Net to Owner</span><span>${UnganiClientShared.safe(UnganiClientShared.formatKES(netToOwner))}</span></div>
+            <div class="detail-row"><span>Gross Rental Income</span><span>${UnganiClientShared.safe(UnganiClientShared.formatKES(rentalIncome))}</span></div>
+            <div class="detail-row"><span>Management Commission${commissionType ? " (" + (commissionType === "percentage" ? commissionValue + "%" : UnganiClientShared.formatKES(commissionValue)) + ")" : " (not set)"}</span><span>- ${UnganiClientShared.safe(UnganiClientShared.formatKES(rentalCommission))}</span></div>
+            <div class="detail-row"><span>Expenses</span><span>- ${UnganiClientShared.safe(UnganiClientShared.formatKES(rentalExpenses))}</span></div>
+            <div class="detail-row" style="font-weight:800;border-top:1px solid var(--border,#e2e5ea);padding-top:8px;margin-top:4px;"><span>Net Rental Income</span><span>${UnganiClientShared.safe(UnganiClientShared.formatKES(netRentalIncome))}</span></div>
           </div>
           ${!commissionType ? '<p class="ungani-small" style="margin-top:8px;opacity:.75;">Set a management commission rate on this property\'s Edit Details to include it here.</p>' : ""}
         </div>
       `;
+
+      const saleBlockHtml = hasSaleActivity ? `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Sale Proceeds</h3>
+              <p class="ungani-small">A one-time sale, kept separate from the recurring rental figures above.</p>
+            </div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-row"><span>Sale Price</span><span>${UnganiClientShared.safe(UnganiClientShared.formatKES(saleProceeds))}</span></div>
+            <div class="detail-row"><span>Agent Commission</span><span>- ${UnganiClientShared.safe(UnganiClientShared.formatKES(agentCommission))}</span></div>
+            <div class="detail-row"><span>Marketing / Legal Costs</span><span>- ${UnganiClientShared.safe(UnganiClientShared.formatKES(otherSaleCosts))}</span></div>
+            <div class="detail-row" style="font-weight:800;border-top:1px solid var(--border,#e2e5ea);padding-top:8px;margin-top:4px;"><span>Net Sale Proceeds</span><span>${UnganiClientShared.safe(UnganiClientShared.formatKES(netSaleProceeds))}</span></div>
+          </div>
+        </div>
+      ` : "";
+
+      el.innerHTML = rentalBlockHtml + saleBlockHtml;
     }
 
     function renderItemProfile(row) {

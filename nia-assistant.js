@@ -4315,6 +4315,26 @@
     return !!extractPropertyRollupQuery(text);
   }
 
+  // Same single-source-of-truth lookup as my-item-profile.html's
+  // getRealEstateSalesCategorySets() - reads the real estate "Sales"
+  // section's own incomeCategories/expenseCategories rather than a second
+  // hardcoded list, so both surfaces agree on what counts as a one-time
+  // sale vs recurring rental income.
+  function getRealEstateSalesCategorySets() {
+    const fallback = { income: ["Property Sale"], expense: ["Agent Commission", "Marketing / Advertising", "Legal / Documentation Fees"] };
+    if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") return fallback;
+
+    const type = UnganiBusinessConfig.resolve(state.tenant);
+    const salesSection = type && Array.isArray(type.sections)
+      ? type.sections.filter(function (s) { return s.key === "sales"; })[0]
+      : null;
+
+    return {
+      income: (salesSection && salesSection.incomeCategories) || fallback.income,
+      expense: (salesSection && salesSection.expenseCategories) || fallback.expense
+    };
+  }
+
   async function runPropertyRollupIntent(text) {
     if (state.surface === "admin") {
       addNiaMessage("Property financial rollups aren't available on the admin side yet.");
@@ -4367,7 +4387,7 @@
     try {
       const response = await state.supabaseClient
         .from("transactions")
-        .select("transaction_type, amount, amount_kes")
+        .select("transaction_type, amount, amount_kes, category")
         .eq("tenant_id", state.tenantId)
         .in("related_item_id", allIds)
         .is("deleted_at", null)
@@ -4379,30 +4399,71 @@
       return { spoken: "I couldn't check that right now." };
     }
 
-    let grossRevenue = 0;
-    let expenses = 0;
+    // Same Rental-vs-Sale split as my-item-profile.html's loadPropertyRollup -
+    // sale-side categories come from the real estate "Sales" section's own
+    // incomeCategories/expenseCategories, not a second hardcoded list, so a
+    // one-time sale never gets blended into the recurring rental numbers.
+    const salesCategories = getRealEstateSalesCategorySets();
+
+    let rentalIncome = 0;
+    let rentalExpenses = 0;
+    let saleProceeds = 0;
+    let agentCommission = 0;
+    let otherSaleCosts = 0;
+
     transactions.forEach(function (row) {
       const amount = Number(pickField(row, ["amount_kes", "amount"], 0) || 0);
       const type = String(pickField(row, ["transaction_type"], "") || "").toLowerCase();
-      if (type.indexOf("income") !== -1 || type.indexOf("revenue") !== -1) grossRevenue += amount; else expenses += amount;
+      const category = String(pickField(row, ["category"], "") || "");
+      const isIncome = type.indexOf("income") !== -1 || type.indexOf("revenue") !== -1;
+
+      if (isIncome && salesCategories.income.indexOf(category) !== -1) {
+        saleProceeds += amount;
+      } else if (!isIncome && category === "Agent Commission") {
+        agentCommission += amount;
+      } else if (!isIncome && salesCategories.expense.indexOf(category) !== -1) {
+        otherSaleCosts += amount;
+      } else if (isIncome) {
+        rentalIncome += amount;
+      } else {
+        rentalExpenses += amount;
+      }
     });
 
     const commissionType = property.management_commission_type || "";
     const commissionValue = Number(property.management_commission_value || 0);
-    const commission = commissionType === "percentage" ? grossRevenue * (commissionValue / 100) : (commissionType === "flat" ? commissionValue : 0);
-    const netToOwner = grossRevenue - commission - expenses;
+    const rentalCommission = commissionType === "percentage" ? rentalIncome * (commissionValue / 100) : (commissionType === "flat" ? commissionValue : 0);
+    const netRentalIncome = rentalIncome - rentalCommission - rentalExpenses;
 
-    const html =
+    const netSaleProceeds = saleProceeds - agentCommission - otherSaleCosts;
+    const hasSaleActivity = saleProceeds > 0 || agentCommission > 0 || otherSaleCosts > 0;
+
+    let html =
       "<strong>" + safe(property._niaItemName) + "'s financial rollup</strong>" + multipleNote +
-      "<div style=\"margin-top:8px;\">Gross Revenue: " + safe(formatNiaKES(grossRevenue)) + "</div>" +
-      "<div style=\"margin-top:6px;\">Management Commission" + (commissionType ? " (" + (commissionType === "percentage" ? commissionValue + "%" : formatNiaKES(commissionValue)) + ")" : " (not set)") + ": - " + safe(formatNiaKES(commission)) + "</div>" +
-      "<div style=\"margin-top:6px;\">Expenses: - " + safe(formatNiaKES(expenses)) + "</div>" +
-      "<div style=\"margin-top:6px;font-weight:800;\">Net to Owner: " + safe(formatNiaKES(netToOwner)) + "</div>" +
-      "<div style=\"margin-top:8px;\">" + goldLink("my-item-profile.html?id=" + encodeURIComponent(property.id), "Open full profile →") + "</div>";
+      "<div style=\"margin-top:10px;font-weight:700;\">Rental Performance</div>" +
+      "<div style=\"margin-top:6px;\">Gross Rental Income: " + safe(formatNiaKES(rentalIncome)) + "</div>" +
+      "<div style=\"margin-top:6px;\">Management Commission" + (commissionType ? " (" + (commissionType === "percentage" ? commissionValue + "%" : formatNiaKES(commissionValue)) + ")" : " (not set)") + ": - " + safe(formatNiaKES(rentalCommission)) + "</div>" +
+      "<div style=\"margin-top:6px;\">Expenses: - " + safe(formatNiaKES(rentalExpenses)) + "</div>" +
+      "<div style=\"margin-top:6px;font-weight:800;\">Net Rental Income: " + safe(formatNiaKES(netRentalIncome)) + "</div>";
+
+    if (hasSaleActivity) {
+      html +=
+        "<div style=\"margin-top:10px;font-weight:700;\">Sale Proceeds (one-time)</div>" +
+        "<div style=\"margin-top:6px;\">Sale Price: " + safe(formatNiaKES(saleProceeds)) + "</div>" +
+        "<div style=\"margin-top:6px;\">Agent Commission: - " + safe(formatNiaKES(agentCommission)) + "</div>" +
+        "<div style=\"margin-top:6px;\">Marketing / Legal Costs: - " + safe(formatNiaKES(otherSaleCosts)) + "</div>" +
+        "<div style=\"margin-top:6px;font-weight:800;\">Net Sale Proceeds: " + safe(formatNiaKES(netSaleProceeds)) + "</div>";
+    }
+
+    html += "<div style=\"margin-top:8px;\">" + goldLink("my-item-profile.html?id=" + encodeURIComponent(property.id), "Open full profile →") + "</div>";
 
     addNiaMessage(html);
 
-    return { spoken: property._niaItemName + "'s net to owner: " + formatNiaKES(netToOwner) + "." };
+    return {
+      spoken: hasSaleActivity
+        ? property._niaItemName + "'s net rental income: " + formatNiaKES(netRentalIncome) + ", net sale proceeds: " + formatNiaKES(netSaleProceeds) + "."
+        : property._niaItemName + "'s net rental income: " + formatNiaKES(netRentalIncome) + "."
+    };
   }
 
   // ---- Phase 2 conversational retrieval: Quotation detail by name/reference ----
