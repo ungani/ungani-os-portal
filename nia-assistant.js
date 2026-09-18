@@ -5336,11 +5336,13 @@
       /\btill\b/.test(lower) || lower.indexOf("register total") !== -1;
     if (!mentionsPos) return false;
 
+    if (lower.indexOf("till total") !== -1 || lower.indexOf("register total") !== -1) return true;
+
     // Exclude how-to/explanatory phrasing so "how do I use POS" reaches
     // the static pos-explained HELP_TOPICS answer instead of this query.
+    // Checked after the till/register-total shortcut above so "what is my
+    // till total today" isn't wrongly caught by the "what is" exclusion.
     if (lower.indexOf("how do i") !== -1 || lower.indexOf("how does") !== -1 || lower.indexOf("how to") !== -1 || lower.indexOf("what is") !== -1) return false;
-
-    if (lower.indexOf("till total") !== -1 || lower.indexOf("register total") !== -1) return true;
 
     return lower.indexOf("sale") !== -1 && (
       lower.indexOf("today") !== -1 || lower.indexOf("how much") !== -1 || lower.indexOf("how many") !== -1 ||
