@@ -617,7 +617,15 @@ async function registerC2BUrls(req, res) {
 
     const baseUrl = resolveMpesaBaseUrlFor(credResponse.environment);
     const accessToken = await getDarajaAccessTokenFor(baseUrl, credResponse.consumer_key, credResponse.consumer_secret);
-    const callbackUrl = APP_URL + "/api/mpesa-stk-push";
+
+    // Daraja's RegisterURL rejects any Confirmation/ValidationURL containing
+    // the word "mpesa" (confirmed live: "Bad Request - Invalid ValidationURL
+    // - URL has the word MPESA") - a restriction specific to this one-time
+    // whitelist registration, not to per-request callback URLs (the STK
+    // Push CallBackURL below still uses /api/mpesa-stk-push directly and
+    // has always worked). Routed via a vercel.json rewrite to the SAME
+    // function/file - no new serverless function, still 12 total.
+    const callbackUrl = APP_URL + "/api/payments-callback";
 
     const registerResponse = await fetch(baseUrl + "/mpesa/c2b/v2/registerurl", {
       method: "POST",
