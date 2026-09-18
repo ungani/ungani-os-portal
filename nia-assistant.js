@@ -2491,7 +2491,7 @@
   }
 
   function isSearchPhrase(text) {
-    return /^(find|search|search for|look up|where is|where's)\b/i.test(text.trim());
+    return /^(?:(?:can|could|would)\s+you\s+|please\s+)*(find|search|search for|look up|where is|where's)\b/i.test(text.trim());
   }
 
   // Broader record-request phrasing ("show me X", "bring me X", "pull up
@@ -2504,7 +2504,7 @@
   // so "show me the Fanta Orange variant" searches for "Fanta Orange", not
   // the literal phrase including "variant".
   function extractBroadRecordQuery(text) {
-    const m = text.trim().match(/^(?:show me|bring me|pull up|give me|get me)\s+(?:the\s+|my\s+)?(.+)/i);
+    const m = text.trim().match(/^(?:(?:can|could|would)\s+you\s+|please\s+)*(?:show me|bring me|pull up|give me|get me)\s+(?:the\s+|my\s+)?(.+)/i);
     if (!m || !m[1]) return null;
 
     const cleaned = m[1].replace(/\s+(record|records|detail|details|profile|variant|item|entry)s?[.?!]*$/i, "").trim();
@@ -3432,14 +3432,36 @@
     return [
       "needs attention", "need attention", "what needs attention", "what's expiring", "whats expiring",
       "expiring soon", "expired items", "expiring items", "maintenance due", "overdue maintenance",
-      "what's overdue", "whats overdue", "low stock", "out of stock"
+      "what's overdue", "whats overdue", "low stock", "out of stock",
+      "needs maintenance", "need maintenance", "maintenance needed"
     ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  // Matches a message against the tenant's OWN real item-type vocabulary
+  // (e.g. Warehouse's "Pallet"/"Storage Unit", Logistics' "Vehicle") - the
+  // same real per-industry terms already wired into the "create X" routing
+  // path (findBusinessVocabCreateAction) but never into any query/
+  // retrieval intent until now, so "how many pallets do I have" matched
+  // nothing for a Warehouse tenant even though "Pallet" is that tenant's
+  // own real item type. Naive plural check (+"s") matches this file's
+  // existing style elsewhere rather than a real pluralizer, since
+  // itemTypes entries are short, simple nouns.
+  function matchesTenantItemVocabulary(lower) {
+    const vocab = getTenantVocabulary();
+    if (!vocab || !Array.isArray(vocab.itemTypes)) return false;
+
+    return vocab.itemTypes.some(function (term) {
+      const singular = String(term || "").toLowerCase();
+      if (!singular) return false;
+      return lower.indexOf(singular) !== -1 || lower.indexOf(singular + "s") !== -1;
+    });
   }
 
   function isAssetCountPhrase(text) {
     const lower = text.toLowerCase();
     if (!/\bhow many\b/.test(lower)) return false;
-    return ["item", "property", "properties", "asset", "stock"].some(function (word) { return lower.indexOf(word) !== -1; });
+    return ["item", "property", "properties", "asset", "stock"].some(function (word) { return lower.indexOf(word) !== -1; })
+      || matchesTenantItemVocabulary(lower);
   }
 
   async function runAssetAttentionIntent() {
@@ -3641,7 +3663,8 @@
   // question shape.
   function isAdminPaymentProofsQueryPhrase(text) {
     const lower = text.toLowerCase();
-    return ["payment proof", "payment proofs", "proof of payment", "proofs submitted", "pending proof"]
+    return ["payment proof", "payment proofs", "proof of payment", "proofs submitted", "pending proof",
+      "screenshot", "uploaded proof"]
       .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
   }
 
@@ -3741,7 +3764,8 @@
 
     return [
       "how much", "who's been paid", "whos been paid", "who has been paid", "who is paid",
-      "total paid", "paid so far", "status", "this month", "this week", "last payment", "when was"
+      "total paid", "paid so far", "status", "this month", "this week", "last payment", "when was",
+      "did i pay", "have i paid", "did we pay", "have we paid"
     ].some(function (phrase) { return lower.indexOf(phrase) !== -1; });
   }
 
@@ -4082,6 +4106,21 @@
       name = m && m[1] ? m[1].trim() : null;
     }
 
+    // "is X in stock" / "check X stock" - both already contain "stock",
+    // so they pass isItemStockDetailPhrase's own keyword gate below, but
+    // neither matched any of the patterns above (which all require
+    // starting with "stock"/"how much"/"how many"/"quantity"/"inventory",
+    // or an explicit possessive "X's stock").
+    if (!name) {
+      m = text.match(/\bis\s+([^.?!]+?)\s+in stock\b/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/\bcheck\s+([^.?!]+?)\s+stock\b/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
     return name || null;
   }
 
@@ -4171,12 +4210,22 @@
     }
 
     if (!name) {
+      m = text.match(/what has\s+([^.?!]+?)\s+paid/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
       m = text.match(/payments?\s+(?:from|to)\s+([^.?!]+)/i);
       name = m && m[1] ? m[1].trim() : null;
     }
 
     if (!name) {
-      m = text.match(/([^.?!]+?)(?:'s|s')\s+payment(?:s)?(?:\s+history)?/i);
+      m = text.match(/([^.?!]+?)(?:'s|s')\s+(?:payment(?:s)?(?:\s+history)?|transaction(?:s)?)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/transaction(?:s)?\s+(?:for|from|with)\s+([^.?!]+)/i);
       name = m && m[1] ? m[1].trim() : null;
     }
 
@@ -4185,7 +4234,7 @@
 
   function isPaymentHistoryDetailPhrase(text) {
     const lower = text.toLowerCase();
-    if (!["payment", "paid"].some(function (w) { return lower.indexOf(w) !== -1; })) return false;
+    if (!["payment", "paid", "transaction"].some(function (w) { return lower.indexOf(w) !== -1; })) return false;
     return !!extractPaymentHistoryQuery(text);
   }
 
@@ -4295,12 +4344,22 @@
     }
 
     if (!name) {
-      m = text.match(/how much does\s+([^.?!]+?)\s+(?:make|net|earn)/i);
+      m = text.match(/profit\s+(?:for|of|on)\s+([^.?!]+)/i);
       name = m && m[1] ? m[1].trim() : null;
     }
 
     if (!name) {
-      m = text.match(/([^.?!]+?)(?:'s|s')\s+(?:roll[\s-]?up|net income)/i);
+      m = text.match(/how much does\s+([^.?!]+?)\s+(?:make|net|earn|profit)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/how much profit\s+(?:does|has)\s+([^.?!]+?)\s+(?:make|made|earn|earned)/i);
+      name = m && m[1] ? m[1].trim() : null;
+    }
+
+    if (!name) {
+      m = text.match(/([^.?!]+?)(?:'s|s')\s+(?:roll[\s-]?up|net income|profit)/i);
       name = m && m[1] ? m[1].trim() : null;
     }
 
@@ -4309,7 +4368,7 @@
 
   function isPropertyRollupPhrase(text) {
     const lower = text.toLowerCase();
-    if (!["rollup", "roll-up", "roll up", "net income", "net to owner", "how much does"].some(function (w) { return lower.indexOf(w) !== -1; })) {
+    if (!["rollup", "roll-up", "roll up", "net income", "net to owner", "how much does", "profit"].some(function (w) { return lower.indexOf(w) !== -1; })) {
       return false;
     }
     return !!extractPropertyRollupQuery(text);
@@ -4668,7 +4727,8 @@
   // outstanding" when there's no data.
   function isDebtorsQueryPhrase(text) {
     const lower = text.toLowerCase();
-    return ["debtor", "debtors", "payable", "payables", "who owes me", "who do i owe", "who i owe"]
+    return ["debtor", "debtors", "payable", "payables", "who owes me", "who do i owe", "who i owe",
+      "who hasn't paid", "who hasnt paid", "who has not paid", "unpaid customers", "unpaid clients"]
       .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
   }
 
@@ -4830,7 +4890,8 @@
   function isUnassignedMpesaPhrase(text) {
     const lower = text.toLowerCase();
     const mentionsMpesa = lower.indexOf("m-pesa") !== -1 || lower.indexOf("mpesa") !== -1;
-    const mentionsUnassigned = lower.indexOf("unassigned") !== -1 || lower.indexOf("not assigned") !== -1 || lower.indexOf("unmatched") !== -1;
+    const mentionsUnassigned = lower.indexOf("unassigned") !== -1 || lower.indexOf("not assigned") !== -1 || lower.indexOf("unmatched") !== -1 ||
+      lower.indexOf("unidentified") !== -1 || lower.indexOf("unlinked") !== -1;
     return mentionsMpesa && mentionsUnassigned;
   }
 
@@ -5104,7 +5165,8 @@
   // other feature's vocabulary in this app.
   function isFavoritesQueryPhrase(text) {
     const lower = text.toLowerCase();
-    return ["favorite", "favourite", "starred", "bookmark"].some(function (word) { return lower.indexOf(word) !== -1; });
+    return ["favorite", "favourite", "starred", "bookmark", "saved item", "saved items", "my saved"]
+      .some(function (word) { return lower.indexOf(word) !== -1; });
   }
 
   const NIA_FAVORITES_TABLE_CONFIG = {
@@ -5270,12 +5332,15 @@
   // POS activity without a parallel, possibly-drifting summary table.
   function isPosSalesQueryPhrase(text) {
     const lower = text.toLowerCase();
-    const mentionsPos = /\bpos\b/.test(lower) || lower.indexOf("point of sale") !== -1 || lower.indexOf("quick sale") !== -1;
+    const mentionsPos = /\bpos\b/.test(lower) || lower.indexOf("point of sale") !== -1 || lower.indexOf("quick sale") !== -1 ||
+      /\btill\b/.test(lower) || lower.indexOf("register total") !== -1;
     if (!mentionsPos) return false;
 
     // Exclude how-to/explanatory phrasing so "how do I use POS" reaches
     // the static pos-explained HELP_TOPICS answer instead of this query.
     if (lower.indexOf("how do i") !== -1 || lower.indexOf("how does") !== -1 || lower.indexOf("how to") !== -1 || lower.indexOf("what is") !== -1) return false;
+
+    if (lower.indexOf("till total") !== -1 || lower.indexOf("register total") !== -1) return true;
 
     return lower.indexOf("sale") !== -1 && (
       lower.indexOf("today") !== -1 || lower.indexOf("how much") !== -1 || lower.indexOf("how many") !== -1 ||
@@ -5570,7 +5635,8 @@
     // reason to require a qualifier word too. The qualifier list only
     // adds more ways to ask.
     return lower.indexOf("health score") !== -1 || lower.indexOf("business health") !== -1 ||
-      lower.indexOf("platform health") !== -1 || (lower.indexOf("health") !== -1 && lower.indexOf("score") !== -1);
+      lower.indexOf("platform health") !== -1 || lower.indexOf("healthy") !== -1 ||
+      (lower.indexOf("health") !== -1 && lower.indexOf("score") !== -1);
   }
 
   // Ungani Connect ("what's new"/"catch me up"/"any mentions") - checked
@@ -5911,7 +5977,8 @@
 
   function isTeamChatQueryPhrase(text) {
     const lower = text.toLowerCase();
-    return ["team chat", "team message", "unread message", "who messaged", "messaged me"]
+    return ["team chat", "team message", "unread message", "who messaged", "messaged me",
+      "message me", "check my messages", "any messages"]
       .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
   }
 
