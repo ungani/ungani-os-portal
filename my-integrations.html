@@ -160,8 +160,9 @@
         label: "M-Pesa",
         icon: '<i data-lucide="smartphone"></i>',
         category: "Payments",
-        comingSoon: true,
-        description: "Automatically record business payments as they come in."
+        live: true,
+        description: "Connect your own Paybill or Till so payments straight to your own number are automatically captured and matched.",
+        manageHref: "my-settings.html#mpesaPaybillIntegrationPanel"
       },
       {
         key: "etims",
@@ -211,10 +212,13 @@
     async function loadIntegrations() {
       currentContext.contentEl.innerHTML = UnganiClientShared.loadingCard("Loading your integrations...");
 
-      // Google Drive owns its own locked-down status RPC (see
-      // sql/google-drive-integration.sql). A failure here just means the
-      // card shows "Not Connected"; it never blocks the rest of the page.
+      // Google Drive and M-Pesa each own their own locked-down status
+      // RPC (sql/google-drive-integration.sql,
+      // sql/mpesa-connection-status-rpc.sql). A failure in either just
+      // means that one card shows "Not Connected"; it never blocks the
+      // rest of the page.
       let driveStatus = { connected: false };
+      let mpesaStatus = { connected: false };
 
       try {
         const driveResponse = await currentContext.supabaseClient.rpc("get_my_ungani_google_drive_status");
@@ -225,7 +229,16 @@
         // Non-fatal.
       }
 
-      cardStatusCache = { google_drive: driveStatus };
+      try {
+        const mpesaResponse = await currentContext.supabaseClient.rpc("owner_get_ungani_mpesa_connection_status");
+        if (!mpesaResponse.error && mpesaResponse.data) {
+          mpesaStatus = mpesaResponse.data;
+        }
+      } catch (error) {
+        // Non-fatal.
+      }
+
+      cardStatusCache = { google_drive: driveStatus, mpesa: mpesaStatus };
 
       renderIntegrationsPage();
     }
@@ -276,8 +289,36 @@
         `;
       }
 
-      // Every remaining registry entry is either comingSoon or google_drive,
-      // both handled above - nothing else reaches this point.
+      if (def.key === "mpesa") {
+        const status = cardStatusCache.mpesa || { connected: false };
+        const connected = !!status.connected;
+
+        const statusBadge = connected
+          ? `<span class="ungani-badge green">Connected</span>`
+          : `<span class="ungani-badge">Not Connected</span>`;
+
+        const detail = connected
+          ? `<p class="ungani-integration-detail"><strong>${UnganiClientShared.safe(status.shortcode || "Connected")}</strong> (${UnganiClientShared.safe(status.environment || "sandbox")})</p>`
+          : `<p class="ungani-integration-detail">${UnganiClientShared.safe(def.description)}</p>`;
+
+        return `
+          <div class="ungani-card ungani-integration-card">
+            <div class="ungani-integration-card-head">
+              <div class="ungani-integration-icon">${def.icon}</div>
+              ${statusBadge}
+            </div>
+            <div>
+              <p class="ungani-integration-category">${UnganiClientShared.safe(def.category)}</p>
+              <h3 style="margin:0 0 6px;">${UnganiClientShared.safe(def.label)}</h3>
+              ${detail}
+            </div>
+            <a class="ungani-btn dark" href="${UnganiClientShared.attr(def.manageHref)}">${connected ? "Manage" : "Connect"}</a>
+          </div>
+        `;
+      }
+
+      // Every remaining registry entry is either comingSoon, google_drive,
+      // or mpesa, all handled above - nothing else reaches this point.
       return "";
     }
 

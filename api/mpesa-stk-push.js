@@ -80,10 +80,14 @@ function normalizePhoneNumber(raw) {
   return null;
 }
 
-async function getDarajaAccessToken() {
-  const credentials = Buffer.from(MPESA_CONSUMER_KEY + ":" + MPESA_CONSUMER_SECRET).toString("base64");
+// Parameterized so a tenant's OWN Consumer Key/Secret (their connected
+// Paybill, sql/mpesa-tenant-paybill-connection-vault.sql) can reuse the
+// exact same OAuth mechanics as UNGANI's own subscription/POS flow
+// below, without ever mixing the two credential sets.
+async function getDarajaAccessTokenFor(baseUrl, consumerKey, consumerSecret) {
+  const credentials = Buffer.from(consumerKey + ":" + consumerSecret).toString("base64");
 
-  const response = await fetch(MPESA_BASE_URL + "/oauth/v1/generate?grant_type=client_credentials", {
+  const response = await fetch(baseUrl + "/oauth/v1/generate?grant_type=client_credentials", {
     method: "GET",
     headers: { Authorization: "Basic " + credentials }
   });
@@ -95,6 +99,14 @@ async function getDarajaAccessToken() {
 
   const data = await response.json();
   return data.access_token;
+}
+
+async function getDarajaAccessToken() {
+  return getDarajaAccessTokenFor(MPESA_BASE_URL, MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET);
+}
+
+function resolveMpesaBaseUrlFor(environment) {
+  return environment === "production" ? "https://api.safaricom.co.ke" : "https://sandbox.safaricom.co.ke";
 }
 
 async function initiateStkPush(req, res) {
@@ -569,6 +581,200 @@ async function handleStkCallback(req, res) {
   }
 }
 
+// Registers a TENANT'S OWN connected Paybill/Till (sql/mpesa-tenant-
+// paybill-connection-vault.sql) with Daraja's C2B API, pointing both
+// ConfirmationURL and ValidationURL at this SAME file's own URL - one
+// registered URL handles every tenant, since inbound confirmations are
+// routed by matching BusinessShortCode against
+// ungani_tenant_mpesa_connections, not by a per-tenant URL. This is a
+// completely separate credential set and API (C2B, customer-initiated)
+// from the subscription/POS flow above (STK Push, UNGANI-initiated) -
+// never mixed.
+async function registerC2BUrls(req, res) {
+  try {
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      return json(res, 500, { ok: false, message: "Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY" });
+    }
+
+    const bearerToken = getBearerToken(req);
+    const caller = await resolveCaller(bearerToken);
+
+    if (!caller || !caller.tenantId) {
+      return json(res, 401, { ok: false, message: "Unauthorized." });
+    }
+
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    const { data: credResponse, error: credError } = await supabaseAdmin.rpc("service_get_ungani_mpesa_credentials", {
+      p_tenant_id: caller.tenantId
+    });
+
+    if (credError || !credResponse || credResponse.ok !== true) {
+      return json(res, 400, { ok: false, message: (credResponse && credResponse.message) || "Save your Paybill credentials first." });
+    }
+
+    const baseUrl = resolveMpesaBaseUrlFor(credResponse.environment);
+    const accessToken = await getDarajaAccessTokenFor(baseUrl, credResponse.consumer_key, credResponse.consumer_secret);
+    const callbackUrl = APP_URL + "/api/mpesa-stk-push";
+
+    const registerResponse = await fetch(baseUrl + "/mpesa/c2b/v2/registerurl", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + accessToken,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        ShortCode: credResponse.shortcode,
+        ResponseType: "Completed",
+        ConfirmationURL: callbackUrl,
+        ValidationURL: callbackUrl
+      })
+    });
+
+    const registerData = await registerResponse.json().catch(() => ({}));
+
+    if (!registerResponse.ok || (registerData.ResponseCode && registerData.ResponseCode !== "0")) {
+      return json(res, 502, {
+        ok: false,
+        message: registerData.errorMessage || registerData.ResponseDescription || "Safaricom did not accept this Paybill connection - check the Shortcode and credentials.",
+        raw: registerData
+      });
+    }
+
+    return json(res, 200, {
+      ok: true,
+      message: "Paybill " + credResponse.shortcode + " is connected and ready to receive payments.",
+      shortcode: credResponse.shortcode
+    });
+  } catch (error) {
+    return json(res, 500, { ok: false, message: error.message });
+  }
+}
+
+// Daraja C2B confirmation shape (flat fields, no envelope - Safaricom
+// calls this the moment ANY customer pays a registered Shortcode):
+//   { TransactionType, TransID, TransTime, TransAmount,
+//     BusinessShortCode, BillRefNumber, MSISDN, FirstName, ... }
+// Distinguished from the STK callback (nested Body.stkCallback) and
+// from our own outbound calls (always carry an Authorization bearer
+// header) purely by shape, same convention as the rest of this file.
+// Security model matches handleStkCallback above: this endpoint is
+// necessarily public, so integrity comes from the Shortcode matching a
+// real connected tenant, not from a bearer token - an unrecognized
+// Shortcode is silently acknowledged and ignored.
+async function handleC2BConfirmation(req, res) {
+  const ack = { ResultCode: 0, ResultDesc: "Success" };
+
+  try {
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      return json(res, 200, ack);
+    }
+
+    const shortcode = req.body.BusinessShortCode;
+    const transId = req.body.TransID;
+
+    if (!shortcode || !transId) {
+      return json(res, 200, ack);
+    }
+
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    const { data: connection } = await supabaseAdmin
+      .from("ungani_tenant_mpesa_connections")
+      .select("tenant_id")
+      .eq("shortcode", shortcode)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (!connection) {
+      return json(res, 200, ack);
+    }
+
+    const tenantId = connection.tenant_id;
+
+    // Idempotency - Safaricom can call the confirmation more than once
+    // for the same transaction. A plain select-then-insert, matching
+    // this file's existing style rather than relying solely on a DB
+    // constraint.
+    const { data: existing } = await supabaseAdmin
+      .from("transactions")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("reference_no", transId)
+      .eq("payment_method", "M-Pesa")
+      .maybeSingle();
+
+    if (existing) {
+      return json(res, 200, ack);
+    }
+
+    const normalizedPhone = normalizePhoneNumber(req.body.MSISDN);
+    let relatedPersonId = null;
+
+    // Same matching rule as my-money.html's handlePayerPhoneChange() /
+    // normalizeMoneyPhone() - exact single match auto-links, zero or
+    // multiple matches leave it unassigned rather than guess. The two
+    // copies can't literally share code (one runs in the browser, this
+    // one runs here in a serverless function), but the RULE must stay
+    // identical - keep them in sync if either ever changes.
+    if (normalizedPhone) {
+      const { data: people } = await supabaseAdmin
+        .from("client_people")
+        .select("id, phone")
+        .eq("tenant_id", tenantId)
+        .is("deleted_at", null);
+
+      const matches = (people || []).filter(function (person) {
+        return normalizePhoneNumber(person.phone) === normalizedPhone;
+      });
+
+      if (matches.length === 1) {
+        relatedPersonId = matches[0].id;
+      }
+    }
+
+    const transAmount = Number(req.body.TransAmount) || 0;
+    const parsedDate = parseDarajaTimestamp(req.body.TransTime);
+    const transactionDate = (parsedDate || new Date().toISOString()).slice(0, 10);
+
+    // category is deliberately "Uncategorized", not guessed from
+    // BillRefNumber - a bare Paybill payment carries no reliable signal
+    // for what it's for (rent vs. deposit vs. something else), so the
+    // owner reclassifies it from Money, same "Not assigned" philosophy
+    // already used for an unmatched payer phone.
+    await supabaseAdmin.from("transactions").insert({
+      tenant_id: tenantId,
+      type: "income",
+      transaction_type: "income",
+      category: "Uncategorized",
+      amount: transAmount,
+      currency: "KES",
+      exchange_rate: 1,
+      amount_kes: transAmount,
+      transaction_date: transactionDate,
+      payment_method: "M-Pesa",
+      status: "completed",
+      description: "Received via M-Pesa Paybill (auto-captured) - reclassify the category if needed.",
+      related_person_id: relatedPersonId,
+      payer_phone: normalizedPhone || req.body.MSISDN || null,
+      reference_no: transId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+    return json(res, 200, ack);
+  } catch (error) {
+    // Always acknowledge with 200 even on our own internal error - same
+    // reasoning as the STK callback: Safaricom retries on non-2xx, and
+    // a genuine internal error here won't be fixed by a retry anyway.
+    return json(res, 200, ack);
+  }
+}
+
 // Merged with what used to be the separate api/mpesa-callback.js -
 // Vercel Hobby caps a deployment at 12 Serverless Functions, and this
 // repo hit 14 the moment both M-Pesa endpoints existed as separate
@@ -576,16 +782,25 @@ async function handleStkCallback(req, res) {
 // Safaricom's CallBackURL is supplied fresh on every STK push request
 // (not a dashboard-registered redirect like Google OAuth's), so
 // repointing it at this same file's own URL is safe - no external
-// config to update. Dispatch is by body shape, not method, because
-// both our own initiate call AND Safaricom's callback arrive as POST:
-// only Safaricom's callback has the nested Body.stkCallback envelope.
+// config to update. The C2B confirmation URL (registerC2BUrls above)
+// is registered against this same URL for the same reason - still
+// exactly one file, now handling four purposes by body shape:
+// STK-initiate, STK-callback, C2B-confirmation, and register-C2B-urls.
 export default async function handler(req, res) {
   if (req.method === "POST" && req.body && req.body.Body && req.body.Body.stkCallback) {
     return handleStkCallback(req, res);
   }
 
+  if (req.method === "POST" && req.body && req.body.BusinessShortCode && req.body.TransID) {
+    return handleC2BConfirmation(req, res);
+  }
+
   if (req.method !== "POST") {
     return json(res, 405, { ok: false, message: "Method not allowed. Use POST." });
+  }
+
+  if (req.body && req.body.purpose === "register_mpesa_c2b_urls") {
+    return registerC2BUrls(req, res);
   }
 
   return initiateStkPush(req, res);

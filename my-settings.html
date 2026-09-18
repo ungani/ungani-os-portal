@@ -1230,6 +1230,74 @@
         </div>
       </section>
 
+      <section class="panel full" id="mpesaPaybillIntegrationPanel">
+        <div class="panel-head">
+          <h2>M-Pesa Paybill / Till</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Connect YOUR OWN Paybill or Till (not UNGANI's) so payments made straight to your own
+            number are automatically captured and matched to the right person - the same matching
+            already used for manually-entered M-Pesa payments in Money, just without typing it in
+            yourself. Get your Consumer Key, Consumer Secret, Initiator Name and Initiator Password
+            from <a href="https://developer.safaricom.co.ke" target="_blank" rel="noopener">developer.safaricom.co.ke</a>.
+          </p>
+
+          <div id="mpesaPaybillStatusBox" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; margin-bottom: 16px;">
+            <div>
+              <strong id="mpesaPaybillStatusText" style="color: var(--text); display: block; margin-bottom: 3px;">Checking connection...</strong>
+              <span id="mpesaPaybillStatusSubtext" style="color: var(--muted); font-size: 13px;"></span>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="mpesaShortcode">Shortcode (Paybill / Till Number)</label>
+              <input type="text" id="mpesaShortcode" class="form-control" placeholder="e.g. 600000" autocomplete="off" />
+            </div>
+
+            <div class="form-group">
+              <label for="mpesaEnvironment">Environment</label>
+              <select id="mpesaEnvironment" class="form-control">
+                <option value="sandbox">Sandbox (testing)</option>
+                <option value="production">Production (live)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="mpesaConsumerKey">Consumer Key</label>
+              <input type="text" id="mpesaConsumerKey" class="form-control" autocomplete="off" placeholder="From your Daraja app" />
+            </div>
+
+            <div class="form-group">
+              <label for="mpesaConsumerSecret">Consumer Secret</label>
+              <input type="password" id="mpesaConsumerSecret" class="form-control" autocomplete="new-password" placeholder="Enter to set or change" />
+            </div>
+
+            <div class="form-group">
+              <label for="mpesaInitiatorName">Initiator Name</label>
+              <input type="text" id="mpesaInitiatorName" class="form-control" autocomplete="off" placeholder="Your Paybill's API operator name" />
+            </div>
+
+            <div class="form-group">
+              <label for="mpesaInitiatorPassword">Initiator Password</label>
+              <input type="password" id="mpesaInitiatorPassword" class="form-control" autocomplete="new-password" placeholder="Enter to set or change" />
+            </div>
+          </div>
+
+          <p style="margin: 4px 0 0; color: var(--muted); font-size: 12px;">
+            Once saved, Consumer Secret and Initiator Password are never shown again - re-enter
+            them only if you need to change them.
+          </p>
+
+          <div class="form-actions">
+            <span id="mpesaPaybillMessage" class="action-msg"></span>
+            <button type="button" id="btnConnectMpesaPaybill" class="ungani-btn gold" onclick="connectMpesaPaybill()">Connect Paybill</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel full" id="pushNotificationsPanel">
         <div class="panel-head">
           <h2>Browser Notifications</h2>
@@ -1703,6 +1771,7 @@
       await fetchUserPreferences();
       handleGoogleDriveOAuthRedirect();
       await loadGoogleDriveIntegrationStatus();
+      await loadMpesaPaybillStatus();
       await refreshPushStatus();
     });
 
@@ -1954,6 +2023,123 @@
         msgSpan.textContent = getErrorMessage(err);
       } finally {
         disconnectBtn.disabled = false;
+      }
+    }
+
+    // M-Pesa Paybill/Till connection (sql/mpesa-tenant-paybill-connection-
+    // vault.sql, sql/mpesa-connection-status-rpc.sql) - a tenant's OWN
+    // Paybill, distinct from UNGANI's own subscription/POS M-Pesa flow.
+    // Status is read-only (shortcode/environment/status only, no
+    // secrets); the form always starts blank for the secret fields so a
+    // saved Consumer Secret/Initiator Password is never round-tripped
+    // back to the browser, even on reconnect.
+    async function loadMpesaPaybillStatus() {
+      const statusText = document.getElementById("mpesaPaybillStatusText");
+      const statusSubtext = document.getElementById("mpesaPaybillStatusSubtext");
+      const connectBtn = document.getElementById("btnConnectMpesaPaybill");
+
+      if (!statusText) return;
+
+      try {
+        const { data, error } = await supabaseClient.rpc("owner_get_ungani_mpesa_connection_status");
+        if (error) throw error;
+
+        if (data && data.connected) {
+          statusText.textContent = "Connected - " + data.shortcode + " (" + data.environment + ")";
+          statusSubtext.textContent = "Payments to this Shortcode are automatically captured.";
+          if (connectBtn) connectBtn.textContent = "Update Connection";
+          const envSelect = document.getElementById("mpesaEnvironment");
+          const shortcodeInput = document.getElementById("mpesaShortcode");
+          if (envSelect) envSelect.value = data.environment;
+          if (shortcodeInput) shortcodeInput.value = data.shortcode;
+        } else if (data && data.ok === false) {
+          statusText.textContent = "Could not check connection";
+          statusSubtext.textContent = data.message || "";
+        } else {
+          statusText.textContent = "Not connected";
+          statusSubtext.textContent = "Connect your own Paybill/Till to auto-capture payments.";
+          if (connectBtn) connectBtn.textContent = "Connect Paybill";
+        }
+      } catch (err) {
+        statusText.textContent = "Could not check connection";
+        statusSubtext.textContent = getErrorMessage(err);
+      }
+    }
+
+    async function connectMpesaPaybill() {
+      const msgSpan = document.getElementById("mpesaPaybillMessage");
+      const connectBtn = document.getElementById("btnConnectMpesaPaybill");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      const shortcode = (document.getElementById("mpesaShortcode").value || "").trim();
+      const environment = document.getElementById("mpesaEnvironment").value || "sandbox";
+      const consumerKey = (document.getElementById("mpesaConsumerKey").value || "").trim();
+      const consumerSecret = (document.getElementById("mpesaConsumerSecret").value || "").trim();
+      const initiatorName = (document.getElementById("mpesaInitiatorName").value || "").trim();
+      const initiatorPassword = (document.getElementById("mpesaInitiatorPassword").value || "").trim();
+
+      if (!shortcode || !consumerKey || !consumerSecret || !initiatorName || !initiatorPassword) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Shortcode, Consumer Key, Consumer Secret, Initiator Name and Initiator Password are all required.";
+        return;
+      }
+
+      try {
+        connectBtn.disabled = true;
+        connectBtn.textContent = "Saving...";
+
+        const { data, error } = await supabaseClient.rpc("owner_connect_ungani_mpesa_paybill", {
+          p_shortcode: shortcode,
+          p_consumer_key: consumerKey,
+          p_consumer_secret: consumerSecret,
+          p_initiator_name: initiatorName,
+          p_initiator_password: initiatorPassword,
+          p_environment: environment
+        });
+
+        if (error) throw error;
+        if (!data || data.ok !== true) {
+          throw new Error((data && data.message) || "Could not save your Paybill credentials.");
+        }
+
+        connectBtn.textContent = "Registering with Safaricom...";
+
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const accessToken = sessionData && sessionData.session ? sessionData.session.access_token : null;
+
+        if (!accessToken) {
+          throw new Error("Your session has expired. Please refresh and try again.");
+        }
+
+        const response = await fetch("/api/mpesa-stk-push", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + accessToken,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ purpose: "register_mpesa_c2b_urls" })
+        });
+
+        const body = await response.json().catch(() => ({}));
+
+        if (!response.ok || !body.ok) {
+          throw new Error((body && body.message) || "Credentials saved, but Safaricom did not accept the connection - check the Shortcode and credentials.");
+        }
+
+        msgSpan.className = "action-msg success";
+        msgSpan.textContent = "Paybill " + body.shortcode + " connected and ready to receive payments.";
+
+        document.getElementById("mpesaConsumerSecret").value = "";
+        document.getElementById("mpesaInitiatorPassword").value = "";
+
+        await loadMpesaPaybillStatus();
+      } catch (err) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = getErrorMessage(err);
+      } finally {
+        connectBtn.disabled = false;
       }
     }
 
