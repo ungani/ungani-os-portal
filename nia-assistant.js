@@ -2842,6 +2842,13 @@
       // like the other live-data phrase matchers) since "pos" is a
       // substring of many unrelated words (purpose, deposit, position,
       // compose, expose) - a plain indexOf would false-positive constantly.
+      // Reconciliation ("does my mpesa match my sales", "any discrepancies
+      // today") - checked ahead of the broader POS-sales query below since
+      // it's the more specific intent (both can mention "sale"/"mpesa").
+      if (isPosMpesaReconciliationPhrase(text)) {
+        return runPosMpesaReconciliationIntent();
+      }
+
       if (isPosSalesQueryPhrase(text)) {
         if (state.surface === "admin") {
           addNiaMessage("Quick Sale (POS) isn't available on the admin side.");
@@ -5388,7 +5395,7 @@
 
     const total = rows.reduce(function (sum, r) { return sum + (Number(r.amount) || 0); }, 0);
     const cashCount = rows.filter(function (r) { return r.method === "cash"; }).length;
-    const mpesaCount = rows.filter(function (r) { return r.method === "mpesa"; }).length;
+    const mpesaCount = rows.filter(function (r) { return r.method === "mpesa" || r.method === "M-Pesa"; }).length;
 
     const html =
       `<strong>Today's Quick Sale (POS)</strong>` +
@@ -5400,6 +5407,87 @@
 
     return {
       spoken: rows.length + " Quick Sale sale" + (rows.length === 1 ? "" : "s") + " today, totalling " + formatNiaKES(total) + "."
+    };
+  }
+
+  // ---- POS <-> M-Pesa reconciliation query ----
+  // Compares the day's passive-C2B M-Pesa total against the day's total
+  // recorded Quick Sale revenue - see
+  // owner_get_ungani_pos_mpesa_reconciliation() for the exact matching
+  // logic (same-day/same-amount heuristic, not a precise per-payment
+  // match, since Safaricom sends no item/invoice reference at all).
+  function isPosMpesaReconciliationPhrase(text) {
+    const lower = text.toLowerCase();
+    const mentionsMpesa = lower.indexOf("mpesa") !== -1 || lower.indexOf("m-pesa") !== -1;
+    const mentionsMatchOrSales = lower.indexOf("match") !== -1 || lower.indexOf("sales") !== -1 ||
+      lower.indexOf("sale") !== -1 || lower.indexOf("record") !== -1;
+
+    return lower.indexOf("reconcil") !== -1 ||
+      lower.indexOf("discrepanc") !== -1 ||
+      lower.indexOf("under-record") !== -1 ||
+      lower.indexOf("underrecord") !== -1 ||
+      (mentionsMpesa && mentionsMatchOrSales);
+  }
+
+  async function runPosMpesaReconciliationIntent() {
+    if (state.surface === "admin") {
+      addNiaMessage("Reconciliation isn't available on the admin side.");
+      return { spoken: "That's not available on the admin side." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    if (!state.tenant || state.tenant.pos_enabled !== true) {
+      addNiaMessage(
+        `Quick Sale (POS) isn't turned on yet, so there's nothing to reconcile against. Enable it in Settings — ${goldLink("my-settings.html", "Open Settings")}.`
+      );
+      return { spoken: "Quick Sale isn't turned on yet." };
+    }
+
+    addNiaMessage("Checking today's M-Pesa reconciliation...");
+
+    let result;
+    try {
+      const response = await state.supabaseClient.rpc("owner_get_ungani_pos_mpesa_reconciliation", {});
+      if (response.error || !response.data || response.data.ok !== true) {
+        throw response.error || new Error((response.data && response.data.message) || "unknown error");
+      }
+      result = response.data;
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const discrepancy = Number(result.discrepancy) || 0;
+    const hasDiscrepancy = discrepancy > 0.5;
+    const unmatchedCount = Array.isArray(result.unmatched_mpesa_payments) ? result.unmatched_mpesa_payments.length : 0;
+
+    let html =
+      `<strong>Today's M-Pesa Reconciliation</strong>` +
+      `<div style="margin-top:8px;">M-Pesa received: ${formatNiaKES(result.mpesa_received_total)}</div>` +
+      `<div style="margin-top:4px;">Recorded sales: ${formatNiaKES(result.pos_sales_total)}</div>`;
+
+    if (hasDiscrepancy) {
+      html += `<div style="margin-top:8px;color:#B91C1C;">Difference: ${formatNiaKES(discrepancy)} — M-Pesa received more than what's recorded as sold. Check for a missing or under-recorded sale.</div>`;
+    } else {
+      html += `<div style="margin-top:8px;">No discrepancy — recorded sales match or exceed M-Pesa received.</div>`;
+    }
+
+    if (unmatchedCount > 0) {
+      html += `<div style="margin-top:6px;">${unmatchedCount} unmatched M-Pesa payment${unmatchedCount === 1 ? "" : "s"} with no same-day sale of the same amount.</div>`;
+    }
+
+    html += `<div style="margin-top:8px;">${goldLink("my-quick-sale.html", "Open Quick Sale →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: hasDiscrepancy
+        ? "There's a " + formatNiaKES(discrepancy) + " difference — M-Pesa received more than recorded sales."
+        : "No discrepancy today — recorded sales match M-Pesa received."
     };
   }
 

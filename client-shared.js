@@ -2472,12 +2472,14 @@
           : !group.defaultExpanded;
       }
 
+      const groupLabel = t("group." + groupKey, group.title);
+
       const headerHtml = isCollapsible
         ? `<button type="button" class="ungani-nav-title ungani-nav-title-toggle" onclick="UnganiClientShared.toggleSidebarGroup('${groupKey}')">
-             <span>${safe(group.title)}</span>
+             <span>${safe(groupLabel)}</span>
              <span class="ungani-nav-toggle-icon">${isCollapsed ? "▸" : "▾"}</span>
            </button>`
-        : `<div class="ungani-nav-title">${safe(group.title)}</div>`;
+        : `<div class="ungani-nav-title">${safe(groupLabel)}</div>`;
 
       return `
         <div class="ungani-nav-group${isCollapsible ? " collapsible" : ""}${isCollapsed ? " collapsed" : ""}" id="unganiNavGroup-${groupKey}">
@@ -2489,7 +2491,7 @@
               return `
                 <a class="ungani-nav-link ${active}" href="${attr(item[1])}">
                   <span class="ungani-nav-icon"><i data-lucide="${attr(item[2])}"></i></span>
-                  <span>${safe(item[3])}</span>
+                  <span>${safe(t("nav." + item[0], item[3]))}</span>
                   <span class="ungani-nav-badge" id="unganiNavBadge-${safe(item[0])}"></span>
                 </a>
               `;
@@ -2512,13 +2514,15 @@
     return `
       <nav class="ungani-bottom-nav">
         ${items.map(function (item) {
+          const label = t("bottom." + item[0], item[3]);
+
           if (item[0] === "menu") {
-            return `<button type="button" onclick="UnganiClientShared.toggleSidebar()"><span><i data-lucide="${attr(item[2])}"></i></span>${safe(item[3])}</button>`;
+            return `<button type="button" onclick="UnganiClientShared.toggleSidebar()"><span><i data-lucide="${attr(item[2])}"></i></span>${safe(label)}</button>`;
           }
 
           const active = item[0] === state.currentPageKey ? "active" : "";
 
-          return `<a class="${active}" href="${attr(item[1])}"><span><i data-lucide="${attr(item[2])}"></i></span>${safe(item[3])}</a>`;
+          return `<a class="${active}" href="${attr(item[1])}"><span><i data-lucide="${attr(item[2])}"></i></span>${safe(label)}</a>`;
         }).join("")}
       </nav>
     `;
@@ -2655,6 +2659,27 @@
     if (window.UnganiTheme && state.authUser) {
       const cleanTheme = await window.UnganiTheme.syncFromServer(state.supabaseClient, state.authUser.id);
       state.currentTheme = cleanTheme;
+    }
+
+    // Same real per-user store my-settings.html's Preferences form already
+    // reads/writes (user_preferences.language) - synced into the same
+    // localStorage key here so nav labels reflect it on every page, not
+    // just my-settings.html itself. Best-effort: any error just leaves
+    // the sidebar in English, same as a user who's never set a preference.
+    if (state.authUser) {
+      try {
+        const response = await state.supabaseClient
+          .from("user_preferences")
+          .select("language")
+          .eq("user_id", state.authUser.id)
+          .maybeSingle();
+
+        if (!response.error && response.data && response.data.language) {
+          setLanguage(response.data.language);
+        }
+      } catch (error) {
+        // Leave whatever language was already in localStorage untouched.
+      }
     }
   }
 
@@ -4396,6 +4421,162 @@
     return text.slice(0, max) + "...";
   }
 
+  // ---- i18n (English/Swahili toggle, Phase 1: foundation + nav labels) ----
+  //
+  // Mirrors admin-shared.js's own proven translations/t()/data-i18n
+  // pattern (the admin side has had a working DB-backed EN/SW system
+  // since earlier this session) rather than inventing a new approach.
+  // Scoped to nav labels only for this phase - the rest of each page's
+  // own content is still English-only, tracked as later phases. Synced
+  // from tenants.preferred_language into localStorage once per page load
+  // (see initPage() below) so t() can be called synchronously anywhere,
+  // including inside render functions that don't have async access to
+  // state.tenant.
+  // Reuses the SAME localStorage key my-settings.html's own Preferences
+  // form already reads/writes (fetchUserPreferences()/savePreferences(),
+  // backed by the real user_preferences.language column) - not a second,
+  // competing storage key. This just extends where that existing
+  // per-user preference gets applied (nav labels) beyond the one page
+  // that already had it wired up.
+  const I18N_STORAGE_KEY = "ungani_client_lang";
+
+  const I18N_TRANSLATIONS = {
+    en: {
+      "group.main": "Main",
+      "group.operations": "Operations",
+      "group.finance": "Finance",
+      "group.sales": "Sales",
+      "group.inventory": "Inventory",
+      "group.insights": "Insights & Activity",
+      "group.reports-account": "Reports",
+      "group.security-team": "Security & Team",
+      "group.support-access": "UNGANI Support Access",
+      "group.billing-setup": "Billing & Setup",
+      "group.support": "Support",
+
+      "nav.dashboard": "Dashboard",
+      "nav.team-chat": "Team Chat",
+      "nav.favorites": "Favorites",
+      "nav.tasks": "Tasks / Follow-ups",
+      "nav.money": "Money Records",
+      "nav.people": "People",
+      "nav.documents": "Documents",
+      "nav.notifications": "Notifications",
+      "nav.records": "Business Records",
+      "nav.calendar": "Calendar",
+      "nav.debtors-payables": "Debtors & Payables",
+      "nav.approvals": "Approvals",
+      "nav.quotations": "Quotations",
+      "nav.orders": "Orders",
+      "nav.customer-invoices": "Customer Invoices",
+      "nav.quick-sale": "Quick Sale",
+      "nav.items": "Items / Assets / Stock",
+      "nav.stock-tracking": "Stock Tracking",
+      "nav.price-lists": "Price Lists",
+      "nav.overview": "Overview",
+      "nav.charts": "Charts",
+      "nav.activity": "Activity Feed",
+      "nav.connect": "Shared Files",
+      "nav.integrations": "Integrations",
+      "nav.reports": "Reports",
+      "nav.print-report": "Print Report",
+      "nav.security": "Security & Data",
+      "nav.team-access": "Team Access",
+      "nav.recently-deleted": "Recently Deleted",
+      "nav.support-access": "Support Access",
+      "nav.package": "Package",
+      "nav.billing": "Billing",
+      "nav.account-status": "Account Status",
+      "nav.onboarding": "Onboarding",
+      "nav.my-tools": "My Tools",
+      "nav.support": "Support Issues",
+      "nav.notices": "Notices",
+      "nav.chat": "Chat with UNGANI",
+
+      "bottom.dashboard": "Home",
+      "bottom.items": "Items",
+      "bottom.money": "Money",
+      "bottom.tasks": "Tasks",
+      "bottom.menu": "Menu"
+    },
+    sw: {
+      "group.main": "Kuu",
+      "group.operations": "Uendeshaji",
+      "group.finance": "Fedha",
+      "group.sales": "Mauzo",
+      "group.inventory": "Hesabu za Bidhaa",
+      "group.insights": "Maarifa na Mienendo",
+      "group.reports-account": "Ripoti",
+      "group.security-team": "Usalama na Timu",
+      "group.support-access": "Ufikiaji wa Msaada wa UNGANI",
+      "group.billing-setup": "Malipo na Mipangilio",
+      "group.support": "Msaada",
+
+      "nav.dashboard": "Dashibodi",
+      "nav.team-chat": "Mazungumzo ya Timu",
+      "nav.favorites": "Vipendwa",
+      "nav.tasks": "Kazi / Ufuatiliaji",
+      "nav.money": "Kumbukumbu za Pesa",
+      "nav.people": "Watu",
+      "nav.documents": "Hati",
+      "nav.notifications": "Arifa",
+      "nav.records": "Kumbukumbu za Biashara",
+      "nav.calendar": "Kalenda",
+      "nav.debtors-payables": "Wanaodaiwa na Wanaodai",
+      "nav.approvals": "Idhini",
+      "nav.quotations": "Nukuu za Bei",
+      "nav.orders": "Oda",
+      "nav.customer-invoices": "Ankara za Wateja",
+      "nav.quick-sale": "Uuzaji wa Haraka",
+      "nav.items": "Bidhaa / Mali / Hisa",
+      "nav.stock-tracking": "Ufuatiliaji wa Hisa",
+      "nav.price-lists": "Orodha za Bei",
+      "nav.overview": "Muhtasari",
+      "nav.charts": "Chati",
+      "nav.activity": "Mienendo",
+      "nav.connect": "Faili Zilizoshirikiwa",
+      "nav.integrations": "Muunganisho",
+      "nav.reports": "Ripoti",
+      "nav.print-report": "Chapisha Ripoti",
+      "nav.security": "Usalama na Data",
+      "nav.team-access": "Ufikiaji wa Timu",
+      "nav.recently-deleted": "Zilizofutwa Hivi Karibuni",
+      "nav.support-access": "Ufikiaji wa Msaada",
+      "nav.package": "Kifurushi",
+      "nav.billing": "Malipo",
+      "nav.account-status": "Hali ya Akaunti",
+      "nav.onboarding": "Uanzishaji",
+      "nav.my-tools": "Zana Zangu",
+      "nav.support": "Masuala ya Msaada",
+      "nav.notices": "Matangazo",
+      "nav.chat": "Ongea na UNGANI",
+
+      "bottom.dashboard": "Nyumbani",
+      "bottom.items": "Bidhaa",
+      "bottom.money": "Pesa",
+      "bottom.tasks": "Kazi",
+      "bottom.menu": "Menyu"
+    }
+  };
+
+  function getLanguage() {
+    try {
+      return window.localStorage.getItem(I18N_STORAGE_KEY) === "sw" ? "sw" : "en";
+    } catch (error) {
+      return "en";
+    }
+  }
+
+  function setLanguage(lang) {
+    const normalized = lang === "sw" ? "sw" : "en";
+    try { window.localStorage.setItem(I18N_STORAGE_KEY, normalized); } catch (error) {}
+  }
+
+  function t(key, fallback) {
+    const dict = I18N_TRANSLATIONS[getLanguage()] || I18N_TRANSLATIONS.en;
+    return dict[key] || fallback || I18N_TRANSLATIONS.en[key] || key;
+  }
+
   function exposeGlobals() {
     window.UnganiClientShared = {
       initPage,
@@ -4410,6 +4591,9 @@
       safe,
       cleanText,
       attr,
+      t,
+      getLanguage,
+      setLanguage,
       value,
       getValue,
       escapePostgrestFilterValue,
