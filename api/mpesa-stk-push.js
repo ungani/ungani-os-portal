@@ -643,7 +643,14 @@ async function registerC2BUrls(req, res) {
 
     const registerData = await registerResponse.json().catch(() => ({}));
 
-    if (!registerResponse.ok || (registerData.ResponseCode && registerData.ResponseCode !== "0")) {
+    // RegisterURL's real success shape uses ResponseCode "00000000"
+    // (confirmed live), not "0" like the STK Push initiate response
+    // above - the two endpoints don't share a success-code convention.
+    // Checking for the presence of errorMessage/errorCode instead
+    // (Daraja's actual error shape, also confirmed live: "Bad Request -
+    // Invalid ValidationURL - URL has the word MPESA" arrived as
+    // errorMessage) avoids depending on a guessed success-code string.
+    if (!registerResponse.ok || registerData.errorMessage || registerData.errorCode) {
       return json(res, 502, {
         ok: false,
         message: registerData.errorMessage || registerData.ResponseDescription || "Safaricom did not accept this Paybill connection - check the Shortcode and credentials.",
