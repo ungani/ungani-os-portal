@@ -2578,7 +2578,7 @@
           return { spoken: "Search isn't available on the admin side yet, but I can help you navigate or answer a how-to question." };
         }
 
-        return runSearchIntent(text.replace(/^(find|search for|search|look up|where is|where's)\b/i, "").trim());
+        return runSearchIntent(text.replace(/^(?:(?:can|could|would)\s+you\s+|please\s+)*(find|search for|search|look up|where is|where's)\b/i, "").trim());
       }
 
       // Live-data questions about assets specifically ("what needs
