@@ -1552,20 +1552,24 @@
         ? (row ? UnganiClientShared.getValue(row, [field.column], "") : "")
         : (row ? UnganiClientShared.getValue(row.custom_fields || {}, [field.id], "") : "");
 
+      // id="itemExtraWrap_<field.id>" on every wrapper below - additive,
+      // used only by updateRealEstateFieldVisibility() to show/hide
+      // specific fields (bedrooms/bathrooms vs square footage/unit
+      // number) per property type. No effect on any other business type.
       if (field.type === "date") {
         const dateVal = rawValue ? String(rawValue).slice(0, 10) : "";
-        return `<div><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="date" value="${UnganiClientShared.attr(dateVal)}" /></div>`;
+        return `<div id="itemExtraWrap_${fieldId.replace("itemExtra_", "")}"><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="date" value="${UnganiClientShared.attr(dateVal)}" /></div>`;
       }
 
       if (field.type === "number") {
-        return `<div><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="number" step="any" placeholder="${UnganiClientShared.attr(field.placeholder || "")}" value="${UnganiClientShared.attr(rawValue)}" /></div>`;
+        return `<div id="itemExtraWrap_${fieldId.replace("itemExtra_", "")}"><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="number" step="any" placeholder="${UnganiClientShared.attr(field.placeholder || "")}" value="${UnganiClientShared.attr(rawValue)}" /></div>`;
       }
 
       if (field.type === "url") {
-        return `<div><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="url" placeholder="${UnganiClientShared.attr(field.placeholder || "")}" value="${UnganiClientShared.attr(rawValue)}" /></div>`;
+        return `<div id="itemExtraWrap_${fieldId.replace("itemExtra_", "")}"><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="url" placeholder="${UnganiClientShared.attr(field.placeholder || "")}" value="${UnganiClientShared.attr(rawValue)}" /></div>`;
       }
 
-      return `<div><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="text" placeholder="${UnganiClientShared.attr(field.placeholder || "")}" value="${UnganiClientShared.attr(rawValue)}" /></div>`;
+      return `<div id="itemExtraWrap_${fieldId.replace("itemExtra_", "")}"><label for="${fieldId}">${UnganiClientShared.safe(field.label)}</label><input id="${fieldId}" type="text" placeholder="${UnganiClientShared.attr(field.placeholder || "")}" value="${UnganiClientShared.attr(rawValue)}" /></div>`;
     }
 
     function renderExtraFieldsHtml(fieldSet, row) {
@@ -1672,7 +1676,7 @@
 
             <div>
               <label for="propertyParent">Parent Property (leave blank if this IS a building/property)</label>
-              <select id="propertyParent" onchange="toggleBuildingFieldsVisibility()">
+              <select id="propertyParent" onchange="updateRealEstateFieldVisibility()">
                 <option value="">Standalone property (not a unit)</option>
                 ${parentPropertyOptions
                   .filter(function (candidate) { return !row || String(candidate.id) !== String(row.id); })
@@ -1680,6 +1684,16 @@
                     const label = UnganiClientShared.getValue(candidate, ["property_name", "item_name", "name"], "Property");
                     return `<option value="${UnganiClientShared.attr(candidate.id)}">${UnganiClientShared.safe(label)}</option>`;
                   }).join("")}
+              </select>
+            </div>
+
+            <div id="propertyTypeWrap" style="display:none;">
+              <label for="propertyType">Property Type</label>
+              <select id="propertyType" onchange="updateRealEstateFieldVisibility()">
+                <option value="building">Building / Apartment</option>
+                <option value="villa">Villa / Standalone House</option>
+                <option value="commercial">Commercial / Shop</option>
+                <option value="office">Office</option>
               </select>
             </div>
 
@@ -2465,7 +2479,12 @@
             document.getElementById("propertyStatus").value = row ? getStatus(row) : (activeItemFieldSet.statusOptions[0] || "available");
             document.getElementById("propertyParent").value = row ? UnganiClientShared.getValue(row, ["parent_item_id"], "") : "";
             document.getElementById("propertyCommissionType").value = row ? UnganiClientShared.getValue(row, ["management_commission_type"], "") : "";
-            toggleBuildingFieldsVisibility();
+
+            const existingType = row ? UnganiClientShared.getValue(row, ["item_type", "type"], "") : "";
+            const validTypes = ["building", "villa", "commercial", "office"];
+            document.getElementById("propertyType").value = validTypes.indexOf(existingType) !== -1 ? existingType : "building";
+
+            updateRealEstateFieldVisibility();
           } else {
             document.getElementById("itemTypeSelect").value = row ? UnganiClientShared.getValue(row, ["item_type", "type"], "") : (businessPreset.itemTypes[0] || "Item");
             document.getElementById("itemStatusSelect").value = row ? getStatus(row) : (activeItemFieldSet.statusOptions[0] || "available");
@@ -2591,18 +2610,45 @@
       `;
     }
 
-    function toggleBuildingFieldsVisibility() {
+    // Real client feedback (property type selection + floor/unit detail +
+    // commercial fields): visibility of the whole real-estate form now
+    // depends on two things together - whether this row is a standalone
+    // property or a unit under a building (propertyParent), and, for a
+    // standalone property, which structural Property Type is selected.
+    // A unit never shows Property Type/floors/commission/owner fields
+    // (those are the parent building's concern, same reasoning already
+    // established for total_floors/commission); a Villa/Commercial/
+    // Office standalone property never shows Total Floors (only a
+    // Building has floors); Commercial/Office show square footage and a
+    // shop/office number instead of bedrooms/bathrooms.
+    function setFieldWrapVisible(id, visible) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = visible ? "" : "none";
+    }
+
+    function updateRealEstateFieldVisibility() {
       const parentSelect = document.getElementById("propertyParent");
+      const typeSelect = document.getElementById("propertyType");
       if (!parentSelect) return;
 
-      const isBuilding = !parentSelect.value;
-      const floorsWrap = document.getElementById("buildingFieldsWrap");
-      const commissionTypeWrap = document.getElementById("commissionTypeWrap");
-      const commissionValueWrap = document.getElementById("commissionValueWrap");
+      const isStandalone = !parentSelect.value;
+      const propertyType = typeSelect ? typeSelect.value : "building";
+      const isBuildingType = isStandalone && propertyType === "building";
+      const isVilla = isStandalone && propertyType === "villa";
+      const isCommercialOrOffice = isStandalone && (propertyType === "commercial" || propertyType === "office");
 
-      if (floorsWrap) floorsWrap.style.display = isBuilding ? "" : "none";
-      if (commissionTypeWrap) commissionTypeWrap.style.display = isBuilding ? "" : "none";
-      if (commissionValueWrap) commissionValueWrap.style.display = isBuilding ? "" : "none";
+      setFieldWrapVisible("propertyTypeWrap", isStandalone);
+      setFieldWrapVisible("buildingFieldsWrap", isBuildingType);
+      setFieldWrapVisible("commissionTypeWrap", isStandalone);
+      setFieldWrapVisible("commissionValueWrap", isStandalone);
+      setFieldWrapVisible("itemExtraWrap_owner_name", isStandalone);
+      setFieldWrapVisible("itemExtraWrap_owner_contact", isStandalone);
+
+      setFieldWrapVisible("itemExtraWrap_floor_number", !isStandalone);
+      setFieldWrapVisible("itemExtraWrap_bedrooms", !isStandalone || isVilla);
+      setFieldWrapVisible("itemExtraWrap_bathrooms", !isStandalone || isVilla);
+      setFieldWrapVisible("itemExtraWrap_square_footage", isCommercialOrOffice);
+      setFieldWrapVisible("itemExtraWrap_unit_number", isCommercialOrOffice);
     }
 
     async function saveItem(event) {
@@ -2656,17 +2702,25 @@
 
         if (isRealEstate) {
           const listingType = UnganiClientShared.value("listingType") || "sale";
-          payload.item_type = "property";
-          payload.type = "property";
+          const parentPropertyId = UnganiClientShared.value("propertyParent") || null;
+
+          // item_type used to be hardcoded to the constant "property" for
+          // every real-estate row (building or unit alike) - now carries
+          // the real structural Property Type (building/villa/commercial/
+          // office) for a standalone row, or "unit" for a row under a
+          // parent. Confirmed safe to repurpose: item_type was never
+          // branched on structurally for real estate anywhere else in
+          // this app, only ever read as a fallback display label.
+          const propertyType = parentPropertyId ? "unit" : (UnganiClientShared.value("propertyType") || "building");
+          payload.item_type = propertyType;
+          payload.type = propertyType;
           payload.item_category = listingType;
           payload.category = listingType;
           payload.listing_type = listingType;
-
-          const parentPropertyId = UnganiClientShared.value("propertyParent") || null;
           payload.parent_item_id = parentPropertyId;
 
           if (!parentPropertyId) {
-            payload.total_floors = UnganiClientShared.value("propertyTotalFloors") || null;
+            payload.total_floors = propertyType === "building" ? (UnganiClientShared.value("propertyTotalFloors") || null) : null;
             payload.management_commission_type = UnganiClientShared.value("propertyCommissionType") || null;
             payload.management_commission_value = UnganiClientShared.value("propertyCommissionValue") || null;
           } else {
@@ -2710,6 +2764,39 @@
             customFields[field.id] = fieldValue;
           }
         });
+
+        // Property Type / floor-unit / commercial fields are read above
+        // from their DOM inputs regardless of whether their wrapper is
+        // currently hidden (a hidden input still has a value) - null out
+        // whichever ones don't apply to this row's current standalone-vs-
+        // unit / property-type combination, same reasoning as the total_
+        // floors/commission clearing above, so switching a row between
+        // "unit" and "standalone building" (or between property types)
+        // never leaves stale data from its previous shape behind.
+        if (isRealEstate) {
+          const parentPropertyIdForClearing = UnganiClientShared.value("propertyParent") || null;
+          const propertyTypeForClearing = parentPropertyIdForClearing ? "unit" : (UnganiClientShared.value("propertyType") || "building");
+          const isStandaloneForClearing = !parentPropertyIdForClearing;
+          const isVillaForClearing = isStandaloneForClearing && propertyTypeForClearing === "villa";
+          const isCommercialOrOfficeForClearing = isStandaloneForClearing && (propertyTypeForClearing === "commercial" || propertyTypeForClearing === "office");
+
+          if (!isStandaloneForClearing) {
+            customFields.owner_name = null;
+            customFields.owner_contact = null;
+          } else {
+            customFields.floor_number = null;
+          }
+
+          if (isStandaloneForClearing && !isVillaForClearing) {
+            customFields.bedrooms = null;
+            customFields.bathrooms = null;
+          }
+
+          if (!isCommercialOrOfficeForClearing) {
+            customFields.square_footage = null;
+            customFields.unit_number = null;
+          }
+        }
 
         // Universal, not tied to any ITEM_FIELD_SETS entry (Phase 5 of the
         // Asset Management module) - "Next Maintenance Due" applies to any

@@ -3479,7 +3479,28 @@
       { id: "units_sold", label: "Units Sold", type: "number", column: "units_sold", placeholder: "Example: 8" },
       { id: "units_available", label: "Units Available", type: "number", column: "units_available", placeholder: "Example: 12" },
       { id: "project_progress_percent", label: "Project Progress %", type: "number", column: "project_progress_percent", placeholder: "Example: 65" },
-      { id: "completion_status", label: "Completion Status", type: "text", column: "completion_status", placeholder: "Example: Ongoing / Ready / Completed" }
+      { id: "completion_status", label: "Completion Status", type: "text", column: "completion_status", placeholder: "Example: Ongoing / Ready / Completed" },
+      // Property type / floor-unit / commercial fields (no `column` - all
+      // stored in custom_fields, no SQL migration needed). Real client
+      // feedback: a building needs each unit tied to a real floor number,
+      // and Commercial/Office listings need their own fields instead of
+      // bedrooms/bathrooms. Visibility of each is toggled per property
+      // type/unit-vs-standalone in my-items.html's real estate form, not
+      // here - this field set stays one flat list, same pattern as the
+      // existing buildingFieldsWrap toggle for total_floors/commission.
+      { id: "floor_number", label: "Floor", type: "number", placeholder: "Example: 3 (which floor this unit is on)" },
+      { id: "square_footage", label: "Square Footage", type: "number", placeholder: "Example: 850" },
+      { id: "unit_number", label: "Shop / Office Number", type: "text", placeholder: "Example: Shop 4, Suite 201" },
+      // Owner fields: the property-management agency (this tenant) may
+      // manage a property ON BEHALF OF a separate owner, taking a
+      // commission cut (management_commission_type/value above) rather
+      // than owning it outright. This is deliberately a plain text pair,
+      // not a link to a client_people/Company record - real name/contact
+      // is enough to know who the "Net to Owner" figure in the property
+      // rollup belongs to; a full linked owner entity is a separate,
+      // later piece of work (Company 360).
+      { id: "owner_name", label: "Property Owner", type: "text", placeholder: "Example: Jane Wanjiru (if managed on their behalf)" },
+      { id: "owner_contact", label: "Owner Phone / Email", type: "text", placeholder: "Example: 0722 123 456" }
     ]
   };
 
