@@ -2736,6 +2736,19 @@
         return runDebtorsQueryIntent();
       }
 
+      // Live-data Cluster 1 booking deposit/balance question ("deposit
+      // pending", "booking balance") - Tourism/Events/Catering/Photography/
+      // Hospitality only, checked right after Debtors since both are
+      // financial live-data questions.
+      if (isBookingQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Booking deposit/balance tracking isn't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runBookingQueryIntent();
+      }
+
       // Live-data payee question ("payee", "payees") - checked right after
       // Debtors since both are people-you-pay questions, but answers with
       // the real payee list/count (get_my_ungani_payees) rather than the
@@ -4844,6 +4857,123 @@
 
     return {
       spoken: "Owed to you: " + formatNiaKES(owedToMe) + " across " + debtorCount + " invoice" + (debtorCount === 1 ? "" : "s") + ". You owe: " + formatNiaKES(iOwe) + "."
+    };
+  }
+
+  // ---- Cluster 1 (Booking/deposit-balance) query ----
+  // Tourism/Events/Catering/Photography/Hospitality only - mirrors the
+  // Debtors & Payables intent above (direct supabase query, same HTML/spoken
+  // shape) but reads business_events rows with booking_total_amount set and
+  // computes the same Deposit Pending / Balance Owed / Paid in Full states
+  // as computeBookingSettlement() in client.html, rather than calling into
+  // client.html (a separate page script, not reachable from here).
+  function isBookingBusinessTypeTenant() {
+    if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") return false;
+
+    try {
+      const matched = UnganiBusinessConfig.resolve(state.tenant);
+      if (matched) return ["tourism", "events", "photography", "hospitality"].indexOf(matched.key) !== -1;
+    } catch (error) {
+      // fall through to keyword check below
+    }
+
+    const businessType = String(pickField(state.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+    return businessType.includes("tourism") || businessType.includes("travel") || businessType.includes("safari") ||
+      businessType.includes("events") || businessType.includes("catering") ||
+      businessType.includes("photography") || businessType.includes("videography") ||
+      businessType.includes("hospitality") || businessType.includes("hotel");
+  }
+
+  function isBookingQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["deposit pending", "deposit owed", "outstanding deposit", "outstanding deposits",
+      "booking balance", "booking balances", "who hasn't paid their deposit", "unpaid deposits",
+      "balance owed on bookings", "bookings owed"]
+      .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  async function runBookingQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    if (!isBookingBusinessTypeTenant()) {
+      addNiaMessage("Deposit/balance tracking isn't relevant for your business type.");
+      return { spoken: "That's not relevant for your business type." };
+    }
+
+    addNiaMessage("Checking deposit and balance status on your bookings...");
+
+    let events = [];
+    let transactions = [];
+
+    try {
+      const [eventsResponse, txResponse] = await Promise.all([
+        state.supabaseClient.from("business_events")
+          .select("id, event_title, event_date, status, booking_total_amount, booking_deposit_required")
+          .eq("tenant_id", state.tenantId)
+          .not("booking_total_amount", "is", null)
+          .order("event_date", { ascending: true }),
+        state.supabaseClient.from("transactions")
+          .select("id, amount, amount_kes, transaction_type, type, related_event_id")
+          .eq("tenant_id", state.tenantId).not("related_event_id", "is", null).limit(1000)
+      ]);
+
+      events = (!eventsResponse.error && eventsResponse.data) ? eventsResponse.data : [];
+      transactions = (!txResponse.error && txResponse.data) ? txResponse.data : [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const outstanding = events.filter(function (event) {
+      const status = String(pickField(event, ["status"], "scheduled")).toLowerCase();
+      return !status.includes("cancelled");
+    }).map(function (event) {
+      const total = Number(event.booking_total_amount) || 0;
+      const depositRequired = Number(event.booking_deposit_required) || 0;
+
+      const paid = transactions.filter(function (t) {
+        if (String(t.related_event_id) !== String(event.id)) return false;
+        const broadType = String(pickField(t, ["transaction_type", "type"], "income")).toLowerCase();
+        return broadType !== "expense";
+      }).reduce(function (sum, t) { return sum + (Number(t.amount_kes) || Number(t.amount) || 0); }, 0);
+
+      const balance = total - paid;
+      const label = paid <= 0
+        ? "Deposit Pending: " + formatNiaKES(depositRequired > 0 ? depositRequired : total)
+        : (balance <= 0 ? "Paid in full" : "Balance Owed: " + formatNiaKES(balance));
+
+      return { title: pickField(event, ["event_title"], "Booking"), date: event.event_date, balance: balance, hasBalance: paid <= 0 || balance > 0, label: label };
+    }).filter(function (row) { return row.hasBalance; }).sort(function (a, b) {
+      return String(a.date || "").localeCompare(String(b.date || ""));
+    });
+
+    if (outstanding.length === 0) {
+      addNiaMessage("All your bookings are settled — no deposits pending or balances owed right now.");
+      return { spoken: "All your bookings are settled." };
+    }
+
+    const shown = outstanding.slice(0, 5);
+    const remaining = outstanding.length - shown.length;
+    const totalOwed = outstanding.reduce(function (sum, row) { return sum + Math.max(row.balance, 0); }, 0);
+
+    const listHtml = shown.map(function (row) {
+      return `<div style="margin-top:6px;">${severityDotHtml("gold")}${safe(row.title)} — ${safe(row.label)}</div>`;
+    }).join("");
+
+    const html =
+      `<strong>Booking Deposits &amp; Balances</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> ${outstanding.length} booking${outstanding.length === 1 ? "" : "s"} with money outstanding, ${safe(formatNiaKES(totalOwed))} owed total</div>` +
+      listHtml +
+      (remaining > 0 ? `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="my-calendar.html">See ${remaining} more →</a></div>` : "") +
+      `<div style="margin-top:8px;">${goldLink("my-calendar.html", "Open Calendar →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: outstanding.length + " booking" + (outstanding.length === 1 ? "" : "s") + " with money outstanding, " + formatNiaKES(totalOwed) + " owed total."
     };
   }
 

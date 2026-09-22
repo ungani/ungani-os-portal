@@ -59,9 +59,11 @@
     let editingMoneyOriginalStatus = "";
     let isRealEstate = false;
     let isLogistics = false;
+    let isBookingBusinessType = false;
     let personOptions = [];
     let propertyItemOptions = [];
     let tripEventOptions = [];
+    let bookingEventOptions = [];
     let teamMemberOptions = [];
     let payeeOptions = [];
     let sectionOptions = [];
@@ -123,6 +125,7 @@
 
       isRealEstate = detectRealEstate(context.tenant);
       isLogistics = detectLogistics(context.tenant);
+      isBookingBusinessType = detectTourism(context.tenant) || detectEvents(context.tenant) || detectPhotography(context.tenant) || detectHospitality(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -388,6 +391,10 @@
         loaders.push(loadTripEventOptions());
       }
 
+      if (isBookingBusinessType) {
+        loaders.push(loadBookingEventOptions());
+      }
+
       await Promise.all(loaders);
 
       renderMoneyPage();
@@ -527,6 +534,26 @@
       } catch (error) {
         console.warn("Trip event options skipped:", error.message);
         tripEventOptions = [];
+      }
+    }
+
+    // Cluster 1 (Booking/deposit-balance) equivalent of loadTripEventOptions
+    // above, for Tourism/Events/Catering/Photography/Hospitality - only real
+    // Booking records (booking_total_amount set) are offered here, matching
+    // the "only real Trip records" precedent.
+    async function loadBookingEventOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_events")
+          .select("id, event_title, event_date, booking_total_amount")
+          .eq("tenant_id", currentContext.tenantId)
+          .not("booking_total_amount", "is", null)
+          .order("event_date", { ascending: false });
+
+        bookingEventOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Booking event options skipped:", error.message);
+        bookingEventOptions = [];
       }
     }
 
@@ -2432,6 +2459,20 @@
               </div>
             ` : ""}
 
+            ${isBookingBusinessType ? `
+              <div>
+                <label for="moneyRelatedBooking">Related Booking</label>
+                <select id="moneyRelatedBooking">
+                  <option value="">Not linked</option>
+                  ${bookingEventOptions.map(function (booking) {
+                    const label = UnganiClientShared.getValue(booking, ["event_title"], "Booking");
+                    const date = booking.event_date ? " — " + String(booking.event_date).slice(0, 10) : "";
+                    return `<option value="${UnganiClientShared.attr(booking.id)}">${UnganiClientShared.safe(label + date)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
+
             <div id="moneyTeamMemberWrap">
               <label for="moneyPaidTo">Paid To (optional)</label>
               <select id="moneyPaidTo" onchange="handlePaidToChange()">
@@ -2557,6 +2598,10 @@
 
           if (document.getElementById("moneyRelatedTrip")) {
             document.getElementById("moneyRelatedTrip").value = row ? UnganiClientShared.getValue(row, ["related_event_id"], "") : "";
+          }
+
+          if (document.getElementById("moneyRelatedBooking")) {
+            document.getElementById("moneyRelatedBooking").value = row ? UnganiClientShared.getValue(row, ["related_event_id"], "") : "";
           }
 
           if (document.getElementById("moneyPaidTo")) {
@@ -2898,7 +2943,7 @@ const payload = {
 
       payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
       payload.related_item_id = (isRealEstate || isLogistics) ? (UnganiClientShared.value("moneyRelatedProperty") || null) : null;
-      payload.related_event_id = isLogistics ? (UnganiClientShared.value("moneyRelatedTrip") || null) : null;
+      payload.related_event_id = isLogistics ? (UnganiClientShared.value("moneyRelatedTrip") || null) : (isBookingBusinessType ? (UnganiClientShared.value("moneyRelatedBooking") || null) : null);
 
       if (payload.payment_method === "M-Pesa") {
         payload.reference_no = UnganiClientShared.value("moneyMpesaCode") || null;
@@ -3352,6 +3397,58 @@ const payload = {
       const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("logistics") || businessType.includes("transport") || businessType.includes("fleet") || businessTypeKey.includes("logistics");
+    }
+
+    // Cluster 1 (Booking/deposit-balance) detectors - same local-copy
+    // pattern as detectLogistics above. Used to gate the Related Booking
+    // picker below to the 4 business types with booking_total_amount /
+    // booking_deposit_required fields on their calendar activities.
+    function detectTourism(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "tourism";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("tourism") || businessType.includes("travel") || businessType.includes("tour ") || businessType.includes("safari") || businessType.includes("excursion") || businessTypeKey.includes("tourism");
+    }
+
+    function detectEvents(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "events";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("events") || businessType.includes("catering") || businessType.includes("caterer") || businessTypeKey.includes("events");
+    }
+
+    function detectPhotography(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "photography";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("photography") || businessType.includes("videography") || businessTypeKey.includes("photography");
+    }
+
+    function detectHospitality(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "hospitality";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("hospitality") || businessType.includes("hotel") || businessTypeKey.includes("hospitality");
     }
   </script>
 </body>

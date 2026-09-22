@@ -7035,6 +7035,46 @@
       return { label: "Partial — Owed: " + balance.toLocaleString() + " " + currency, hasBalance: true };
     }
 
+    // Cluster 1 (Booking/deposit-balance) equivalent of computeTripSettlement
+    // above, for Tourism/Events/Catering/Photography/Hospitality bookings -
+    // kept as a separate function rather than merged, since the states are
+    // conceptually different: Trip settlement is Pending -> Partial -> Paid
+    // (a trip already happened, or is about to), while Booking settlement is
+    // Deposit Pending -> Balance Owed -> Paid in Full (a booking secured with
+    // a deposit ahead of the date). Reads booking_total_amount /
+    // booking_deposit_required (business_events columns added for Cluster 1)
+    // and reuses the same transactions.related_event_id link as Trip
+    // settlement - no new Money-side schema needed.
+    function computeBookingSettlement(event, transactions) {
+      const total = Number(getValue(event, ["booking_total_amount"], 0)) || 0;
+      if (total <= 0) return null;
+
+      const status = String(getValue(event, ["status"], "scheduled")).toLowerCase();
+      if (status.includes("cancelled")) return null;
+
+      const depositRequired = Number(getValue(event, ["booking_deposit_required"], 0)) || 0;
+      const currency = getValue(event, ["rate_currency"], "KES") || "KES";
+
+      const paid = (transactions || []).filter(function (t) {
+        return String(getValue(t, ["related_event_id"], "")) === String(event.id) && isIncome(t);
+      }).reduce(function (sum, t) {
+        return sum + Number(getValue(t, ["amount_kes", "amount"], 0) || 0);
+      }, 0);
+
+      if (paid <= 0) {
+        const depositLabel = depositRequired > 0 ? depositRequired : total;
+        return { label: "Deposit Pending: " + depositLabel.toLocaleString() + " " + currency, hasBalance: true };
+      }
+
+      const balance = total - paid;
+
+      if (balance <= 0) {
+        return { label: "Paid in full", hasBalance: false };
+      }
+
+      return { label: "Balance Owed: " + balance.toLocaleString() + " " + currency, hasBalance: true };
+    }
+
     function renderLogisticsTripsSection(data, ctx) {
       const sevenDaysAgoStr = new Date(new Date(ctx.todayStr).getTime() - 7 * 86400000).toISOString().slice(0, 10);
 
@@ -8985,7 +9025,7 @@
         ].join(""),
         attentionTitle: "Needs Attention Today",
         attentionSubtitle: "Overdue checkouts, today's check-ins, bookings needing an outcome, open housekeeping/maintenance, and upcoming departures — in priority order.",
-        attentionHtml: renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts),
+        attentionHtml: renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts, false, data.transactions),
         quickActionsHtml: [
           quickAction("hotel", "Add Room", "List a new room or unit", ctx.itemsHref, "#D4A63A"),
           quickAction("wallet", "Log Payment", "Record booking income", ctx.moneyHref, "#16A34A"),
@@ -9571,7 +9611,7 @@
               <p>Overdue checkouts, today's check-ins, open housekeeping/maintenance, and upcoming departures — tagged by section.</p>
             </div>
           </div>
-          ${renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts, true)}
+          ${renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts, true, dashboardData.transactions)}
         `;
 
         quickActionsHtml = `
@@ -10396,7 +10436,7 @@
       return renderAttentionGroups([{ title: "Needs Outcome", rows: rows }], "#16A34A", "All caught up ✓", "Nothing needs an outcome confirmed right now.");
     }
 
-    function renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts, taggedMode) {
+    function renderHospitalityAttentionList(overdueCheckouts, todaysCheckins, bookingsNeedingOutcome, maintenanceOpen, upcomingCheckouts, taggedMode, transactions) {
       const todayStr = new Date().toISOString().slice(0, 10);
       const groups = [];
 
@@ -10429,6 +10469,7 @@
             const title = getValue(row, ["event_title", "title", "name"], "Booking");
             const time = getValue(row, ["start_time"], "");
             const rowSection = getValue(row, ["section_label"], "");
+            const settlement = computeBookingSettlement(row, transactions);
 
             return attentionRow(
               "concierge-bell",
@@ -10437,7 +10478,7 @@
               "Today",
               "gold",
               "my-calendar.html?highlight=" + row.id,
-              taggedMode ? (rowSection || "Untagged") : null,
+              taggedMode ? (rowSection || "Untagged") : (settlement ? settlement.label : null),
               "event:" + row.id
             );
           })
@@ -10451,6 +10492,7 @@
             const title = getValue(row, ["event_title", "title", "name"], "Booking");
             const date = getValue(row, ["event_date", "date", "start_date"], "");
             const rowSection = getValue(row, ["section_label"], "");
+            const settlement = computeBookingSettlement(row, transactions);
 
             return attentionRow(
               "circle-question-mark",
@@ -10459,7 +10501,7 @@
               "Needs Outcome",
               "red",
               "my-calendar.html?highlight=" + row.id,
-              taggedMode ? (rowSection || "Untagged") : null,
+              taggedMode ? (rowSection || "Untagged") : (settlement ? settlement.label : null),
               "event:" + row.id
             );
           })
@@ -13425,7 +13467,8 @@
             const title = getValue(event, ["event_title", "title", "name"], calendarNoun);
             const date = formatDate(getValue(event, ["event_date", "date", "start_date"], ""));
             const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === ctx.todayStr;
-            return attentionRow("calendar", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", ctx.calendarHref + "?highlight=" + event.id, null, null);
+            const settlement = computeBookingSettlement(event, data.transactions);
+            return attentionRow("calendar", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", ctx.calendarHref + "?highlight=" + event.id, settlement ? settlement.label : null, null);
           })
         });
       }
@@ -15074,7 +15117,8 @@
             const title = getValue(event, ["event_title", "title", "name"], "Tour");
             const date = formatDate(getValue(event, ["event_date", "date", "start_date"], ""));
             const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr;
-            return attentionRow("compass", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null);
+            const settlement = computeBookingSettlement(event, data.transactions);
+            return attentionRow("compass", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, settlement ? settlement.label : null, null);
           })
         });
       }
@@ -16076,7 +16120,7 @@
 
       const attentionGroups = [];
       if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("triangle-alert", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
-      if (upcomingShoots.length > 0) attentionGroups.push({ title: "Upcoming Shoots (Next First)", rows: upcomingShoots.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Shoot"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; return attentionRow("camera", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null); }) });
+      if (upcomingShoots.length > 0) attentionGroups.push({ title: "Upcoming Shoots (Next First)", rows: upcomingShoots.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Shoot"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; const settlement = computeBookingSettlement(event, data.transactions); return attentionRow("camera", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, settlement ? settlement.label : null, null); }) });
 
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks or upcoming shoots need attention right now.");
 

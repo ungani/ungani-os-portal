@@ -60,6 +60,7 @@
     let tripDriverOptions = [];
     let tripClientOptions = [];
     let tripManagerOptions = [];
+    let isBookingBusinessType = false;
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -81,6 +82,7 @@
       sectionOptions = businessPreset.selectedSectionLabels || [];
       currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
       isLogistics = detectLogistics(context.tenant);
+      isBookingBusinessType = detectTourism(context.tenant) || detectEvents(context.tenant) || detectPhotography(context.tenant) || detectHospitality(context.tenant);
 
       if (isLogistics && logisticsTripFieldsAllowed()) {
         await loadLogisticsTripOptions();
@@ -114,6 +116,58 @@
       const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("logistics") || businessType.includes("transport") || businessType.includes("fleet") || businessTypeKey.includes("logistics");
+    }
+
+    // Same local-copy pattern as detectLogistics above. Booking/deposit
+    // fields (Total Amount, Deposit Required, Deposit Due Date) apply to
+    // these 4 business types - Tourism, Events (incl. Catering), Photography,
+    // Hospitality - matching computeBookingSettlement() in client.html.
+    function detectTourism(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "tourism";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("tourism") || businessType.includes("travel") || businessType.includes("tour ") || businessType.includes("safari") || businessType.includes("excursion") || businessTypeKey.includes("tourism");
+    }
+
+    function detectEvents(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "events";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("events") || businessType.includes("catering") || businessType.includes("caterer") || businessTypeKey.includes("events");
+    }
+
+    function detectPhotography(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "photography";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("photography") || businessType.includes("videography") || businessTypeKey.includes("photography");
+    }
+
+    function detectHospitality(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "hospitality";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("hospitality") || businessType.includes("hotel") || businessTypeKey.includes("hospitality");
     }
 
     // Trip depth (vehicle/driver/client/route/rate) only fits Transport and
@@ -797,6 +851,23 @@
                   </div>
                 ` : ""}
 
+                ${isBookingBusinessType ? `
+                  <div>
+                    <label for="eventBookingTotalAmount">Total Amount</label>
+                    <input id="eventBookingTotalAmount" type="number" min="0" step="0.01" placeholder="Example: 45000" />
+                  </div>
+
+                  <div>
+                    <label for="eventBookingDepositRequired">Deposit Required</label>
+                    <input id="eventBookingDepositRequired" type="number" min="0" step="0.01" placeholder="Example: 15000" />
+                  </div>
+
+                  <div>
+                    <label for="eventBookingDepositDueDate">Deposit Due Date</label>
+                    <input id="eventBookingDepositDueDate" type="date" />
+                  </div>
+                ` : ""}
+
                 <div class="wide">
                   <label for="eventNotes">Notes</label>
                   <textarea id="eventNotes" rows="5" placeholder="Add meeting details, appointment notes, delivery details, reminders, or preparation notes..."></textarea>
@@ -1233,6 +1304,12 @@
         payload.trip_issue_notes = UnganiClientShared.value("eventTripIssue") ? (UnganiClientShared.value("eventTripIssueNotes") || null) : null;
       }
 
+      if (isBookingBusinessType && document.getElementById("eventBookingTotalAmount")) {
+        payload.booking_total_amount = UnganiClientShared.value("eventBookingTotalAmount") ? Number(UnganiClientShared.value("eventBookingTotalAmount")) : null;
+        payload.booking_deposit_required = UnganiClientShared.value("eventBookingDepositRequired") ? Number(UnganiClientShared.value("eventBookingDepositRequired")) : null;
+        payload.booking_deposit_due_date = UnganiClientShared.value("eventBookingDepositDueDate") || null;
+      }
+
       let response;
 
       try {
@@ -1306,6 +1383,12 @@
           document.getElementById("eventTripIssue").value = row.trip_issue || "";
           document.getElementById("eventTripIssueNotes").value = row.trip_issue_notes || "";
           updateTripIssueNotesVisibility();
+        }
+
+        if (document.getElementById("eventBookingTotalAmount")) {
+          document.getElementById("eventBookingTotalAmount").value = row.booking_total_amount != null ? row.booking_total_amount : "";
+          document.getElementById("eventBookingDepositRequired").value = row.booking_deposit_required != null ? row.booking_deposit_required : "";
+          document.getElementById("eventBookingDepositDueDate").value = row.booking_deposit_due_date || "";
         }
 
         document.getElementById("eventNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
@@ -1419,6 +1502,9 @@
       if (document.getElementById("eventTripIssue")) document.getElementById("eventTripIssue").value = "";
       if (document.getElementById("eventTripIssueNotes")) document.getElementById("eventTripIssueNotes").value = "";
       updateTripIssueNotesVisibility();
+      if (document.getElementById("eventBookingTotalAmount")) document.getElementById("eventBookingTotalAmount").value = "";
+      if (document.getElementById("eventBookingDepositRequired")) document.getElementById("eventBookingDepositRequired").value = "";
+      if (document.getElementById("eventBookingDepositDueDate")) document.getElementById("eventBookingDepositDueDate").value = "";
       if (document.getElementById("eventNotes")) document.getElementById("eventNotes").value = "";
     }
 
