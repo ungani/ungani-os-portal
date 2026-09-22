@@ -263,7 +263,11 @@
         position: fixed;
         right: 18px;
         top: 82px;
-        z-index: 99999;
+        /* Kept below .ungani-modal-backdrop (z-index: 9999 in
+           client-shared.js) so a toast popping in doesn't sit on top of
+           an open modal's buttons - was 99999, same bug class as the
+           push-notification banner. */
+        z-index: 66;
         display: flex;
         flex-direction: column;
         gap: 12px;

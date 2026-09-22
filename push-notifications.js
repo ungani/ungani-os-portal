@@ -233,7 +233,11 @@
         position: fixed;
         left: 18px;
         bottom: 18px;
-        z-index: 99998;
+        /* Must stay below .ungani-modal-backdrop (z-index: 9999 in
+           client-shared.js) so an open modal's buttons are always
+           clickable - this used to be 99998 and rendered on top of
+           every modal in the app, blocking form submits underneath it. */
+        z-index: 61;
         display: grid;
         grid-template-columns: 40px 1fr;
         gap: 12px;

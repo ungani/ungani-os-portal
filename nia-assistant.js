@@ -952,7 +952,11 @@
         position: fixed;
         right: 20px;
         bottom: 20px;
-        z-index: 99998;
+        /* Kept below .ungani-modal-backdrop (z-index: 9999 in
+           client-shared.js) so the FAB never sits on top of an open
+           modal's buttons - was 99998, same bug class as the push
+           banner's z-index. */
+        z-index: 63;
         width: 58px;
         height: 58px;
         border-radius: 50%;
@@ -1054,7 +1058,7 @@
         position: fixed;
         right: 32px;
         bottom: 92px;
-        z-index: 99997;
+        z-index: 62;
         width: 34px;
         height: 34px;
         border-radius: 50%;
@@ -1088,7 +1092,7 @@
         position: fixed;
         right: 88px;
         bottom: 34px;
-        z-index: 99997;
+        z-index: 62;
         background: ${BRAND.white};
         color: ${BRAND.navy};
         border: none;
@@ -1124,7 +1128,7 @@
         position: fixed;
         right: 20px;
         bottom: 90px;
-        z-index: 99999;
+        z-index: 64;
         width: min(380px, calc(100vw - 32px));
         height: min(560px, calc(100vh - 120px));
         background: ${BRAND.white};

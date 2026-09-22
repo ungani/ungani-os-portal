@@ -458,7 +458,7 @@
         position: fixed;
         right: 18px;
         bottom: 18px;
-        z-index: 99999;
+        z-index: 67;
         max-width: min(340px, calc(100vw - 32px));
         background: linear-gradient(135deg, rgba(8,38,84,0.98), rgba(6,28,61,0.98));
         color: #FFFFFF;
