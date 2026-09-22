@@ -5921,7 +5921,7 @@
       });
 
       const leaseCommitments = (data.commitments || []).filter(function (c) { return c.commitment_type === "lease"; });
-      const leasesExpiring = UnganiClientShared.commitmentsExpiringSoon(leaseCommitments, ctx.todayStr);
+      const leasesExpiring = commitmentsExpiringSoonLocal(leaseCommitments, ctx.todayStr);
 
       const trendMonths = calculatePropertyRentTrend(data.transactions);
       const outstandingRentTrend = calculateOutstandingRentTrend(data, true);
@@ -6150,7 +6150,7 @@
           return type.includes("maintenance") && !status.includes("completed") && !status.includes("cancelled");
         });
         const leaseCommitmentsForHealth = (data.commitments || []).filter(function (c) { return c.commitment_type === "lease"; });
-        const leasesExpiringForHealth = UnganiClientShared.commitmentsExpiringSoon(leaseCommitmentsForHealth, todayStr);
+        const leasesExpiringForHealth = commitmentsExpiringSoonLocal(leaseCommitmentsForHealth, todayStr);
 
         try {
           health = computePropertyHealthScore({
@@ -6352,7 +6352,7 @@
       const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
 
       const leaseCommitments = (dashboardData.commitments || []).filter(function (c) { return c.commitment_type === "lease"; });
-      const leasesExpiring = UnganiClientShared.commitmentsExpiringSoon(leaseCommitments, todayStr);
+      const leasesExpiring = commitmentsExpiringSoonLocal(leaseCommitments, todayStr);
 
       const sectionSummaries = sections.map(function (label) {
         return calculateSectionSummary(label, monthKey, todayStr);
@@ -14204,7 +14204,7 @@
       // created contract records there. See renderGymDashboard for the
       // same pattern applied to memberships.
       const contractCommitments = (data.commitments || []).filter(function (c) { return c.commitment_type === "service_contract"; });
-      const contractsExpiring = UnganiClientShared.commitmentsExpiringSoon(contractCommitments, todayStr);
+      const contractsExpiring = commitmentsExpiringSoonLocal(contractCommitments, todayStr);
 
       const calendarPreview = buildSecurityCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(isNotificationUnread).length;
@@ -15159,7 +15159,7 @@
       // Deliberately separate from renewalsDue above (task-based, manual)
       // rather than replacing it - a gym may use either or both.
       const membershipCommitments = (data.commitments || []).filter(function (c) { return c.commitment_type === "membership"; });
-      const membershipsExpiring = UnganiClientShared.commitmentsExpiringSoon(membershipCommitments, todayStr);
+      const membershipsExpiring = commitmentsExpiringSoonLocal(membershipCommitments, todayStr);
 
       const calendarPreview = buildGymCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(isNotificationUnread).length;
@@ -15578,7 +15578,7 @@
       // has turned on "Leases / Memberships / Contracts" in Settings AND
       // created contract records there. Same pattern as Security/Gym.
       const contractCommitments = (data.commitments || []).filter(function (c) { return c.commitment_type === "service_contract"; });
-      const contractsExpiring = UnganiClientShared.commitmentsExpiringSoon(contractCommitments, todayStr);
+      const contractsExpiring = commitmentsExpiringSoonLocal(contractCommitments, todayStr);
 
       const greetingMessages = [];
       if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
@@ -17642,6 +17642,35 @@
 
       if (state) state.innerText = label;
       if (sidebarState) sidebarState.innerText = label;
+    }
+
+    // Cluster 4 (leases/memberships/service contracts): local, self-
+    // contained re-implementation of client-shared.js's
+    // commitmentsExpiringSoon() - client.html deliberately never loads
+    // client-shared.js (own bespoke shell, side-effect risk from its
+    // auto-init), so the 6 dashboard call sites that were cut over to
+    // Commitments during the Real Estate/Gym/Security/Cleaning work
+    // were calling an undefined global and crashing renderDashboard()
+    // for every business type using Cluster 4. Same logic as
+    // computeCommitmentStatus()'s "expiring_soon" branch: a manually
+    // terminated/frozen commitment never counts, only a commitment with
+    // an end_date between today and +windowDays does.
+    function commitmentsExpiringSoonLocal(commitments, todayStr, windowDays) {
+      const today = todayStr || new Date().toISOString().slice(0, 10);
+      const window = windowDays || 7;
+      const windowEnd = new Date(today);
+      windowEnd.setDate(windowEnd.getDate() + window);
+      const windowEndStr = windowEnd.toISOString().slice(0, 10);
+
+      return (commitments || []).filter(function (c) {
+        const manualStatus = String((c && c.status) || "active").toLowerCase();
+        if (manualStatus === "terminated" || manualStatus === "frozen") return false;
+
+        const endDate = String((c && c.end_date) || "").slice(0, 10);
+        if (!endDate) return false;
+
+        return endDate >= today && endDate <= windowEndStr;
+      }).sort(function (a, b) { return String(a.end_date || "").localeCompare(String(b.end_date || "")); });
     }
 
     function getValue(obj, fields, fallback) {
