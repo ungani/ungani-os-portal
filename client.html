@@ -7746,6 +7746,29 @@
           ${renderLogisticsAttentionList(overdueDeliveries, todaysTrips, [], maintenanceDue, true)}
         </section>
 
+        ${(function () {
+          // This combined multi-section Overview is a SEPARATE render path
+          // from renderLogisticsDashboard() (single-section/scoped views) -
+          // the live-settlement Trips section only existed on that other
+          // path until this fix. Caught via real end-to-end Playwright
+          // testing: a Trip created + fully paid off never appeared here,
+          // even though the exact same tenant's Transport-scoped view
+          // showed it correctly.
+          const tripsSection = renderLogisticsTripsSection(dashboardData, { todayStr: todayStr, calendarHref: "my-calendar.html" });
+          return tripsSection ? `
+            <section class="card">
+              <div class="section-title">
+                <div>
+                  <h3>Active & Upcoming Trips</h3>
+                  <p>${safe(tripsSection.subtitle)}</p>
+                </div>
+              </div>
+
+              ${tripsSection.html}
+            </section>
+          ` : "";
+        })()}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(dashboardData.transactions)}
         </section>
