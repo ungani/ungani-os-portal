@@ -76,6 +76,7 @@
     ],
     "peopleTypes": [
       "Driver",
+      "Transport Manager",
       "Client",
       "Customer",
       "Supplier",
@@ -3449,6 +3450,7 @@
     // wrong for the other eleven, so this stays genuinely generic rather
     // than picking a specific noun.
     namePlaceholder: "Example: Item or asset name",
+    variantGroupPlaceholder: "Example: Size, Model, Package Type",
     fields: [
       // id must be "stock_quantity", not "quantity" - client.html's
       // getStockQuantity()/isLowStockItem() (built for Retail's low-stock
@@ -3508,6 +3510,7 @@
     valueLabel: "Estimated Value",
     statusOptions: ["available", "in use", "in maintenance", "retired", "inactive"],
     namePlaceholder: "Example: Truck KDA 123B, Delivery Van 2",
+    variantGroupPlaceholder: "Example: Truck Class, Fleet Group",
     // Registration number is a genuine permanent unique identifier for a
     // vehicle - drives the strong-match branch of the duplicate-detection
     // RPC (check_my_ungani_duplicate_item). Field sets with no such
@@ -3526,6 +3529,7 @@
     valueLabel: "Estimated Value",
     statusOptions: ["available", "in use", "in maintenance", "retired", "inactive"],
     namePlaceholder: "Example: Reefer Unit 2, Cold Room A",
+    variantGroupPlaceholder: "Example: Reefer Size, Genset Capacity",
     fields: [
       { id: "fuel_capacity_liters", label: "Fuel Capacity (Liters)", type: "number", placeholder: "Example: 200" },
       { id: "temperature_range", label: "Temperature Range", type: "text", placeholder: "Example: -18°C to -22°C" },
@@ -3537,12 +3541,22 @@
     valueLabel: "Estimated Value",
     statusOptions: ["available", "in progress", "cleared", "on hold", "inactive"],
     namePlaceholder: "Example: Container MSKU1234567, Shipment #4521",
+    variantGroupPlaceholder: "Example: Shipment Type, Cargo Class",
     identityFieldId: "reference_number",
     fields: [
       { id: "reference_number", label: "Container / Reference Number", type: "text", placeholder: "Example: MSKU1234567" },
       { id: "origin", label: "Origin", type: "text", placeholder: "Example: Mombasa Port" },
       { id: "destination", label: "Destination", type: "text", placeholder: "Example: Nairobi ICD" },
-      { id: "clearance_status", label: "Clearance Status", type: "text", placeholder: "Example: Awaiting documents" }
+      { id: "clearance_status", label: "Clearance Status", type: "text", placeholder: "Example: Awaiting documents" },
+      // Logistics depth pass: a container's real operational unit is the
+      // customs-clearance case, not a vehicle trip - so it needs a client
+      // link and a fee, not the vehicle_item_id/driver_person_id/route
+      // Trip columns added for Transport/Cold Chain. client_name is
+      // free text (matches this app's existing "who is this for" fields
+      // like Real Estate's assigned_agent), fee is numeric so it can be
+      // compared against clearance_status at a glance.
+      { id: "client_name", label: "Client", type: "text", placeholder: "Example: Acme Imports Ltd" },
+      { id: "clearance_fee", label: "Clearance Fee (Ksh)", type: "number", placeholder: "Example: 45000" }
     ]
   };
 
@@ -3550,6 +3564,7 @@
     valueLabel: "Rate per Night",
     statusOptions: ["available", "occupied", "reserved", "maintenance", "inactive"],
     namePlaceholder: "Example: Room 204, Deluxe Suite 3",
+    variantGroupPlaceholder: "Example: Room Type, Bed Size",
     fields: [
       { id: "room_type", label: "Room / Unit Type", type: "text", placeholder: "Example: Single, Double, Suite" },
       { id: "capacity", label: "Guest Capacity", type: "number", placeholder: "Example: 2" },
@@ -3562,6 +3577,7 @@
     valueLabel: "Unit Price",
     statusOptions: ["available", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Grilled Chicken, Coca-Cola 500ml",
+    variantGroupPlaceholder: "Example: Soda, Portion Size",
     fields: [
       { id: "category", label: "Category", type: "text", placeholder: "Example: Main Course, Drink, Equipment" },
       { id: "stock_quantity", label: "Stock Quantity", type: "number", placeholder: "Example: 25" },
@@ -3583,6 +3599,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "expired", "discontinued"],
     namePlaceholder: "Example: Amoxicillin 500mg, Paracetamol 500mg",
+    variantGroupPlaceholder: "Example: Dosage, Pack Size",
     fields: [
       { id: "expiry_date", label: "Expiry Date", type: "date" },
       { id: "batch_number", label: "Batch Number", type: "text", placeholder: "Example: B20260614" },
@@ -3596,6 +3613,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "expired", "discontinued"],
     namePlaceholder: "Example: Dairy Meal 50kg, Maize Seed 2kg",
+    variantGroupPlaceholder: "Example: Bag Size, Pack Weight",
     fields: [
       { id: "expiry_date", label: "Expiry Date", type: "date" },
       { id: "batch_number", label: "Batch Number", type: "text", placeholder: "Example: B20260614" },
@@ -3609,6 +3627,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "expired", "discontinued"],
     namePlaceholder: "Example: Vaseline Lotion 400ml, Shea Butter Cream",
+    variantGroupPlaceholder: "Example: Bottle Size, Scent",
     fields: [
       { id: "expiry_date", label: "Expiry Date", type: "date" },
       { id: "batch_number", label: "Batch Number", type: "text", placeholder: "Example: B20260614" },
@@ -3624,6 +3643,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Samsung TV 55-inch, HP Laptop 15s",
+    variantGroupPlaceholder: "Example: Screen Size, Storage Capacity",
     identityFieldId: "serial_number",
     fields: [
       { id: "serial_number", label: "Serial Number / IMEI", type: "text", placeholder: "Example: 356789104561234" },
@@ -3637,6 +3657,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: iPhone 13 Pro, Samsung Galaxy A14",
+    variantGroupPlaceholder: "Example: Storage Capacity, Color",
     identityFieldId: "serial_number",
     fields: [
       { id: "serial_number", label: "Serial Number / IMEI", type: "text", placeholder: "Example: 356789104561234" },
@@ -3650,6 +3671,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Men's Denim Jacket, Ladies Sandals",
+    variantGroupPlaceholder: "Example: Men's Denim Jacket (groups its Size/Color variants)",
     fields: [
       { id: "size", label: "Size", type: "text", placeholder: "Example: M, 42, UK 8" },
       { id: "color", label: "Color", type: "text", placeholder: "Example: Navy Blue" },
@@ -3662,6 +3684,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: 3-Seater Sofa, Dining Table Set",
+    variantGroupPlaceholder: "Example: Fabric, Finish",
     fields: [
       { id: "dimensions", label: "Dimensions", type: "text", placeholder: "Example: 180cm x 90cm x 75cm" },
       { id: "material", label: "Material", type: "text", placeholder: "Example: Oak, Steel, Fabric" },
@@ -3674,6 +3697,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Mathematics Textbook Form 3, A4 Notebook",
+    variantGroupPlaceholder: "Example: Grade Level, Subject Series",
     identityFieldId: "isbn",
     fields: [
       { id: "isbn", label: "ISBN", type: "text", placeholder: "Example: 978-3-16-148410-0" },
@@ -3689,6 +3713,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Sugar 2kg, Cooking Oil 1L",
+    variantGroupPlaceholder: "Example: Soda, Cooking Oil",
     identityFieldId: "sku",
     fields: [
       { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },
@@ -3702,6 +3727,7 @@
     valueLabel: "Cost Price",
     statusOptions: ["in stock", "low stock", "out of stock", "discontinued"],
     namePlaceholder: "Example: Hammer, Paint Bucket 20L",
+    variantGroupPlaceholder: "Example: Paint, Nails",
     identityFieldId: "sku",
     fields: [
       { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },
@@ -3720,6 +3746,7 @@
     // problem for whichever OTHER kind of shop picks this one - stays
     // genuinely generic on purpose, same reasoning as GENERIC_ITEM_FIELD_SET.
     namePlaceholder: "Example: Product name, SKU-00123",
+    variantGroupPlaceholder: "Example: Product Group, Size Category",
     identityFieldId: "sku",
     fields: [
       { id: "sku", label: "SKU", type: "text", placeholder: "Example: SKU-00123" },

@@ -58,8 +58,10 @@
     let editingMoneyId = null;
     let editingMoneyOriginalStatus = "";
     let isRealEstate = false;
+    let isLogistics = false;
     let personOptions = [];
     let propertyItemOptions = [];
+    let tripEventOptions = [];
     let teamMemberOptions = [];
     let payeeOptions = [];
     let sectionOptions = [];
@@ -120,6 +122,7 @@
       currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
 
       isRealEstate = detectRealEstate(context.tenant);
+      isLogistics = detectLogistics(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -377,8 +380,12 @@
         loadPersonOptions()
       ];
 
-      if (isRealEstate) {
+      if (isRealEstate || isLogistics) {
         loaders.push(loadPropertyItemOptions());
+      }
+
+      if (isLogistics) {
+        loaders.push(loadTripEventOptions());
       }
 
       await Promise.all(loaders);
@@ -479,10 +486,11 @@
     // Property/Unit financial rollup (real client feedback): a transaction
     // needs to be linkable to a specific building or unit, not just a
     // person, so the property's own rollup can sum real payments instead
-    // of relying on the free-text property_name column. Real estate only
-    // for now - the underlying related_item_id column and pattern are
-    // generic, so this can extend to other hierarchical-inventory business
-    // types later without a new migration.
+    // of relying on the free-text property_name column. Extended to
+    // Logistics (Logistics depth pass) so a fuel/maintenance expense or a
+    // trip payment can be tied to a specific vehicle - same
+    // related_item_id column and pattern, no new migration needed, exactly
+    // as this comment originally predicted.
     async function loadPropertyItemOptions() {
       try {
         const response = await currentContext.supabaseClient
@@ -496,6 +504,29 @@
       } catch (error) {
         console.warn("Property item options skipped:", error.message);
         propertyItemOptions = [];
+      }
+    }
+
+    // Real money tracking for Trips (standing rule: every operational
+    // record connects to real Money, never a static frozen number) - a
+    // payment can now be tied to the specific Trip it's for via
+    // transactions.related_event_id, so the dashboard's Owed/Partial/Paid
+    // settlement is computed live instead of just reflecting the vehicle's
+    // overall Related Vehicle rollup. Only real Trip records (vehicle_item_id
+    // set) are offered here, not every calendar entry.
+    async function loadTripEventOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_events")
+          .select("id, event_title, event_date, route")
+          .eq("tenant_id", currentContext.tenantId)
+          .not("vehicle_item_id", "is", null)
+          .order("event_date", { ascending: false });
+
+        tripEventOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Trip event options skipped:", error.message);
+        tripEventOptions = [];
       }
     }
 
@@ -2373,15 +2404,29 @@
               </select>
             </div>
 
-            ${isRealEstate ? `
+            ${(isRealEstate || isLogistics) ? `
               <div>
-                <label for="moneyRelatedProperty">Related Property / Unit</label>
+                <label for="moneyRelatedProperty">${isLogistics ? "Related Vehicle" : "Related Property / Unit"}</label>
                 <select id="moneyRelatedProperty">
                   <option value="">Not linked</option>
                   ${propertyItemOptions.map(function (candidate) {
                     const label = UnganiClientShared.getValue(candidate, ["property_name", "item_name", "name"], "Property");
                     const suffix = candidate.parent_item_id ? " (Unit)" : "";
                     return `<option value="${UnganiClientShared.attr(candidate.id)}">${UnganiClientShared.safe(label + suffix)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
+
+            ${isLogistics ? `
+              <div>
+                <label for="moneyRelatedTrip">Related Trip</label>
+                <select id="moneyRelatedTrip">
+                  <option value="">Not linked</option>
+                  ${tripEventOptions.map(function (trip) {
+                    const label = UnganiClientShared.getValue(trip, ["route", "event_title"], "Trip");
+                    const date = trip.event_date ? " — " + String(trip.event_date).slice(0, 10) : "";
+                    return `<option value="${UnganiClientShared.attr(trip.id)}">${UnganiClientShared.safe(label + date)}</option>`;
                   }).join("")}
                 </select>
               </div>
@@ -2510,6 +2555,10 @@
             document.getElementById("moneyRelatedProperty").value = row ? UnganiClientShared.getValue(row, ["related_item_id"], "") : "";
           }
 
+          if (document.getElementById("moneyRelatedTrip")) {
+            document.getElementById("moneyRelatedTrip").value = row ? UnganiClientShared.getValue(row, ["related_event_id"], "") : "";
+          }
+
           if (document.getElementById("moneyPaidTo")) {
             const existingTeamMemberId = row ? UnganiClientShared.getValue(row, ["related_team_member_id"], "") : "";
             const existingPayeeId = row ? UnganiClientShared.getValue(row, ["related_payee_id"], "") : "";
@@ -2571,6 +2620,10 @@
           document.getElementById("moneyAmount").addEventListener("input", recalculateVatAmount);
 
           hideMoneyWarning();
+
+          if (document.getElementById("moneyPayerPhone")) {
+            UnganiClientShared.wireDatalistSuggestions("moneyPayerPhone", "moneyPayerPhoneSuggestions", "get_my_ungani_person_phone_suggestions", "phones");
+          }
         }
       });
     }
@@ -2844,7 +2897,8 @@ const payload = {
 };
 
       payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
-      payload.related_item_id = isRealEstate ? (UnganiClientShared.value("moneyRelatedProperty") || null) : null;
+      payload.related_item_id = (isRealEstate || isLogistics) ? (UnganiClientShared.value("moneyRelatedProperty") || null) : null;
+      payload.related_event_id = isLogistics ? (UnganiClientShared.value("moneyRelatedTrip") || null) : null;
 
       if (payload.payment_method === "M-Pesa") {
         payload.reference_no = UnganiClientShared.value("moneyMpesaCode") || null;
@@ -3283,6 +3337,21 @@ const payload = {
       const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+    }
+
+    // Same detectLogistics logic as client.html/my-items.html's copies -
+    // each page keeps its own local copy, same established pattern as
+    // detectRealEstate above.
+    function detectLogistics(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "logistics";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("logistics") || businessType.includes("transport") || businessType.includes("fleet") || businessTypeKey.includes("logistics");
     }
   </script>
 </body>

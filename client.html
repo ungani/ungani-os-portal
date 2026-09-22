@@ -6972,6 +6972,124 @@
     // with swapped labels. All three return the same shape so
     // renderLogisticsDashboard() can render whichever one applies without
     // caring which section it came from.
+    // Logistics depth pass: a Trip is a business_events row with a real
+    // vehicle_item_id set (the columns added alongside driver_person_id/
+    // client_person_id/route/rate) - presence of vehicle_item_id is the
+    // reliable signal that a calendar entry is a genuine Trip record,
+    // regardless of which free-text event_type the owner picked. Shared by
+    // both Transport and Cold Chain (the two sub-sectors a vehicle trip
+    // makes sense for); Clearing & Forwarding's Container concept doesn't
+    // use these columns at all, so it never surfaces here.
+    function isLogisticsTripEvent(event) {
+      return !!getValue(event, ["vehicle_item_id"], "");
+    }
+
+    // The standing rule for every operational record going forward: no
+    // static frozen "rate" label - the Owed/Partial/Paid state is
+    // computed live from real transactions.related_event_id rows every
+    // time the dashboard renders, so it always reflects reality (a
+    // payment logged in Money instantly changes what a Trip row shows,
+    // with zero separate "mark as paid" step to forget). "Completed"
+    // trips get real Owed/Partial/Paid; scheduled/in-progress trips that
+    // haven't been paid yet read as "Pending" rather than "Owed" - the
+    // trip hasn't been delivered yet, so there's nothing overdue about
+    // it. Returns null when there's no rate to settle against (rate not
+    // set, or a cancelled trip).
+    function computeTripSettlement(event, transactions) {
+      const rate = Number(getValue(event, ["rate"], 0)) || 0;
+      if (rate <= 0) return null;
+
+      const status = String(getValue(event, ["status"], "scheduled")).toLowerCase();
+      if (status.includes("cancelled")) return null;
+
+      const currency = getValue(event, ["rate_currency"], "KES") || "KES";
+
+      const paid = (transactions || []).filter(function (t) {
+        return String(getValue(t, ["related_event_id"], "")) === String(event.id) && isIncome(t);
+      }).reduce(function (sum, t) {
+        return sum + Number(getValue(t, ["amount_kes", "amount"], 0) || 0);
+      }, 0);
+
+      const balance = rate - paid;
+
+      if (paid <= 0) {
+        const verb = status.includes("completed") ? "Owed" : "Pending";
+        return { label: verb + ": " + rate.toLocaleString() + " " + currency, hasBalance: true };
+      }
+
+      if (balance <= 0) {
+        return { label: "Paid in full", hasBalance: false };
+      }
+
+      return { label: "Partial — Owed: " + balance.toLocaleString() + " " + currency, hasBalance: true };
+    }
+
+    function renderLogisticsTripsSection(data, ctx) {
+      const sevenDaysAgoStr = new Date(new Date(ctx.todayStr).getTime() - 7 * 86400000).toISOString().slice(0, 10);
+
+      const relevantTrips = (data.events || []).filter(isLogisticsTripEvent).filter(function (event) {
+        const status = statusText(event);
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        if (status.includes("cancelled")) return false;
+        return !date || date >= sevenDaysAgoStr;
+      }).sort(function (a, b) {
+        return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
+      });
+
+      if (relevantTrips.length === 0) {
+        return {
+          subtitle: "Truck, driver, route, client, status, and rate for each trip.",
+          html: emptyStateNudge("truck", "No trips logged yet", "Log a trip in Calendar with a vehicle assigned and it will show up here with driver, route, client, status, and rate owed.", "New Trip", ctx.calendarHref)
+        };
+      }
+
+      const CAP = 8;
+      const shown = relevantTrips.slice(0, CAP);
+      const statusColorMap = { "scheduled": "blue", "in progress": "gold", "completed": "green", "no show": "red", "cancelled": "red" };
+
+      const issueLabelMap = { delay: "⚠ Delayed", dispute: "⚠ Disputed", accident: "⚠ Accident" };
+
+      const rowsHtml = shown.map(function (event) {
+        const vehicle = (data.items || []).find(function (item) { return String(item.id) === String(event.vehicle_item_id); });
+        const driver = (data.people || []).find(function (person) { return String(person.id) === String(event.driver_person_id); });
+        const manager = (data.people || []).find(function (person) { return String(person.id) === String(event.manager_person_id); });
+        const client = (data.people || []).find(function (person) { return String(person.id) === String(event.client_person_id); });
+
+        const vehicleName = vehicle ? getValue(vehicle, ["item_name", "name"], "Vehicle") : "No vehicle assigned";
+        const driverName = driver ? getValue(driver, ["full_name"], "Unassigned") : "Unassigned";
+        const managerName = manager ? getValue(manager, ["full_name"], "") : "";
+        const clientName = client ? getValue(client, ["full_name"], "") : "";
+        const route = getValue(event, ["route"], "");
+        const tripType = getValue(event, ["trip_type"], "");
+        const status = String(getValue(event, ["status"], "scheduled")).toLowerCase();
+        const date = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10);
+        const issue = String(getValue(event, ["trip_issue"], "") || "").toLowerCase();
+        const issueNotes = getValue(event, ["trip_issue_notes"], "");
+
+        const titlePrefix = issue && issueLabelMap[issue] ? issueLabelMap[issue] + " — " : "";
+        const title = titlePrefix + (route || vehicleName);
+        const subtitleParts = ["Truck: " + vehicleName, "Driver: " + driverName];
+        if (managerName) subtitleParts.push("Manager: " + managerName);
+        if (clientName) subtitleParts.push("Client: " + clientName);
+        if (tripType) subtitleParts.push(toTitle(tripType));
+        if (date) subtitleParts.push(formatDate(date));
+        if (issue && issueLabelMap[issue] && issueNotes) subtitleParts.push(issueLabelMap[issue] + ": " + issueNotes);
+
+        const badgeColor = statusColorMap[status] || "blue";
+        const settlement = computeTripSettlement(event, data.transactions);
+        const settlementTag = settlement ? settlement.label : null;
+
+        return attentionRow("truck", title, subtitleParts.join(" • "), toTitle(status), badgeColor, ctx.calendarHref + "?highlight=" + event.id, settlementTag, null);
+      }).join("");
+
+      const viewAllHtml = relevantTrips.length > CAP ? `<div style="margin-top:12px;"><a class="ungani-btn small dark" href="${attr(ctx.calendarHref)}">View all ${relevantTrips.length} trips in Calendar</a></div>` : "";
+
+      return {
+        subtitle: relevantTrips.length > CAP ? ("Truck, driver, route, client, status, and rate — showing " + CAP + " of " + relevantTrips.length + ".") : "Truck, driver, route, client, status, and rate for each trip.",
+        html: rowsHtml + viewAllHtml
+      };
+    }
+
     function buildTransportSectionContent(data, ctx) {
       const fuelThisMonth = sumFuelCosts(data.transactions, ctx.monthKey);
       const fuelLastMonth = sumFuelCosts(data.transactions, ctx.lastMonthKey);
@@ -7059,6 +7177,7 @@
         trendColor: "#D4A63A",
         trendEmpty: { icon: "fuel", title: "Put your numbers here", message: "Log your first fuel or operating cost and this chart will start tracking your monthly spend trend.", actionLabel: "Log Fuel Entry", actionHref: ctx.moneyHref },
         todayListHtml: "",
+        tripsSection: renderLogisticsTripsSection(data, ctx),
         greetingMessages: greetingMessages
       };
     }
@@ -7167,6 +7286,7 @@
         trendColor: "#D4A63A",
         trendEmpty: { icon: "wrench", title: "Put your numbers here", message: "Log your first genset or reefer maintenance cost and this chart will start tracking your monthly spend trend.", actionLabel: "Log Maintenance Cost", actionHref: ctx.moneyHref },
         todayListHtml: "",
+        tripsSection: renderLogisticsTripsSection(data, ctx),
         greetingMessages: greetingMessages
       };
     }
@@ -7412,6 +7532,19 @@
 
           ${content.attentionHtml}
         </section>
+
+        ${content.tripsSection ? `
+          <section class="card">
+            <div class="section-title">
+              <div>
+                <h3>Active & Upcoming Trips</h3>
+                <p>${safe(content.tripsSection.subtitle)}</p>
+              </div>
+            </div>
+
+            ${content.tripsSection.html}
+          </section>
+        ` : ""}
 
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}

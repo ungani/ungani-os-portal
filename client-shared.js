@@ -4870,8 +4870,47 @@
     return dict[key] || fallback || I18N_TRANSLATIONS.en[key] || key;
   }
 
+  // Real-data autocomplete (distinct from browser autofill): suggests
+  // values already entered by THIS tenant - vehicle plates, person
+  // names, phone numbers, etc. - as the user types. Factored out of the
+  // customer-name-suggestions pattern (built earlier for Quotations/
+  // Orders/Customer Invoices, which copy-pasted the same load+render
+  // pair 3x) into one reusable helper so new fields wire up in one call
+  // instead of a 4th copy-paste. Uses a native <datalist> (browser
+  // renders the suggestion dropdown) rather than a custom JS dropdown.
+  async function wireDatalistSuggestions(inputId, datalistId, rpcName, dataKey) {
+    const input = document.getElementById(inputId);
+    if (!input) return [];
+
+    input.setAttribute("list", datalistId);
+
+    let values = [];
+    try {
+      const response = await state.supabaseClient.rpc(rpcName);
+      if (!response.error && response.data && response.data.ok === true) {
+        values = response.data[dataKey] || [];
+      }
+    } catch (error) {
+      console.warn("Suggestion load failed for " + rpcName + ":", error.message);
+    }
+
+    let datalist = document.getElementById(datalistId);
+    if (!datalist) {
+      datalist = document.createElement("datalist");
+      datalist.id = datalistId;
+      document.body.appendChild(datalist);
+    }
+
+    datalist.innerHTML = values.map(function (v) {
+      return `<option value="${attr(v)}"></option>`;
+    }).join("");
+
+    return values;
+  }
+
   function exposeGlobals() {
     window.UnganiClientShared = {
+      wireDatalistSuggestions,
       initPage,
       setContent,
       loadingCard,

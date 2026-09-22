@@ -55,6 +55,11 @@
     let highlightApplied = false;
     let sectionOptions = [];
     let currentSectionFilter = "";
+    let isLogistics = false;
+    let tripVehicleOptions = [];
+    let tripDriverOptions = [];
+    let tripClientOptions = [];
+    let tripManagerOptions = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -75,6 +80,11 @@
       businessPreset = UnganiPresets.getPreset(context.tenant);
       sectionOptions = businessPreset.selectedSectionLabels || [];
       currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
+      isLogistics = detectLogistics(context.tenant);
+
+      if (isLogistics && logisticsTripFieldsAllowed()) {
+        await loadLogisticsTripOptions();
+      }
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -88,6 +98,70 @@
       }
 
       await loadEventRows();
+    }
+
+    // Same detectLogistics logic as client.html/my-items.html/my-money.html's
+    // copies - each page keeps its own local copy, established pattern in
+    // this codebase since many pages don't load client-shared.js's helpers
+    // for this.
+    function detectLogistics(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "logistics";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("logistics") || businessType.includes("transport") || businessType.includes("fleet") || businessTypeKey.includes("logistics");
+    }
+
+    // Trip depth (vehicle/driver/client/route/rate) only fits Transport and
+    // Cold Chain - a Clearing & Forwarding container's operational unit is
+    // a customs-clearance case, not a vehicle trip (see
+    // LOGISTICS_CLEARING_FIELD_SET's client_name/clearance_fee fields
+    // instead). A tenant with no sub-sector chosen yet defaults to showing
+    // the fields (most single-section Logistics tenants are Transport).
+    function logisticsTripFieldsAllowed() {
+      if (!sectionOptions || sectionOptions.length === 0) return true;
+      return sectionOptions.indexOf("Transport") !== -1 || sectionOptions.indexOf("Cold Chain") !== -1;
+    }
+
+    async function loadLogisticsTripOptions() {
+      const [vehiclesRes, driversRes, clientsRes] = await Promise.all([
+        currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, item_type, type")
+          .eq("tenant_id", currentContext.tenantId),
+        currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, person_type")
+          .eq("tenant_id", currentContext.tenantId)
+          .ilike("person_type", "driver"),
+        currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, person_type")
+          .eq("tenant_id", currentContext.tenantId)
+      ]);
+
+      const vehicleTypes = ["truck", "vehicle", "genset", "reefer"];
+      tripVehicleOptions = ((vehiclesRes && vehiclesRes.data) || []).filter(function (item) {
+        const type = String(UnganiClientShared.getValue(item, ["item_type", "type"], "")).toLowerCase();
+        return vehicleTypes.indexOf(type) !== -1;
+      });
+
+      tripDriverOptions = (driversRes && driversRes.data) || [];
+
+      const allPeople = (clientsRes && clientsRes.data) || [];
+
+      tripClientOptions = allPeople.filter(function (person) {
+        const type = String(UnganiClientShared.getValue(person, ["person_type"], "")).toLowerCase();
+        return type === "client" || type === "customer";
+      });
+
+      tripManagerOptions = allPeople.filter(function (person) {
+        return String(UnganiClientShared.getValue(person, ["person_type"], "")).toLowerCase() === "transport manager";
+      });
     }
 
     async function loadEventRows() {
@@ -626,6 +700,90 @@
                   <input id="eventRelatedItem" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)}" />
                 </div>
 
+                ${isLogistics && logisticsTripFieldsAllowed() ? `
+                  <div>
+                    <label for="eventTripVehicle">Vehicle</label>
+                    <select id="eventTripVehicle">
+                      <option value="">— No vehicle —</option>
+                      ${tripVehicleOptions.map(function (vehicle) {
+                        return `<option value="${UnganiClientShared.attr(vehicle.id)}">${UnganiClientShared.safe(UnganiClientShared.getValue(vehicle, ["item_name", "name"], "Vehicle"))}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventTripDriver">Driver</label>
+                    <select id="eventTripDriver">
+                      <option value="">— No driver —</option>
+                      ${tripDriverOptions.map(function (driver) {
+                        return `<option value="${UnganiClientShared.attr(driver.id)}">${UnganiClientShared.safe(driver.full_name)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventTripManager">Transport Manager</label>
+                    <select id="eventTripManager">
+                      <option value="">— No manager —</option>
+                      ${tripManagerOptions.map(function (manager) {
+                        return `<option value="${UnganiClientShared.attr(manager.id)}">${UnganiClientShared.safe(manager.full_name)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventTripClient">Client</label>
+                    <select id="eventTripClient">
+                      <option value="">— No client —</option>
+                      ${tripClientOptions.map(function (client) {
+                        return `<option value="${UnganiClientShared.attr(client.id)}">${UnganiClientShared.safe(client.full_name)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventTripType">Trip Type</label>
+                    <select id="eventTripType">
+                      <option value="local">Local</option>
+                      <option value="transit">Transit</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventTripRoute">Route</label>
+                    <input id="eventTripRoute" placeholder="Example: Nairobi - Mombasa" />
+                  </div>
+
+                  <div>
+                    <label for="eventTripRate">Trip Rate</label>
+                    <input id="eventTripRate" type="number" min="0" step="0.01" placeholder="Example: 25000" />
+                  </div>
+
+                  <div>
+                    <label for="eventTripRateCurrency">Rate Currency</label>
+                    <select id="eventTripRateCurrency">
+                      <option value="KES">KES</option>
+                      <option value="USD">USD</option>
+                      <option value="Cash">Cash</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventTripIssue">Issue (if any)</label>
+                    <select id="eventTripIssue" onchange="updateTripIssueNotesVisibility()">
+                      <option value="">— None —</option>
+                      <option value="delay">Delay</option>
+                      <option value="dispute">Dispute</option>
+                      <option value="accident">Accident</option>
+                    </select>
+                  </div>
+
+                  <div class="wide" id="eventTripIssueNotesWrap" style="display:none;">
+                    <label for="eventTripIssueNotes">Issue Notes</label>
+                    <input id="eventTripIssueNotes" placeholder="Example: 2-hour delay at Mombasa Road due to traffic" />
+                  </div>
+                ` : ""}
+
                 <div class="wide">
                   <label for="eventNotes">Notes</label>
                   <textarea id="eventNotes" rows="5" placeholder="Add meeting details, appointment notes, delivery details, reminders, or preparation notes..."></textarea>
@@ -696,6 +854,10 @@
       }, 150);
 
       applyHighlightFromUrl();
+
+      if (document.getElementById("eventRelatedPerson")) {
+        UnganiClientShared.wireDatalistSuggestions("eventRelatedPerson", "relatedPersonSuggestions", "get_my_ungani_person_name_suggestions", "names");
+      }
     }
 
     function applyHighlightFromUrl() {
@@ -999,6 +1161,17 @@
       }
     }
 
+    // trip_issue is independent of the trip's lifecycle status (a trip can
+    // be "In Progress" AND "Delayed" at once) - notes only matter once an
+    // issue is actually selected, so the field stays hidden until then.
+    function updateTripIssueNotesVisibility() {
+      const issueSelect = document.getElementById("eventTripIssue");
+      const wrap = document.getElementById("eventTripIssueNotesWrap");
+      if (issueSelect && wrap) {
+        wrap.style.display = issueSelect.value ? "" : "none";
+      }
+    }
+
     async function saveEvent(event) {
       event.preventDefault();
 
@@ -1032,6 +1205,19 @@
 
       if (sectionOptions.length > 1) {
         payload.section_label = UnganiClientShared.value("eventSection") || null;
+      }
+
+      if (isLogistics && logisticsTripFieldsAllowed() && document.getElementById("eventTripVehicle")) {
+        payload.vehicle_item_id = UnganiClientShared.value("eventTripVehicle") || null;
+        payload.driver_person_id = UnganiClientShared.value("eventTripDriver") || null;
+        payload.manager_person_id = UnganiClientShared.value("eventTripManager") || null;
+        payload.client_person_id = UnganiClientShared.value("eventTripClient") || null;
+        payload.trip_type = UnganiClientShared.value("eventTripType") || null;
+        payload.route = UnganiClientShared.value("eventTripRoute") || null;
+        payload.rate = UnganiClientShared.value("eventTripRate") ? Number(UnganiClientShared.value("eventTripRate")) : null;
+        payload.rate_currency = UnganiClientShared.value("eventTripRateCurrency") || "KES";
+        payload.trip_issue = UnganiClientShared.value("eventTripIssue") || null;
+        payload.trip_issue_notes = UnganiClientShared.value("eventTripIssue") ? (UnganiClientShared.value("eventTripIssueNotes") || null) : null;
       }
 
       let response;
@@ -1094,6 +1280,21 @@
         document.getElementById("eventLocation").value = UnganiClientShared.getValue(row, ["location"], "");
         document.getElementById("eventRelatedPerson").value = UnganiClientShared.getValue(row, ["related_person"], "");
         document.getElementById("eventRelatedItem").value = UnganiClientShared.getValue(row, ["related_item"], "");
+
+        if (document.getElementById("eventTripVehicle")) {
+          document.getElementById("eventTripVehicle").value = row.vehicle_item_id || "";
+          document.getElementById("eventTripDriver").value = row.driver_person_id || "";
+          document.getElementById("eventTripManager").value = row.manager_person_id || "";
+          document.getElementById("eventTripClient").value = row.client_person_id || "";
+          document.getElementById("eventTripType").value = row.trip_type || "local";
+          document.getElementById("eventTripRoute").value = row.route || "";
+          document.getElementById("eventTripRate").value = row.rate != null ? row.rate : "";
+          document.getElementById("eventTripRateCurrency").value = row.rate_currency || "KES";
+          document.getElementById("eventTripIssue").value = row.trip_issue || "";
+          document.getElementById("eventTripIssueNotes").value = row.trip_issue_notes || "";
+          updateTripIssueNotesVisibility();
+        }
+
         document.getElementById("eventNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
       }, 150);
     }
@@ -1194,6 +1395,17 @@
       if (document.getElementById("eventLocation")) document.getElementById("eventLocation").value = "";
       if (document.getElementById("eventRelatedPerson")) document.getElementById("eventRelatedPerson").value = "";
       if (document.getElementById("eventRelatedItem")) document.getElementById("eventRelatedItem").value = "";
+      if (document.getElementById("eventTripVehicle")) document.getElementById("eventTripVehicle").value = "";
+      if (document.getElementById("eventTripDriver")) document.getElementById("eventTripDriver").value = "";
+      if (document.getElementById("eventTripManager")) document.getElementById("eventTripManager").value = "";
+      if (document.getElementById("eventTripClient")) document.getElementById("eventTripClient").value = "";
+      if (document.getElementById("eventTripType")) document.getElementById("eventTripType").value = "local";
+      if (document.getElementById("eventTripRoute")) document.getElementById("eventTripRoute").value = "";
+      if (document.getElementById("eventTripRate")) document.getElementById("eventTripRate").value = "";
+      if (document.getElementById("eventTripRateCurrency")) document.getElementById("eventTripRateCurrency").value = "KES";
+      if (document.getElementById("eventTripIssue")) document.getElementById("eventTripIssue").value = "";
+      if (document.getElementById("eventTripIssueNotes")) document.getElementById("eventTripIssueNotes").value = "";
+      updateTripIssueNotesVisibility();
       if (document.getElementById("eventNotes")) document.getElementById("eventNotes").value = "";
     }
 

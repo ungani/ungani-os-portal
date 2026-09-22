@@ -53,8 +53,10 @@
     let businessPreset = null;
     let items = [];
     let parentPropertyOptions = [];
+    let driverOptions = [];
     let currentEditId = null;
     let isRealEstate = false;
+    let isLogistics = false;
     let activeItemCategory = "all";
     let urlActionApplied = false;
     let sectionOptions = [];
@@ -131,6 +133,7 @@
       currentContext = context;
 
       isRealEstate = detectRealEstate(context.tenant);
+      isLogistics = detectLogistics(context.tenant);
       businessPreset = UnganiPresets.getPreset(context.tenant);
       sectionOptions = businessPreset.selectedSectionLabels || [];
       currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
@@ -1760,7 +1763,7 @@
 
             <div>
               <label for="itemVariantGroup">Variant Group (optional)</label>
-              <input id="itemVariantGroup" placeholder="Example: Soda, T-Shirt Size, Room Type" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["variant_group"], "")) : ""}" />
+              <input id="itemVariantGroup" placeholder="${UnganiClientShared.attr(activeItemFieldSet.variantGroupPlaceholder || "Example: Size, Model, Package Type")}" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["variant_group"], "")) : ""}" />
             </div>
 
             <div>
@@ -1784,6 +1787,18 @@
               <label for="itemValue" id="itemValueLabel">${UnganiClientShared.safe(activeItemFieldSet.valueLabel || "Price / Value")}</label>
               <input id="itemValue" type="number" min="0" step="any" placeholder="Amount in Ksh" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["property_price", "selling_price", "cost_price"], "")) : ""}" />
             </div>
+
+            ${isLogistics ? `
+              <div>
+                <label for="itemAssignedDriver">Assigned Driver</label>
+                <select id="itemAssignedDriver">
+                  <option value="">— Not assigned —</option>
+                  ${driverOptions.map(function (driver) {
+                    return `<option value="${UnganiClientShared.attr(driver.id)}">${UnganiClientShared.safe(driver.full_name)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
 
             ${renderSectionFieldHtml(formSectionLabel)}
 
@@ -2464,6 +2479,10 @@
         await loadParentPropertyOptions();
       }
 
+      if (isLogistics) {
+        await loadDriverOptions();
+      }
+
       const bodyHtml = isRealEstate
         ? buildRealEstateFormHtml(row, formSectionLabel)
         : buildGenericItemFormHtml(row, formSectionLabel);
@@ -2488,6 +2507,14 @@
           } else {
             document.getElementById("itemTypeSelect").value = row ? UnganiClientShared.getValue(row, ["item_type", "type"], "") : (businessPreset.itemTypes[0] || "Item");
             document.getElementById("itemStatusSelect").value = row ? getStatus(row) : (activeItemFieldSet.statusOptions[0] || "available");
+
+            if (isLogistics && document.getElementById("itemAssignedDriver")) {
+              document.getElementById("itemAssignedDriver").value = row ? UnganiClientShared.getValue(row.custom_fields || {}, ["assigned_driver_id"], "") : "";
+            }
+
+            if (document.getElementById("itemExtra_registration_number")) {
+              UnganiClientShared.wireDatalistSuggestions("itemExtra_registration_number", "vehiclePlateSuggestions", "get_my_ungani_vehicle_plate_suggestions", "plates");
+            }
           }
 
           if (sectionOptions.length > 1 && document.getElementById("itemSection")) {
@@ -2803,6 +2830,15 @@
         // business type, same treatment as Notes, so it lives directly in
         // custom_fields rather than requiring every field set to declare it.
         customFields.next_maintenance_date = UnganiClientShared.value("nextMaintenanceDate") || null;
+
+        // Logistics depth pass: which driver is normally assigned to this
+        // vehicle - a real client_people id (functions as a genuine link,
+        // same as propertyParent above, just custom_fields-stored rather
+        // than a DB-enforced FK since business_items has no spare column
+        // for it and this needs no migration).
+        if (isLogistics) {
+          customFields.assigned_driver_id = UnganiClientShared.value("itemAssignedDriver") || null;
+        }
 
         payload.custom_fields = customFields;
 
@@ -3160,6 +3196,45 @@
       const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+    }
+
+    // Same detectLogistics logic as client.html's copy - each page keeps
+    // its own local copy rather than sharing, same established pattern
+    // as detectRealEstate above (this page has its own bespoke auth/data
+    // loading, not client-shared.js's).
+    function detectLogistics(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "logistics";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("logistics") || businessType.includes("transport") || businessType.includes("fleet") || businessTypeKey.includes("logistics");
+    }
+
+    // Real client feedback (Logistics depth pass): a vehicle needs a real
+    // driver assignment, not a free-text label - same reasoning as
+    // parentPropertyOptions above. Filtered to person_type "Driver" only
+    // (matches the peopleTypes list Logistics already uses in
+    // ungani-business-config.js), so the picker doesn't fill up with
+    // every contact.
+    async function loadDriverOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name")
+          .eq("tenant_id", currentContext.tenantId)
+          .ilike("person_type", "driver")
+          .is("deleted_at", null)
+          .order("full_name", { ascending: true });
+
+        driverOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Could not load driver options:", error.message);
+        driverOptions = [];
+      }
     }
   </script>
 </body>
