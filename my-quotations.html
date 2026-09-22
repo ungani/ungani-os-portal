@@ -12,6 +12,7 @@
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
   <script src="team-chat-shared.js"></script>
   <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-context-menu.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script src="ungani-print-branding.js"></script>
   <script>
@@ -74,6 +75,16 @@
         pageSubtitle: "Send quotes and convert accepted ones into invoices.",
         onReady: startQuotationsPage
       });
+
+      if (window.UnganiContextMenu) {
+        UnganiContextMenu.init({
+          ungani_quotations: [
+            { key: "discuss", label: "Discuss", icon: "message-circle", handler: function (el) { openQuotationDiscussionPanel(el.getAttribute("data-record-id")); } },
+            { key: "print", label: "Print", icon: "printer", handler: function (el) { printQuotationFromModal(el.getAttribute("data-record-id")); } },
+            { key: "delete", label: "Delete", icon: "trash-2", danger: true, handler: function (el) { deleteQuotationRecord(el.getAttribute("data-record-id")); } }
+          ]
+        });
+      }
     });
 
     async function startQuotationsPage(context) {
@@ -479,7 +490,7 @@
           <tbody>
             ${quotationRows.map(function (row) {
               return `
-                <tr onclick="openQuotationModal('${UnganiClientShared.attr(row.id)}')">
+                <tr data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="ungani_quotations" onclick="openQuotationModal('${UnganiClientShared.attr(row.id)}')">
                   <td><strong>${UnganiClientShared.safe(row.quotation_number)}</strong></td>
                   <td>${UnganiClientShared.safe(row.customer_name)}</td>
                   <td>${UnganiClientShared.formatDate(row.issue_date)}</td>
@@ -564,7 +575,7 @@
       if (row.status === "accepted") nextMoves.push({ key: "rejected", label: "Rejected" });
 
       return `
-        <div class="task-board-card" style="--accent:${UnganiClientShared.attr(meta.fg)};" onclick="openQuotationModal('${UnganiClientShared.attr(row.id)}')">
+        <div class="task-board-card" data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="ungani_quotations" style="--accent:${UnganiClientShared.attr(meta.fg)};" onclick="openQuotationModal('${UnganiClientShared.attr(row.id)}')">
           <div class="task-board-card-title">${UnganiClientShared.safe(row.quotation_number)} — ${UnganiClientShared.safe(row.customer_name)}</div>
           <div class="task-board-card-meta">
             <span>${row.valid_until ? "Valid until " + UnganiClientShared.formatDate(row.valid_until) : "No expiry"}</span>
@@ -1054,6 +1065,22 @@
       } catch (error) {
         UnganiClientShared.showToast("Could not convert to invoice: " + error.message);
       }
+    }
+
+    function openQuotationDiscussionPanel(id) {
+      const row = quotationRows.find(function (item) { return String(item.id) === String(id); });
+      if (!row) {
+        UnganiClientShared.showToast("Quotation not found.");
+        return;
+      }
+
+      UnganiConnectPanel.open(currentContext, {
+        recordTable: "ungani_quotations",
+        recordId: id,
+        title: row.quotation_number + " — " + row.customer_name,
+        subtitleHtml: `<p class="ungani-small">${UnganiClientShared.safe(UnganiClientShared.formatKES(row.total_amount))} · ${UnganiClientShared.safe((row.effective_status || "").replace("_", " "))}</p>`,
+        attachments: null
+      });
     }
 
     async function deleteQuotationRecord(id) {

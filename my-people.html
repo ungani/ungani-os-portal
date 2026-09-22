@@ -12,6 +12,7 @@
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
   <script src="team-chat-shared.js"></script>
   <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-context-menu.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script>
     (function () {
@@ -82,6 +83,16 @@
         pageSubtitle: "Manage staff, clients, suppliers, leads, and business contacts.",
         onReady: startPeoplePage
       });
+
+      if (window.UnganiContextMenu) {
+        UnganiContextMenu.init({
+          client_people: [
+            { key: "discuss", label: "Discuss", icon: "message-circle", handler: function (el) { openPersonDiscussionPanel(el.getAttribute("data-record-id")); } },
+            { key: "payments", label: "Payment History", icon: "wallet", handler: function (el) { openPersonPaymentHistory(el.getAttribute("data-record-id")); } },
+            { key: "delete", label: "Delete", icon: "trash-2", danger: true, handler: function (el) { deletePerson(el.getAttribute("data-record-id")); } }
+          ]
+        });
+      }
     });
 
     async function startPeoplePage(context) {
@@ -970,7 +981,7 @@
                 const followUp = UnganiClientShared.getValue(row, ["last_follow_up_date"], "");
 
                 return `
-                  <tr style="--accent:${UnganiClientShared.attr(statusAccent(status))};" onclick="openPersonModal('${UnganiClientShared.attr(row.id)}')">
+                  <tr style="--accent:${UnganiClientShared.attr(statusAccent(status))};" data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="client_people" onclick="openPersonModal('${UnganiClientShared.attr(row.id)}')">
                     <td>
                       ${UnganiClientShared.safe(name)}
                       <span class="row-sub">${UnganiClientShared.safe(role || company || "No role/company")}</span>

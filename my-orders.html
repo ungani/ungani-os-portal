@@ -12,6 +12,7 @@
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
   <script src="team-chat-shared.js"></script>
   <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-context-menu.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script src="ungani-print-branding.js"></script>
   <script>
@@ -74,6 +75,16 @@
         pageSubtitle: "Confirm customer orders, fulfil them, then convert to an invoice.",
         onReady: startOrdersPage
       });
+
+      if (window.UnganiContextMenu) {
+        UnganiContextMenu.init({
+          ungani_orders: [
+            { key: "discuss", label: "Discuss", icon: "message-circle", handler: function (el) { openOrderDiscussionPanel(el.getAttribute("data-record-id")); } },
+            { key: "print", label: "Print", icon: "printer", handler: function (el) { printOrderFromModal(el.getAttribute("data-record-id")); } },
+            { key: "delete", label: "Delete", icon: "trash-2", danger: true, handler: function (el) { deleteOrderRecord(el.getAttribute("data-record-id")); } }
+          ]
+        });
+      }
     });
 
     async function startOrdersPage(context) {
@@ -547,7 +558,7 @@
           <tbody>
             ${orderRows.map(function (row) {
               return `
-                <tr onclick="openOrderModal('${UnganiClientShared.attr(row.id)}')">
+                <tr data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="ungani_orders" onclick="openOrderModal('${UnganiClientShared.attr(row.id)}')">
                   <td><strong>${UnganiClientShared.safe(row.order_number)}</strong></td>
                   <td>${UnganiClientShared.safe(row.customer_name)}</td>
                   <td>${UnganiClientShared.formatDate(row.order_date)}</td>
@@ -642,7 +653,7 @@
       }
 
       return `
-        <div class="task-board-card" style="--accent:${UnganiClientShared.attr(meta.fg)};" onclick="openOrderModal('${UnganiClientShared.attr(row.id)}')">
+        <div class="task-board-card" data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="ungani_orders" style="--accent:${UnganiClientShared.attr(meta.fg)};" onclick="openOrderModal('${UnganiClientShared.attr(row.id)}')">
           <div class="task-board-card-title">${UnganiClientShared.safe(row.order_number)} — ${UnganiClientShared.safe(row.customer_name)}</div>
           <div class="task-board-card-meta">
             <span>${row.expected_fulfillment_date ? "Expected " + UnganiClientShared.formatDate(row.expected_fulfillment_date) : "No expected date"}</span>
@@ -1254,6 +1265,22 @@
       } catch (error) {
         UnganiClientShared.showToast("Could not convert to invoice: " + error.message);
       }
+    }
+
+    function openOrderDiscussionPanel(id) {
+      const row = orderRows.find(function (item) { return String(item.id) === String(id); });
+      if (!row) {
+        UnganiClientShared.showToast("Order not found.");
+        return;
+      }
+
+      UnganiConnectPanel.open(currentContext, {
+        recordTable: "ungani_orders",
+        recordId: id,
+        title: row.order_number + " — " + row.customer_name,
+        subtitleHtml: `<p class="ungani-small">${UnganiClientShared.safe(UnganiClientShared.formatKES(row.total_amount))} · ${UnganiClientShared.safe((row.effective_status || "").replace("_", " "))}</p>`,
+        attachments: null
+      });
     }
 
     async function deleteOrderRecord(id) {

@@ -12,6 +12,7 @@
   <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
   <script src="team-chat-shared.js"></script>
   <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-context-menu.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script src="ungani-print-branding.js"></script>
   <script>
@@ -73,6 +74,16 @@
         pageSubtitle: "Bill your customers directly and track payments.",
         onReady: startInvoicesPage
       });
+
+      if (window.UnganiContextMenu) {
+        UnganiContextMenu.init({
+          ungani_customer_invoices: [
+            { key: "discuss", label: "Discuss", icon: "message-circle", handler: function (el) { openInvoiceDiscussionPanel(el.getAttribute("data-record-id")); } },
+            { key: "print", label: "Print", icon: "printer", handler: function (el) { printInvoiceFromModal(el.getAttribute("data-record-id")); } },
+            { key: "delete", label: "Delete", icon: "trash-2", danger: true, handler: function (el) { deleteInvoiceRecord(el.getAttribute("data-record-id")); } }
+          ]
+        });
+      }
     });
 
     async function startInvoicesPage(context) {
@@ -359,7 +370,7 @@
             ${invoiceRows.map(function (row) {
               const balance = Number(row.total_amount) - Number(row.amount_paid);
               return `
-                <tr onclick="openInvoiceModal('${UnganiClientShared.attr(row.id)}')">
+                <tr data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="ungani_customer_invoices" onclick="openInvoiceModal('${UnganiClientShared.attr(row.id)}')">
                   <td><strong>${UnganiClientShared.safe(row.invoice_number)}</strong></td>
                   <td>${UnganiClientShared.safe(row.customer_name)}</td>
                   <td>${UnganiClientShared.formatDate(row.issue_date)}</td>
@@ -891,6 +902,24 @@
       } catch (error) {
         UnganiClientShared.showToast("Could not record payment: " + error.message);
       }
+    }
+
+    function openInvoiceDiscussionPanel(id) {
+      const row = invoiceRows.find(function (item) { return String(item.id) === String(id); });
+      if (!row) {
+        UnganiClientShared.showToast("Invoice not found.");
+        return;
+      }
+
+      const balance = Number(row.total_amount) - Number(row.amount_paid);
+
+      UnganiConnectPanel.open(currentContext, {
+        recordTable: "ungani_customer_invoices",
+        recordId: id,
+        title: row.invoice_number + " — " + row.customer_name,
+        subtitleHtml: `<p class="ungani-small">${UnganiClientShared.safe(UnganiClientShared.formatKES(row.total_amount))} · Balance ${UnganiClientShared.safe(UnganiClientShared.formatKES(balance))} · ${UnganiClientShared.safe((row.effective_status || "").replace("_", " "))}</p>`,
+        attachments: null
+      });
     }
 
     async function deleteInvoiceRecord(id) {
