@@ -727,66 +727,15 @@
 
     let currentTenantForSidebar = null;
 
-    const ONBOARDING_SIDEBAR_COLLAPSE_KEY = "ungani_sidebar_collapsed_groups";
-
-    function getOnboardingSidebarCollapsedState() {
-      try {
-        return JSON.parse(localStorage.getItem(ONBOARDING_SIDEBAR_COLLAPSE_KEY) || "{}");
-      } catch (error) {
-        return {};
-      }
-    }
-
-    function setOnboardingSidebarGroupCollapsed(groupKey, collapsed) {
-      const state = getOnboardingSidebarCollapsedState();
-      state[groupKey] = collapsed;
-      localStorage.setItem(ONBOARDING_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
-    }
-
-    function toggleOnboardingSidebarGroup(groupKey) {
-      const el = document.getElementById("onboardingNavGroup-" + groupKey);
-      if (!el) return;
-
-      const nowCollapsed = !el.classList.contains("collapsed");
-      el.classList.toggle("collapsed", nowCollapsed);
-      setOnboardingSidebarGroupCollapsed(groupKey, nowCollapsed);
-    }
-
-    function renderOnboardingNavGroup(group, collapsedState) {
-      const itemsHtml = group.items.map(function (item) {
-        const active = item[1] === "my-onboarding.html" ? " active" : "";
-        return `<a class="side-link${active}" href="${item[1]}"><i data-lucide="${item[2]}"></i> <span>${item[3]}</span></a>`;
-      }).join("");
-
-      if (!group.collapsible) {
-        return `<div class="sidebar-section-title">${group.title}</div>${itemsHtml}`;
-      }
-
-      const containsActive = group.items.some(function (item) { return item[1] === "my-onboarding.html"; });
-      const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
-      const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
-
-      return `
-        <div class="side-group collapsible${collapsed ? " collapsed" : ""}" id="onboardingNavGroup-${group.key}">
-          <button type="button" class="sidebar-section-title sidebar-section-title-toggle" onclick="toggleOnboardingSidebarGroup('${group.key}')">
-            <span>${group.title}</span>
-            <span class="sidebar-toggle-icon">${collapsed ? "▸" : "▾"}</span>
-          </button>
-          <div class="side-group-items">${itemsHtml}</div>
-        </div>
-      `;
-    }
-
+    // Sidebar render/collapse logic now lives in ungani-nav-config.js
+    // (shared across the 8 pages that hand-rolled this same ~65 lines
+    // each - sidebar/nav audit, 2026-09-22). This page's own auth/data
+    // loading is untouched.
     function renderOnboardingSidebarGroups() {
       const container = document.getElementById("onboardingNavGroups");
       if (!container || !window.UnganiNavConfig) return;
 
-      const groups = UnganiNavConfig.getSidebarGroups(currentTenantForSidebar);
-      const collapsedState = getOnboardingSidebarCollapsedState();
-
-      container.innerHTML = groups.map(function (group) {
-        return renderOnboardingNavGroup(group, collapsedState);
-      }).join("");
+      container.innerHTML = UnganiNavConfig.renderSidebarGroupsHtml(currentTenantForSidebar, "my-onboarding.html");
 
       if (window.lucide && typeof window.lucide.createIcons === "function") {
         window.lucide.createIcons();

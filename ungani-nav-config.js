@@ -72,6 +72,22 @@
       ["calendar", "my-calendar.html", "calendar", "Calendar"]
     ];
 
+    // Cluster 4 (recurring-commitment lifecycle) - opt-in same as Stock
+    // Tracking/Price Lists/Debtors above, reachable by any business type,
+    // but the label is type-aware so a Real Estate owner sees "Leases",
+    // a Gym owner sees "Memberships", Security/Cleaning see "Contracts" -
+    // mirrors the same mapping in my-commitments.html's COMMITMENT_VOCAB.
+    if (tenant && tenant.commitments_enabled === true) {
+      const commitmentsLabel = {
+        real_estate: "Leases",
+        gym: "Memberships",
+        security: "Contracts",
+        cleaning: "Contracts"
+      }[tenant.business_type_key] || "Leases / Memberships / Contracts";
+
+      operationsItems.push(["commitments", "my-commitments.html", "file-clock", commitmentsLabel]);
+    }
+
     const financeItems = [];
 
     if (tenant && tenant.debtors_payables_enabled === true) {
@@ -257,9 +273,123 @@
     return visibleGroups.filter(function (group) { return group.items && group.items.length > 0; });
   }
 
+  // Sidebar/nav architecture audit (2026-09-22) found 8 pages
+  // (my-support-access.html, my-recently-deleted.html, my-tools.html,
+  // my-team-access.html, my-account-status.html, my-billing.html,
+  // my-package.html, my-onboarding.html) each hand-rolling their own
+  // ~30-line copy of the same render/collapse sidebar logic, on top of
+  // already sharing getSidebarGroups() above. None of them load
+  // client-shared.js - that's deliberate (documented at
+  // my-team-access.html:1428, "same as client.html" - client-shared.js
+  // has auto-initializing side effects like search/notifications/Team
+  // Chat popup wiring that would risk double-firing against each page's
+  // own bespoke setup) - so the fix is NOT to pull those 8 pages onto
+  // client-shared.js's initPage()/renderSidebarNav(). It's to extract
+  // just the render/collapse HTML-building into pure, side-effect-free
+  // functions here (this file already documents itself as having "zero
+  // side effects" - the right home for a second pure helper), so the 8
+  // pages call one shared implementation instead of 8 copies, without
+  // touching their auth/data-loading at all.
+  //
+  // One real divergence found: 7 of the 8 pages use one CSS class
+  // scheme (side-link/sidebar-section-title/side-group/side-group-items/
+  // sidebar-toggle-icon); my-recently-deleted.html alone uses a second,
+  // self-contained scheme (nav-link/section-title/nav-group/
+  // nav-group-items/section-toggle-icon) with its own local CSS rules.
+  // renderSidebarGroupsHtml() below defaults to the 7-page scheme and
+  // takes an `opts` override so my-recently-deleted.html keeps its own
+  // classes/CSS untouched - zero visual change on any of the 8 pages.
+  // (Separately: my-recently-deleted.html's OLD render code rendered the
+  // Lucide icon name as literal text, `<span class="nav-icon">trash</
+  // span>`, instead of a hydratable `data-lucide` attribute, and never
+  // called lucide.createIcons() - so its sidebar icons were showing as
+  // raw text, not glyphs. The shared function always emits a real
+  // data-lucide icon; each page's wrapper already calls (or now calls)
+  // lucide.createIcons() after render, so this incidentally fixes that
+  // page's icons as a side effect of the consolidation, not a separate
+  // change.)
+
+  const SIDEBAR_COLLAPSE_STORAGE_KEY = "ungani_sidebar_collapsed_groups";
+
+  function getSidebarCollapsedState() {
+    try {
+      return JSON.parse(window.localStorage.getItem(SIDEBAR_COLLAPSE_STORAGE_KEY) || "{}");
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function setSidebarGroupCollapsed(groupKey, collapsed) {
+    const state = getSidebarCollapsedState();
+    state[groupKey] = collapsed;
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSE_STORAGE_KEY, JSON.stringify(state));
+    } catch (error) {
+      // ignore - collapse state is a convenience preference, not critical data
+    }
+  }
+
+  // The DOM id prefix ("unganiNavGroup-") is a new, internal-only detail
+  // (invisible to the user, not a CSS class) - safe to standardize across
+  // all 8 pages even though their CSS class names aren't being unified.
+  function toggleSidebarGroup(groupKey) {
+    const el = document.getElementById("unganiNavGroup-" + groupKey);
+    if (!el) return;
+
+    const nowCollapsed = !el.classList.contains("collapsed");
+    el.classList.toggle("collapsed", nowCollapsed);
+    setSidebarGroupCollapsed(groupKey, nowCollapsed);
+  }
+
+  function renderSidebarGroupHtml(group, activeHref, collapsedState, opts) {
+    const o = opts || {};
+    const linkClass = o.linkClass || "side-link";
+    const sectionTitleClass = o.sectionTitleClass || "sidebar-section-title";
+    const groupClass = o.groupClass || "side-group";
+    const groupItemsClass = o.groupItemsClass || "side-group-items";
+    const toggleIconClass = o.toggleIconClass || "sidebar-toggle-icon";
+
+    const itemsHtml = group.items.map(function (item) {
+      const active = item[1] === activeHref ? " active" : "";
+      return `<a class="${linkClass}${active}" href="${item[1]}"><i data-lucide="${item[2]}"></i> <span>${item[3]}</span></a>`;
+    }).join("");
+
+    if (!group.collapsible) {
+      return `<div class="${sectionTitleClass}">${group.title}</div>${itemsHtml}`;
+    }
+
+    const containsActive = group.items.some(function (item) { return item[1] === activeHref; });
+    const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
+    const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
+
+    return `
+      <div class="${groupClass} collapsible${collapsed ? " collapsed" : ""}" id="unganiNavGroup-${group.key}">
+        <button type="button" class="${sectionTitleClass} ${sectionTitleClass}-toggle" onclick="UnganiNavConfig.toggleSidebarGroup('${group.key}')">
+          <span>${group.title}</span>
+          <span class="${toggleIconClass}">${collapsed ? "▸" : "▾"}</span>
+        </button>
+        <div class="${groupItemsClass}">${itemsHtml}</div>
+      </div>
+    `;
+  }
+
+  // activeHref should be the current page's own filename (e.g.
+  // "my-billing.html"), matched against each item's href - same
+  // convention every one of the 8 pages already used individually.
+  function renderSidebarGroupsHtml(tenant, activeHref, opts) {
+    const groups = getSidebarGroups(tenant);
+    const collapsedState = getSidebarCollapsedState();
+
+    return groups.map(function (group) {
+      return renderSidebarGroupHtml(group, activeHref, collapsedState, opts);
+    }).join("");
+  }
+
   window.UnganiNavConfig = {
     getSidebarGroups: getSidebarGroups,
     isIntegrationsEligible: isIntegrationsEligible,
-    PROTECTED_NAV_ITEM_KEYS: PROTECTED_NAV_ITEM_KEYS
+    PROTECTED_NAV_ITEM_KEYS: PROTECTED_NAV_ITEM_KEYS,
+    renderSidebarGroupsHtml: renderSidebarGroupsHtml,
+    toggleSidebarGroup: toggleSidebarGroup
   };
 })();

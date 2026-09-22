@@ -969,6 +969,18 @@
         </div>
       </section>
 
+      <section class="panel full" id="addonsIntroPanel">
+        <div class="panel-head">
+          <h2>Add-ons</h2>
+        </div>
+        <div class="panel-body">
+          <p style="margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Optional modules, off by default. Turn on whichever apply to your business - nothing here
+            changes your dashboard or sidebar until you switch it on.
+          </p>
+        </div>
+      </section>
+
       <section class="panel full" id="stockTrackingPanel">
         <div class="panel-head">
           <h2>Stock Tracking</h2>
@@ -1082,6 +1094,35 @@
           <div class="form-actions">
             <span id="posMessage" class="action-msg"></span>
             <button type="button" id="btnSavePos" class="ungani-btn gold" onclick="savePointOfSale()">Save Point of Sale Setting</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel full" id="commitmentsPanel">
+        <div class="panel-head">
+          <h2>Leases / Memberships / Contracts</h2>
+        </div>
+
+        <div class="panel-body">
+          <p style="margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.6;">
+            Turn this on to track recurring leases, memberships, or service contracts with real start
+            and end dates - your dashboard flags anything expiring within 7 days automatically. Once
+            on, a page appears in your sidebar labelled for your business (Leases, Memberships, or
+            Contracts).
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--border); border-radius: 14px; cursor: pointer;">
+                <input type="checkbox" id="commitmentsEnabled" style="width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer;" />
+                <span style="color: var(--text);">Track lease / membership / contract renewal dates</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="commitmentsMessage" class="action-msg"></span>
+            <button type="button" id="btnSaveCommitments" class="ungani-btn gold" onclick="saveCommitments()">Save Setting</button>
           </div>
         </div>
       </section>
@@ -2375,7 +2416,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled, price_lists_enabled, pos_enabled, expense_approval_threshold_kes, hidden_nav_items")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled, price_lists_enabled, pos_enabled, commitments_enabled, expense_approval_threshold_kes, hidden_nav_items")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -2391,6 +2432,7 @@
       renderDebtorsPayablesPanel(tenantRow);
       renderPriceListsPanel(tenantRow);
       renderPointOfSalePanel(tenantRow);
+      renderCommitmentsPanel(tenantRow);
       renderSidebarCustomizationPanel(tenantRow);
       renderExpenseApprovalPanel(tenantRow);
       renderBrandingPanel(tenantRow);
@@ -2685,6 +2727,45 @@
           msgSpan.textContent = wantsEnabled ? "Point of Sale enabled." : "Point of Sale disabled.";
         } catch (err) {
           document.getElementById("posEnabled").checked = !wantsEnabled;
+          msgSpan.className = "action-msg error";
+          msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
+        }
+      });
+    }
+
+    function renderCommitmentsPanel(tenantRow) {
+      const el = document.getElementById("commitmentsEnabled");
+      if (!el) return;
+      el.checked = !!(tenantRow && tenantRow.commitments_enabled);
+    }
+
+    async function saveCommitments() {
+      const msgSpan = document.getElementById("commitmentsMessage");
+      const btn = document.getElementById("btnSaveCommitments");
+
+      msgSpan.className = "action-msg";
+      msgSpan.textContent = "";
+
+      if (!currentTenantId) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Error: No workspace identified.";
+        return;
+      }
+
+      const commitmentsEnabled = document.getElementById("commitmentsEnabled").checked;
+
+      await withButtonLoading(btn, async () => {
+        try {
+          const { error } = await supabaseClient
+            .from("tenants")
+            .update({ commitments_enabled: commitmentsEnabled })
+            .eq("id", currentTenantId);
+
+          if (error) throw error;
+
+          msgSpan.className = "action-msg success";
+          msgSpan.textContent = "Setting saved.";
+        } catch (err) {
           msgSpan.className = "action-msg error";
           msgSpan.textContent = "Failed to save: " + getErrorMessage(err);
         }

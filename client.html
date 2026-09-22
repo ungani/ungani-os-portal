@@ -3056,7 +3056,8 @@
       tasks: [],
       documents: [],
       events: [],
-      support: []
+      support: [],
+      commitments: []
     };
 
     let notifications = [];
@@ -4896,6 +4897,7 @@
       dashboardData.events = cached.payload.events || [];
       dashboardData.support = cached.payload.support || [];
       dashboardData.invoices = cached.payload.invoices || [];
+      dashboardData.commitments = cached.payload.commitments || [];
 
       rawDashboardData = {
         transactions: dashboardData.transactions,
@@ -4934,7 +4936,8 @@
         safeSelect("documents", 250),
         safeSelect("business_events", 250),
         safeSelect("support_issues", 250),
-        safeInvoicesForHealth()
+        safeInvoicesForHealth(),
+        safeCommitments()
       ]);
 
       if (dashboardHadNetworkFailure && tryRenderDashboardFromCache()) {
@@ -4952,6 +4955,7 @@
       dashboardData.events = responses[6];
       dashboardData.support = responses[7];
       dashboardData.invoices = responses[8];
+      dashboardData.commitments = responses[9];
 
       // Branch UX Phase B - keep an unfiltered snapshot of the 3 tables
       // Phase A actually tags (transactions/tasks/people), then re-apply
@@ -4993,7 +4997,8 @@
         documents: dashboardData.documents,
         events: dashboardData.events,
         support: dashboardData.support,
-        invoices: dashboardData.invoices
+        invoices: dashboardData.invoices,
+        commitments: dashboardData.commitments
       });
 
       lastDashboardLoadTime = new Date();
@@ -5384,6 +5389,22 @@
         return response.data.invoices || [];
       } catch (error) {
         console.warn("invoices", error.message);
+        return [];
+      }
+    }
+
+    // Same reasoning as safeInvoicesForHealth() - ungani_commitments' RLS
+    // select policy is tenant-scoped only (no deleted_at filter, matching
+    // ungani_price_lists' precedent), so a direct .from() read would leak
+    // soft-deleted leases/memberships/contracts. The RPC filters
+    // deleted_at is null server-side.
+    async function safeCommitments() {
+      try {
+        const response = await supabaseClient.rpc("get_my_ungani_commitments");
+        if (response.error || !response.data || response.data.ok !== true) return [];
+        return response.data.commitments || [];
+      } catch (error) {
+        console.warn("commitments", error.message);
         return [];
       }
     }
@@ -5899,12 +5920,8 @@
         return String(getValue(a, ["event_date", "date", "start_date"], "")).localeCompare(String(getValue(b, ["event_date", "date", "start_date"], "")));
       });
 
-      const leasesExpiring = (data.people || []).filter(function (person) {
-        const leaseEnd = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
-        return leaseEnd && leaseEnd >= ctx.todayStr && leaseEnd <= ctx.sevenDaysStr;
-      }).sort(function (a, b) {
-        return String(getValue(a, ["lease_end_date"], "")).localeCompare(String(getValue(b, ["lease_end_date"], "")));
-      });
+      const leaseCommitments = (data.commitments || []).filter(function (c) { return c.commitment_type === "lease"; });
+      const leasesExpiring = UnganiClientShared.commitmentsExpiringSoon(leaseCommitments, ctx.todayStr);
 
       const trendMonths = calculatePropertyRentTrend(data.transactions);
       const outstandingRentTrend = calculateOutstandingRentTrend(data, true);
@@ -5915,7 +5932,7 @@
       const greetingMessages = [];
       if (overdueRent.length > 0) greetingMessages.push({ text: overdueRent.length === 1 ? "1 tenant has unpaid rent this month" : overdueRent.length + " tenants have unpaid rent this month", href: ctx.peopleHref });
       if (todaysViewings.length > 0) greetingMessages.push({ text: todaysViewings.length === 1 ? "1 viewing scheduled today" : todaysViewings.length + " viewings scheduled today", href: ctx.calendarHref });
-      if (leasesExpiring.length > 0) greetingMessages.push({ text: leasesExpiring.length === 1 ? "1 lease expiring within 7 days" : leasesExpiring.length + " leases expiring within 7 days", href: ctx.peopleHref });
+      if (leasesExpiring.length > 0) greetingMessages.push({ text: leasesExpiring.length === 1 ? "1 lease expiring within 7 days" : leasesExpiring.length + " leases expiring within 7 days", href: "my-commitments.html" });
 
       return {
         subtitle: "Overdue rent, today's viewings, open maintenance, and leases expiring soon for Rentals.",
@@ -6132,10 +6149,8 @@
           const status = statusText(task);
           return type.includes("maintenance") && !status.includes("completed") && !status.includes("cancelled");
         });
-        const leasesExpiringForHealth = (data.people || []).filter(function (person) {
-          const leaseEnd = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
-          return leaseEnd && leaseEnd >= todayStr && leaseEnd <= sevenDaysStr;
-        });
+        const leaseCommitmentsForHealth = (data.commitments || []).filter(function (c) { return c.commitment_type === "lease"; });
+        const leasesExpiringForHealth = UnganiClientShared.commitmentsExpiringSoon(leaseCommitmentsForHealth, todayStr);
 
         try {
           health = computePropertyHealthScore({
@@ -6336,12 +6351,8 @@
 
       const sevenDaysStr = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
 
-      const leasesExpiring = (dashboardData.people || []).filter(function (person) {
-        const leaseEnd = String(getValue(person, ["lease_end_date"], "")).slice(0, 10);
-        return leaseEnd && leaseEnd >= todayStr && leaseEnd <= sevenDaysStr;
-      }).sort(function (a, b) {
-        return String(getValue(a, ["lease_end_date"], "")).localeCompare(String(getValue(b, ["lease_end_date"], "")));
-      });
+      const leaseCommitments = (dashboardData.commitments || []).filter(function (c) { return c.commitment_type === "lease"; });
+      const leasesExpiring = UnganiClientShared.commitmentsExpiringSoon(leaseCommitments, todayStr);
 
       const sectionSummaries = sections.map(function (label) {
         return calculateSectionSummary(label, monthKey, todayStr);
@@ -6365,7 +6376,7 @@
         greetingMessages.push({ text: todaysViewings.length === 1 ? "1 viewing scheduled today" : todaysViewings.length + " viewings scheduled today", href: "my-calendar.html" });
       }
       if (leasesExpiring.length > 0) {
-        greetingMessages.push({ text: leasesExpiring.length === 1 ? "1 lease expiring within 7 days" : leasesExpiring.length + " leases expiring within 7 days", href: "my-people.html" });
+        greetingMessages.push({ text: leasesExpiring.length === 1 ? "1 lease expiring within 7 days" : leasesExpiring.length + " leases expiring within 7 days", href: "my-commitments.html" });
       }
       if (mostRecentRecord) {
         greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
@@ -10173,8 +10184,8 @@
         groups.push({
           title: "Leases Expiring Within 7 Days",
           rows: leasesExpiring.map(function (row) {
-            const tenantName = getValue(row, ["full_name", "name"], "Tenant");
-            const leaseEnd = getValue(row, ["lease_end_date"], "");
+            const tenantName = getValue(row, ["person_name"], "Tenant");
+            const leaseEnd = getValue(row, ["end_date"], "");
 
             return attentionRow(
               "file-text",
@@ -10182,7 +10193,7 @@
               "Lease ends " + formatDate(leaseEnd),
               "Expiring",
               "orange",
-              "my-people.html?highlight=" + row.id,
+              "my-commitments.html",
               taggedMode ? "Rentals" : null,
               null
             );
@@ -10503,16 +10514,17 @@
         });
       });
 
-      (data.people || []).forEach(function (row) {
-        const leaseEnd = String(getValue(row, ["lease_end_date"], "")).slice(0, 10);
+      (data.commitments || []).forEach(function (row) {
+        if (row.commitment_type !== "lease") return;
+        const leaseEnd = String(getValue(row, ["end_date"], "")).slice(0, 10);
         if (!leaseEnd || !days.includes(leaseEnd)) return;
 
         items.push({
           date: leaseEnd,
-          title: "Lease ends — " + getValue(row, ["full_name", "name"], "Tenant"),
+          title: "Lease ends — " + getValue(row, ["person_name"], "Tenant"),
           type: "Lease Renewal",
           section: "Rentals",
-          href: "my-people.html?highlight=" + row.id
+          href: "my-commitments.html"
         });
       });
 
@@ -14187,6 +14199,13 @@
 
       const overdueTasks = findOverdueTasksForSection(data, todayStr);
 
+      // Cluster 4 (Commitments) - additive, opt-in, empty unless the owner
+      // has turned on "Leases / Memberships / Contracts" in Settings AND
+      // created contract records there. See renderGymDashboard for the
+      // same pattern applied to memberships.
+      const contractCommitments = (data.commitments || []).filter(function (c) { return c.commitment_type === "service_contract"; });
+      const contractsExpiring = UnganiClientShared.commitmentsExpiringSoon(contractCommitments, todayStr);
+
       const calendarPreview = buildSecurityCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(isNotificationUnread).length;
 
@@ -14198,6 +14217,9 @@
       }
       if (incidentFollowUps.length > 0) {
         greetingMessages.push({ text: incidentFollowUps.length === 1 ? "1 incident follow-up is open" : incidentFollowUps.length + " incident follow-ups are open", href: "my-tasks.html" });
+      }
+      if (contractsExpiring.length > 0) {
+        greetingMessages.push({ text: contractsExpiring.length === 1 ? "1 contract expiring within 7 days" : contractsExpiring.length + " contracts expiring within 7 days", href: "my-commitments.html" });
       }
       if (todaysShifts.length > 0) {
         greetingMessages.push({ text: todaysShifts.length === 1 ? "1 shift today" : todaysShifts.length + " shifts today", href: "my-calendar.html" });
@@ -14252,6 +14274,16 @@
         });
       }
 
+      if (contractsExpiring.length > 0) {
+        attentionGroups.push({
+          title: "Contracts Expiring Within 7 Days",
+          rows: contractsExpiring.map(function (row) {
+            const clientName = getValue(row, ["person_name"], "Client");
+            return attentionRow("file-clock", clientName, "Contract ends " + formatDate(getValue(row, ["end_date"], "")), "Expiring", "orange", "my-commitments.html", null, null);
+          })
+        });
+      }
+
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, incident follow-ups, or shifts need attention right now.");
 
       document.getElementById("content").innerHTML = `
@@ -14292,6 +14324,7 @@
           ${kpiCard("Active Sites", activeSites.length + " / " + sites.length, sites.length > 0 ? "Sites currently under contract" : "No sites tracked yet", "#2563EB", "my-items.html", countSpan(activeSites.length, "ratio", " / " + sites.length), staticProportionBar(sites.length > 0 ? activeSites.length / sites.length : 0, "#2563EB", sites.length > 0 ? (Math.round((activeSites.length / sites.length) * 100) + "% active") : "No sites tracked yet"), "building-2")}
           ${kpiCard("Incident Follow-ups Open", incidentFollowUps.length, "Incidents needing action", incidentFollowUps.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(incidentFollowUps.length, "plain"), null, "siren")}
           ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "triangle-alert")}
+          ${contractCommitments.length > 0 ? kpiCard("Contracts Expiring Soon", contractsExpiring.length, "Within the next 7 days", contractsExpiring.length > 0 ? "#D4A63A" : "#16A34A", "my-commitments.html", countSpan(contractsExpiring.length, "plain"), null, "file-clock") : ""}
         </section>
 
         <section class="card">
@@ -15119,6 +15152,15 @@
 
       const overdueTasks = findOverdueTasksForSection(data, todayStr);
 
+      // Cluster 4 (Commitments) - additive, opt-in. Empty unless the owner
+      // has turned on "Leases / Memberships / Contracts" in Settings AND
+      // actually created membership records there - stays invisible by
+      // default, same as every other optional module on this dashboard.
+      // Deliberately separate from renewalsDue above (task-based, manual)
+      // rather than replacing it - a gym may use either or both.
+      const membershipCommitments = (data.commitments || []).filter(function (c) { return c.commitment_type === "membership"; });
+      const membershipsExpiring = UnganiClientShared.commitmentsExpiringSoon(membershipCommitments, todayStr);
+
       const calendarPreview = buildGymCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(isNotificationUnread).length;
 
@@ -15130,6 +15172,9 @@
       }
       if (renewalsDue.length > 0) {
         greetingMessages.push({ text: renewalsDue.length === 1 ? "1 membership renewal is due" : renewalsDue.length + " membership renewals are due", href: "my-tasks.html" });
+      }
+      if (membershipsExpiring.length > 0) {
+        greetingMessages.push({ text: membershipsExpiring.length === 1 ? "1 membership expiring within 7 days" : membershipsExpiring.length + " memberships expiring within 7 days", href: "my-commitments.html" });
       }
       if (todaysClasses.length > 0) {
         greetingMessages.push({ text: todaysClasses.length === 1 ? "1 class or session today" : todaysClasses.length + " classes or sessions today", href: "my-calendar.html" });
@@ -15184,6 +15229,16 @@
         });
       }
 
+      if (membershipsExpiring.length > 0) {
+        attentionGroups.push({
+          title: "Memberships Expiring Within 7 Days",
+          rows: membershipsExpiring.map(function (row) {
+            const memberName = getValue(row, ["person_name"], "Member");
+            return attentionRow("file-clock", memberName, "Membership ends " + formatDate(getValue(row, ["end_date"], "")), "Expiring", "orange", "my-commitments.html", null, null);
+          })
+        });
+      }
+
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, membership renewals, or classes need attention right now.");
 
       document.getElementById("content").innerHTML = `
@@ -15224,6 +15279,7 @@
           ${kpiCard("Membership Renewals Due", renewalsDue.length, "Members needing renewal follow-up", renewalsDue.length > 0 ? "#D4A63A" : "#16A34A", "my-tasks.html", countSpan(renewalsDue.length, "plain"), null, "repeat-2")}
           ${kpiCard("Active Members", activeMembers.length + " / " + members.length, "Members currently active", "#2563EB", "my-people.html", countSpan(activeMembers.length, "ratio", " / " + members.length), staticProportionBar(members.length > 0 ? activeMembers.length / members.length : 0, "#2563EB", members.length > 0 ? (Math.round((activeMembers.length / members.length) * 100) + "% active") : "No members tracked yet"), "user")}
           ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "triangle-alert")}
+          ${membershipCommitments.length > 0 ? kpiCard("Memberships Expiring Soon", membershipsExpiring.length, "Within the next 7 days", membershipsExpiring.length > 0 ? "#D4A63A" : "#16A34A", "my-commitments.html", countSpan(membershipsExpiring.length, "plain"), null, "file-clock") : ""}
         </section>
 
         <section class="card">
@@ -15517,10 +15573,18 @@
       const calendarPreview = buildCleaningCalendarPreview(today, data);
       const unreadNotifications = notifications.filter(isNotificationUnread).length;
       const mostRecentRecord = findMostRecentRecord(data);
+
+      // Cluster 4 (Commitments) - additive, opt-in, empty unless the owner
+      // has turned on "Leases / Memberships / Contracts" in Settings AND
+      // created contract records there. Same pattern as Security/Gym.
+      const contractCommitments = (data.commitments || []).filter(function (c) { return c.commitment_type === "service_contract"; });
+      const contractsExpiring = UnganiClientShared.commitmentsExpiringSoon(contractCommitments, todayStr);
+
       const greetingMessages = [];
       if (overdueTasks.length > 0) greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
       if (jobsToday.length > 0) greetingMessages.push({ text: jobsToday.length === 1 ? "1 cleaning job today" : jobsToday.length + " cleaning jobs today", href: "my-calendar.html" });
       if (restocksDue.length > 0) greetingMessages.push({ text: restocksDue.length === 1 ? "1 supply restock is due" : restocksDue.length + " supply restocks are due", href: "my-tasks.html" });
+      if (contractsExpiring.length > 0) greetingMessages.push({ text: contractsExpiring.length === 1 ? "1 contract expiring within 7 days" : contractsExpiring.length + " contracts expiring within 7 days", href: "my-commitments.html" });
       if (mostRecentRecord) greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
 
       let health;
@@ -15531,6 +15595,7 @@
       if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("triangle-alert", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
       if (jobsToday.length > 0) attentionGroups.push({ title: "Today's Cleaning Jobs", rows: jobsToday.map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Cleaning Job"); return attentionRow("broom", title, getValue(event, ["event_type", "type"], "Cleaning Job"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null); }) });
       if (restocksDue.length > 0) attentionGroups.push({ title: "Supply Restocks Due", rows: restocksDue.map(function (task) { const title = getValue(task, ["task_title", "title"], "Supply Restock"); const due = getValue(task, ["due_date"], ""); return attentionRow("package", title, due ? "Due " + formatDate(due) : "No due date set", "Due", "orange", "my-tasks.html?highlight=" + task.id, null, "restock:" + task.id); }) });
+      if (contractsExpiring.length > 0) attentionGroups.push({ title: "Contracts Expiring Within 7 Days", rows: contractsExpiring.map(function (row) { const clientName = getValue(row, ["person_name"], "Client"); return attentionRow("file-clock", clientName, "Contract ends " + formatDate(getValue(row, ["end_date"], "")), "Expiring", "orange", "my-commitments.html", null, null); }) });
 
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, cleaning jobs, or supply restocks need attention right now.");
 
@@ -15565,6 +15630,7 @@
           ${kpiCard("Today's Cleaning Jobs", jobsToday.length, "Jobs scheduled today", "#2563EB", "my-calendar.html", countSpan(jobsToday.length, "plain"), null, "spray-can")}
           ${kpiCard("Supply Restocks Due", restocksDue.length, "Supplies needing reorder", restocksDue.length > 0 ? "#D4A63A" : "#16A34A", "my-tasks.html", countSpan(restocksDue.length, "plain"), null, "package")}
           ${kpiCard("Overdue Tasks", overdueTasks.length, "Tasks past their due date", overdueTasks.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(overdueTasks.length, "plain"), null, "triangle-alert")}
+          ${contractCommitments.length > 0 ? kpiCard("Contracts Expiring Soon", contractsExpiring.length, "Within the next 7 days", contractsExpiring.length > 0 ? "#D4A63A" : "#16A34A", "my-commitments.html", countSpan(contractsExpiring.length, "plain"), null, "file-clock") : ""}
         </section>
         <section class="card">
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, today's cleaning jobs, and supply restocks due — in priority order.</p></div></div>

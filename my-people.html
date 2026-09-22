@@ -269,7 +269,7 @@
         return;
       }
 
-      if (isRealEstate || isHospitality) {
+      if (isHospitality) {
         await loadUnitOptions();
       }
 
@@ -981,7 +981,7 @@
                 const followUp = UnganiClientShared.getValue(row, ["last_follow_up_date"], "");
 
                 return `
-                  <tr style="--accent:${UnganiClientShared.attr(statusAccent(status))};" data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="client_people" onclick="openPersonModal('${UnganiClientShared.attr(row.id)}')">
+                  <tr style="--accent:${UnganiClientShared.attr(statusAccent(status))};" data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="client_people" onclick="openPersonProfile('${UnganiClientShared.attr(row.id)}')">
                     <td>
                       ${UnganiClientShared.safe(name)}
                       <span class="row-sub">${UnganiClientShared.safe(role || company || "No role/company")}</span>
@@ -1204,6 +1204,27 @@
       UnganiClientShared.showToast("Person type selected ✓");
     }
 
+    // Person 360: unified profile entry point (client-shared.js's
+    // openUnganiPersonProfile()) - replaces the old direct-to-edit-modal
+    // click. Payments/Documents/Commitments are now visible in one place
+    // without opening the edit form first; Edit/Discuss/Delete stay as
+    // buttons inside the profile, wired to this page's own existing
+    // functions rather than duplicating them.
+    function openPersonProfile(id) {
+      const row = peopleRows.find(function (item) { return String(item.id) === String(id); });
+
+      if (!row) {
+        UnganiClientShared.showToast("Person not found.");
+        return;
+      }
+
+      UnganiClientShared.openUnganiPersonProfile(currentContext, row, {
+        editFnName: "openPersonModal",
+        discussFnName: "openPersonDiscussionPanel",
+        deleteFnName: "deletePerson"
+      });
+    }
+
     function openPersonModal(id, presetValues) {
       const row = id ? peopleRows.find(function (item) { return String(item.id) === String(id); }) : null;
 
@@ -1305,9 +1326,9 @@
               </div>
             ` : ""}
 
-            ${(isRealEstate || isHospitality) ? `
+            ${isHospitality ? `
               <div>
-                <label for="personLinkedItem">${isHospitality ? "Linked Room / Table" : "Linked Unit / Property"}</label>
+                <label for="personLinkedItem">Linked Room / Table</label>
                 <select id="personLinkedItem">
                   <option value="">Not linked</option>
                   ${unitOptions.map(function (item) {
@@ -1320,13 +1341,24 @@
               </div>
 
               <div>
-                <label for="personLeaseStart">${isHospitality ? "Check-in Date" : "Lease Start Date"}</label>
+                <label for="personLeaseStart">Check-in Date</label>
                 <input id="personLeaseStart" type="date" value="${row ? UnganiClientShared.attr(String(UnganiClientShared.getValue(row, ["lease_start_date"], "")).slice(0, 10)) : ""}" />
               </div>
 
               <div>
-                <label for="personLeaseEnd">${isHospitality ? "Checkout Date" : "Lease End Date"}</label>
+                <label for="personLeaseEnd">Checkout Date</label>
                 <input id="personLeaseEnd" type="date" value="${row ? UnganiClientShared.attr(String(UnganiClientShared.getValue(row, ["lease_end_date"], "")).slice(0, 10)) : ""}" />
+              </div>
+            ` : ""}
+
+            ${isRealEstate && row ? `
+              <div class="wide">
+                <label>Lease</label>
+                <p class="ungani-small" style="margin:0;">
+                  Lease start/end dates and unit linking now live on
+                  <a href="my-commitments.html" style="color:var(--gold,#D4A63A);">Leases</a>
+                  (My Settings → Add-ons → turn on "Leases / Memberships / Contracts" if it's not visible in your sidebar yet).
+                </p>
               </div>
             ` : ""}
 
@@ -1362,7 +1394,7 @@
           document.getElementById("personStatus").value = row ? UnganiClientShared.getValue(row, ["status"], "active") : "active";
           document.getElementById("personRelationship").value = row ? UnganiClientShared.getValue(row, ["relationship_status", "lead_status"], "") : "";
 
-          if (isRealEstate || isHospitality) {
+          if (isHospitality) {
             if (document.getElementById("personLinkedItem")) document.getElementById("personLinkedItem").value = row ? UnganiClientShared.getValue(row, ["linked_item_id"], "") : "";
           }
 
@@ -1401,7 +1433,7 @@
         notes: UnganiClientShared.value("personNotes") || null
       };
 
-      if (isRealEstate || isHospitality) {
+      if (isHospitality) {
         payload.linked_item_id = UnganiClientShared.value("personLinkedItem") || null;
         payload.lease_start_date = UnganiClientShared.value("personLeaseStart") || null;
         payload.lease_end_date = UnganiClientShared.value("personLeaseEnd") || null;

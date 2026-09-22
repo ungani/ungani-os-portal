@@ -379,23 +379,20 @@
     // business_items (same shape as ungani_order_items.order_id), not a
     // stored "is this a building" flag - so "is this row a building" is
     // derived at render time by checking whether anything points at it.
+    // Location/Property 360: uses the shared client-shared.js query
+    // (loadLocationConnections) for units/tenants/commitments, rather than
+    // this page's own copy - it used to query client_people.lease_end_date
+    // directly, which went stale/empty once Cluster 4's full cutover moved
+    // Real Estate lease data onto ungani_commitments (this page was missed
+    // in that cutover pass since it's a separate standalone page from the
+    // my-items.html side panel that WAS updated). Parent-property lookup
+    // stays a local query since it's a distinct "breadcrumb" concept, not
+    // part of "what's connected to this record".
     async function loadPropertyHierarchy(itemId) {
       if (!isRealEstate) return;
 
-      const [childrenResponse, tenantResponse, parentResponse] = await Promise.all([
-        currentContext.supabaseClient
-          .from("business_items")
-          .select("*")
-          .eq("tenant_id", currentContext.tenantId)
-          .eq("parent_item_id", itemId)
-          .is("deleted_at", null)
-          .order("item_name", { ascending: true }),
-        currentContext.supabaseClient
-          .from("client_people")
-          .select("id, full_name, phone, lease_start_date, lease_end_date")
-          .eq("tenant_id", currentContext.tenantId)
-          .eq("linked_item_id", itemId)
-          .is("deleted_at", null),
+      const [connections, parentResponse] = await Promise.all([
+        UnganiClientShared.loadLocationConnections(currentContext.supabaseClient, currentContext.tenantId, itemId),
         currentItem.parent_item_id
           ? currentContext.supabaseClient
               .from("business_items")
@@ -405,12 +402,13 @@
           : Promise.resolve({ data: null, error: null })
       ]);
 
-      const units = (childrenResponse && childrenResponse.data) || [];
-      const tenants = (tenantResponse && tenantResponse.data) || [];
+      const units = connections.units || [];
+      const tenants = connections.tenants || [];
+      const commitments = connections.commitments || [];
       const parent = parentResponse ? parentResponse.data : null;
 
       renderPropertyParentLink(parent);
-      renderCurrentTenantCard(tenants);
+      renderCurrentTenantCard(tenants, commitments);
 
       if (units.length > 0) {
         renderUnitsCard(units);
@@ -431,7 +429,7 @@
       el.innerHTML = `<a class="ungani-small" href="my-item-profile.html?id=${encodeURIComponent(parent.id)}">&larr; Belongs to: ${UnganiClientShared.safe(parentName)}</a>`;
     }
 
-    function renderCurrentTenantCard(tenants) {
+    function renderCurrentTenantCard(tenants, commitments) {
       const el = document.getElementById("currentTenantCard");
       if (!el) return;
 
@@ -442,8 +440,9 @@
 
       const rowsHtml = tenants.map(function (person) {
         const name = UnganiClientShared.getValue(person, ["full_name", "name"], "Tenant");
-        const lease = person.lease_start_date || person.lease_end_date
-          ? `${person.lease_start_date ? UnganiClientShared.formatDate(person.lease_start_date) : "—"} to ${person.lease_end_date ? UnganiClientShared.formatDate(person.lease_end_date) : "—"}`
+        const commitment = (commitments || []).filter(function (c) { return String(c.person_id) === String(person.id); })[0];
+        const lease = commitment && (commitment.start_date || commitment.end_date)
+          ? `${commitment.start_date ? UnganiClientShared.formatDate(commitment.start_date) : "—"} to ${commitment.end_date ? UnganiClientShared.formatDate(commitment.end_date) : "—"}`
           : "No lease dates set";
 
         return `
@@ -698,6 +697,8 @@
             <span>Next Maintenance Due</span>
             ${maintenanceDueBadge(UnganiClientShared.getValue(row.custom_fields || {}, ["next_maintenance_date"], ""))}
           </div>
+
+          <div id="itemLinkedTasksList" style="margin-top:12px;"></div>
         </div>
 
         <div class="ungani-card" style="margin-top:18px;">
@@ -746,7 +747,51 @@
 
       loadItemTimeline(row.id);
       loadItemDocuments(row.id);
+      loadItemLinkedTasks(row.id);
       loadPropertyHierarchy(row.id);
+    }
+
+    // Any task tagged to this item (maintenance/electrician/watchman visit,
+    // via tasks.linked_item_id) - not Real-Estate-gated, since any business
+    // type's business_items row can have a task linked to it.
+    async function loadItemLinkedTasks(itemId) {
+      const el = document.getElementById("itemLinkedTasksList");
+      if (!el) return;
+
+      let response;
+
+      try {
+        response = await currentContext.supabaseClient
+          .from("tasks")
+          .select("id, task_title, status, due_date, assigned_to")
+          .eq("tenant_id", currentContext.tenantId)
+          .eq("linked_item_id", itemId)
+          .is("deleted_at", null)
+          .order("due_date", { ascending: true });
+      } catch (error) {
+        el.innerHTML = "";
+        return;
+      }
+
+      const tasks = (response && response.data) || [];
+
+      if (!tasks.length) {
+        el.innerHTML = "";
+        return;
+      }
+
+      el.innerHTML = tasks.map(function (t) {
+        const title = UnganiClientShared.getValue(t, ["task_title"], "Task");
+        const due = UnganiClientShared.getValue(t, ["due_date"], "");
+        const assigned = UnganiClientShared.getValue(t, ["assigned_to"], "");
+
+        return `
+          <div class="detail-row">
+            <span>${UnganiClientShared.safe(title)}</span>
+            <span class="ungani-small">${assigned ? UnganiClientShared.safe(assigned) + " · " : ""}${due ? "Due " + UnganiClientShared.safe(UnganiClientShared.formatDate(due)) : "No due date"}</span>
+          </div>
+        `;
+      }).join("");
     }
 
     async function loadItemDocuments(itemId) {

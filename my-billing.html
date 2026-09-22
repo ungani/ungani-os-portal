@@ -1218,66 +1218,15 @@
       document.getElementById("sidebar").classList.toggle("open");
     }
 
-    const BILLING_SIDEBAR_COLLAPSE_KEY = "ungani_sidebar_collapsed_groups";
-
-    function getBillingSidebarCollapsedState() {
-      try {
-        return JSON.parse(localStorage.getItem(BILLING_SIDEBAR_COLLAPSE_KEY) || "{}");
-      } catch (error) {
-        return {};
-      }
-    }
-
-    function setBillingSidebarGroupCollapsed(groupKey, collapsed) {
-      const state = getBillingSidebarCollapsedState();
-      state[groupKey] = collapsed;
-      localStorage.setItem(BILLING_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
-    }
-
-    function toggleBillingSidebarGroup(groupKey) {
-      const el = document.getElementById("billingNavGroup-" + groupKey);
-      if (!el) return;
-
-      const nowCollapsed = !el.classList.contains("collapsed");
-      el.classList.toggle("collapsed", nowCollapsed);
-      setBillingSidebarGroupCollapsed(groupKey, nowCollapsed);
-    }
-
-    function renderBillingNavGroup(group, collapsedState) {
-      const itemsHtml = group.items.map(function (item) {
-        const active = item[1] === "my-billing.html" ? " active" : "";
-        return `<a class="side-link${active}" href="${item[1]}"><i data-lucide="${item[2]}"></i> <span>${item[3]}</span></a>`;
-      }).join("");
-
-      if (!group.collapsible) {
-        return `<div class="sidebar-section-title">${group.title}</div>${itemsHtml}`;
-      }
-
-      const containsActive = group.items.some(function (item) { return item[1] === "my-billing.html"; });
-      const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
-      const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
-
-      return `
-        <div class="side-group collapsible${collapsed ? " collapsed" : ""}" id="billingNavGroup-${group.key}">
-          <button type="button" class="sidebar-section-title sidebar-section-title-toggle" onclick="toggleBillingSidebarGroup('${group.key}')">
-            <span>${group.title}</span>
-            <span class="sidebar-toggle-icon">${collapsed ? "▸" : "▾"}</span>
-          </button>
-          <div class="side-group-items">${itemsHtml}</div>
-        </div>
-      `;
-    }
-
+    // Sidebar render/collapse logic now lives in ungani-nav-config.js
+    // (shared across the 8 pages that hand-rolled this same ~65 lines
+    // each - sidebar/nav audit, 2026-09-22). This page's own auth/data
+    // loading is untouched.
     function renderBillingSidebarGroups(tenant) {
       const container = document.getElementById("billingNavGroups");
       if (!container || !window.UnganiNavConfig) return;
 
-      const groups = UnganiNavConfig.getSidebarGroups(tenant || null);
-      const collapsedState = getBillingSidebarCollapsedState();
-
-      container.innerHTML = groups.map(function (group) {
-        return renderBillingNavGroup(group, collapsedState);
-      }).join("");
+      container.innerHTML = UnganiNavConfig.renderSidebarGroupsHtml(tenant || null, "my-billing.html");
 
       if (window.lucide && typeof window.lucide.createIcons === "function") {
         window.lucide.createIcons();

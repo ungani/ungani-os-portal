@@ -127,7 +127,37 @@
       }
 
       await loadMyStaffAccessAndTeamMembers();
-      await loadTaskRows();
+      await Promise.all([loadTaskRows(), loadLinkableItems()]);
+    }
+
+    // Location/Property 360: same pattern as my-documents.html's
+    // loadLinkableItems() - a task tagged to a specific business_items row
+    // (via tasks.linked_item_id) is how "electrician visiting Nyali
+    // Apartment" or "watchman shift note" becomes a real, queryable record
+    // on that property's profile panel, without inventing a new role/
+    // service-call subsystem.
+    let linkableItems = [];
+
+    async function loadLinkableItems() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, title, property_name")
+          .eq("tenant_id", currentContext.tenantId)
+          .order("created_at", { ascending: false })
+          .limit(500);
+
+        if (response.error) {
+          linkableItems = [];
+          return;
+        }
+
+        linkableItems = (response.data || []).map(function (row) {
+          return { id: row.id, name: UnganiClientShared.getValue(row, ["item_name", "name", "title", "property_name"], "Untitled Item") };
+        }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+      } catch (error) {
+        linkableItems = [];
+      }
     }
 
     async function loadMyStaffAccessAndTeamMembers() {
@@ -1574,6 +1604,16 @@
               <input id="taskRelatedItem" placeholder="${UnganiClientShared.attr(businessPreset.itemsLabel)}" value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["related_item"], "")) : ""}" />
             </div>
 
+            <div>
+              <label for="taskLinkedItem">Link to Item / Property (optional)</label>
+              <select id="taskLinkedItem">
+                <option value="">— Not linked —</option>
+                ${linkableItems.map(function (item) {
+                  return `<option value="${UnganiClientShared.attr(item.id)}">${UnganiClientShared.safe(item.name)}</option>`;
+                }).join("")}
+              </select>
+            </div>
+
             <div class="wide">
               <label for="taskNotes">Notes</label>
               <textarea id="taskNotes" rows="4" placeholder="Add instructions, context, follow-up details, or next steps...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
@@ -1622,6 +1662,10 @@
               ? UnganiClientShared.getValue(row, ["section_label"], "")
               : (currentSectionFilter || sectionOptions[0] || "");
           }
+
+          if (document.getElementById("taskLinkedItem")) {
+            document.getElementById("taskLinkedItem").value = row ? UnganiClientShared.getValue(row, ["linked_item_id"], "") : "";
+          }
         }
       });
     }
@@ -1654,6 +1698,7 @@
           assigned_to_is_owner: assignee.isOwner,
           related_person: UnganiClientShared.value("taskRelatedPerson") || null,
           related_item: UnganiClientShared.value("taskRelatedItem") || null,
+          linked_item_id: UnganiClientShared.value("taskLinkedItem") || null,
           notes: UnganiClientShared.value("taskNotes") || null
         };
 

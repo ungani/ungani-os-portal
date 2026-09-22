@@ -4399,6 +4399,286 @@
     return new Date().toISOString().slice(0, 10);
   }
 
+  // Cluster 4 (recurring-commitment lifecycle): single source of truth for
+  // deriving a lease/membership/service-contract's DISPLAY status, so the
+  // ~10 call sites in client.html that used to each inline their own
+  // "leaseEnd >= today && leaseEnd <= +7days" date math now share one
+  // function. `status` on the row itself is a MANUAL field the owner sets
+  // (active/terminated/frozen) - terminated/frozen always win outright,
+  // since a terminated lease showing as "expiring soon" would be wrong.
+  // Only when the manual status is 'active' do dates get consulted, to
+  // distinguish active / expiring_soon / expired - this needs no cron job,
+  // it's recomputed fresh every time a dashboard or list renders.
+  function computeCommitmentStatus(commitment, todayStr, windowDays) {
+    const today = todayStr || todayISO();
+    const window = windowDays || 7;
+    const manualStatus = String((commitment && commitment.status) || "active").toLowerCase();
+
+    if (manualStatus === "terminated") {
+      return { statusKey: "terminated", label: t("commitment.status.terminated", "Terminated"), color: "#6B7280" };
+    }
+    if (manualStatus === "frozen") {
+      return { statusKey: "frozen", label: t("commitment.status.frozen", "Frozen"), color: "#9A6A0A" };
+    }
+
+    const endDate = String((commitment && commitment.end_date) || "").slice(0, 10);
+    if (!endDate) {
+      return { statusKey: "active", label: t("commitment.status.active", "Active"), color: "#16A34A" };
+    }
+
+    if (endDate < today) {
+      return { statusKey: "expired", label: t("commitment.status.expired", "Expired"), color: "#DC2626" };
+    }
+
+    const windowEnd = new Date(today);
+    windowEnd.setDate(windowEnd.getDate() + window);
+    const windowEndStr = windowEnd.toISOString().slice(0, 10);
+
+    if (endDate <= windowEndStr) {
+      return { statusKey: "expiring_soon", label: t("commitment.status.expiring_soon", "Expiring Soon"), color: "#D4A63A" };
+    }
+
+    return { statusKey: "active", label: t("commitment.status.active", "Active"), color: "#16A34A" };
+  }
+
+  // Convenience wrapper for the exact "expiring within N days" filter+sort
+  // every dashboard attention-list call site needs - direct drop-in
+  // replacement for the old inline `leasesExpiring`/`membershipsExpiring`
+  // pattern.
+  function commitmentsExpiringSoon(commitments, todayStr, windowDays) {
+    const today = todayStr || todayISO();
+    return (commitments || [])
+      .filter(function (c) { return computeCommitmentStatus(c, today, windowDays).statusKey === "expiring_soon"; })
+      .sort(function (a, b) { return String(a.end_date || "").localeCompare(String(b.end_date || "")); });
+  }
+
+  // Location/Property 360 (Level 3 of the Person/Company/Location connected-
+  // records work): single shared query for "everything connected to this
+  // business_items row" - child units, the current tenant(s), any lease/
+  // membership/contract (Cluster 4's ungani_commitments), and any task
+  // tagged to this item (maintenance/electrician/watchman visits, via
+  // tasks.linked_item_id). Built once here so my-items.html's item-profile
+  // side panel and the standalone my-item-profile.html page both read from
+  // the same source instead of drifting apart - the same lesson learned
+  // when my-item-profile.html's tenant card was found still reading the old
+  // client_people.lease_end_date columns after Cluster 4's full cutover;
+  // that call site is being fixed to use this helper's `commitments` result
+  // instead of `tenants[].lease_end_date`.
+  async function loadLocationConnections(supabaseClient, tenantId, itemId) {
+    const [unitsRes, tenantsRes, commitmentsRes, tasksRes] = await Promise.all([
+      supabaseClient
+        .from("business_items")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("parent_item_id", itemId)
+        .is("deleted_at", null)
+        .order("item_name", { ascending: true }),
+      supabaseClient
+        .from("client_people")
+        .select("id, full_name, phone, linked_item_id")
+        .eq("tenant_id", tenantId)
+        .eq("linked_item_id", itemId)
+        .is("deleted_at", null),
+      supabaseClient
+        .rpc("get_my_ungani_commitments")
+        .then(function (res) { return res; })
+        .catch(function (error) { return { error: error }; }),
+      supabaseClient
+        .from("tasks")
+        .select("id, task_title, status, due_date, assigned_to")
+        .eq("tenant_id", tenantId)
+        .eq("linked_item_id", itemId)
+        .is("deleted_at", null)
+        .order("due_date", { ascending: true })
+    ]);
+
+    const allCommitments = (commitmentsRes && !commitmentsRes.error && commitmentsRes.data && commitmentsRes.data.ok === true)
+      ? (commitmentsRes.data.commitments || [])
+      : [];
+
+    return {
+      units: (unitsRes && unitsRes.data) || [],
+      tenants: (tenantsRes && tenantsRes.data) || [],
+      commitments: allCommitments.filter(function (c) { return String(c.linked_item_id || "") === String(itemId); }),
+      tasks: (tasksRes && tasksRes.data) || []
+    };
+  }
+
+  // Person 360 (Level 1 of the Person/Company/Location connected-records
+  // work): single shared query for "everything connected to this
+  // client_people row" - payment history (transactions.related_person_id,
+  // already proven working via my-people.html's openPersonPaymentHistory()
+  // before this consolidation), documents (documents.linked_person_id),
+  // and any lease/membership/contract (Cluster 4). Same pattern as
+  // loadLocationConnections() above.
+  async function loadPersonConnections(supabaseClient, tenantId, personId) {
+    const [paymentsRes, documentsRes, commitmentsRes] = await Promise.all([
+      supabaseClient
+        .from("transactions")
+        .select("id, transaction_date, transaction_type, category, category_name, description, amount, amount_kes, currency, status, payment_method")
+        .eq("tenant_id", tenantId)
+        .eq("related_person_id", personId)
+        .is("deleted_at", null)
+        .order("transaction_date", { ascending: false }),
+      supabaseClient
+        .from("documents")
+        .select("id, document_title, file_name, category, created_at")
+        .eq("tenant_id", tenantId)
+        .eq("linked_person_id", personId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }),
+      supabaseClient
+        .rpc("get_my_ungani_commitments")
+        .then(function (res) { return res; })
+        .catch(function (error) { return { error: error }; })
+    ]);
+
+    const allCommitments = (commitmentsRes && !commitmentsRes.error && commitmentsRes.data && commitmentsRes.data.ok === true)
+      ? (commitmentsRes.data.commitments || [])
+      : [];
+
+    return {
+      payments: (paymentsRes && paymentsRes.data) || [],
+      documents: (documentsRes && documentsRes.data) || [],
+      commitments: allCommitments.filter(function (c) { return String(c.person_id || "") === String(personId); })
+    };
+  }
+
+  // Facts-only summary badges, deliberately no invented rating. Payment
+  // timeliness and dispute counts are NOT included - transactions has no
+  // due_date column (confirmed, see my-debtors-payables.html's own
+  // accepted-limitation comment) and disputes don't exist as records
+  // anywhere in the app, so a "reliable payer" style claim would not be
+  // backed by real data. Only shows what's actually calculable today.
+  function buildPersonSummaryBadges(personRow, connections) {
+    const badges = [];
+
+    const earliestCommitmentStart = (connections.commitments || [])
+      .map(function (c) { return c.start_date; })
+      .filter(Boolean)
+      .sort()[0];
+    const sinceDate = earliestCommitmentStart || (personRow && personRow.created_at);
+
+    if (sinceDate) {
+      const since = new Date(sinceDate);
+      const now = new Date();
+      const months = Math.max(0, (now.getFullYear() - since.getFullYear()) * 12 + (now.getMonth() - since.getMonth()));
+      const monthsLabel = months < 1 ? "this month" : (months + " month" + (months === 1 ? "" : "s"));
+      badges.push("Since " + formatDate(sinceDate) + " (" + monthsLabel + ")");
+    }
+
+    const payments = connections.payments || [];
+    if (payments.length) {
+      const total = payments.reduce(function (sum, p) { return sum + Number(p.amount_kes || p.amount || 0); }, 0);
+      badges.push(payments.length + " payment" + (payments.length === 1 ? "" : "s") + " recorded, " + formatKES(total) + " total");
+    } else {
+      badges.push("No payments recorded yet");
+    }
+
+    const documents = connections.documents || [];
+    badges.push(documents.length + " document" + (documents.length === 1 ? "" : "s") + " on file");
+
+    return badges;
+  }
+
+  // Reuses openSidePanel() as the container (not a hard dependency on
+  // ungani-connect-panel.js, since not every page that could show a
+  // person profile loads that module) - Discussion/Activity stays
+  // reachable via a caller-supplied callback name rather than this
+  // function embedding UnganiConnectPanel's own plumbing a second time.
+  // opts: { discussFnName, editFnName, deleteFnName } - each a string
+  // naming a global function the caller already defines, invoked with
+  // the person id as its only argument. All optional - omitted buttons
+  // just don't render.
+  async function openUnganiPersonProfile(context, personRow, opts) {
+    const o = opts || {};
+    const personId = personRow.id;
+    const personName = getValue(personRow, ["full_name", "name"], "Person");
+
+    openSidePanel({
+      title: personName,
+      bodyHtml: loadingCard("Loading profile...")
+    });
+
+    let connections;
+    try {
+      connections = await loadPersonConnections(context.supabaseClient, context.tenantId, personId);
+    } catch (error) {
+      document.getElementById("unganiPanelBody").innerHTML = errorCard("Could not load profile", error.message || "Network error.");
+      return;
+    }
+
+    const badges = buildPersonSummaryBadges(personRow, connections);
+    const personType = getValue(personRow, ["person_type"], "Contact");
+    const status = getValue(personRow, ["status"], "active");
+
+    const paymentRowsHtml = (connections.payments || []).slice(0, 20).map(function (p) {
+      const amount = Number(p.amount_kes || p.amount || 0);
+      return `
+        <div class="detail-row">
+          <span>${safe(p.description || p.category_name || p.category || p.transaction_type || "Transaction")}</span>
+          <span class="ungani-small">${safe(formatDate(p.transaction_date))} · ${safe(formatKES(amount))}</span>
+        </div>
+      `;
+    }).join("");
+
+    const documentRowsHtml = (connections.documents || []).map(function (d) {
+      return `
+        <div class="detail-row">
+          <span>${safe(d.document_title || d.file_name || "Document")}</span>
+          <span class="ungani-small">${safe(formatDate(d.created_at))}</span>
+        </div>
+      `;
+    }).join("");
+
+    const commitmentRowsHtml = (connections.commitments || []).map(function (c) {
+      const range = (c.start_date || c.end_date)
+        ? (c.start_date ? formatDate(c.start_date) : "—") + " to " + (c.end_date ? formatDate(c.end_date) : "—")
+        : "No dates set";
+      return `
+        <div class="detail-row">
+          <span>${safe(c.plan_name || c.commitment_type || "Commitment")}</span>
+          <span class="ungani-small">${safe(range)}</span>
+        </div>
+      `;
+    }).join("");
+
+    document.getElementById("unganiPanelBody").innerHTML = `
+      <div class="ungani-card">
+        <p class="ungani-small">${safe(personType)} · ${safe(status)}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          ${badges.map(function (b) { return `<span class="ungani-badge">${safe(b)}</span>`; }).join("")}
+        </div>
+        <div class="ungani-button-row" style="margin-top:14px;">
+          ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="closeSidePanel(); ${o.editFnName}('${attr(personId)}')">Edit</button>` : ""}
+          ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="closeSidePanel(); ${o.discussFnName}('${attr(personId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
+          ${o.deleteFnName ? `<button class="ungani-btn red" type="button" onclick="${o.deleteFnName}('${attr(personId)}')">Delete</button>` : ""}
+        </div>
+      </div>
+
+      <div class="ungani-card" style="margin-top:18px;">
+        <div class="ungani-section-title"><div><h3>Payment History</h3></div></div>
+        ${paymentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No payments recorded yet.</p>`}
+      </div>
+
+      ${connections.commitments && connections.commitments.length ? `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title"><div><h3>Lease / Membership / Contract</h3></div></div>
+          ${commitmentRowsHtml}
+        </div>
+      ` : ""}
+
+      <div class="ungani-card" style="margin-top:18px;">
+        <div class="ungani-section-title"><div><h3>Documents</h3></div></div>
+        ${documentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No documents on file.</p>`}
+      </div>
+    `;
+
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
+  }
+
   function safe(valueText) {
     return String(valueText === null || valueText === undefined ? "" : valueText)
       .replace(/&/g, "&amp;")
@@ -4497,7 +4777,13 @@
       "bottom.items": "Items",
       "bottom.money": "Money",
       "bottom.tasks": "Tasks",
-      "bottom.menu": "Menu"
+      "bottom.menu": "Menu",
+
+      "commitment.status.active": "Active",
+      "commitment.status.expiring_soon": "Expiring Soon",
+      "commitment.status.expired": "Expired",
+      "commitment.status.terminated": "Terminated",
+      "commitment.status.frozen": "Frozen"
     },
     sw: {
       "group.main": "Kuu",
@@ -4555,7 +4841,14 @@
       "bottom.items": "Bidhaa",
       "bottom.money": "Pesa",
       "bottom.tasks": "Kazi",
-      "bottom.menu": "Menyu"
+      "bottom.menu": "Menyu",
+
+      "nav.commitments": "Kodi / Uanachama / Mikataba",
+      "commitment.status.active": "Inaendelea",
+      "commitment.status.expiring_soon": "Inakaribia Kuisha",
+      "commitment.status.expired": "Imeisha",
+      "commitment.status.terminated": "Imesitishwa",
+      "commitment.status.frozen": "Imesimamishwa"
     }
   };
 
@@ -4604,6 +4897,11 @@
       formatDate,
       formatDateTime,
       todayISO,
+      computeCommitmentStatus,
+      commitmentsExpiringSoon,
+      loadLocationConnections,
+      loadPersonConnections,
+      openUnganiPersonProfile,
       showToast,
       withButtonLoading,
       toggleTheme,

@@ -40,6 +40,7 @@
     { key: "orders", href: "my-orders.html", icon: "shopping-cart", label: "Orders", aliases: ["orders", "order", "customer order", "sales order", "fulfilment", "fulfillment", "fulfil an order", "fulfill an order"] },
     { key: "quick-sale", href: "my-quick-sale.html", icon: "shopping-bag", label: "Quick Sale (POS)", aliases: ["quick sale", "point of sale", "checkout", "cash register", "pos terminal"] },
     { key: "price-lists", href: "my-price-lists.html", icon: "wallet", label: "Price Lists", aliases: ["price lists", "price list", "prices", "price", "wholesale pricing"] },
+    { key: "commitments", href: "my-commitments.html", icon: "file-clock", label: "Leases / Memberships / Contracts", aliases: ["leases", "lease", "tenancy", "tenancies", "memberships", "membership", "service contracts", "service contract", "contracts", "contract", "renewals", "renewal"] },
     { key: "documents", href: "my-documents.html", icon: "file-text", label: "Documents", aliases: ["documents", "document", "docs", "files", "uploads"] },
     { key: "reports", href: "reports.html", icon: "file-text", label: "Reports", aliases: ["reports", "report", "export", "exports"] },
     { key: "people", href: "my-people.html", icon: "users", label: "People", aliases: ["people", "customers", "customer", "clients", "client", "leads", "lead", "staff", "employees", "employee", "contacts", "drivers", "driver", "suppliers", "supplier"] },
@@ -2835,6 +2836,18 @@
         return runPriceListQueryIntent();
       }
 
+      // Cluster 4: live-data commitments question ("lease", "membership",
+      // "contract", "renewal") - same reasoning as price lists above,
+      // checked right after it since it's the same opt-in-module pattern.
+      if (isCommitmentQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("That isn't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runCommitmentQueryIntent();
+      }
+
       // Live-data POS/Quick Sale question ("today's POS sales", "how much
       // have I sold today") - checked ahead of the static pos-explained
       // HELP_TOPICS answer, same reasoning as stock/debtors above. Uses a
@@ -5331,6 +5344,107 @@
     };
   }
 
+  // ---- Cluster 4: Commitments (leases / memberships / service contracts) ----
+  // Reuses get_my_ungani_commitments() - the exact RPC my-commitments.html
+  // itself calls. "lease"/"leases" need a word-boundary check since "lease"
+  // is a substring of "please" - every other keyword here (membership,
+  // contract, tenancy, renewal) is a safe plain substring, checked against
+  // the rest of this file already (see the NAV_ITEMS aliases list) with no
+  // collisions found. "renewal"/"renewals" deliberately used instead of
+  // bare "renew", which collides with the existing subscription/package
+  // "renew my plan" phrasing elsewhere in this file.
+  const COMMITMENT_LABEL_BY_BUSINESS_KEY = {
+    real_estate: { singular: "lease", plural: "leases" },
+    gym: { singular: "membership", plural: "memberships" },
+    security: { singular: "contract", plural: "contracts" },
+    cleaning: { singular: "contract", plural: "contracts" }
+  };
+
+  function isCommitmentQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    if (/\blease[s]?\b/.test(lower)) return true;
+    return ["membership", "memberships", "service contract", "service contracts", "contract", "contracts", "tenancy", "tenancies", "renewal", "renewals"]
+      .some(function (word) { return lower.indexOf(word) !== -1; });
+  }
+
+  async function runCommitmentQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    const labels = (state.tenant && COMMITMENT_LABEL_BY_BUSINESS_KEY[state.tenant.business_type_key]) ||
+      { singular: "commitment", plural: "commitments" };
+
+    if (!state.tenant || state.tenant.commitments_enabled !== true) {
+      addNiaMessage(
+        `Tracking ${labels.plural} isn't turned on yet. Enable it in Settings' Add-ons panel to start tracking renewal dates — ${goldLink("my-settings.html", "Open Settings")}.`
+      );
+      return { spoken: "That isn't turned on yet." };
+    }
+
+    addNiaMessage("Checking your " + labels.plural + "...");
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_commitments");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const commitments = (response && !response.error && response.data && response.data.ok === true)
+      ? (response.data.commitments || [])
+      : [];
+
+    if (!commitments.length) {
+      addNiaMessage(
+        "No " + labels.plural + " yet. Create one from " + goldLink("my-commitments.html", labels.plural.charAt(0).toUpperCase() + labels.plural.slice(1)) + "."
+      );
+      return { spoken: "No " + labels.plural + " yet." };
+    }
+
+    // Not calling out to UnganiClientShared.computeCommitmentStatus() here -
+    // nia-assistant.js is a self-contained script (see the Quick Add bridge
+    // comment in client.html) that must work on client.html, which does NOT
+    // load client-shared.js at all. A minimal inline re-derivation of the
+    // same active/expiring-soon logic avoids a hard crash on that page.
+    const today = new Date().toISOString().slice(0, 10);
+    const windowEnd = new Date(today);
+    windowEnd.setDate(windowEnd.getDate() + 7);
+    const windowEndStr = windowEnd.toISOString().slice(0, 10);
+
+    const activeCommitments = commitments.filter(function (c) {
+      return String((c && c.status) || "active").toLowerCase() === "active";
+    });
+    const activeCount = activeCommitments.length;
+    const expiring = activeCommitments
+      .filter(function (c) {
+        const endDate = String((c && c.end_date) || "").slice(0, 10);
+        return endDate && endDate >= today && endDate <= windowEndStr;
+      })
+      .sort(function (a, b) { return String(a.end_date || "").localeCompare(String(b.end_date || "")); });
+
+    const summary = activeCount + " active " + (activeCount === 1 ? labels.singular : labels.plural) +
+      (expiring.length ? ", " + expiring.length + " expiring within 7 days" : "");
+
+    const expiringHtml = expiring.length
+      ? `<div style="margin-top:8px;">${expiring.slice(0, 5).map(function (c) {
+          return safe(c.plan_name || c.person_name || labels.singular) + " — ends " + safe(String(c.end_date || "").slice(0, 10));
+        }).join("<br>")}</div>`
+      : "";
+
+    const html =
+      `<strong>${labels.plural.charAt(0).toUpperCase() + labels.plural.slice(1)}</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="file-clock"></i> ${safe(summary)}</div>` +
+      expiringHtml +
+      `<div style="margin-top:8px;">${goldLink("my-commitments.html", "See all " + labels.plural + " →")}</div>`;
+
+    addNiaMessage(html);
+
+    return { spoken: summary + "." };
+  }
+
   // ---- Quick Sale (POS) sales query ----
   // POS sales aren't a distinct table - record_ungani_pos_sale() creates a
   // real Customer Invoice and (for cash) an immediate payment tagged with
@@ -5787,10 +5901,27 @@
 
     results.forEach(function (r) { if (r.error) throw new Error(r.error.message); });
 
+    // Cluster 4 cutover: real estate leases now live in ungani_commitments,
+    // not client_people.lease_end_date (still selected above only because
+    // Hospitality's check-in/checkout reuses those same 2 columns and
+    // buildNiaGenericHealthEntries doesn't otherwise touch this fetch).
+    // Uses the RPC, not a direct .from() read, since ungani_commitments'
+    // RLS select policy is tenant-scoped only (no deleted_at filter) -
+    // same reasoning as client.html's safeCommitments().
+    let commitments = [];
+    try {
+      const commitmentsResponse = await state.supabaseClient.rpc("get_my_ungani_commitments");
+      if (!commitmentsResponse.error && commitmentsResponse.data && commitmentsResponse.data.ok === true) {
+        commitments = commitmentsResponse.data.commitments || [];
+      }
+    } catch (error) {
+      // Non-fatal - health score just won't factor in lease expiry this time.
+    }
+
     return {
       transactions: results[0].data || [], items: results[1].data || [], people: results[2].data || [],
       records: results[3].data || [], tasks: results[4].data || [], documents: results[5].data || [],
-      events: results[6].data || [], support: results[7].data || []
+      events: results[6].data || [], support: results[7].data || [], commitments: commitments
     };
   }
 
@@ -5884,8 +6015,9 @@
       return type.indexOf("maintenance") !== -1 && status.indexOf("completed") === -1 && status.indexOf("cancelled") === -1;
     });
 
-    const leasesExpiring = (data.people || []).filter(function (person) {
-      const leaseEnd = String(pickField(person, ["lease_end_date"], "")).slice(0, 10);
+    const leasesExpiring = (data.commitments || []).filter(function (c) {
+      if (c.commitment_type !== "lease") return false;
+      const leaseEnd = String(pickField(c, ["end_date"], "")).slice(0, 10);
       return leaseEnd && leaseEnd >= today && leaseEnd <= sevenDays;
     });
 

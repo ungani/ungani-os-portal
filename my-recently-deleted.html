@@ -778,66 +778,33 @@
       window.location.href = "login.html?mode=client";
     }
 
-    const DELETED_SIDEBAR_COLLAPSE_KEY = "ungani_sidebar_collapsed_groups";
-
-    function getDeletedSidebarCollapsedState() {
-      try {
-        return JSON.parse(localStorage.getItem(DELETED_SIDEBAR_COLLAPSE_KEY) || "{}");
-      } catch (error) {
-        return {};
-      }
-    }
-
-    function setDeletedSidebarGroupCollapsed(groupKey, collapsed) {
-      const state = getDeletedSidebarCollapsedState();
-      state[groupKey] = collapsed;
-      localStorage.setItem(DELETED_SIDEBAR_COLLAPSE_KEY, JSON.stringify(state));
-    }
-
-    function toggleDeletedSidebarGroup(groupKey) {
-      const el = document.getElementById("deletedNavGroup-" + groupKey);
-      if (!el) return;
-
-      const nowCollapsed = !el.classList.contains("collapsed");
-      el.classList.toggle("collapsed", nowCollapsed);
-      setDeletedSidebarGroupCollapsed(groupKey, nowCollapsed);
-    }
-
-    function renderDeletedNavGroup(group, collapsedState) {
-      const itemsHtml = group.items.map(function (item) {
-        const active = item[1] === "my-recently-deleted.html" ? " active" : "";
-        return `<a class="nav-link${active}" href="${item[1]}"><span class="nav-icon">${item[2]}</span><span>${item[3]}</span></a>`;
-      }).join("");
-
-      if (!group.collapsible) {
-        return `<div class="section-title">${group.title}</div>${itemsHtml}`;
-      }
-
-      const containsActive = group.items.some(function (item) { return item[1] === "my-recently-deleted.html"; });
-      const hasStoredState = Object.prototype.hasOwnProperty.call(collapsedState, group.key);
-      const collapsed = containsActive ? false : (hasStoredState ? collapsedState[group.key] : !group.defaultExpanded);
-
-      return `
-        <div class="nav-group collapsible${collapsed ? " collapsed" : ""}" id="deletedNavGroup-${group.key}">
-          <button type="button" class="section-title section-title-toggle" onclick="toggleDeletedSidebarGroup('${group.key}')">
-            <span>${group.title}</span>
-            <span class="section-toggle-icon">${collapsed ? "▸" : "▾"}</span>
-          </button>
-          <div class="nav-group-items">${itemsHtml}</div>
-        </div>
-      `;
-    }
-
+    // Sidebar render/collapse logic now lives in ungani-nav-config.js
+    // (shared across the 8 pages that hand-rolled this same ~60 lines
+    // each - sidebar/nav audit, 2026-09-22). This page's own auth/data
+    // loading is untouched. This page uses its own local CSS class scheme
+    // (nav-link/section-title/nav-group/nav-group-items/section-toggle-icon,
+    // defined above in this file's <style> block) rather than the
+    // side-link/sidebar-section-title scheme the other 7 pages use - the
+    // opts override below keeps that scheme exactly as-is, zero visual
+    // change. Incidental fix: the old renderDeletedNavGroup rendered the
+    // Lucide icon name as raw text (no data-lucide attribute, no
+    // createIcons() call) - the shared function always emits a real
+    // hydratable icon, fixed below by calling lucide.createIcons().
     function renderDeletedSidebarGroups() {
       const container = document.getElementById("deletedNavGroups");
       if (!container || !window.UnganiNavConfig) return;
 
-      const groups = UnganiNavConfig.getSidebarGroups(currentTenant);
-      const collapsedState = getDeletedSidebarCollapsedState();
+      container.innerHTML = UnganiNavConfig.renderSidebarGroupsHtml(currentTenant, "my-recently-deleted.html", {
+        linkClass: "nav-link",
+        sectionTitleClass: "section-title",
+        groupClass: "nav-group",
+        groupItemsClass: "nav-group-items",
+        toggleIconClass: "section-toggle-icon"
+      });
 
-      container.innerHTML = groups.map(function (group) {
-        return renderDeletedNavGroup(group, collapsedState);
-      }).join("");
+      if (window.lucide && typeof window.lucide.createIcons === "function") {
+        window.lucide.createIcons();
+      }
     }
 
     async function loadTenantForSidebar() {

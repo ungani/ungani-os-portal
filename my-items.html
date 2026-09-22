@@ -1895,6 +1895,8 @@
           </div>
         </div>
 
+        <div id="itemConnectionsBlock"><p class="ungani-small" style="opacity:.75;margin-top:18px;">Loading connections...</p></div>
+
         <div class="ungani-card" style="margin-top:18px;">
           <div class="ungani-section-title">
             <div>
@@ -1920,6 +1922,8 @@
             <span>Next Maintenance Due</span>
             ${maintenanceDueBadge(UnganiClientShared.getValue(row.custom_fields || {}, ["next_maintenance_date"], ""))}
           </div>
+
+          <div id="itemLinkedTasksList" style="margin-top:12px;"></div>
         </div>
 
         <div class="ungani-card" style="margin-top:18px;">
@@ -1968,6 +1972,133 @@
 
       loadItemTimeline(row.id);
       loadItemDocuments(row.id);
+      loadItemConnections(row.id);
+    }
+
+    // Location/Property 360: everything connected to this item in one
+    // shared query (client-shared.js's loadLocationConnections) - child
+    // units, current tenant(s), any lease/membership/contract, and any
+    // task tagged to this item. A snapshot line goes at the top of the
+    // panel (before Details), the fuller lists render inline where each
+    // naturally belongs - units/tenant/commitments together (they're all
+    // "who/what is here right now"), tasks inside the existing Maintenance
+    // card (a linked task IS the maintenance/electrician/watchman visit).
+    async function loadItemConnections(id) {
+      let connections;
+
+      try {
+        connections = await UnganiClientShared.loadLocationConnections(currentContext.supabaseClient, currentContext.tenantId, id);
+      } catch (error) {
+        const block = document.getElementById("itemConnectionsBlock");
+        if (block) block.innerHTML = "";
+        return;
+      }
+
+      if (!currentPanelItem || String(currentPanelItem.id) !== String(id)) return;
+
+      renderItemConnectionsBlock(connections);
+      renderItemLinkedTasks(connections.tasks);
+    }
+
+    function renderItemConnectionsBlock(connections) {
+      const block = document.getElementById("itemConnectionsBlock");
+      if (!block) return;
+
+      const units = connections.units || [];
+      const tenants = connections.tenants || [];
+      const commitments = connections.commitments || [];
+      const openTasks = (connections.tasks || []).filter(function (t) {
+        return String(UnganiClientShared.getValue(t, ["status"], "pending")).toLowerCase() !== "completed" &&
+          String(UnganiClientShared.getValue(t, ["status"], "pending")).toLowerCase() !== "cancelled";
+      });
+
+      if (!units.length && !tenants.length && !commitments.length && !openTasks.length) {
+        block.innerHTML = "";
+        return;
+      }
+
+      const snapshotChips = [];
+      if (units.length) snapshotChips.push(units.length + " unit" + (units.length === 1 ? "" : "s"));
+      if (tenants.length) snapshotChips.push(tenants.length + " current tenant" + (tenants.length === 1 ? "" : "s"));
+      if (openTasks.length) snapshotChips.push(openTasks.length + " open task" + (openTasks.length === 1 ? "" : "s"));
+
+      const tenantRowsHtml = tenants.map(function (person) {
+        const commitment = commitments.filter(function (c) { return String(c.person_id) === String(person.id); })[0];
+        const range = commitment
+          ? (commitment.start_date ? UnganiClientShared.formatDate(commitment.start_date) : "—") + " to " + (commitment.end_date ? UnganiClientShared.formatDate(commitment.end_date) : "—")
+          : "No lease dates set";
+
+        return `
+          <div class="detail-row">
+            <span>${UnganiClientShared.safe(person.full_name || "Tenant")}</span>
+            <span class="ungani-small">${UnganiClientShared.safe(person.phone || "No phone")} · ${UnganiClientShared.safe(range)}</span>
+          </div>
+        `;
+      }).join("");
+
+      const unitRowsHtml = units.map(function (unit) {
+        const name = getItemName(unit);
+        const status = getStatus(unit);
+        const price = Number(UnganiClientShared.getValue(unit, ["property_price"], 0) || 0);
+
+        return `
+          <tr onclick="UnganiClientShared.closeSidePanel(); openItemProfile('${UnganiClientShared.attr(unit.id)}')" style="cursor:pointer;">
+            <td>${UnganiClientShared.safe(name)}</td>
+            <td>${statusBadge(status)}</td>
+            <td>${price > 0 ? UnganiClientShared.safe(UnganiClientShared.formatKES(price)) : "—"}</td>
+          </tr>
+        `;
+      }).join("");
+
+      block.innerHTML = `
+        ${snapshotChips.length ? `
+          <div class="ungani-card" style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;">
+            ${snapshotChips.map(function (chip) { return `<span class="ungani-badge">${UnganiClientShared.safe(chip)}</span>`; }).join("")}
+          </div>
+        ` : ""}
+
+        ${units.length ? `
+          <div class="ungani-card" style="margin-top:18px;">
+            <div class="ungani-section-title"><div><h3>Units</h3><p class="ungani-small">${units.length} unit(s) in this property. Click one to see its own details.</p></div></div>
+            <div class="people-table-wrap">
+              <table class="ungani-table">
+                <thead><tr><th>Unit</th><th>Status</th><th>Price</th></tr></thead>
+                <tbody>${unitRowsHtml}</tbody>
+              </table>
+            </div>
+          </div>
+        ` : ""}
+
+        ${tenants.length ? `
+          <div class="ungani-card" style="margin-top:18px;">
+            <div class="ungani-section-title"><div><h3>Current Tenant${tenants.length === 1 ? "" : "s"}</h3></div></div>
+            ${tenantRowsHtml}
+          </div>
+        ` : ""}
+      `;
+    }
+
+    function renderItemLinkedTasks(tasks) {
+      const el = document.getElementById("itemLinkedTasksList");
+      if (!el) return;
+
+      if (!tasks || !tasks.length) {
+        el.innerHTML = "";
+        return;
+      }
+
+      el.innerHTML = tasks.map(function (t) {
+        const title = UnganiClientShared.getValue(t, ["task_title"], "Task");
+        const due = UnganiClientShared.getValue(t, ["due_date"], "");
+        const assigned = UnganiClientShared.getValue(t, ["assigned_to"], "");
+
+        return `
+          <div class="detail-row">
+            <span>${UnganiClientShared.safe(title)}</span>
+            <span class="ungani-small">${assigned ? UnganiClientShared.safe(assigned) + " · " : ""}${due ? "Due " + UnganiClientShared.safe(UnganiClientShared.formatDate(due)) : "No due date"}</span>
+          </div>
+        `;
+      }).join("");
     }
 
     function renderFieldRows(row, fieldSet) {

@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Leases / Memberships / Contracts</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-context-menu.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let businessPreset = null;
+    let commitmentRows = [];
+    let personOptions = [];
+    let linkedItemOptions = [];
+    let editingCommitmentId = null;
+
+    // Cluster 4 type mapping, per the approved plan: which commitment_type
+    // this tenant's business type implies, and what to call the whole
+    // feature/each field in THEIR vocabulary - a Real Estate owner sees
+    // "Leases"/"Tenant"/"Unit", a Gym owner sees "Memberships"/"Member",
+    // never a generic "Commitment" label. Falls back to a neutral generic
+    // labelset for any other type that turns the toggle on (opt-in, so
+    // this is reachable by any business type, not just these 4).
+    const COMMITMENT_TYPE_BY_BUSINESS_KEY = {
+      real_estate: "lease",
+      gym: "membership",
+      security: "service_contract",
+      cleaning: "service_contract"
+    };
+
+    const COMMITMENT_VOCAB = {
+      lease: {
+        pageTitle: "Leases", singular: "Lease", personLabel: "Tenant", itemLabel: "Unit / Property",
+        amountLabel: "Monthly Rent", planLabel: "Plan / Notes", showLinkedItem: true
+      },
+      membership: {
+        pageTitle: "Memberships", singular: "Membership", personLabel: "Member", itemLabel: "",
+        amountLabel: "Membership Fee", planLabel: "Plan / Tier", showLinkedItem: false
+      },
+      service_contract: {
+        pageTitle: "Contracts", singular: "Contract", personLabel: "Client Contact", itemLabel: "Site / Location",
+        amountLabel: "Contract Rate", planLabel: "Plan / Notes", showLinkedItem: true
+      },
+      generic: {
+        pageTitle: "Leases / Memberships / Contracts", singular: "Commitment", personLabel: "Person", itemLabel: "Linked Unit / Site",
+        amountLabel: "Amount", planLabel: "Plan / Notes", showLinkedItem: true
+      }
+    };
+
+    function commitmentTypeForTenant() {
+      const key = businessPreset ? businessPreset.key : null;
+      return COMMITMENT_TYPE_BY_BUSINESS_KEY[key] || "generic";
+    }
+
+    function vocabFor(commitmentType) {
+      return COMMITMENT_VOCAB[commitmentType] || COMMITMENT_VOCAB.generic;
+    }
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "commitments",
+        pageTitle: "Leases / Memberships / Contracts",
+        pageSubtitle: "Recurring leases, memberships, and service contracts - with renewal dates tracked in one place.",
+        onReady: startCommitmentsPage
+      });
+
+      if (window.UnganiContextMenu) {
+        UnganiContextMenu.init({
+          ungani_commitments: [
+            { key: "delete", label: "Delete", icon: "trash-2", danger: true, handler: function (el) { deleteCommitmentRecord(el.getAttribute("data-record-id")); } }
+          ]
+        });
+      }
+    });
+
+    async function startCommitmentsPage(context) {
+      currentContext = context;
+      businessPreset = (window.UnganiPresets && typeof UnganiPresets.getPreset === "function")
+        ? UnganiPresets.getPreset(context.tenant)
+        : null;
+
+      const vocab = vocabFor(commitmentTypeForTenant());
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      const subEl = document.querySelector(".ungani-topbar p");
+      if (titleEl) titleEl.innerText = vocab.pageTitle;
+      if (subEl) subEl.innerText = "Recurring " + vocab.singular.toLowerCase() + "s, with renewal dates tracked in one place.";
+
+      if (!context.tenant || context.tenant.commitments_enabled !== true) {
+        UnganiClientShared.setContent(`
+          <section class="ungani-card ungani-hero">
+            <span class="ungani-badge gold">${UnganiClientShared.safe(vocab.pageTitle)}</span>
+            <h2 style="font-size:clamp(24px,3.6vw,36px);line-height:1.1;margin:16px 0 12px;">${UnganiClientShared.safe(vocab.pageTitle)} isn't turned on yet.</h2>
+            <p>Enable it from My Settings' Add-ons panel to start tracking ${UnganiClientShared.safe(vocab.singular.toLowerCase())} renewal dates and get "expiring soon" alerts on your dashboard.</p>
+            <div class="ungani-button-row">
+              <a class="ungani-btn gold" href="my-settings.html">Go to Settings</a>
+            </div>
+          </section>
+        `);
+        return;
+      }
+
+      await Promise.all([loadPersonOptions(), loadLinkedItemOptions()]);
+      await loadCommitmentRows();
+      renderCommitmentsPage();
+
+      const applyAction = new URLSearchParams(window.location.search).get("action");
+      if (applyAction === "add") {
+        setTimeout(function () { openCommitmentModal(); }, 250);
+      }
+    }
+
+    async function loadPersonOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("full_name")
+          .limit(1000);
+
+        personOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load People for commitment picker:", error.message);
+        personOptions = [];
+      }
+    }
+
+    async function loadLinkedItemOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, title, property_name")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(1000);
+
+        linkedItemOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load Items for commitment picker:", error.message);
+        linkedItemOptions = [];
+      }
+    }
+
+    function linkedItemLabel(item) {
+      return item.item_name || item.name || item.title || item.property_name || "Item";
+    }
+
+    async function loadCommitmentRows() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_commitments");
+        commitmentRows = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.commitments || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load commitments:", error.message);
+        commitmentRows = [];
+      }
+    }
+
+    // ---- List page ----
+
+    function renderCommitmentsPage() {
+      const vocab = vocabFor(commitmentTypeForTenant());
+      const todayStr = UnganiClientShared.todayISO();
+
+      const withStatus = commitmentRows.map(function (row) {
+        return { row: row, status: UnganiClientShared.computeCommitmentStatus(row, todayStr) };
+      });
+
+      const activeCount = withStatus.filter(function (x) { return x.status.statusKey === "active"; }).length;
+      const expiringCount = withStatus.filter(function (x) { return x.status.statusKey === "expiring_soon"; }).length;
+      const expiredCount = withStatus.filter(function (x) { return x.status.statusKey === "expired"; }).length;
+
+      UnganiClientShared.setContent(`
+        <style>
+          .commitments-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 18px; }
+          .commitment-card { cursor: pointer; border-left: 3px solid var(--accent, #D4A63A); }
+          .commitment-card:hover { border-color: rgba(212,166,58,0.5); }
+          .commitment-status-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+          .commitment-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-top: 18px; }
+          .commitment-kpi { background: var(--ungani-card-bg, rgba(255,255,255,0.04)); border-radius: 12px; padding: 14px 16px; }
+          .commitment-kpi .value { font-size: 26px; font-weight: 800; }
+          .commitment-kpi .label { font-size: 12.5px; opacity: 0.75; margin-top: 2px; }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">${UnganiClientShared.safe(vocab.pageTitle)}</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">Never miss a renewal.</h2>
+          <p>Track ${UnganiClientShared.safe(vocab.singular.toLowerCase())} start/end dates in one place - the dashboard flags anything expiring within 7 days automatically.</p>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn gold" onclick="openCommitmentModal()">+ New ${UnganiClientShared.safe(vocab.singular)}</button>
+            <button class="ungani-btn green" onclick="refreshCommitmentsPage()">Refresh</button>
+          </div>
+
+          <div class="commitment-kpis">
+            <div class="commitment-kpi"><div class="value">${activeCount}</div><div class="label">Active</div></div>
+            <div class="commitment-kpi"><div class="value" style="color:#D4A63A;">${expiringCount}</div><div class="label">Expiring within 7 days</div></div>
+            <div class="commitment-kpi"><div class="value" style="color:#DC2626;">${expiredCount}</div><div class="label">Expired</div></div>
+          </div>
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>All ${UnganiClientShared.safe(vocab.pageTitle)}</h3>
+              <p class="ungani-small">${commitmentRows.length} record(s).</p>
+            </div>
+          </div>
+
+          ${renderCommitmentsGrid(withStatus)}
+        </section>
+
+        <p class="ungani-small">${UnganiClientShared.safe(vocab.pageTitle)} · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    function renderCommitmentsGrid(withStatus) {
+      if (!withStatus.length) {
+        const vocab = vocabFor(commitmentTypeForTenant());
+        return `<p class="ungani-small" style="padding:18px 0;">No ${UnganiClientShared.safe(vocab.singular.toLowerCase())}s yet. Click "+ New ${UnganiClientShared.safe(vocab.singular)}" to create your first one.</p>`;
+      }
+
+      return `
+        <div class="commitments-grid">
+          ${withStatus.map(function (x) {
+            const row = x.row;
+            const vocab = vocabFor(row.commitment_type);
+            const title = row.plan_name || row.person_name || row.linked_item_name || vocab.singular;
+            const subtitleParts = [];
+            if (row.person_name) subtitleParts.push(row.person_name);
+            if (row.linked_item_name) subtitleParts.push(row.linked_item_name);
+
+            return `
+              <div class="ungani-card commitment-card" data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="ungani_commitments" style="--accent:${UnganiClientShared.attr(x.status.color)};" onclick="openCommitmentModal('${UnganiClientShared.attr(row.id)}')">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                  <div style="font-size:16px;font-weight:800;">${UnganiClientShared.safe(title)}</div>
+                  <span class="commitment-status-pill" style="background:${UnganiClientShared.attr(x.status.color)}22;color:${UnganiClientShared.attr(x.status.color)};">${UnganiClientShared.safe(x.status.label)}</span>
+                </div>
+                ${subtitleParts.length ? `<p class="ungani-small" style="margin-top:4px;">${UnganiClientShared.safe(subtitleParts.join(" · "))}</p>` : ""}
+                <p class="ungani-small" style="margin-top:10px;color:var(--ungani-muted,#6B7280);">
+                  ${row.amount != null ? UnganiClientShared.formatKES(row.amount) + " / " + UnganiClientShared.safe(row.billing_frequency || "monthly") + " · " : ""}
+                  ${row.end_date ? "Ends " + UnganiClientShared.formatDate(row.end_date) : "No end date set"}
+                </p>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    async function refreshCommitmentsPage() {
+      await loadCommitmentRows();
+      renderCommitmentsPage();
+      UnganiClientShared.showToast("Refreshed ✓");
+    }
+
+    // ---- Add/Edit modal ----
+
+    function personOptionsHtml(selectedId) {
+      const options = personOptions.map(function (person) {
+        const selected = String(person.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(person.id)}"${selected}>${UnganiClientShared.safe(person.full_name)}</option>`;
+      }).join("");
+
+      return `<option value="">— Choose a person —</option>${options}`;
+    }
+
+    function linkedItemOptionsHtml(selectedId) {
+      const options = linkedItemOptions.map(function (item) {
+        const selected = String(item.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(item.id)}"${selected}>${UnganiClientShared.safe(linkedItemLabel(item))}</option>`;
+      }).join("");
+
+      return `<option value="">— Not linked —</option>${options}`;
+    }
+
+    function openCommitmentModal(id) {
+      const row = id ? commitmentRows.find(function (item) { return String(item.id) === String(id); }) : null;
+
+      if (id && !row) {
+        UnganiClientShared.showToast("Not found.");
+        return;
+      }
+
+      editingCommitmentId = row ? row.id : null;
+      const commitmentType = row ? row.commitment_type : commitmentTypeForTenant();
+      const vocab = vocabFor(commitmentType);
+
+      const bodyHtml = `
+        <form onsubmit="saveCommitmentRecord(event)">
+          <input type="hidden" id="commitmentType" value="${UnganiClientShared.attr(commitmentType)}" />
+
+          <label for="commitmentPerson">${UnganiClientShared.safe(vocab.personLabel)}</label>
+          <select id="commitmentPerson">${personOptionsHtml(row ? row.person_id : null)}</select>
+
+          ${vocab.showLinkedItem ? `
+            <label for="commitmentLinkedItem">${UnganiClientShared.safe(vocab.itemLabel)}</label>
+            <select id="commitmentLinkedItem">${linkedItemOptionsHtml(row ? row.linked_item_id : null)}</select>
+          ` : ""}
+
+          <label for="commitmentPlanName">${UnganiClientShared.safe(vocab.planLabel)}</label>
+          <input type="text" id="commitmentPlanName" value="${row ? UnganiClientShared.attr(row.plan_name || "") : ""}" />
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label for="commitmentAmount">${UnganiClientShared.safe(vocab.amountLabel)}</label>
+              <input type="number" min="0" step="0.01" id="commitmentAmount" value="${row && row.amount != null ? UnganiClientShared.attr(row.amount) : ""}" />
+            </div>
+            <div>
+              <label for="commitmentFrequency">Billing Frequency</label>
+              <select id="commitmentFrequency">
+                ${["monthly", "weekly", "quarterly", "annual", "once"].map(function (freq) {
+                  const selected = (row ? row.billing_frequency : "monthly") === freq ? " selected" : "";
+                  return `<option value="${freq}"${selected}>${freq.charAt(0).toUpperCase() + freq.slice(1)}</option>`;
+                }).join("")}
+              </select>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label for="commitmentStart">Start Date</label>
+              <input type="date" id="commitmentStart" value="${row ? UnganiClientShared.attr(String(row.start_date || "").slice(0, 10)) : ""}" />
+            </div>
+            <div>
+              <label for="commitmentEnd">End / Renewal Date</label>
+              <input type="date" id="commitmentEnd" value="${row ? UnganiClientShared.attr(String(row.end_date || "").slice(0, 10)) : ""}" />
+            </div>
+          </div>
+
+          <label for="commitmentStatus">Status</label>
+          <select id="commitmentStatus">
+            ${["active", "terminated", "frozen"].map(function (s) {
+              const selected = (row ? row.status : "active") === s ? " selected" : "";
+              return `<option value="${s}"${selected}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`;
+            }).join("")}
+          </select>
+
+          <label style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+            <input type="checkbox" id="commitmentAutoRenew" ${row && row.auto_renew ? "checked" : ""} style="width:auto;" />
+            Auto-renews
+          </label>
+
+          <label for="commitmentNotes">Notes</label>
+          <textarea id="commitmentNotes" rows="3">${row ? UnganiClientShared.safe(row.notes || "") : ""}</textarea>
+
+          <div class="ungani-button-row" style="margin-top:18px;justify-content:space-between;">
+            <div>
+              ${row ? `<button type="button" class="ungani-btn red" onclick="deleteCommitmentRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
+            </div>
+            <div class="ungani-button-row" style="margin:0;">
+              <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Close</button>
+              <button type="submit" class="ungani-btn gold">${row ? "Update" : "Create"} ${UnganiClientShared.safe(vocab.singular)}</button>
+            </div>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({
+        title: row ? vocab.singular + ": " + (row.plan_name || row.person_name || "") : "New " + vocab.singular,
+        bodyHtml: bodyHtml
+      });
+    }
+
+    async function saveCommitmentRecord(event) {
+      event.preventDefault();
+
+      const submitBtn = event.target.querySelector("button[type=submit]");
+
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        try {
+          const response = await currentContext.supabaseClient.rpc("owner_upsert_ungani_commitment", {
+            p_commitment_id: editingCommitmentId,
+            p_commitment_type: UnganiClientShared.value("commitmentType"),
+            p_person_id: UnganiClientShared.value("commitmentPerson") || null,
+            p_linked_item_id: document.getElementById("commitmentLinkedItem") ? (UnganiClientShared.value("commitmentLinkedItem") || null) : null,
+            p_plan_name: UnganiClientShared.value("commitmentPlanName") || null,
+            p_amount: UnganiClientShared.value("commitmentAmount") ? Number(UnganiClientShared.value("commitmentAmount")) : null,
+            p_billing_frequency: UnganiClientShared.value("commitmentFrequency") || "monthly",
+            p_start_date: UnganiClientShared.value("commitmentStart") || null,
+            p_end_date: UnganiClientShared.value("commitmentEnd") || null,
+            p_status: UnganiClientShared.value("commitmentStatus") || "active",
+            p_auto_renew: !!document.getElementById("commitmentAutoRenew").checked,
+            p_notes: UnganiClientShared.value("commitmentNotes") || null
+          });
+
+          if (response.error || !response.data || response.data.ok !== true) {
+            UnganiClientShared.showToast("Could not save: " + (response.error ? response.error.message : (response.data && response.data.message)));
+            return;
+          }
+
+          UnganiClientShared.closeModal();
+          UnganiClientShared.showToast(editingCommitmentId ? "Updated ✓" : "Created ✓");
+          await loadCommitmentRows();
+          renderCommitmentsPage();
+        } catch (error) {
+          UnganiClientShared.showToast("Could not save: " + error.message);
+        }
+      });
+    }
+
+    async function deleteCommitmentRecord(id) {
+      if (!confirm("Move this to Recently Deleted? You can restore it within 30 days.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+          p_table_name: "ungani_commitments",
+          p_record_id: id,
+          p_delete_reason: "Deleted from Leases / Memberships / Contracts page"
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not delete: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Deleted ✓");
+        await loadCommitmentRows();
+        renderCommitmentsPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not delete: " + error.message);
+      }
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
