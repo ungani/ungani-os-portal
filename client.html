@@ -7075,6 +7075,44 @@
       return { label: "Balance Owed: " + balance.toLocaleString() + " " + currency, hasBalance: true };
     }
 
+    // Cluster 3 (Deployment/roster scheduling) equivalent of
+    // computeTripSettlement/computeBookingSettlement above, for Security
+    // Shifts and Cleaning Schedule jobs. Uses the Trip-shaped Pending ->
+    // Partial -> Paid states (not Booking's Deposit/Balance framing) since
+    // a shift/job has no deposit concept - reads the new deployment_rate
+    // column, reuses rate_currency and transactions.related_event_id.
+    // Tourism's roster side (guide/vehicle) reuses computeTripSettlement
+    // directly instead, since it writes to the same rate/vehicle_item_id/
+    // driver_person_id columns Trip already uses.
+    function computeDeploymentSettlement(event, transactions) {
+      const rate = Number(getValue(event, ["deployment_rate"], 0)) || 0;
+      if (rate <= 0) return null;
+
+      const status = String(getValue(event, ["status"], "scheduled")).toLowerCase();
+      if (status.includes("cancelled")) return null;
+
+      const currency = getValue(event, ["rate_currency"], "KES") || "KES";
+
+      const paid = (transactions || []).filter(function (t) {
+        return String(getValue(t, ["related_event_id"], "")) === String(event.id) && isIncome(t);
+      }).reduce(function (sum, t) {
+        return sum + Number(getValue(t, ["amount_kes", "amount"], 0) || 0);
+      }, 0);
+
+      const balance = rate - paid;
+
+      if (paid <= 0) {
+        const verb = status.includes("completed") ? "Owed" : "Pending";
+        return { label: verb + ": " + rate.toLocaleString() + " " + currency, hasBalance: true };
+      }
+
+      if (balance <= 0) {
+        return { label: "Paid in full", hasBalance: false };
+      }
+
+      return { label: "Partial — Owed: " + balance.toLocaleString() + " " + currency, hasBalance: true };
+    }
+
     function renderLogisticsTripsSection(data, ctx) {
       const sevenDaysAgoStr = new Date(new Date(ctx.todayStr).getTime() - 7 * 86400000).toISOString().slice(0, 10);
 
@@ -14484,7 +14522,8 @@
           title: "Today's Shifts",
           rows: todaysShifts.map(function (event) {
             const title = getValue(event, ["event_title", "title", "name"], "Shift");
-            return attentionRow("shield", title, getValue(event, ["event_type", "type"], "Shift"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null);
+            const settlement = computeDeploymentSettlement(event, data.transactions);
+            return attentionRow("shield", title, getValue(event, ["event_type", "type"], "Shift"), "Today", "blue", "my-calendar.html?highlight=" + event.id, settlement ? settlement.label : null, null);
           })
         });
       }
@@ -15809,7 +15848,7 @@
 
       const attentionGroups = [];
       if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("triangle-alert", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
-      if (jobsToday.length > 0) attentionGroups.push({ title: "Today's Cleaning Jobs", rows: jobsToday.map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Cleaning Job"); return attentionRow("broom", title, getValue(event, ["event_type", "type"], "Cleaning Job"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null); }) });
+      if (jobsToday.length > 0) attentionGroups.push({ title: "Today's Cleaning Jobs", rows: jobsToday.map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Cleaning Job"); const settlement = computeDeploymentSettlement(event, data.transactions); return attentionRow("broom", title, getValue(event, ["event_type", "type"], "Cleaning Job"), "Today", "blue", "my-calendar.html?highlight=" + event.id, settlement ? settlement.label : null, null); }) });
       if (restocksDue.length > 0) attentionGroups.push({ title: "Supply Restocks Due", rows: restocksDue.map(function (task) { const title = getValue(task, ["task_title", "title"], "Supply Restock"); const due = getValue(task, ["due_date"], ""); return attentionRow("package", title, due ? "Due " + formatDate(due) : "No due date set", "Due", "orange", "my-tasks.html?highlight=" + task.id, null, "restock:" + task.id); }) });
       if (contractsExpiring.length > 0) attentionGroups.push({ title: "Contracts Expiring Within 7 Days", rows: contractsExpiring.map(function (row) { const clientName = getValue(row, ["person_name"], "Client"); return attentionRow("file-clock", clientName, "Contract ends " + formatDate(getValue(row, ["end_date"], "")), "Expiring", "orange", "my-commitments.html", null, null); }) });
 

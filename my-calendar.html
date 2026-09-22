@@ -61,6 +61,13 @@
     let tripClientOptions = [];
     let tripManagerOptions = [];
     let isBookingBusinessType = false;
+    let isSecurity = false;
+    let isCleaning = false;
+    let isTourismDeployment = false;
+    let deployedPersonOptions = [];
+    let deployedSiteOptions = [];
+    let tourGuideOptions = [];
+    let tourVehicleOptions = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -83,9 +90,20 @@
       currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
       isLogistics = detectLogistics(context.tenant);
       isBookingBusinessType = detectTourism(context.tenant) || detectEvents(context.tenant) || detectPhotography(context.tenant) || detectHospitality(context.tenant);
+      isSecurity = detectSecurity(context.tenant);
+      isCleaning = detectCleaning(context.tenant);
+      isTourismDeployment = detectTourism(context.tenant);
 
       if (isLogistics && logisticsTripFieldsAllowed()) {
         await loadLogisticsTripOptions();
+      }
+
+      if (isSecurity || isCleaning) {
+        await loadDeploymentOptions();
+      }
+
+      if (isTourismDeployment) {
+        await loadTourGuideVehicleOptions();
       }
 
       const titleEl = document.querySelector(".ungani-topbar h2");
@@ -170,6 +188,37 @@
       return businessType.includes("hospitality") || businessType.includes("hotel") || businessTypeKey.includes("hospitality");
     }
 
+    // Cluster 3 (Deployment/roster scheduling) detectors - same local-copy
+    // pattern as the others above. Security/Cleaning get their own
+    // Guard/Cleaner + Site + Rate fields; Tourism reuses the SAME
+    // vehicle_item_id/driver_person_id/route/rate columns Logistics' Trip
+    // fields already use (a guide fills the driver slot) via its own
+    // separate gated block below, rather than sharing the isLogistics gate -
+    // keeps the already-shipped, working Trip block untouched.
+    function detectSecurity(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "security";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("security") || businessType.includes("guarding") || businessType.includes("guards") || businessTypeKey.includes("security");
+    }
+
+    function detectCleaning(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "cleaning";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("cleaning") || businessType.includes("facilities management") || businessType.includes("facility management") || businessType.includes("janitorial") || businessTypeKey.includes("cleaning");
+    }
+
     // Trip depth (vehicle/driver/client/route/rate) only fits Transport and
     // Cold Chain - a Clearing & Forwarding container's operational unit is
     // a customs-clearance case, not a vehicle trip (see
@@ -216,6 +265,65 @@
       tripManagerOptions = allPeople.filter(function (person) {
         return String(UnganiClientShared.getValue(person, ["person_type"], "")).toLowerCase() === "transport manager";
       });
+    }
+
+    // Cluster 3 (Deployment/roster scheduling) - Security/Cleaning only.
+    // Guard/Cleaner assignment + Site assignment for a Shift/Cleaning
+    // Schedule activity, same shape as Trip's vehicle/driver options above.
+    async function loadDeploymentOptions() {
+      try {
+        const personType = isSecurity ? "guard" : "cleaner";
+
+        const [peopleRes, sitesRes] = await Promise.all([
+          currentContext.supabaseClient
+            .from("client_people")
+            .select("id, full_name, person_type")
+            .eq("tenant_id", currentContext.tenantId)
+            .ilike("person_type", personType),
+          currentContext.supabaseClient
+            .from("business_items")
+            .select("id, item_name, name, item_type, type")
+            .eq("tenant_id", currentContext.tenantId)
+        ]);
+
+        deployedPersonOptions = (peopleRes && peopleRes.data) || [];
+        deployedSiteOptions = ((sitesRes && sitesRes.data) || []).filter(function (item) {
+          return String(UnganiClientShared.getValue(item, ["item_type", "type"], "")).trim().toLowerCase() === "site";
+        });
+      } catch (error) {
+        console.warn("Deployment options skipped:", error.message);
+        deployedPersonOptions = [];
+        deployedSiteOptions = [];
+      }
+    }
+
+    // Tourism's roster side - reuses the SAME vehicle_item_id/driver_person_id/
+    // route/rate columns Logistics' Trip fields already use (a guide fills
+    // the driver slot), via its own gated form block so the working
+    // isLogistics Trip block stays untouched.
+    async function loadTourGuideVehicleOptions() {
+      try {
+        const [guidesRes, vehiclesRes] = await Promise.all([
+          currentContext.supabaseClient
+            .from("client_people")
+            .select("id, full_name, person_type")
+            .eq("tenant_id", currentContext.tenantId)
+            .ilike("person_type", "guide"),
+          currentContext.supabaseClient
+            .from("business_items")
+            .select("id, item_name, name, item_type, type")
+            .eq("tenant_id", currentContext.tenantId)
+        ]);
+
+        tourGuideOptions = (guidesRes && guidesRes.data) || [];
+        tourVehicleOptions = ((vehiclesRes && vehiclesRes.data) || []).filter(function (item) {
+          return String(UnganiClientShared.getValue(item, ["item_type", "type"], "")).trim().toLowerCase() === "vehicle";
+        });
+      } catch (error) {
+        console.warn("Tour guide/vehicle options skipped:", error.message);
+        tourGuideOptions = [];
+        tourVehicleOptions = [];
+      }
     }
 
     async function loadEventRows() {
@@ -868,6 +976,65 @@
                   </div>
                 ` : ""}
 
+                ${(isSecurity || isCleaning) ? `
+                  <div>
+                    <label for="eventDeployedPerson">${isSecurity ? "Guard" : "Cleaner"}</label>
+                    <select id="eventDeployedPerson">
+                      <option value="">— Unassigned —</option>
+                      ${deployedPersonOptions.map(function (person) {
+                        return `<option value="${UnganiClientShared.attr(person.id)}">${UnganiClientShared.safe(person.full_name)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventDeployedSite">Site</label>
+                    <select id="eventDeployedSite">
+                      <option value="">— No site —</option>
+                      ${deployedSiteOptions.map(function (site) {
+                        return `<option value="${UnganiClientShared.attr(site.id)}">${UnganiClientShared.safe(UnganiClientShared.getValue(site, ["item_name", "name"], "Site"))}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventDeploymentRate">Rate</label>
+                    <input id="eventDeploymentRate" type="number" min="0" step="0.01" placeholder="Example: 3000" />
+                  </div>
+                ` : ""}
+
+                ${isTourismDeployment ? `
+                  <div>
+                    <label for="eventTourGuide">Guide</label>
+                    <select id="eventTourGuide">
+                      <option value="">— No guide —</option>
+                      ${tourGuideOptions.map(function (guide) {
+                        return `<option value="${UnganiClientShared.attr(guide.id)}">${UnganiClientShared.safe(guide.full_name)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventTourVehicle">Vehicle</label>
+                    <select id="eventTourVehicle">
+                      <option value="">— No vehicle —</option>
+                      ${tourVehicleOptions.map(function (vehicle) {
+                        return `<option value="${UnganiClientShared.attr(vehicle.id)}">${UnganiClientShared.safe(UnganiClientShared.getValue(vehicle, ["item_name", "name"], "Vehicle"))}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventTourRoute">Route</label>
+                    <input id="eventTourRoute" placeholder="Example: Nairobi - Maasai Mara" />
+                  </div>
+
+                  <div>
+                    <label for="eventTourRate">Rate</label>
+                    <input id="eventTourRate" type="number" min="0" step="0.01" placeholder="Example: 15000" />
+                  </div>
+                ` : ""}
+
                 <div class="wide">
                   <label for="eventNotes">Notes</label>
                   <textarea id="eventNotes" rows="5" placeholder="Add meeting details, appointment notes, delivery details, reminders, or preparation notes..."></textarea>
@@ -1310,6 +1477,19 @@
         payload.booking_deposit_due_date = UnganiClientShared.value("eventBookingDepositDueDate") || null;
       }
 
+      if ((isSecurity || isCleaning) && document.getElementById("eventDeployedPerson")) {
+        payload.deployed_person_id = UnganiClientShared.value("eventDeployedPerson") || null;
+        payload.deployed_site_item_id = UnganiClientShared.value("eventDeployedSite") || null;
+        payload.deployment_rate = UnganiClientShared.value("eventDeploymentRate") ? Number(UnganiClientShared.value("eventDeploymentRate")) : null;
+      }
+
+      if (isTourismDeployment && document.getElementById("eventTourGuide")) {
+        payload.driver_person_id = UnganiClientShared.value("eventTourGuide") || null;
+        payload.vehicle_item_id = UnganiClientShared.value("eventTourVehicle") || null;
+        payload.route = UnganiClientShared.value("eventTourRoute") || null;
+        payload.rate = UnganiClientShared.value("eventTourRate") ? Number(UnganiClientShared.value("eventTourRate")) : null;
+      }
+
       let response;
 
       try {
@@ -1389,6 +1569,19 @@
           document.getElementById("eventBookingTotalAmount").value = row.booking_total_amount != null ? row.booking_total_amount : "";
           document.getElementById("eventBookingDepositRequired").value = row.booking_deposit_required != null ? row.booking_deposit_required : "";
           document.getElementById("eventBookingDepositDueDate").value = row.booking_deposit_due_date || "";
+        }
+
+        if (document.getElementById("eventDeployedPerson")) {
+          document.getElementById("eventDeployedPerson").value = row.deployed_person_id || "";
+          document.getElementById("eventDeployedSite").value = row.deployed_site_item_id || "";
+          document.getElementById("eventDeploymentRate").value = row.deployment_rate != null ? row.deployment_rate : "";
+        }
+
+        if (document.getElementById("eventTourGuide")) {
+          document.getElementById("eventTourGuide").value = row.driver_person_id || "";
+          document.getElementById("eventTourVehicle").value = row.vehicle_item_id || "";
+          document.getElementById("eventTourRoute").value = row.route || "";
+          document.getElementById("eventTourRate").value = row.rate != null ? row.rate : "";
         }
 
         document.getElementById("eventNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
@@ -1505,6 +1698,13 @@
       if (document.getElementById("eventBookingTotalAmount")) document.getElementById("eventBookingTotalAmount").value = "";
       if (document.getElementById("eventBookingDepositRequired")) document.getElementById("eventBookingDepositRequired").value = "";
       if (document.getElementById("eventBookingDepositDueDate")) document.getElementById("eventBookingDepositDueDate").value = "";
+      if (document.getElementById("eventDeployedPerson")) document.getElementById("eventDeployedPerson").value = "";
+      if (document.getElementById("eventDeployedSite")) document.getElementById("eventDeployedSite").value = "";
+      if (document.getElementById("eventDeploymentRate")) document.getElementById("eventDeploymentRate").value = "";
+      if (document.getElementById("eventTourGuide")) document.getElementById("eventTourGuide").value = "";
+      if (document.getElementById("eventTourVehicle")) document.getElementById("eventTourVehicle").value = "";
+      if (document.getElementById("eventTourRoute")) document.getElementById("eventTourRoute").value = "";
+      if (document.getElementById("eventTourRate")) document.getElementById("eventTourRate").value = "";
       if (document.getElementById("eventNotes")) document.getElementById("eventNotes").value = "";
     }
 

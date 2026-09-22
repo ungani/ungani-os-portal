@@ -60,10 +60,13 @@
     let isRealEstate = false;
     let isLogistics = false;
     let isBookingBusinessType = false;
+    let isSecurity = false;
+    let isCleaning = false;
     let personOptions = [];
     let propertyItemOptions = [];
     let tripEventOptions = [];
     let bookingEventOptions = [];
+    let deploymentEventOptions = [];
     let teamMemberOptions = [];
     let payeeOptions = [];
     let sectionOptions = [];
@@ -126,6 +129,8 @@
       isRealEstate = detectRealEstate(context.tenant);
       isLogistics = detectLogistics(context.tenant);
       isBookingBusinessType = detectTourism(context.tenant) || detectEvents(context.tenant) || detectPhotography(context.tenant) || detectHospitality(context.tenant);
+      isSecurity = detectSecurity(context.tenant);
+      isCleaning = detectCleaning(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -395,6 +400,10 @@
         loaders.push(loadBookingEventOptions());
       }
 
+      if (isSecurity || isCleaning) {
+        loaders.push(loadDeploymentEventOptions());
+      }
+
       await Promise.all(loaders);
 
       renderMoneyPage();
@@ -554,6 +563,26 @@
       } catch (error) {
         console.warn("Booking event options skipped:", error.message);
         bookingEventOptions = [];
+      }
+    }
+
+    // Cluster 3 (Deployment/roster scheduling) equivalent of
+    // loadBookingEventOptions above, for Security Shifts and Cleaning
+    // Schedule jobs - only real Deployment records (deployment_rate set)
+    // are offered here.
+    async function loadDeploymentEventOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_events")
+          .select("id, event_title, event_date, deployment_rate")
+          .eq("tenant_id", currentContext.tenantId)
+          .not("deployment_rate", "is", null)
+          .order("event_date", { ascending: false });
+
+        deploymentEventOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Deployment event options skipped:", error.message);
+        deploymentEventOptions = [];
       }
     }
 
@@ -2473,6 +2502,20 @@
               </div>
             ` : ""}
 
+            ${(isSecurity || isCleaning) ? `
+              <div>
+                <label for="moneyRelatedDeployment">${isSecurity ? "Related Shift" : "Related Job"}</label>
+                <select id="moneyRelatedDeployment">
+                  <option value="">Not linked</option>
+                  ${deploymentEventOptions.map(function (deployment) {
+                    const label = UnganiClientShared.getValue(deployment, ["event_title"], isSecurity ? "Shift" : "Job");
+                    const date = deployment.event_date ? " — " + String(deployment.event_date).slice(0, 10) : "";
+                    return `<option value="${UnganiClientShared.attr(deployment.id)}">${UnganiClientShared.safe(label + date)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
+
             <div id="moneyTeamMemberWrap">
               <label for="moneyPaidTo">Paid To (optional)</label>
               <select id="moneyPaidTo" onchange="handlePaidToChange()">
@@ -2602,6 +2645,10 @@
 
           if (document.getElementById("moneyRelatedBooking")) {
             document.getElementById("moneyRelatedBooking").value = row ? UnganiClientShared.getValue(row, ["related_event_id"], "") : "";
+          }
+
+          if (document.getElementById("moneyRelatedDeployment")) {
+            document.getElementById("moneyRelatedDeployment").value = row ? UnganiClientShared.getValue(row, ["related_event_id"], "") : "";
           }
 
           if (document.getElementById("moneyPaidTo")) {
@@ -2943,7 +2990,10 @@ const payload = {
 
       payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
       payload.related_item_id = (isRealEstate || isLogistics) ? (UnganiClientShared.value("moneyRelatedProperty") || null) : null;
-      payload.related_event_id = isLogistics ? (UnganiClientShared.value("moneyRelatedTrip") || null) : (isBookingBusinessType ? (UnganiClientShared.value("moneyRelatedBooking") || null) : null);
+      payload.related_event_id = isLogistics ? (UnganiClientShared.value("moneyRelatedTrip") || null)
+        : isBookingBusinessType ? (UnganiClientShared.value("moneyRelatedBooking") || null)
+        : (isSecurity || isCleaning) ? (UnganiClientShared.value("moneyRelatedDeployment") || null)
+        : null;
 
       if (payload.payment_method === "M-Pesa") {
         payload.reference_no = UnganiClientShared.value("moneyMpesaCode") || null;
@@ -3449,6 +3499,33 @@ const payload = {
       const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("hospitality") || businessType.includes("hotel") || businessTypeKey.includes("hospitality");
+    }
+
+    // Cluster 3 (Deployment/roster scheduling) detectors - same local-copy
+    // pattern as above. Gate the Related Shift/Job picker to Security and
+    // Cleaning.
+    function detectSecurity(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "security";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("security") || businessType.includes("guarding") || businessType.includes("guards") || businessTypeKey.includes("security");
+    }
+
+    function detectCleaning(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "cleaning";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("cleaning") || businessType.includes("facilities management") || businessType.includes("facility management") || businessType.includes("janitorial") || businessTypeKey.includes("cleaning");
     }
   </script>
 </body>
