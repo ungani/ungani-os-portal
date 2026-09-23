@@ -4578,7 +4578,7 @@
       // type they came from.
       supabaseClient
         .from("business_events")
-        .select("id, event_title, title, event_type, type, status, event_date, date, start_date, created_at, rate, booking_total_amount, deployment_rate, appointment_amount, client_person_id, customer_person_id")
+        .select("*")
         .eq("tenant_id", tenantId)
         .or("client_person_id.eq." + personId + ",customer_person_id.eq." + personId)
         .order("event_date", { ascending: false })
