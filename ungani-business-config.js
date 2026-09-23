@@ -798,7 +798,8 @@
     ],
     "itemTypes": [
       "Vehicle",
-      "Equipment"
+      "Equipment",
+      "Service Job"
     ],
     "peopleTypes": [
       "Staff",
@@ -3756,6 +3757,67 @@
     ]
   };
 
+  // Cluster 2 (Job/work-order with stages) field sets - Automotive, Printing,
+  // Furniture, Construction. job_stage is free text (same precedent as Real
+  // Estate's completion_status field, not a real select-input) since
+  // my-items.html's shared field renderer doesn't have a select type yet and
+  // adding one would touch shared rendering code used by every business
+  // type. job_total_amount/job_materials_cost/job_labor_cost/job_due_date
+  // are real business_items columns (see sql/cluster2-job-workorder-stages.sql)
+  // so computeJobSettlement() in client.html can query them directly, same
+  // as booking_total_amount/deployment_rate in the prior 2 clusters.
+  const AUTOMOTIVE_JOB_FIELD_SET = {
+    valueLabel: "Estimated Value",
+    statusOptions: ["available", "in use", "maintenance", "quoted", "in progress", "awaiting parts", "ready for pickup", "completed", "inactive"],
+    fields: [
+      { id: "job_stage", label: "Job Stage", type: "text", column: "job_stage", placeholder: "Example: Quoted, In Progress, Awaiting Parts, Ready for Pickup, Completed" },
+      { id: "job_total_amount", label: "Job Total Amount", type: "number", column: "job_total_amount", placeholder: "Example: 15000" },
+      { id: "job_materials_cost", label: "Parts / Materials Cost", type: "number", column: "job_materials_cost", placeholder: "Example: 6000" },
+      { id: "job_labor_cost", label: "Labor Cost", type: "number", column: "job_labor_cost", placeholder: "Example: 3000" },
+      { id: "job_due_date", label: "Job Due Date", type: "date", column: "job_due_date" }
+    ]
+  };
+
+  const PRINTING_JOB_FIELD_SET = {
+    valueLabel: "Job Value",
+    statusOptions: ["quoted", "in production", "printing", "awaiting approval", "ready for delivery", "completed", "cancelled"],
+    fields: [
+      { id: "job_stage", label: "Job Stage", type: "text", column: "job_stage", placeholder: "Example: Quoted, In Production, Awaiting Approval, Ready for Delivery, Completed" },
+      { id: "job_total_amount", label: "Job Total Amount", type: "number", column: "job_total_amount", placeholder: "Example: 25000" },
+      { id: "job_materials_cost", label: "Materials Cost", type: "number", column: "job_materials_cost", placeholder: "Example: 8000" },
+      { id: "job_labor_cost", label: "Labor Cost", type: "number", column: "job_labor_cost", placeholder: "Example: 4000" },
+      { id: "job_due_date", label: "Job Due Date", type: "date", column: "job_due_date" }
+    ]
+  };
+
+  const FURNITURE_JOB_FIELD_SET = {
+    valueLabel: "Job Value",
+    statusOptions: ["quoted", "materials ordered", "in production", "finishing", "ready for delivery", "completed", "cancelled"],
+    fields: [
+      { id: "job_stage", label: "Job Stage", type: "text", column: "job_stage", placeholder: "Example: Quoted, Materials Ordered, In Production, Finishing, Ready for Delivery, Completed" },
+      { id: "job_total_amount", label: "Job Total Amount", type: "number", column: "job_total_amount", placeholder: "Example: 45000" },
+      { id: "job_materials_cost", label: "Materials Cost", type: "number", column: "job_materials_cost", placeholder: "Example: 18000" },
+      { id: "job_labor_cost", label: "Labor Cost", type: "number", column: "job_labor_cost", placeholder: "Example: 10000" },
+      { id: "job_due_date", label: "Job Due Date", type: "date", column: "job_due_date" }
+    ]
+  };
+
+  // Construction's "longer-timeline variant" - same 5 fields, but job_stage
+  // is milestone-oriented (weeks/months apart) rather than production-step
+  // oriented, per the explicit ask distinguishing Construction from the
+  // other 3.
+  const CONSTRUCTION_JOB_FIELD_SET = {
+    valueLabel: "Project Value",
+    statusOptions: ["contract signed", "foundation", "structure", "finishing", "handover", "completed", "on hold", "cancelled"],
+    fields: [
+      { id: "job_stage", label: "Project Milestone", type: "text", column: "job_stage", placeholder: "Example: Contract Signed, Foundation, Structure, Finishing, Handover, Completed" },
+      { id: "job_total_amount", label: "Project Total Amount", type: "number", column: "job_total_amount", placeholder: "Example: 2500000" },
+      { id: "job_materials_cost", label: "Materials Cost", type: "number", column: "job_materials_cost", placeholder: "Example: 900000" },
+      { id: "job_labor_cost", label: "Labor Cost", type: "number", column: "job_labor_cost", placeholder: "Example: 600000" },
+      { id: "job_due_date", label: "Milestone / Handover Date", type: "date", column: "job_due_date" }
+    ]
+  };
+
   const ITEM_FIELD_SETS = {
     real_estate: REAL_ESTATE_ITEM_FIELD_SET,
 
@@ -3783,13 +3845,23 @@
     bookshop: RETAIL_BOOK_FIELD_SET,
     supermarket: RETAIL_SUPERMARKET_FIELD_SET,
     hardware: RETAIL_HARDWARE_FIELD_SET,
-    general_retail: RETAIL_GENERAL_FIELD_SET
+    general_retail: RETAIL_GENERAL_FIELD_SET,
+
+    // Cluster 2 (Job/work-order with stages) - top-level type keys, not
+    // sections (automotive has sections but none of them have their own
+    // field-set entry yet, so it falls through to this one via
+    // resolveItemFieldSet's type.key fallback below; printing/furniture/
+    // construction have no sections at all).
+    automotive: AUTOMOTIVE_JOB_FIELD_SET,
+    printing: PRINTING_JOB_FIELD_SET,
+    furniture: FURNITURE_JOB_FIELD_SET,
+    construction: CONSTRUCTION_JOB_FIELD_SET
   };
 
   // Resolves which field-set a tenant's item form/card should use: the
   // matched section's own set (by section key) if the item's current
   // section has one, else the top-level business type's set (by type
-  // key - currently only real_estate, since it has no section split),
+  // key - real_estate, automotive, printing, furniture, construction),
   // else the generic minimal fallback for anything not authored yet.
   function resolveItemFieldSet(tenant, sectionLabel) {
     const type = resolve(tenant);

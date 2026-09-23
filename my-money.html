@@ -62,8 +62,13 @@
     let isBookingBusinessType = false;
     let isSecurity = false;
     let isCleaning = false;
+    let isAutomotive = false;
+    let isPrinting = false;
+    let isFurniture = false;
+    let isConstruction = false;
     let personOptions = [];
     let propertyItemOptions = [];
+    let jobItemOptions = [];
     let tripEventOptions = [];
     let bookingEventOptions = [];
     let deploymentEventOptions = [];
@@ -131,6 +136,10 @@
       isBookingBusinessType = detectTourism(context.tenant) || detectEvents(context.tenant) || detectPhotography(context.tenant) || detectHospitality(context.tenant);
       isSecurity = detectSecurity(context.tenant);
       isCleaning = detectCleaning(context.tenant);
+      isAutomotive = detectAutomotive(context.tenant);
+      isPrinting = detectPrinting(context.tenant);
+      isFurniture = detectFurniture(context.tenant);
+      isConstruction = detectConstruction(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -404,6 +413,10 @@
         loaders.push(loadDeploymentEventOptions());
       }
 
+      if (isAutomotive || isPrinting || isFurniture || isConstruction) {
+        loaders.push(loadJobItemOptions());
+      }
+
       await Promise.all(loaders);
 
       renderMoneyPage();
@@ -520,6 +533,28 @@
       } catch (error) {
         console.warn("Property item options skipped:", error.message);
         propertyItemOptions = [];
+      }
+    }
+
+    // Cluster 2 (Job/work-order with stages) - Automotive, Printing,
+    // Furniture, Construction. Jobs live in business_items (not
+    // business_events), same table as loadPropertyItemOptions - filtered to
+    // items that actually have a job_total_amount set, since only those are
+    // meaningful to link a payment to.
+    async function loadJobItemOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, job_total_amount, job_stage")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .not("job_total_amount", "is", null)
+          .order("item_name", { ascending: true });
+
+        jobItemOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Job item options skipped:", error.message);
+        jobItemOptions = [];
       }
     }
 
@@ -2516,6 +2551,20 @@
               </div>
             ` : ""}
 
+            ${(isAutomotive || isPrinting || isFurniture || isConstruction) ? `
+              <div>
+                <label for="moneyRelatedJob">Related Job</label>
+                <select id="moneyRelatedJob">
+                  <option value="">Not linked</option>
+                  ${jobItemOptions.map(function (job) {
+                    const label = UnganiClientShared.getValue(job, ["item_name", "name"], "Job");
+                    const stage = job.job_stage ? " — " + job.job_stage : "";
+                    return `<option value="${UnganiClientShared.attr(job.id)}">${UnganiClientShared.safe(label + stage)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
+
             <div id="moneyTeamMemberWrap">
               <label for="moneyPaidTo">Paid To (optional)</label>
               <select id="moneyPaidTo" onchange="handlePaidToChange()">
@@ -2637,6 +2686,10 @@
 
           if (document.getElementById("moneyRelatedProperty")) {
             document.getElementById("moneyRelatedProperty").value = row ? UnganiClientShared.getValue(row, ["related_item_id"], "") : "";
+          }
+
+          if (document.getElementById("moneyRelatedJob")) {
+            document.getElementById("moneyRelatedJob").value = row ? UnganiClientShared.getValue(row, ["related_item_id"], "") : "";
           }
 
           if (document.getElementById("moneyRelatedTrip")) {
@@ -2989,7 +3042,9 @@ const payload = {
 };
 
       payload.related_person_id = UnganiClientShared.value("moneyRelatedPerson") || null;
-      payload.related_item_id = (isRealEstate || isLogistics) ? (UnganiClientShared.value("moneyRelatedProperty") || null) : null;
+      payload.related_item_id = (isRealEstate || isLogistics) ? (UnganiClientShared.value("moneyRelatedProperty") || null)
+        : (isAutomotive || isPrinting || isFurniture || isConstruction) ? (UnganiClientShared.value("moneyRelatedJob") || null)
+        : null;
       payload.related_event_id = isLogistics ? (UnganiClientShared.value("moneyRelatedTrip") || null)
         : isBookingBusinessType ? (UnganiClientShared.value("moneyRelatedBooking") || null)
         : (isSecurity || isCleaning) ? (UnganiClientShared.value("moneyRelatedDeployment") || null)
@@ -3499,6 +3554,57 @@ const payload = {
       const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("hospitality") || businessType.includes("hotel") || businessTypeKey.includes("hospitality");
+    }
+
+    // Cluster 2 (Job/work-order with stages) detectors - same local-copy
+    // pattern as above, byte-identical to client.html's versions. Gate the
+    // Related Job picker to Automotive, Printing, Furniture, Construction.
+    function detectAutomotive(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "automotive";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("automotive") || businessType.includes("car wash") || businessType.includes("repair shop") || businessTypeKey.includes("automotive");
+    }
+
+    function detectPrinting(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "printing";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("printing") || businessType.includes("branding") || businessTypeKey.includes("printing");
+    }
+
+    function detectFurniture(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "furniture";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("furniture") || businessType.includes("carpentry") || businessTypeKey.includes("furniture");
+    }
+
+    function detectConstruction(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "construction";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("construction") || businessType.includes("contractor") || businessTypeKey.includes("construction");
     }
 
     // Cluster 3 (Deployment/roster scheduling) detectors - same local-copy

@@ -7113,6 +7113,98 @@
       return { label: "Partial — Owed: " + balance.toLocaleString() + " " + currency, hasBalance: true };
     }
 
+    // Cluster 2 (Job/work-order with stages) - Automotive, Printing,
+    // Furniture, Construction. Unlike Trip/Booking/Deployment this isn't a
+    // calendar activity - Print Job/Order/Project/Service Job items already
+    // live in business_items, so computeJobSettlement reads from an ITEM
+    // (job_total_amount) rather than an event, but keeps the same Pending
+    // -> Partial -> Paid shape as computeTripSettlement/
+    // computeDeploymentSettlement. business_items has no rate_currency
+    // column (no precedent to reuse, unlike Deployment reusing Trip's), so
+    // this stays KES-labeled - amount_kes already normalizes the actual
+    // paid-sum comparison regardless of what currency a transaction was
+    // logged in, only the display suffix is fixed.
+    function computeJobSettlement(item, transactions) {
+      const total = Number(getValue(item, ["job_total_amount"], 0)) || 0;
+      if (total <= 0) return null;
+
+      const stage = String(getValue(item, ["job_stage"], "")).toLowerCase();
+      if (stage.includes("cancelled")) return null;
+
+      const paid = (transactions || []).filter(function (t) {
+        return String(getValue(t, ["related_item_id"], "")) === String(item.id) && isIncome(t);
+      }).reduce(function (sum, t) {
+        return sum + Number(getValue(t, ["amount_kes", "amount"], 0) || 0);
+      }, 0);
+
+      const balance = total - paid;
+
+      if (paid <= 0) {
+        const verb = stage.includes("completed") ? "Owed" : "Pending";
+        return { label: verb + ": " + total.toLocaleString() + " KES", hasBalance: true };
+      }
+
+      if (balance <= 0) {
+        return { label: "Paid in full", hasBalance: false };
+      }
+
+      return { label: "Partial — Owed: " + balance.toLocaleString() + " KES", hasBalance: true };
+    }
+
+    // Shared attention-group builder reused across all 4 Cluster 2 dashboards
+    // rather than duplicating the same row-mapping logic 4 times - matches
+    // the established shared-function precedent (attentionRow,
+    // renderAttentionGroups) already used app-wide.
+    function buildJobAttentionGroup(jobItems, transactions, groupTitle, icon) {
+      if (!jobItems || jobItems.length === 0) return null;
+
+      return {
+        title: groupTitle,
+        rows: jobItems.map(function (item) {
+          const title = getValue(item, ["item_name", "name"], "Job");
+          const stageLabel = getValue(item, ["job_stage"], "") || "No stage set";
+          const dueDate = getValue(item, ["job_due_date"], "");
+          const subtitle = dueDate ? stageLabel + " · Due " + formatDate(dueDate) : stageLabel;
+          const settlement = computeJobSettlement(item, transactions);
+          return attentionRow(icon, title, subtitle, "Active", "blue", "my-items.html?highlight=" + item.id, settlement ? settlement.label : null, null);
+        })
+      };
+    }
+
+    // Active-job filter shared by all 4 dashboards - excludes items whose
+    // job_stage marks them done, same "!includes(completed/cancelled)"
+    // convention used for status/stage filtering everywhere else in this
+    // file. Items with no job_stage set yet are still included (a job just
+    // added, stage not chosen yet, is still active).
+    function findActiveJobItems(items, jobTypeMatcher) {
+      return (items || []).filter(function (item) {
+        if (!jobTypeMatcher(getValue(item, ["item_type", "type"], ""))) return false;
+        const stage = String(getValue(item, ["job_stage"], "")).toLowerCase();
+        return !stage.includes("completed") && !stage.includes("cancelled");
+      }).sort(function (a, b) {
+        return String(getValue(a, ["job_due_date"], "9999")).localeCompare(String(getValue(b, ["job_due_date"], "9999")));
+      });
+    }
+
+    function isAutomotiveServiceJobItemType(value) {
+      return String(value || "").trim().toLowerCase() === "service job";
+    }
+
+    function isPrintingJobItemType(value) {
+      const lower = String(value || "").trim().toLowerCase();
+      return lower === "print job" || lower === "branding job";
+    }
+
+    function isFurnitureJobItemType(value) {
+      const lower = String(value || "").trim().toLowerCase();
+      return lower === "order" || lower === "project";
+    }
+
+    function isConstructionJobItemType(value) {
+      const lower = String(value || "").trim().toLowerCase();
+      return lower === "project" || lower === "work package";
+    }
+
     function renderLogisticsTripsSection(data, ctx) {
       const sevenDaysAgoStr = new Date(new Date(ctx.todayStr).getTime() - 7 * 86400000).toISOString().slice(0, 10);
 
@@ -11388,6 +11480,10 @@
         });
       }
 
+      const activeServiceJobs = findActiveJobItems(data.items, isAutomotiveServiceJobItemType);
+      const jobAttentionGroup = buildJobAttentionGroup(activeServiceJobs, data.transactions, "Active Service Jobs", "wrench");
+      if (jobAttentionGroup) attentionGroups.push(jobAttentionGroup);
+
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks or bookings need attention right now.");
 
       const greetingMessages = [];
@@ -11489,6 +11585,10 @@
           })
         });
       }
+
+      const activeServiceJobs = findActiveJobItems(data.items, isAutomotiveServiceJobItemType);
+      const jobAttentionGroup = buildJobAttentionGroup(activeServiceJobs, data.transactions, "Active Service Jobs", "wrench");
+      if (jobAttentionGroup) attentionGroups.push(jobAttentionGroup);
 
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No vehicle returns or tasks need attention right now.");
 
@@ -11592,6 +11692,10 @@
           })
         });
       }
+
+      const activeServiceJobs = findActiveJobItems(data.items, isAutomotiveServiceJobItemType);
+      const jobAttentionGroup = buildJobAttentionGroup(activeServiceJobs, data.transactions, "Active Service Jobs", "wrench");
+      if (jobAttentionGroup) attentionGroups.push(jobAttentionGroup);
 
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No repair deadlines or tasks need attention right now.");
 
@@ -15690,6 +15794,10 @@
       if (deadlinesToday.length > 0) attentionGroups.push({ title: "Today's Job Deadlines", rows: deadlinesToday.map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Job Deadline"); return attentionRow("printer", title, getValue(event, ["event_type", "type"], "Job Deadline"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null); }) });
       if (restocksDue.length > 0) attentionGroups.push({ title: "Material Restocks Due", rows: restocksDue.map(function (task) { const title = getValue(task, ["task_title", "title"], "Material Restock"); const due = getValue(task, ["due_date"], ""); return attentionRow("package", title, due ? "Due " + formatDate(due) : "No due date set", "Due", "orange", "my-tasks.html?highlight=" + task.id, null, "restock:" + task.id); }) });
 
+      const activeJobs = findActiveJobItems(data.items, isPrintingJobItemType);
+      const jobAttentionGroup = buildJobAttentionGroup(activeJobs, data.transactions, "Active Print / Branding Jobs", "printer");
+      if (jobAttentionGroup) attentionGroups.push(jobAttentionGroup);
+
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, job deadlines, or material restocks need attention right now.");
 
       document.getElementById("content").innerHTML = `
@@ -16007,6 +16115,10 @@
       if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("triangle-alert", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
       if (upcomingInspections.length > 0) attentionGroups.push({ title: "Upcoming Inspections (Next First)", rows: upcomingInspections.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Inspection"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; return attentionRow("hard-hat", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null); }) });
 
+      const activeJobs = findActiveJobItems(data.items, isConstructionJobItemType);
+      const jobAttentionGroup = buildJobAttentionGroup(activeJobs, data.transactions, "Active Projects (By Milestone)", "hard-hat");
+      if (jobAttentionGroup) attentionGroups.push(jobAttentionGroup);
+
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks or upcoming inspections need attention right now.");
 
       document.getElementById("content").innerHTML = `
@@ -16317,6 +16429,10 @@
       if (overdueTasks.length > 0) attentionGroups.push({ title: "Overdue Tasks (Oldest First)", rows: overdueTasks.map(function (task) { const title = getValue(task, ["task_title", "title"], "Task"); const due = formatDate(getValue(task, ["due_date"], "")); return attentionRow("triangle-alert", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id); }) });
       if (followUpsOpen.length > 0) attentionGroups.push({ title: "Material Follow-ups Open", rows: followUpsOpen.map(function (task) { const title = getValue(task, ["task_title", "title"], "Material Follow-up"); const due = getValue(task, ["due_date"], ""); return attentionRow("package", title, due ? "Due " + formatDate(due) : "No due date set", "Open", "orange", "my-tasks.html?highlight=" + task.id, null, "followup:" + task.id); }) });
       if (upcomingDeadlines.length > 0) attentionGroups.push({ title: "Upcoming Order Deadlines (Next First)", rows: upcomingDeadlines.slice(0, 8).map(function (event) { const title = getValue(event, ["event_title", "title", "name"], "Order Deadline"); const date = formatDate(getValue(event, ["event_date", "date", "start_date"], "")); const isToday = String(getValue(event, ["event_date", "date", "start_date"], "")).slice(0, 10) === todayStr; return attentionRow("armchair", title, date, isToday ? "Today" : "Upcoming", isToday ? "blue" : "gold", "my-calendar.html?highlight=" + event.id, null, null); }) });
+
+      const activeJobs = findActiveJobItems(data.items, isFurnitureJobItemType);
+      const jobAttentionGroup = buildJobAttentionGroup(activeJobs, data.transactions, "Active Orders / Projects", "armchair");
+      if (jobAttentionGroup) attentionGroups.push(jobAttentionGroup);
 
       const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, material follow-ups, or upcoming order deadlines need attention right now.");
 

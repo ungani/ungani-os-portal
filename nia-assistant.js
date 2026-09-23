@@ -2761,6 +2761,18 @@
         return runDeploymentQueryIntent();
       }
 
+      // Live-data Cluster 2 job/work-order pay question ("job pay", "job
+      // owed") - Automotive/Printing/Furniture/Construction only, checked
+      // right after Deployment since both are financial live-data questions.
+      if (isJobQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Job pay tracking isn't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runJobQueryIntent();
+      }
+
       // Live-data payee question ("payee", "payees") - checked right after
       // Debtors since both are people-you-pay questions, but answers with
       // the real payee list/count (get_my_ungani_payees) rather than the
@@ -5102,6 +5114,122 @@
 
     return {
       spoken: outstanding.length + " shift" + (outstanding.length === 1 ? "" : "s") + "/job" + (outstanding.length === 1 ? "" : "s") + " with money outstanding, " + formatNiaKES(totalOwed) + " owed total."
+    };
+  }
+
+  // ---- Cluster 2 (Job/work-order with stages) query ----
+  // Automotive/Printing/Furniture/Construction only - mirrors the Deployment
+  // intent above (direct supabase query, same HTML/spoken shape) but reads
+  // business_items rows with job_total_amount set (not business_events),
+  // matched to transactions via related_item_id (not related_event_id), and
+  // computes the same Pending/Owed/Partial/Paid states as
+  // computeJobSettlement() in client.html.
+  function isJobBusinessTypeTenant() {
+    if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+      try {
+        const matched = UnganiBusinessConfig.resolve(state.tenant);
+        if (matched) return ["automotive", "printing", "furniture", "construction"].indexOf(matched.key) !== -1;
+      } catch (error) {
+        // fall through to keyword check below
+      }
+    }
+
+    const businessType = String(pickField(state.tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+    return businessType.includes("automotive") || businessType.includes("car wash") || businessType.includes("repair shop") ||
+      businessType.includes("printing") || businessType.includes("branding") ||
+      businessType.includes("furniture") || businessType.includes("carpentry") ||
+      businessType.includes("construction") || businessType.includes("contractor");
+  }
+
+  function isJobQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["job pay", "job owed", "jobs owed", "unpaid jobs", "job balance", "job payment status",
+      "project pay", "project owed", "how much is the job", "job total"]
+      .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  async function runJobQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    if (!isJobBusinessTypeTenant()) {
+      addNiaMessage("Job pay tracking isn't relevant for your business type.");
+      return { spoken: "That's not relevant for your business type." };
+    }
+
+    addNiaMessage("Checking pay status on your jobs...");
+
+    let items = [];
+    let transactions = [];
+
+    try {
+      const [itemsResponse, txResponse] = await Promise.all([
+        state.supabaseClient.from("business_items")
+          .select("id, item_name, name, job_stage, job_total_amount")
+          .eq("tenant_id", state.tenantId)
+          .is("deleted_at", null)
+          .not("job_total_amount", "is", null)
+          .order("job_due_date", { ascending: true }),
+        state.supabaseClient.from("transactions")
+          .select("id, amount, amount_kes, transaction_type, type, related_item_id")
+          .eq("tenant_id", state.tenantId).not("related_item_id", "is", null).limit(1000)
+      ]);
+
+      items = (!itemsResponse.error && itemsResponse.data) ? itemsResponse.data : [];
+      transactions = (!txResponse.error && txResponse.data) ? txResponse.data : [];
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const outstanding = items.filter(function (item) {
+      const stage = String(pickField(item, ["job_stage"], "")).toLowerCase();
+      return !stage.includes("cancelled");
+    }).map(function (item) {
+      const total = Number(item.job_total_amount) || 0;
+
+      const paid = transactions.filter(function (t) {
+        if (String(t.related_item_id) !== String(item.id)) return false;
+        const broadType = String(pickField(t, ["transaction_type", "type"], "income")).toLowerCase();
+        return broadType !== "expense";
+      }).reduce(function (sum, t) { return sum + (Number(t.amount_kes) || Number(t.amount) || 0); }, 0);
+
+      const balance = total - paid;
+      const stage = String(pickField(item, ["job_stage"], "")).toLowerCase();
+      const verb = stage.includes("completed") ? "Owed" : "Pending";
+      const label = paid <= 0
+        ? verb + ": " + formatNiaKES(total)
+        : (balance <= 0 ? "Paid in full" : "Partial — Owed: " + formatNiaKES(balance));
+
+      return { title: pickField(item, ["item_name", "name"], "Job"), balance: balance, hasBalance: paid <= 0 || balance > 0, label: label };
+    }).filter(function (row) { return row.hasBalance; });
+
+    if (outstanding.length === 0) {
+      addNiaMessage("All your jobs are settled — nothing owed right now.");
+      return { spoken: "All your jobs are settled." };
+    }
+
+    const shown = outstanding.slice(0, 5);
+    const remaining = outstanding.length - shown.length;
+    const totalOwed = outstanding.reduce(function (sum, row) { return sum + Math.max(row.balance, 0); }, 0);
+
+    const listHtml = shown.map(function (row) {
+      return `<div style="margin-top:6px;">${severityDotHtml("gold")}${safe(row.title)} — ${safe(row.label)}</div>`;
+    }).join("");
+
+    const html =
+      `<strong>Job Pay</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> ${outstanding.length} job${outstanding.length === 1 ? "" : "s"} with money outstanding, ${safe(formatNiaKES(totalOwed))} owed total</div>` +
+      listHtml +
+      (remaining > 0 ? `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="my-items.html">See ${remaining} more →</a></div>` : "") +
+      `<div style="margin-top:8px;">${goldLink("my-items.html", "Open Items →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: outstanding.length + " job" + (outstanding.length === 1 ? "" : "s") + " with money outstanding, " + formatNiaKES(totalOwed) + " owed total."
     };
   }
 
