@@ -68,6 +68,10 @@
     let deployedSiteOptions = [];
     let tourGuideOptions = [];
     let tourVehicleOptions = [];
+    let isSalon = false;
+    let isHealthcare = false;
+    let isGym = false;
+    let appointmentStaffOptions = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -93,6 +97,9 @@
       isSecurity = detectSecurity(context.tenant);
       isCleaning = detectCleaning(context.tenant);
       isTourismDeployment = detectTourism(context.tenant);
+      isSalon = detectSalon(context.tenant);
+      isHealthcare = detectHealthcare(context.tenant);
+      isGym = detectGym(context.tenant);
 
       if (isLogistics && logisticsTripFieldsAllowed()) {
         await loadLogisticsTripOptions();
@@ -104,6 +111,10 @@
 
       if (isTourismDeployment) {
         await loadTourGuideVehicleOptions();
+      }
+
+      if (isSalon || isHealthcare || isGym) {
+        await loadAppointmentStaffOptions();
       }
 
       const titleEl = document.querySelector(".ungani-topbar h2");
@@ -323,6 +334,109 @@
         console.warn("Tour guide/vehicle options skipped:", error.message);
         tourGuideOptions = [];
         tourVehicleOptions = [];
+      }
+    }
+
+    // Cluster 5 (Appointment scheduling) detectors - same local-copy pattern
+    // as above.
+    function detectSalon(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "salon";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("salon") || businessType.includes("barber") || businessType.includes("spa") || businessType.includes("beauty") || businessTypeKey.includes("salon");
+    }
+
+    function detectHealthcare(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "healthcare";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("clinic") || businessType.includes("health") || businessType.includes("medical") || businessType.includes("hospital") || businessTypeKey.includes("healthcare");
+    }
+
+    function detectGym(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "gym";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("gym") || businessType.includes("fitness") || businessType.includes("wellness") || businessTypeKey.includes("gym");
+    }
+
+    // Staff options for the appointment/class staff-assignment picker.
+    // Unlike Deployment's single fixed person_type (guard/cleaner), each of
+    // these 3 business types has MULTIPLE valid staff person_types (matches
+    // ungani-business-config.js's peoplePrimaryTypes for each), so this
+    // queries with .in() against the full list rather than a single .ilike().
+    async function loadAppointmentStaffOptions() {
+      try {
+        const personTypes = isSalon ? ["staff", "stylist", "barber", "therapist"]
+          : isHealthcare ? ["staff", "doctor", "nurse", "dentist", "surgeon", "lab technician"]
+          : ["trainer", "staff"];
+
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, person_type")
+          .eq("tenant_id", currentContext.tenantId)
+          .in("person_type", personTypes);
+
+        appointmentStaffOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Appointment staff options skipped:", error.message);
+        appointmentStaffOptions = [];
+      }
+    }
+
+    // No-double-booking check for Cluster 5 - the first cluster in this
+    // codebase to add real scheduling-conflict detection. Optimistic/
+    // client-side only (queries then blocks the save if a conflict is
+    // found) - not a DB-level exclusion constraint, so a true race under
+    // concurrent simultaneous saves for the same staff member remains
+    // possible, same honest-gap category as the earlier branch-creation
+    // race-condition finding. Only runs when a staff member AND both start/
+    // end times are set - can't determine overlap otherwise.
+    async function checkAppointmentConflict(staffPersonId, eventDate, startTime, endTime, excludeEventId) {
+      if (!staffPersonId || !eventDate || !startTime || !endTime) return null;
+
+      try {
+        let query = currentContext.supabaseClient
+          .from("business_events")
+          .select("id, event_title, start_time, end_time, status")
+          .eq("tenant_id", currentContext.tenantId)
+          .eq("staff_person_id", staffPersonId)
+          .eq("event_date", eventDate)
+          .not("status", "ilike", "%cancelled%");
+
+        if (excludeEventId) {
+          query = query.neq("id", excludeEventId);
+        }
+
+        const response = await query;
+        const rows = (response && response.data) || [];
+
+        const conflict = rows.find(function (row) {
+          if (!row.start_time || !row.end_time) return false;
+          return startTime < row.end_time && row.start_time < endTime;
+        });
+
+        if (!conflict) return null;
+
+        return "That staff member already has \"" + (conflict.event_title || "an appointment") + "\" from " + conflict.start_time + " to " + conflict.end_time + " on this date.";
+      } catch (error) {
+        console.warn("Appointment conflict check skipped:", error.message);
+        return null;
       }
     }
 
@@ -1035,6 +1149,23 @@
                   </div>
                 ` : ""}
 
+                ${(isSalon || isHealthcare || isGym) ? `
+                  <div>
+                    <label for="eventAppointmentStaff">Staff Member (optional)</label>
+                    <select id="eventAppointmentStaff">
+                      <option value="">— Unassigned —</option>
+                      ${appointmentStaffOptions.map(function (person) {
+                        return `<option value="${UnganiClientShared.attr(person.id)}">${UnganiClientShared.safe(person.full_name)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="eventAppointmentAmount">${isGym ? "Session Amount" : "Appointment Amount"} (optional)</label>
+                    <input id="eventAppointmentAmount" type="number" min="0" step="0.01" placeholder="Example: 1500" />
+                  </div>
+                ` : ""}
+
                 <div class="wide">
                   <label for="eventNotes">Notes</label>
                   <textarea id="eventNotes" rows="5" placeholder="Add meeting details, appointment notes, delivery details, reminders, or preparation notes..."></textarea>
@@ -1490,6 +1621,19 @@
         payload.rate = UnganiClientShared.value("eventTourRate") ? Number(UnganiClientShared.value("eventTourRate")) : null;
       }
 
+      if ((isSalon || isHealthcare || isGym) && document.getElementById("eventAppointmentStaff")) {
+        payload.staff_person_id = UnganiClientShared.value("eventAppointmentStaff") || null;
+        payload.appointment_amount = UnganiClientShared.value("eventAppointmentAmount") ? Number(UnganiClientShared.value("eventAppointmentAmount")) : null;
+
+        if (payload.staff_person_id) {
+          const conflictMessage = await checkAppointmentConflict(payload.staff_person_id, payload.event_date, payload.start_time, payload.end_time, editingEventId);
+          if (conflictMessage) {
+            UnganiClientShared.showToast(conflictMessage);
+            return;
+          }
+        }
+      }
+
       let response;
 
       try {
@@ -1582,6 +1726,11 @@
           document.getElementById("eventTourVehicle").value = row.vehicle_item_id || "";
           document.getElementById("eventTourRoute").value = row.route || "";
           document.getElementById("eventTourRate").value = row.rate != null ? row.rate : "";
+        }
+
+        if (document.getElementById("eventAppointmentStaff")) {
+          document.getElementById("eventAppointmentStaff").value = row.staff_person_id || "";
+          document.getElementById("eventAppointmentAmount").value = row.appointment_amount != null ? row.appointment_amount : "";
         }
 
         document.getElementById("eventNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
@@ -1705,6 +1854,8 @@
       if (document.getElementById("eventTourVehicle")) document.getElementById("eventTourVehicle").value = "";
       if (document.getElementById("eventTourRoute")) document.getElementById("eventTourRoute").value = "";
       if (document.getElementById("eventTourRate")) document.getElementById("eventTourRate").value = "";
+      if (document.getElementById("eventAppointmentStaff")) document.getElementById("eventAppointmentStaff").value = "";
+      if (document.getElementById("eventAppointmentAmount")) document.getElementById("eventAppointmentAmount").value = "";
       if (document.getElementById("eventNotes")) document.getElementById("eventNotes").value = "";
     }
 

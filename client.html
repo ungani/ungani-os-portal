@@ -7205,6 +7205,49 @@
       return lower === "project" || lower === "work package";
     }
 
+    // Cluster 5 (Appointment scheduling) - Salon, Healthcare, Gym (class
+    // variant). Mirrors computeDeploymentSettlement's Pending -> Partial ->
+    // Paid states, reading appointment_amount/staff_person_id/rate_currency
+    // from the event and matching transactions via related_event_id - same
+    // shape as Trip/Deployment, kept as its own separate function per the
+    // established "one settlement function per cluster, not merged" pattern.
+    function computeAppointmentSettlement(event, transactions) {
+      const amount = Number(getValue(event, ["appointment_amount"], 0)) || 0;
+      if (amount <= 0) return null;
+
+      const status = String(getValue(event, ["status"], "scheduled")).toLowerCase();
+      if (status.includes("cancelled")) return null;
+
+      const currency = getValue(event, ["rate_currency"], "KES") || "KES";
+
+      const paid = (transactions || []).filter(function (t) {
+        return String(getValue(t, ["related_event_id"], "")) === String(event.id) && isIncome(t);
+      }).reduce(function (sum, t) {
+        return sum + Number(getValue(t, ["amount_kes", "amount"], 0) || 0);
+      }, 0);
+
+      const balance = amount - paid;
+
+      if (paid <= 0) {
+        const verb = status.includes("completed") ? "Owed" : "Pending";
+        return { label: verb + ": " + amount.toLocaleString() + " " + currency, hasBalance: true };
+      }
+
+      if (balance <= 0) {
+        return { label: "Paid in full", hasBalance: false };
+      }
+
+      return { label: "Partial — Owed: " + balance.toLocaleString() + " " + currency, hasBalance: true };
+    }
+
+    // Looks up the assigned staff member's name for an appointment/class row
+    // - same data.people lookup-by-id pattern used for Trip's driver/manager/
+    // client name resolution.
+    function appointmentStaffName(event, people) {
+      const staff = (people || []).find(function (person) { return String(person.id) === String(getValue(event, ["staff_person_id"], "")); });
+      return staff ? getValue(staff, ["full_name"], "") : "";
+    }
+
     function renderLogisticsTripsSection(data, ctx) {
       const sevenDaysAgoStr = new Date(new Date(ctx.todayStr).getTime() - 7 * 86400000).toISOString().slice(0, 10);
 
@@ -12326,7 +12369,10 @@
           title: "Today's " + calendarNoun,
           rows: todaysEvents.map(function (event) {
             const title = getValue(event, ["event_title", "title", "name"], calendarNoun);
-            return attentionRow("calendar", title, getValue(event, ["event_type", "type"], calendarNoun), "Today", "blue", ctx.calendarHref + "?highlight=" + event.id, null, null);
+            const staffName = appointmentStaffName(event, data.people);
+            const subtitle = staffName ? getValue(event, ["event_type", "type"], calendarNoun) + " · " + staffName : getValue(event, ["event_type", "type"], calendarNoun);
+            const settlement = computeAppointmentSettlement(event, data.transactions);
+            return attentionRow("calendar", title, subtitle, "Today", "blue", ctx.calendarHref + "?highlight=" + event.id, settlement ? settlement.label : null, null);
           })
         });
       }
@@ -12992,7 +13038,10 @@
           title: "Today's Appointments",
           rows: todaysAppointments.map(function (event) {
             const title = getValue(event, ["event_title", "title", "name"], "Appointment");
-            return attentionRow("calendar", title, getValue(event, ["event_type", "type"], "Appointment"), "Today", "blue", ctx.calendarHref + "?highlight=" + event.id, null, null);
+            const staffName = appointmentStaffName(event, data.people);
+            const subtitle = staffName ? getValue(event, ["event_type", "type"], "Appointment") + " · " + staffName : getValue(event, ["event_type", "type"], "Appointment");
+            const settlement = computeAppointmentSettlement(event, data.transactions);
+            return attentionRow("calendar", title, subtitle, "Today", "blue", ctx.calendarHref + "?highlight=" + event.id, settlement ? settlement.label : null, null);
           })
         });
       }
@@ -15583,7 +15632,10 @@
           title: "Today's Classes / Sessions",
           rows: todaysClasses.map(function (event) {
             const title = getValue(event, ["event_title", "title", "name"], "Class");
-            return attentionRow("dumbbell", title, getValue(event, ["event_type", "type"], "Class"), "Today", "blue", "my-calendar.html?highlight=" + event.id, null, null);
+            const staffName = appointmentStaffName(event, data.people);
+            const subtitle = staffName ? getValue(event, ["event_type", "type"], "Class") + " · " + staffName : getValue(event, ["event_type", "type"], "Class");
+            const settlement = computeAppointmentSettlement(event, data.transactions);
+            return attentionRow("dumbbell", title, subtitle, "Today", "blue", "my-calendar.html?highlight=" + event.id, settlement ? settlement.label : null, null);
           })
         });
       }
