@@ -3818,6 +3818,29 @@
     ]
   };
 
+  // Education Vertical Phase 2 - Class/Subject field set for the "school"
+  // business type (Primary/High School/College sub-types, see
+  // sql/education-vertical-phase1.sql). class_level/term_or_year are free
+  // text (same precedent as job_stage - no select input type exists yet).
+  // Teacher assignment (business_items.assigned_team_member_id) is NOT one
+  // of these fields - it's rendered as a real <select> of team members
+  // directly in my-items.html (same pattern as my-tasks.html's "Assigned
+  // To" picker), since the generic field-set renderer has no dynamic
+  // per-tenant option-list support. Fee amounts are NOT part of this field
+  // set either - fee structures reuse the existing Price Lists feature
+  // (ungani_price_lists/ungani_price_list_items already key on any
+  // business_items row via item_id, so a "Term 1 Fees" price list with a
+  // per-Class price works unchanged).
+  const SCHOOL_CLASS_FIELD_SET = {
+    valueLabel: "Class",
+    statusOptions: ["active", "inactive", "archived"],
+    fields: [
+      { id: "class_level", label: "Grade / Class Level", type: "text", column: "job_stage", placeholder: "Example: Grade 4, Form 2, Year 1" },
+      { id: "class_subject", label: "Subject (if applicable)", type: "text", placeholder: "Example: Mathematics, Computer Science" },
+      { id: "class_term", label: "Term / Year", type: "text", placeholder: "Example: Term 1 2026, Semester 2" }
+    ]
+  };
+
   const ITEM_FIELD_SETS = {
     real_estate: REAL_ESTATE_ITEM_FIELD_SET,
 
@@ -3855,7 +3878,10 @@
     automotive: AUTOMOTIVE_JOB_FIELD_SET,
     printing: PRINTING_JOB_FIELD_SET,
     furniture: FURNITURE_JOB_FIELD_SET,
-    construction: CONSTRUCTION_JOB_FIELD_SET
+    construction: CONSTRUCTION_JOB_FIELD_SET,
+
+    // Education Vertical Phase 2
+    school: SCHOOL_CLASS_FIELD_SET
   };
 
   // Resolves which field-set a tenant's item form/card should use: the

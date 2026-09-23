@@ -57,6 +57,8 @@
     let currentEditId = null;
     let isRealEstate = false;
     let isLogistics = false;
+    let isSchool = false;
+    let teacherOptions = [];
     let activeItemCategory = "all";
     let urlActionApplied = false;
     let sectionOptions = [];
@@ -134,6 +136,7 @@
 
       isRealEstate = detectRealEstate(context.tenant);
       isLogistics = detectLogistics(context.tenant);
+      isSchool = detectSchool(context.tenant);
       businessPreset = UnganiPresets.getPreset(context.tenant);
       sectionOptions = businessPreset.selectedSectionLabels || [];
       currentSectionFilter = new URLSearchParams(window.location.search).get("section") || "";
@@ -1800,6 +1803,18 @@
               </div>
             ` : ""}
 
+            ${isSchool ? `
+              <div>
+                <label for="itemAssignedTeacher">Teacher / Lecturer</label>
+                <select id="itemAssignedTeacher">
+                  <option value="">— Not assigned —</option>
+                  ${teacherOptions.map(function (member) {
+                    return `<option value="${UnganiClientShared.attr(member.id)}">${UnganiClientShared.safe(member.full_name)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
+
             ${renderSectionFieldHtml(formSectionLabel)}
 
             <div id="itemExtraFieldsContainer" class="ungani-form-grid" style="grid-column:1/-1;padding:0;margin:0;">
@@ -2558,6 +2573,10 @@
         await loadDriverOptions();
       }
 
+      if (isSchool) {
+        await loadTeacherOptions();
+      }
+
       const bodyHtml = isRealEstate
         ? buildRealEstateFormHtml(row, formSectionLabel)
         : buildGenericItemFormHtml(row, formSectionLabel);
@@ -2585,6 +2604,10 @@
 
             if (isLogistics && document.getElementById("itemAssignedDriver")) {
               document.getElementById("itemAssignedDriver").value = row ? UnganiClientShared.getValue(row.custom_fields || {}, ["assigned_driver_id"], "") : "";
+            }
+
+            if (isSchool && document.getElementById("itemAssignedTeacher")) {
+              document.getElementById("itemAssignedTeacher").value = row ? UnganiClientShared.getValue(row, ["assigned_team_member_id"], "") : "";
             }
 
             if (document.getElementById("itemExtra_registration_number")) {
@@ -2913,6 +2936,15 @@
         // for it and this needs no migration).
         if (isLogistics) {
           customFields.assigned_driver_id = UnganiClientShared.value("itemAssignedDriver") || null;
+        }
+
+        // Education Vertical Phase 2: unlike the driver link above, this
+        // has a real DB-enforced FK column (business_items.
+        // assigned_team_member_id -> ungani_team_members, added in
+        // sql/education-vertical-phase1.sql), so it goes on payload
+        // directly rather than into custom_fields.
+        if (isSchool) {
+          payload.assigned_team_member_id = UnganiClientShared.value("itemAssignedTeacher") || null;
         }
 
         payload.custom_fields = customFields;
@@ -3277,6 +3309,36 @@
     // its own local copy rather than sharing, same established pattern
     // as detectRealEstate above (this page has its own bespoke auth/data
     // loading, not client-shared.js's).
+    function detectSchool(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "school";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("school") || businessType.includes("training") || businessType.includes("academy") || businessTypeKey.includes("school");
+    }
+
+    // Education Vertical Phase 2: a Class needs a real teacher assignment
+    // (business_items.assigned_team_member_id, added in
+    // sql/education-vertical-phase1.sql), same reasoning as Logistics'
+    // driver picker above. Reuses the existing
+    // get_my_ungani_team_members_for_assignment RPC (already built for
+    // my-tasks.html's "Assigned To" picker) rather than a new query.
+    async function loadTeacherOptions() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_team_members_for_assignment");
+        teacherOptions = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.members || [])
+          : [];
+      } catch (error) {
+        console.warn("Could not load teacher options:", error.message);
+        teacherOptions = [];
+      }
+    }
+
     function detectLogistics(tenant) {
       if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
         const matched = UnganiBusinessConfig.resolve(tenant);

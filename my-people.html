@@ -60,6 +60,9 @@
     let highlightApplied = false;
     let isRealEstate = false;
     let isHospitality = false;
+    let isSchool = false;
+    let classOptions = [];
+    let editingPersonActiveEnrollments = [];
     let unitOptions = [];
     let organizationOptions = [];
     let organizationLinkedCounts = {};
@@ -111,6 +114,7 @@
 
       isRealEstate = detectRealEstate(context.tenant);
       isHospitality = detectHospitality(context.tenant);
+      isSchool = detectSchool(context.tenant);
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -1520,6 +1524,26 @@
               </div>
             ` : ""}
 
+            ${isSchool && row && isStudentPersonType(getPersonType(row)) ? `
+              <div class="wide">
+                <label>Enrolled Classes</label>
+                ${classOptions.length ? `
+                  <div id="personClassEnrollments" style="display:flex;flex-direction:column;gap:8px;max-height:180px;overflow-y:auto;padding:12px;border:1px solid var(--border,#2a3a55);border-radius:10px;">
+                    ${classOptions.map(function (cls) {
+                      const className = UnganiClientShared.getValue(cls, ["item_name", "name"], "Class");
+                      const isEnrolled = editingPersonActiveEnrollments.some(function (e) { return String(e.class_item_id) === String(cls.id); });
+                      return `
+                        <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
+                          <input type="checkbox" class="person-class-checkbox" value="${UnganiClientShared.attr(cls.id)}" ${isEnrolled ? "checked" : ""} />
+                          ${UnganiClientShared.safe(className)}
+                        </label>
+                      `;
+                    }).join("")}
+                  </div>
+                ` : `<p class="ungani-small" style="margin:0;">No Classes found yet - add one from <a href="my-items.html" style="color:var(--gold,#D4A63A);">Items</a> (Item Type: "Class") to enroll students.</p>`}
+              </div>
+            ` : ""}
+
             <div class="wide">
               <label for="personNotes">Notes</label>
               <textarea id="personNotes" rows="5" placeholder="Add contact notes, follow-up details, responsibilities, client needs, supplier info...">${row ? UnganiClientShared.safe(UnganiClientShared.getValue(row, ["notes", "description"], "")) : ""}</textarea>
@@ -1536,7 +1560,7 @@
       `;
     }
 
-    function openPersonModal(id, presetValues) {
+    async function openPersonModal(id, presetValues) {
       const row = id ? peopleRows.find(function (item) { return String(item.id) === String(id); }) : null;
 
       if (id && !row) {
@@ -1549,6 +1573,13 @@
       editingIsOrganization = isOrg;
       editingPersonId = row ? row.id : null;
       editingPersonOriginalStatus = row ? String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase() : "";
+
+      if (isSchool && !isOrg && row && isStudentPersonType(getPersonType(row))) {
+        await loadClassOptionsAndEnrollments(row.id);
+      } else {
+        classOptions = [];
+        editingPersonActiveEnrollments = [];
+      }
 
       const bodyHtml = isOrg ? buildOrganizationFormHtml(row) : buildPersonFormHtml(row);
 
@@ -1690,11 +1721,53 @@
         UnganiConnectPanel.logActivity(currentContext, "client_people", savedPersonId, "status_changed", "Status changed from " + toTitlePerson(editingPersonOriginalStatus || "active") + " to " + toTitlePerson(payload.status) + ".");
       }
 
+      if (isSchool && !editingIsOrganization && document.getElementById("personClassEnrollments")) {
+        await syncStudentClassEnrollments(savedPersonId);
+      }
+
       UnganiClientShared.showToast(editingPersonId ? recordLabel + " updated ✓" : recordLabel + " added ✓");
       editingPersonId = null;
       editingIsOrganization = false;
       UnganiClientShared.closeModal();
       await loadPeopleRows();
+    }
+
+    // Education Vertical Phase 2: diffs the checked Class checkboxes
+    // against editingPersonActiveEnrollments (loaded when the modal
+    // opened) and calls owner_upsert_ungani_class_enrollment once per
+    // change - newly checked -> new active enrollment row, newly
+    // unchecked -> the existing active row's status set to "dropped"
+    // (never deleted, so re-enrollment history stays visible on the
+    // Class/Student side later).
+    async function syncStudentClassEnrollments(studentPersonId) {
+      const checkedClassIds = Array.from(document.querySelectorAll(".person-class-checkbox:checked")).map(function (el) { return el.value; });
+      const previouslyEnrolledIds = editingPersonActiveEnrollments.map(function (e) { return String(e.class_item_id); });
+
+      const toEnroll = checkedClassIds.filter(function (id) { return previouslyEnrolledIds.indexOf(id) === -1; });
+      const toDrop = editingPersonActiveEnrollments.filter(function (e) { return checkedClassIds.indexOf(String(e.class_item_id)) === -1; });
+
+      for (const classId of toEnroll) {
+        try {
+          await currentContext.supabaseClient.rpc("owner_upsert_ungani_class_enrollment", {
+            p_student_person_id: studentPersonId,
+            p_class_item_id: classId,
+            p_status: "active"
+          });
+        } catch (error) {
+          console.warn("Could not enroll in class:", error.message);
+        }
+      }
+
+      for (const enrollment of toDrop) {
+        try {
+          await currentContext.supabaseClient.rpc("owner_upsert_ungani_class_enrollment", {
+            p_enrollment_id: enrollment.id,
+            p_status: "dropped"
+          });
+        } catch (error) {
+          console.warn("Could not drop class enrollment:", error.message);
+        }
+      }
     }
 
     // Warn-not-block duplicate check, same idiom as my-money.html's
@@ -1991,6 +2064,64 @@
       const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("real estate") || businessTypeKey.includes("real_estate");
+    }
+
+    function detectSchool(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "school";
+      }
+
+      const businessType = String(UnganiClientShared.getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(UnganiClientShared.getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("school") || businessType.includes("training") || businessType.includes("academy") || businessTypeKey.includes("school");
+    }
+
+    // Education Vertical Phase 2: a Student needs a real link into the
+    // Classes they're taking (ungani_class_enrollments, see
+    // sql/education-vertical-phase1.sql) - Classes are business_items rows
+    // with item_type "Class" (see ungani-business-config.js's school
+    // itemTypes list). Loads both the tenant's available Classes and this
+    // specific student's currently-active enrollments so the checkbox
+    // list can be pre-checked and diffed against on save.
+    async function loadClassOptionsAndEnrollments(studentPersonId) {
+      try {
+        const classesResponse = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name")
+          .eq("tenant_id", currentContext.tenantId)
+          .ilike("item_type", "class")
+          .is("deleted_at", null)
+          .order("item_name", { ascending: true });
+
+        classOptions = (classesResponse && classesResponse.data) || [];
+      } catch (error) {
+        console.warn("Could not load class options:", error.message);
+        classOptions = [];
+      }
+
+      editingPersonActiveEnrollments = [];
+      if (!studentPersonId) return;
+
+      try {
+        const enrollmentsResponse = await currentContext.supabaseClient
+          .from("ungani_class_enrollments")
+          .select("id, class_item_id")
+          .eq("tenant_id", currentContext.tenantId)
+          .eq("student_person_id", studentPersonId)
+          .eq("status", "active");
+
+        editingPersonActiveEnrollments = (enrollmentsResponse && enrollmentsResponse.data) || [];
+      } catch (error) {
+        console.warn("Could not load student enrollments:", error.message);
+        editingPersonActiveEnrollments = [];
+      }
+    }
+
+    function isStudentPersonType(personTypeValue) {
+      const clean = String(personTypeValue || "").toLowerCase();
+      return clean === "student" || clean === "learner";
     }
 
     function detectHospitality(tenant) {
