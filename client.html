@@ -1930,6 +1930,8 @@
 
     .property-attention-row {
       position: relative;
+      box-sizing: border-box;
+      overflow: hidden;
       padding: 13px 13px 13px 16px;
       /* These rows are full-width clickable links inside dashboard cards
          (Money Snapshot attention lists, Calendar - Next 5 Days preview)
@@ -1939,7 +1941,16 @@
          them - unlike .event-card in my-calendar.html, which has its own
          separate margin-right carve-out. margin-right shrinks the row's
          actual rendered box (not just its inner content) so it never
-         extends into that fixed floating-button footprint.
+         extends into that fixed floating-button footprint. box-sizing:
+         border-box + overflow: hidden are a hard backstop on top of that -
+         Chris reported the overlap reproduces specifically in Safari/WebKit
+         and only with a real populated row (never the empty state), which
+         points at engine-specific auto/intrinsic-sizing of the inner grid's
+         content (badges, text) computing a wider box than Chromium does for
+         the same markup. These two properties guarantee the row's rendered
+         box can never exceed its allotted width regardless of how any
+         engine computes internal content sizing - the box itself becomes
+         the hard limit, not a pixel guess about what fits inside it.
       */
       margin-right: 70px;
       border: 1px solid var(--border);
@@ -1953,6 +1964,7 @@
       grid-template-columns: 42px minmax(0, 1fr) auto;
       gap: 12px;
       align-items: center;
+      min-width: 0;
       transition: transform 0.2s ease;
     }
 
@@ -2082,6 +2094,9 @@
       display: block;
       font-size: 14px;
       color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .property-attention-row small {
@@ -2090,6 +2105,87 @@
       margin-top: 2px;
       font-size: 12px;
       line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Calendar - Next 5 Days redesign: a compact date tile (weekday +
+       day-number, like a small calendar page) replaces the generic icon,
+       giving the row real at-a-glance date hierarchy instead of burying
+       the date inside the subtitle text. Reuses .property-attention-row's
+       accent bar/hover/pulse behavior - only the inner content changes. */
+    .calendar-preview-tile {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: var(--accent-20, rgba(100,116,139,0.20));
+      color: var(--accent, var(--text-soft));
+      box-shadow: 0 0 0 1px var(--accent-28, rgba(100,116,139,0.28)) inset;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .calendar-preview-tile .tile-weekday {
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.85;
+    }
+
+    .calendar-preview-tile .tile-day {
+      font-size: 16px;
+      font-weight: 950;
+      margin-top: 2px;
+    }
+
+    .calendar-preview-row-inner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .calendar-preview-row-content {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .calendar-preview-row-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-top: 2px;
+      color: var(--text-soft);
+      font-size: 12px;
+      overflow: hidden;
+    }
+
+    .calendar-preview-row-meta .meta-type {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .calendar-preview-row-meta .meta-section {
+      flex-shrink: 0;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(37,99,235,0.14);
+      color: #2563EB;
+      font-weight: 700;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .calendar-preview-row-status {
+      flex-shrink: 0;
     }
 
     .status {
@@ -11019,7 +11115,9 @@
 
     function calendarPreviewRow(item, taggedMode) {
       const d = new Date(item.date);
-      const dayLabel = isNaN(d.getTime()) ? item.date : d.toLocaleDateString("en-KE", { weekday: "short", day: "2-digit", month: "short" });
+      const weekdayLabel = isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-KE", { weekday: "short" });
+      const dayNumber = isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-KE", { day: "2-digit" });
+      const monthLabel = isNaN(d.getTime()) ? item.date : d.toLocaleDateString("en-KE", { month: "short" });
       const todayStr = new Date().toISOString().slice(0, 10);
       const isToday = item.date === todayStr;
       const urgent = isToday && item.ackKey && !isAcknowledged(item.ackKey);
@@ -11029,16 +11127,19 @@
 
       return `
         <a class="property-attention-row${pulseClass}" href="${attr(item.href)}"${onclickAttr} style="${accentVars(iconInfo.color)}">
-          <div class="property-attention-row-inner">
-            <div class="property-attention-icon">${iconInfo.emoji}</div>
-            <div>
+          <div class="calendar-preview-row-inner">
+            <div class="calendar-preview-tile">
+              <span class="tile-weekday">${safe(weekdayLabel)}</span>
+              <span class="tile-day">${safe(dayNumber)}</span>
+            </div>
+            <div class="calendar-preview-row-content">
               <strong>${safe(item.title)}</strong>
-              <small>${safe(dayLabel)} · ${safe(item.type)}</small>
+              <div class="calendar-preview-row-meta">
+                <span class="meta-type">${safe(monthLabel)} · ${safe(item.type)}</span>
+                ${taggedMode && item.section ? `<span class="meta-section">${safe(item.section)}</span>` : ""}
+              </div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
-              ${taggedMode && item.section ? `<span class="status blue">${safe(item.section)}</span>` : ""}
-              <span class="status blue">Open</span>
-            </div>
+            <span class="status blue calendar-preview-row-status">${isToday ? "Today" : "Open"}</span>
           </div>
         </a>
       `;
