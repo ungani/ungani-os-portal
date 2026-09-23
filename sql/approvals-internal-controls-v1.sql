@@ -156,6 +156,10 @@ begin
   )
   returning id into v_request_id;
 
+  -- create_ungani_notification has two live overloads (10-arg, and an
+  -- 11-arg version with p_user_id appended, defaulted null) - a 10-arg
+  -- positional call is ambiguous between them ("not unique"). The
+  -- trailing null forces resolution to the 11-arg version.
   perform public.create_ungani_notification(
     v_tenant_id,
     'Expense awaiting your approval',
@@ -166,7 +170,8 @@ begin
     'my-approvals.html',
     'normal',
     jsonb_build_object('request_id', v_request_id, 'amount_kes', v_amount_kes),
-    false
+    false,
+    null
   );
 
   return jsonb_build_object('ok', true, 'mode', 'pending_approval', 'request_id', v_request_id);
@@ -267,7 +272,8 @@ begin
     'my-money.html',
     'normal',
     jsonb_build_object('request_id', p_request_id),
-    false
+    false,
+    null
   );
 
   return jsonb_build_object('ok', true, 'transaction_id', v_transaction_id);
@@ -322,7 +328,8 @@ begin
     'my-approvals.html',
     'normal',
     jsonb_build_object('request_id', p_request_id),
-    false
+    false,
+    null
   );
 
   return jsonb_build_object('ok', true, 'message', 'Request rejected.');

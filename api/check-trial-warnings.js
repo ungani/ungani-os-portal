@@ -19,7 +19,7 @@ const APP_URL = "https://ungani-os-portal.vercel.app";
 // accounts (against subscription_ends_at) - see gatherCandidates().
 export const WARNING_FAR_DAYS = 7;
 export const WARNING_NEAR_DAYS = 3;
-export const GRACE_PERIOD_DAYS = 7;
+export const GRACE_PERIOD_DAYS = 3;
 
 // Dedup windows - each covers its own trigger window with exactly one
 // email per daily cron run, not one per day. WARNING_NEAR_DEDUP_DAYS

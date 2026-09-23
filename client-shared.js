@@ -4679,6 +4679,210 @@
     }
   }
 
+  // ---- Company 360 (sibling to Person 360 above, same openSidePanel()
+  // mechanism) - an "Organization" is a client_people row with
+  // is_organization = true; individual people link to it via
+  // parent_organization_id. Rollups union transactions/documents/
+  // commitments tied to EITHER the org row itself (a payment logged
+  // directly against the company) OR any of its linked people (separate
+  // invoices per contact) - both cases just use different client_people
+  // ids in the same related_person_id/linked_person_id columns, so one
+  // .in() query covers both without new schema. ----
+  async function loadOrganizationConnections(supabaseClient, tenantId, orgId) {
+    let linkedPeople = [];
+
+    try {
+      const peopleRes = await supabaseClient
+        .from("client_people")
+        .select("id, full_name, name, role_title, position, phone, email, status")
+        .eq("tenant_id", tenantId)
+        .eq("parent_organization_id", orgId)
+        .is("deleted_at", null)
+        .order("full_name", { ascending: true });
+
+      linkedPeople = (peopleRes && peopleRes.data) || [];
+    } catch (error) {
+      linkedPeople = [];
+    }
+
+    const allRelevantIds = [orgId].concat(linkedPeople.map(function (p) { return p.id; }));
+
+    const [paymentsRes, documentsRes, commitmentsRes] = await Promise.all([
+      supabaseClient
+        .from("transactions")
+        .select("id, transaction_date, transaction_type, category, category_name, description, amount, amount_kes, currency, status, payment_method, related_person_id")
+        .eq("tenant_id", tenantId)
+        .in("related_person_id", allRelevantIds)
+        .is("deleted_at", null)
+        .order("transaction_date", { ascending: false }),
+      supabaseClient
+        .from("documents")
+        .select("id, document_title, file_name, category, created_at, linked_person_id")
+        .eq("tenant_id", tenantId)
+        .in("linked_person_id", allRelevantIds)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }),
+      supabaseClient
+        .rpc("get_my_ungani_commitments")
+        .then(function (res) { return res; })
+        .catch(function (error) { return { error: error }; })
+    ]);
+
+    const allCommitments = (commitmentsRes && !commitmentsRes.error && commitmentsRes.data && commitmentsRes.data.ok === true)
+      ? (commitmentsRes.data.commitments || [])
+      : [];
+
+    const relevantIdStrings = allRelevantIds.map(String);
+
+    return {
+      linkedPeople: linkedPeople,
+      payments: (paymentsRes && paymentsRes.data) || [],
+      documents: (documentsRes && documentsRes.data) || [],
+      commitments: allCommitments.filter(function (c) { return relevantIdStrings.indexOf(String(c.person_id || "")) !== -1; })
+    };
+  }
+
+  function buildOrganizationSummaryBadges(orgRow, connections) {
+    const badges = [];
+    const peopleCount = (connections.linkedPeople || []).length;
+
+    badges.push(peopleCount + " " + (peopleCount === 1 ? "person" : "people") + " linked");
+
+    if (orgRow && orgRow.created_at) {
+      const since = new Date(orgRow.created_at);
+      const now = new Date();
+      const months = Math.max(0, (now.getFullYear() - since.getFullYear()) * 12 + (now.getMonth() - since.getMonth()));
+      const monthsLabel = months < 1 ? "this month" : (months + " month" + (months === 1 ? "" : "s"));
+      badges.push("Since " + formatDate(orgRow.created_at) + " (" + monthsLabel + ")");
+    }
+
+    const payments = connections.payments || [];
+    if (payments.length) {
+      const total = payments.reduce(function (sum, p) { return sum + Number(p.amount_kes || p.amount || 0); }, 0);
+      badges.push(payments.length + " payment" + (payments.length === 1 ? "" : "s") + " recorded (all linked people), " + formatKES(total) + " total");
+    }
+
+    return badges;
+  }
+
+  async function openUnganiOrganizationProfile(context, orgRow, opts) {
+    const o = opts || {};
+    const orgId = orgRow.id;
+    const orgName = getValue(orgRow, ["full_name", "name"], "Organization");
+
+    openSidePanel({
+      title: orgName,
+      bodyHtml: loadingCard("Loading organization profile...")
+    });
+
+    let connections;
+    try {
+      connections = await loadOrganizationConnections(context.supabaseClient, context.tenantId, orgId);
+    } catch (error) {
+      document.getElementById("unganiPanelBody").innerHTML = errorCard("Could not load organization profile", error.message || "Network error.");
+      return;
+    }
+
+    const badges = buildOrganizationSummaryBadges(orgRow, connections);
+    const status = getValue(orgRow, ["status"], "active");
+
+    // Name lookup so rollup rows can show WHICH person a payment/document
+    // belongs to (the org itself, or a specific linked contact) - the
+    // whole point of the rollup is that mix, so it should stay visible.
+    const nameById = {};
+    nameById[String(orgId)] = orgName + " (Organization)";
+    (connections.linkedPeople || []).forEach(function (p) {
+      nameById[String(p.id)] = getValue(p, ["full_name", "name"], "Person");
+    });
+
+    const linkedPeopleRowsHtml = (connections.linkedPeople || []).map(function (p) {
+      const role = getValue(p, ["role_title", "position"], "");
+      const pStatus = getValue(p, ["status"], "active");
+      const openFn = o.openPersonFnName ? `onclick="closeSidePanel(); ${o.openPersonFnName}('${attr(p.id)}')" style="cursor:pointer;"` : "";
+      return `
+        <div class="detail-row" ${openFn}>
+          <span>${safe(getValue(p, ["full_name", "name"], "Person"))}${role ? " — " + safe(role) : ""}</span>
+          <span class="ungani-small">${safe(pStatus)}</span>
+        </div>
+      `;
+    }).join("");
+
+    const paymentRowsHtml = (connections.payments || []).slice(0, 20).map(function (p) {
+      const amount = Number(p.amount_kes || p.amount || 0);
+      const whoName = nameById[String(p.related_person_id)] || "Unknown";
+      return `
+        <div class="detail-row">
+          <span>${safe(p.description || p.category_name || p.category || p.transaction_type || "Transaction")}</span>
+          <span class="ungani-small">${safe(formatDate(p.transaction_date))} · ${safe(formatKES(amount))} · ${safe(whoName)}</span>
+        </div>
+      `;
+    }).join("");
+
+    const documentRowsHtml = (connections.documents || []).map(function (d) {
+      const whoName = nameById[String(d.linked_person_id)] || "Unknown";
+      return `
+        <div class="detail-row">
+          <span>${safe(d.document_title || d.file_name || "Document")}</span>
+          <span class="ungani-small">${safe(formatDate(d.created_at))} · ${safe(whoName)}</span>
+        </div>
+      `;
+    }).join("");
+
+    const commitmentRowsHtml = (connections.commitments || []).map(function (c) {
+      const range = (c.start_date || c.end_date)
+        ? (c.start_date ? formatDate(c.start_date) : "—") + " to " + (c.end_date ? formatDate(c.end_date) : "—")
+        : "No dates set";
+      const whoName = nameById[String(c.person_id)] || "Unknown";
+      return `
+        <div class="detail-row">
+          <span>${safe(c.plan_name || c.commitment_type || "Commitment")}</span>
+          <span class="ungani-small">${safe(range)} · ${safe(whoName)}</span>
+        </div>
+      `;
+    }).join("");
+
+    document.getElementById("unganiPanelBody").innerHTML = `
+      <div class="ungani-card">
+        <p class="ungani-small">Organization · ${safe(status)}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          ${badges.map(function (b) { return `<span class="ungani-badge">${safe(b)}</span>`; }).join("")}
+        </div>
+        <div class="ungani-button-row" style="margin-top:14px;">
+          ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="closeSidePanel(); ${o.editFnName}('${attr(orgId)}')">Edit</button>` : ""}
+          ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="closeSidePanel(); ${o.discussFnName}('${attr(orgId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
+          ${o.deleteFnName ? `<button class="ungani-btn red" type="button" onclick="${o.deleteFnName}('${attr(orgId)}')">Delete</button>` : ""}
+        </div>
+      </div>
+
+      <div class="ungani-card" style="margin-top:18px;">
+        <div class="ungani-section-title"><div><h3>Linked People</h3></div></div>
+        ${linkedPeopleRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No people linked to this organization yet.</p>`}
+        <p class="ungani-small" style="margin-top:10px;">To link more people, edit their record from the People list and set "Linked Organization".</p>
+      </div>
+
+      <div class="ungani-card" style="margin-top:18px;">
+        <div class="ungani-section-title"><div><h3>Payment History (all linked people)</h3></div></div>
+        ${paymentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No payments recorded yet.</p>`}
+      </div>
+
+      ${connections.commitments && connections.commitments.length ? `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title"><div><h3>Lease / Membership / Contract</h3></div></div>
+          ${commitmentRowsHtml}
+        </div>
+      ` : ""}
+
+      <div class="ungani-card" style="margin-top:18px;">
+        <div class="ungani-section-title"><div><h3>Documents</h3></div></div>
+        ${documentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No documents on file.</p>`}
+      </div>
+    `;
+
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
+  }
+
   function safe(valueText) {
     return String(valueText === null || valueText === undefined ? "" : valueText)
       .replace(/&/g, "&amp;")
@@ -4941,6 +5145,8 @@
       loadLocationConnections,
       loadPersonConnections,
       openUnganiPersonProfile,
+      loadOrganizationConnections,
+      openUnganiOrganizationProfile,
       showToast,
       withButtonLoading,
       toggleTheme,
