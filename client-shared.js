@@ -4694,7 +4694,7 @@
     try {
       const peopleRes = await supabaseClient
         .from("client_people")
-        .select("id, full_name, role_title, position, phone, email, status")
+        .select("id, full_name, role_title, phone, email, status")
         .eq("tenant_id", tenantId)
         .eq("parent_organization_id", orgId)
         .is("deleted_at", null)
