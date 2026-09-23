@@ -4719,8 +4719,8 @@
           ${badges.map(function (b) { return `<span class="ungani-badge">${safe(b)}</span>`; }).join("")}
         </div>
         <div class="ungani-button-row" style="margin-top:14px;">
-          ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="closeSidePanel(); ${o.editFnName}('${attr(personId)}')">Edit</button>` : ""}
-          ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="closeSidePanel(); ${o.discussFnName}('${attr(personId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
+          ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.editFnName}('${attr(personId)}')">Edit</button>` : ""}
+          ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.discussFnName}('${attr(personId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
           ${o.deleteFnName ? `<button class="ungani-btn red" type="button" onclick="${o.deleteFnName}('${attr(personId)}')">Delete</button>` : ""}
         </div>
       </div>
@@ -4879,7 +4879,7 @@
     const linkedPeopleRowsHtml = (connections.linkedPeople || []).map(function (p) {
       const role = getValue(p, ["role_title", "position"], "");
       const pStatus = getValue(p, ["status"], "active");
-      const openFn = o.openPersonFnName ? `onclick="closeSidePanel(); ${o.openPersonFnName}('${attr(p.id)}')" style="cursor:pointer;"` : "";
+      const openFn = o.openPersonFnName ? `onclick="UnganiClientShared.closeSidePanel(); ${o.openPersonFnName}('${attr(p.id)}')" style="cursor:pointer;"` : "";
       return `
         <div class="detail-row" ${openFn}>
           <span>${safe(getValue(p, ["full_name", "name"], "Person"))}${role ? " — " + safe(role) : ""}</span>
@@ -4929,8 +4929,8 @@
           ${badges.map(function (b) { return `<span class="ungani-badge">${safe(b)}</span>`; }).join("")}
         </div>
         <div class="ungani-button-row" style="margin-top:14px;">
-          ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="closeSidePanel(); ${o.editFnName}('${attr(orgId)}')">Edit</button>` : ""}
-          ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="closeSidePanel(); ${o.discussFnName}('${attr(orgId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
+          ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.editFnName}('${attr(orgId)}')">Edit</button>` : ""}
+          ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.discussFnName}('${attr(orgId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
           ${o.deleteFnName ? `<button class="ungani-btn red" type="button" onclick="${o.deleteFnName}('${attr(orgId)}')">Delete</button>` : ""}
         </div>
       </div>
@@ -5041,12 +5041,12 @@
       connections.person ? {
         label: connections.person.is_organization ? "Organization" : "Person",
         value: personName,
-        onclick: o.openPersonFnName ? `closeSidePanel(); ${o.openPersonFnName}('${attr(connections.person.id)}')` : ""
+        onclick: o.openPersonFnName ? `UnganiClientShared.closeSidePanel(); ${o.openPersonFnName}('${attr(connections.person.id)}')` : ""
       } : null,
       connections.item ? {
         label: "Item / Asset",
         value: itemName,
-        onclick: o.openItemFnName ? `closeSidePanel(); ${o.openItemFnName}('${attr(connections.item.id)}')` : ""
+        onclick: o.openItemFnName ? `UnganiClientShared.closeSidePanel(); ${o.openItemFnName}('${attr(connections.item.id)}')` : ""
       } : null,
       connections.task ? {
         label: "Task",
@@ -5080,8 +5080,8 @@
         <p class="ungani-small">${safe(docType)} · ${safe(status)}${fileUrl ? "" : " · No file attached"}</p>
         <div class="ungani-button-row" style="margin-top:14px;">
           ${fileUrl ? `<a class="ungani-btn small green" href="${attr(fileUrl)}" target="_blank" rel="noopener">Open File</a>` : ""}
-          ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="closeSidePanel(); ${o.editFnName}('${attr(docId)}')">Edit</button>` : ""}
-          ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="closeSidePanel(); ${o.discussFnName}('${attr(docId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
+          ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.editFnName}('${attr(docId)}')">Edit</button>` : ""}
+          ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.discussFnName}('${attr(docId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
           ${o.deleteFnName ? `<button class="ungani-btn red" type="button" onclick="${o.deleteFnName}('${attr(docId)}')">Delete</button>` : ""}
         </div>
       </div>
