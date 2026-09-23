@@ -4496,10 +4496,48 @@
       ? (commitmentsRes.data.commitments || [])
       : [];
 
+    const itemCommitments = allCommitments.filter(function (c) { return String(c.linked_item_id || "") === String(itemId); });
+
+    // Past Tenants: terminated leases are NOT deleted when a lease ends
+    // (ungani_commitments just gets status = 'terminated'), so this is a
+    // pure display fix, no new schema - the current-tenant query above only
+    // sees client_people.linked_item_id, which gets reassigned/cleared on
+    // move-out and loses the history. Commitment rows only carry person_id,
+    // not a name, so a second small lookup resolves names for whichever
+    // past tenants aren't already covered by the current `tenants` array.
+    const pastCommitments = itemCommitments.filter(function (c) { return c.status === "terminated" && c.person_id; });
+    let pastTenantNames = {};
+
+    if (pastCommitments.length) {
+      const currentIds = (tenantsRes && tenantsRes.data || []).map(function (t) { return String(t.id); });
+      const pastPersonIds = pastCommitments
+        .map(function (c) { return c.person_id; })
+        .filter(function (id, index, arr) { return currentIds.indexOf(String(id)) === -1 && arr.indexOf(id) === index; });
+
+      if (pastPersonIds.length) {
+        const namesRes = await supabaseClient
+          .from("client_people")
+          .select("id, full_name")
+          .in("id", pastPersonIds);
+
+        (namesRes && namesRes.data || []).forEach(function (p) {
+          pastTenantNames[String(p.id)] = getValue(p, ["full_name", "name"], "Former Tenant");
+        });
+      }
+    }
+
     return {
       units: (unitsRes && unitsRes.data) || [],
       tenants: (tenantsRes && tenantsRes.data) || [],
-      commitments: allCommitments.filter(function (c) { return String(c.linked_item_id || "") === String(itemId); }),
+      commitments: itemCommitments,
+      pastTenants: pastCommitments.map(function (c) {
+        return {
+          personId: c.person_id,
+          name: pastTenantNames[String(c.person_id)] || "Former Tenant",
+          startDate: c.start_date,
+          endDate: c.end_date
+        };
+      }),
       tasks: (tasksRes && tasksRes.data) || []
     };
   }
@@ -4883,6 +4921,141 @@
     }
   }
 
+  // ---- Document 360 - Chris's explicit priority ("if there's a document,
+  // it has to tell us where it's from"). documents already has FIVE real
+  // linking columns (linked_item_id/linked_task_id/linked_person_id/
+  // linked_transaction_id/linked_team_member_id) written by the document
+  // form for a while now, but nothing ever displayed what they resolve to -
+  // this is a pure display layer, no new schema. Unlike Person/Org/Location,
+  // a document links to AT MOST ONE of each related type, so this does 5
+  // targeted single-row lookups (only for whichever ids are actually set)
+  // rather than the list-based loadXConnections() shape used elsewhere.
+  async function loadDocumentConnections(supabaseClient, tenantId, docRow) {
+    const [personRes, taskRes, transactionRes, teamMemberRes, itemRes] = await Promise.all([
+      docRow.linked_person_id
+        ? supabaseClient.from("client_people").select("id, full_name, is_organization, status").eq("id", docRow.linked_person_id).eq("tenant_id", tenantId).maybeSingle()
+        : Promise.resolve({ data: null }),
+      docRow.linked_task_id
+        ? supabaseClient.from("tasks").select("id, task_title, status, due_date").eq("id", docRow.linked_task_id).eq("tenant_id", tenantId).maybeSingle()
+        : Promise.resolve({ data: null }),
+      docRow.linked_transaction_id
+        ? supabaseClient.from("transactions").select("id, description, category, category_name, transaction_type, amount, amount_kes, transaction_date").eq("id", docRow.linked_transaction_id).eq("tenant_id", tenantId).maybeSingle()
+        : Promise.resolve({ data: null }),
+      docRow.linked_team_member_id
+        ? supabaseClient.from("ungani_team_members").select("id, full_name, role_key").eq("id", docRow.linked_team_member_id).eq("tenant_id", tenantId).maybeSingle()
+        : Promise.resolve({ data: null }),
+      docRow.linked_item_id
+        ? supabaseClient.from("business_items").select("id, item_name, property_name, name").eq("id", docRow.linked_item_id).eq("tenant_id", tenantId).maybeSingle()
+        : Promise.resolve({ data: null })
+    ]);
+
+    return {
+      person: (personRes && personRes.data) || null,
+      task: (taskRes && taskRes.data) || null,
+      transaction: (transactionRes && transactionRes.data) || null,
+      teamMember: (teamMemberRes && teamMemberRes.data) || null,
+      item: (itemRes && itemRes.data) || null
+    };
+  }
+
+  // opts: { editFnName, discussFnName, deleteFnName, openPersonFnName,
+  // openItemFnName } - the last two let the caller wire "click through to
+  // that person's/item's own profile" since my-documents.html already has
+  // both openUnganiPersonProfile and my-items.html's item panel available
+  // as globals via UnganiClientShared/local functions; both optional, a
+  // missing one just renders the row as plain text instead of a link.
+  async function openUnganiDocumentProfile(context, docRow, opts) {
+    const o = opts || {};
+    const docId = docRow.id;
+    const docTitle = getValue(docRow, ["document_title", "file_name"], "Document");
+
+    openSidePanel({
+      title: docTitle,
+      bodyHtml: loadingCard("Loading document...")
+    });
+
+    let connections;
+    try {
+      connections = await loadDocumentConnections(context.supabaseClient, context.tenantId, docRow);
+    } catch (error) {
+      document.getElementById("unganiPanelBody").innerHTML = errorCard("Could not load document", error.message || "Network error.");
+      return;
+    }
+
+    const docType = getValue(docRow, ["document_type", "category"], "Document");
+    const status = getValue(docRow, ["status"], "active");
+    const fileUrl = getValue(docRow, ["file_url", "url", "document_url"], "");
+
+    const personName = connections.person ? getValue(connections.person, ["full_name", "name"], "Person") : null;
+    const itemName = connections.item ? getValue(connections.item, ["item_name", "property_name", "name"], "Item") : null;
+
+    const linkRowsHtml = [
+      connections.person ? {
+        label: connections.person.is_organization ? "Organization" : "Person",
+        value: personName,
+        onclick: o.openPersonFnName ? `closeSidePanel(); ${o.openPersonFnName}('${attr(connections.person.id)}')` : ""
+      } : null,
+      connections.item ? {
+        label: "Item / Asset",
+        value: itemName,
+        onclick: o.openItemFnName ? `closeSidePanel(); ${o.openItemFnName}('${attr(connections.item.id)}')` : ""
+      } : null,
+      connections.task ? {
+        label: "Task",
+        value: getValue(connections.task, ["task_title"], "Task") + (connections.task.due_date ? " · Due " + formatDate(connections.task.due_date) : ""),
+        onclick: ""
+      } : null,
+      connections.transaction ? {
+        label: "Payment",
+        value: (connections.transaction.description || connections.transaction.category_name || connections.transaction.category || connections.transaction.transaction_type || "Transaction") + " · " + formatKES(Number(connections.transaction.amount_kes || connections.transaction.amount || 0)) + " · " + formatDate(connections.transaction.transaction_date),
+        onclick: ""
+      } : null,
+      connections.teamMember ? {
+        label: "Staff Member",
+        value: getValue(connections.teamMember, ["full_name"], "Staff"),
+        onclick: ""
+      } : null
+    ].filter(Boolean);
+
+    const linkRowsRenderedHtml = linkRowsHtml.map(function (r) {
+      const clickable = !!r.onclick;
+      return `
+        <div class="detail-row" ${clickable ? `onclick="${r.onclick}" style="cursor:pointer;"` : ""}>
+          <span class="ungani-small">${safe(r.label)}</span>
+          <span>${safe(r.value)}</span>
+        </div>
+      `;
+    }).join("");
+
+    document.getElementById("unganiPanelBody").innerHTML = `
+      <div class="ungani-card">
+        <p class="ungani-small">${safe(docType)} · ${safe(status)}${fileUrl ? "" : " · No file attached"}</p>
+        <div class="ungani-button-row" style="margin-top:14px;">
+          ${fileUrl ? `<a class="ungani-btn small green" href="${attr(fileUrl)}" target="_blank" rel="noopener">Open File</a>` : ""}
+          ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="closeSidePanel(); ${o.editFnName}('${attr(docId)}')">Edit</button>` : ""}
+          ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="closeSidePanel(); ${o.discussFnName}('${attr(docId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
+          ${o.deleteFnName ? `<button class="ungani-btn red" type="button" onclick="${o.deleteFnName}('${attr(docId)}')">Delete</button>` : ""}
+        </div>
+      </div>
+
+      <div class="ungani-card" style="margin-top:18px;">
+        <div class="ungani-section-title"><div><h3>Where This Document Is From</h3></div></div>
+        ${linkRowsRenderedHtml || `<p class="ungani-small" style="padding:10px 0;">Not linked to any person, item, task, payment, or staff member yet - edit this document to add a link.</p>`}
+      </div>
+
+      ${getValue(docRow, ["notes", "description"], "") ? `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title"><div><h3>Notes</h3></div></div>
+          <p class="ungani-small" style="white-space:pre-wrap;">${safe(getValue(docRow, ["notes", "description"], ""))}</p>
+        </div>
+      ` : ""}
+    `;
+
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
+  }
+
   function safe(valueText) {
     return String(valueText === null || valueText === undefined ? "" : valueText)
       .replace(/&/g, "&amp;")
@@ -5147,6 +5320,8 @@
       openUnganiPersonProfile,
       loadOrganizationConnections,
       openUnganiOrganizationProfile,
+      loadDocumentConnections,
+      openUnganiDocumentProfile,
       showToast,
       withButtonLoading,
       toggleTheme,

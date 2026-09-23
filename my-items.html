@@ -1892,6 +1892,7 @@
       const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
       const photo = UnganiClientShared.getValue(row, ["photo_url", "image_url", "thumbnail_url"], "");
       const fieldSet = UnganiBusinessConfig.resolveItemFieldSet(currentContext.tenant, sectionLabel);
+      const stockTrackingEnabled = !!(currentContext && currentContext.tenant && currentContext.tenant.stock_tracking_enabled === true);
 
       const subtitleParts = [toTitle(itemType)];
       if (sectionLabel) subtitleParts.push(sectionLabel);
@@ -1955,6 +1956,22 @@
           <div id="itemLinkedTasksList" style="margin-top:12px;"></div>
         </div>
 
+        ${stockTrackingEnabled ? `
+          <div class="ungani-card" style="margin-top:18px;">
+            <div class="ungani-section-title">
+              <div>
+                <h3>Stock Movements</h3>
+                <p class="ungani-small">Every restock, sale, and adjustment logged against this item.</p>
+              </div>
+              <a class="ungani-btn small dark" href="my-stock-tracking.html">Full Log</a>
+            </div>
+
+            <div id="itemStockMovementsList">
+              <p class="ungani-small">Loading movement history...</p>
+            </div>
+          </div>
+        ` : ""}
+
         <div class="ungani-card" style="margin-top:18px;">
           <div class="ungani-section-title">
             <div>
@@ -2002,6 +2019,45 @@
       loadItemTimeline(row.id);
       loadItemDocuments(row.id);
       loadItemConnections(row.id);
+      if (stockTrackingEnabled) loadItemStockMovements(row.id);
+    }
+
+    // Item/Stock 360: the ungani_stock_movements ledger has existed since
+    // the Stock Tracking module shipped, but nothing ever displayed it on
+    // the item itself - this is a pure wiring fix, the RPC and data already
+    // exist. Full item-to-order/trip traceability (which sale/trip consumed
+    // this movement) is a separate follow-up, scoped but not built here.
+    async function loadItemStockMovements(id) {
+      const el = document.getElementById("itemStockMovementsList");
+      if (!el) return;
+
+      let response;
+      try {
+        response = await currentContext.supabaseClient.rpc("get_my_ungani_stock_movements", { p_item_id: id, p_limit: 20 });
+      } catch (error) {
+        el.innerHTML = `<p class="ungani-small">Could not load movement history.</p>`;
+        return;
+      }
+
+      const movements = (response && response.data && response.data.ok === true) ? (response.data.movements || []) : [];
+
+      if (!movements.length) {
+        el.innerHTML = `<p class="ungani-small">No stock movements logged yet.</p>`;
+        return;
+      }
+
+      el.innerHTML = movements.map(function (m) {
+        const delta = Number(m.quantity_delta || 0);
+        const deltaLabel = (delta > 0 ? "+" : "") + delta;
+        const typeLabel = UnganiClientShared.getValue(m, ["movement_type"], "adjustment").replace(/_/g, " ");
+
+        return `
+          <div class="detail-row">
+            <span>${UnganiClientShared.safe(toTitle(typeLabel))} · ${UnganiClientShared.safe(deltaLabel)}</span>
+            <span class="ungani-small">${UnganiClientShared.safe(UnganiClientShared.formatDateTime(m.created_at))}${m.reason ? " · " + UnganiClientShared.safe(m.reason) : ""}</span>
+          </div>
+        `;
+      }).join("");
     }
 
     // Location/Property 360: everything connected to this item in one
@@ -2036,12 +2092,13 @@
       const units = connections.units || [];
       const tenants = connections.tenants || [];
       const commitments = connections.commitments || [];
+      const pastTenants = connections.pastTenants || [];
       const openTasks = (connections.tasks || []).filter(function (t) {
         return String(UnganiClientShared.getValue(t, ["status"], "pending")).toLowerCase() !== "completed" &&
           String(UnganiClientShared.getValue(t, ["status"], "pending")).toLowerCase() !== "cancelled";
       });
 
-      if (!units.length && !tenants.length && !commitments.length && !openTasks.length) {
+      if (!units.length && !tenants.length && !commitments.length && !pastTenants.length && !openTasks.length) {
         block.innerHTML = "";
         return;
       }
@@ -2049,6 +2106,7 @@
       const snapshotChips = [];
       if (units.length) snapshotChips.push(units.length + " unit" + (units.length === 1 ? "" : "s"));
       if (tenants.length) snapshotChips.push(tenants.length + " current tenant" + (tenants.length === 1 ? "" : "s"));
+      if (pastTenants.length) snapshotChips.push(pastTenants.length + " past tenant" + (pastTenants.length === 1 ? "" : "s"));
       if (openTasks.length) snapshotChips.push(openTasks.length + " open task" + (openTasks.length === 1 ? "" : "s"));
 
       const tenantRowsHtml = tenants.map(function (person) {
@@ -2061,6 +2119,16 @@
           <div class="detail-row">
             <span>${UnganiClientShared.safe(person.full_name || "Tenant")}</span>
             <span class="ungani-small">${UnganiClientShared.safe(person.phone || "No phone")} · ${UnganiClientShared.safe(range)}</span>
+          </div>
+        `;
+      }).join("");
+
+      const pastTenantRowsHtml = pastTenants.map(function (t) {
+        const range = (t.startDate ? UnganiClientShared.formatDate(t.startDate) : "—") + " to " + (t.endDate ? UnganiClientShared.formatDate(t.endDate) : "—");
+        return `
+          <div class="detail-row">
+            <span>${UnganiClientShared.safe(t.name)}</span>
+            <span class="ungani-small">${UnganiClientShared.safe(range)}</span>
           </div>
         `;
       }).join("");
@@ -2102,6 +2170,13 @@
           <div class="ungani-card" style="margin-top:18px;">
             <div class="ungani-section-title"><div><h3>Current Tenant${tenants.length === 1 ? "" : "s"}</h3></div></div>
             ${tenantRowsHtml}
+          </div>
+        ` : ""}
+
+        ${pastTenants.length ? `
+          <div class="ungani-card" style="margin-top:18px;">
+            <div class="ungani-section-title"><div><h3>Past Tenant${pastTenants.length === 1 ? "" : "s"}</h3></div></div>
+            ${pastTenantRowsHtml}
           </div>
         ` : ""}
       `;

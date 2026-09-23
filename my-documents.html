@@ -1070,7 +1070,7 @@
                 const folder = UnganiClientShared.getValue(row, ["folder_name", "category"], "");
 
                 return `
-                  <tr style="--accent:${UnganiClientShared.attr(statusAccent(status))};" data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="documents" onclick="openDocumentModal('${UnganiClientShared.attr(row.id)}')">
+                  <tr style="--accent:${UnganiClientShared.attr(statusAccent(status))};" data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="documents" onclick="openDocumentProfile('${UnganiClientShared.attr(row.id)}')">
                     <td>
                       ${UnganiClientShared.safe(title)}
                       <span class="row-sub">${UnganiClientShared.safe(folder || "No folder")}</span>
@@ -1262,6 +1262,61 @@
     function quickDocumentType(documentType) {
       openDocumentModal(null, { documentType: documentType });
       UnganiClientShared.showToast("Document type selected ✓");
+    }
+
+    // Document 360 - replaces the old direct-to-edit-modal row click.
+    // "Where This Document Is From" is visible in one place without opening
+    // the edit form first; Edit/Discuss/Delete stay as buttons inside the
+    // profile, wired to this page's own existing functions.
+    function openDocumentProfile(id) {
+      const row = documentRows.find(function (item) { return String(item.id) === String(id); });
+
+      if (!row) {
+        UnganiClientShared.showToast("Document not found.");
+        return;
+      }
+
+      UnganiClientShared.openUnganiDocumentProfile(currentContext, row, {
+        editFnName: "openDocumentModal",
+        discussFnName: "openDocumentDiscussionPanel",
+        deleteFnName: "deleteDocument",
+        openPersonFnName: "openDocumentLinkedPersonProfile",
+        openItemFnName: "openDocumentLinkedItemProfile"
+      });
+    }
+
+    // Generic Person/Organization 360 is reusable cross-page - this page
+    // doesn't keep its own people list, so it queries the one linked row
+    // directly rather than duplicating my-people.html's full dataset.
+    async function openDocumentLinkedPersonProfile(personId) {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("*")
+          .eq("id", personId)
+          .eq("tenant_id", currentContext.tenantId)
+          .maybeSingle();
+
+        if (!response.data) {
+          UnganiClientShared.showToast("Person not found.");
+          return;
+        }
+
+        if (response.data.is_organization) {
+          UnganiClientShared.openUnganiOrganizationProfile(currentContext, response.data, {});
+        } else {
+          UnganiClientShared.openUnganiPersonProfile(currentContext, response.data, {});
+        }
+      } catch (error) {
+        UnganiClientShared.showToast("Could not load person: " + (error.message || "Network error."));
+      }
+    }
+
+    // Item's own profile panel is page-specific (business-type field sets,
+    // maintenance log, etc. live in my-items.html) rather than duplicated
+    // here - reuses the existing ?highlight=<id> deep-link pattern instead.
+    function openDocumentLinkedItemProfile(itemId) {
+      window.location.href = "my-items.html?highlight=" + encodeURIComponent(itemId);
     }
 
     function openDocumentModal(id, presetValues) {
