@@ -700,6 +700,13 @@
           </div>
 
           <div class="field full">
+            <div id="institutionSubTypeContainer" class="sub-section-box" style="display:none;">
+              <p>What type of institution is this? This sets up your dashboard for how your institution actually runs, and can't be changed later without contacting support.</p>
+              <div id="institutionSubTypeOptions"></div>
+            </div>
+          </div>
+
+          <div class="field full">
             <label for="notes">What would you like to manage first?</label>
             <textarea id="notes" placeholder="Example: money records, tasks, stock, documents, follow-ups..."></textarea>
           </div>
@@ -802,6 +809,8 @@
       optionsBox.innerHTML = "";
       container.classList.remove("show");
 
+      updateInstitutionSubType(key);
+
       if (!key || !window.UnganiBusinessConfig) return;
 
       const type = window.UnganiBusinessConfig.TYPES.find(function (t) { return t.key === key; });
@@ -827,6 +836,59 @@
       });
 
       container.classList.add("show");
+    }
+
+    // Education vertical Phase 1: a mandatory, single-choice sub-type
+    // (Primary School / High School / College) for the "school" business
+    // type - deliberately NOT the same mechanism as the multi-select
+    // sections checkboxes above (those are additive and editable later in
+    // Settings; this is a one-time structural choice locked in at
+    // registration, since Primary/High/College need genuinely different
+    // downstream dashboard content in a later phase). Radio buttons,
+    // conditionally revealed the same way updateSubSections() reveals its
+    // checkboxes.
+    const INSTITUTION_SUB_TYPES = [
+      { key: "primary_school", label: "Primary School" },
+      { key: "high_school", label: "High School" },
+      { key: "college", label: "College / University" }
+    ];
+
+    function updateInstitutionSubType(key) {
+      const container = document.getElementById("institutionSubTypeContainer");
+      const optionsBox = document.getElementById("institutionSubTypeOptions");
+
+      optionsBox.innerHTML = "";
+      container.style.display = "none";
+
+      if (key !== "school") return;
+
+      INSTITUTION_SUB_TYPES.forEach(function (subType, index) {
+        const wrap = document.createElement("div");
+        wrap.className = "sub-section-option";
+
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "institutionSubType";
+        input.id = "institutionSubType_" + index;
+        input.value = subType.key;
+        input.dataset.label = subType.label;
+
+        const label = document.createElement("label");
+        label.setAttribute("for", input.id);
+        label.textContent = subType.label;
+
+        wrap.appendChild(input);
+        wrap.appendChild(label);
+        optionsBox.appendChild(wrap);
+      });
+
+      container.style.display = "block";
+    }
+
+    function getSelectedInstitutionSubType() {
+      const checked = document.querySelector("#institutionSubTypeOptions input[type='radio']:checked");
+      if (!checked) return null;
+      return { key: checked.value, label: checked.dataset.label };
     }
 
     function getSelectedSubSections() {
@@ -867,9 +929,19 @@
       let businessType = value("businessType");
       const notes = value("notes");
       const selectedSections = getSelectedSubSections();
+      const institutionSubType = getSelectedInstitutionSubType();
 
       if (!businessName || !contactName || !phone || !email || !password || !confirmPassword || !businessType) {
         showStatus("Please fill in all required fields.", "error");
+        return;
+      }
+
+      const businessTypeSelect = document.getElementById("businessType");
+      const businessTypeSelectedOption = businessTypeSelect.options[businessTypeSelect.selectedIndex];
+      const businessTypeKeyChosen = businessTypeSelectedOption ? businessTypeSelectedOption.dataset.key : "";
+
+      if (businessTypeKeyChosen === "school" && !institutionSubType) {
+        showStatus("Please select what type of institution this is (Primary School, High School, or College/University).", "error");
         return;
       }
 
@@ -958,6 +1030,7 @@
         notes,
         authUserId,
         selectedSections,
+        institutionSubType,
         referredByPartnerId
       });
 
@@ -1066,6 +1139,8 @@
         business_type: data.businessType,
         business_type_key: makeBusinessKey(data.businessType),
         selected_sections: data.selectedSections && data.selectedSections.length ? data.selectedSections : null,
+        business_sub_type: data.institutionSubType ? data.institutionSubType.label : null,
+        business_sub_type_key: data.institutionSubType ? data.institutionSubType.key : null,
         status: "pending",
         notes: data.notes,
         auth_user_id: data.authUserId,
