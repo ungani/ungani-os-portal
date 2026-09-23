@@ -4748,6 +4748,11 @@
         <div class="ungani-section-title"><div><h3>Documents</h3></div></div>
         ${documentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No documents on file.</p>`}
       </div>
+
+      <p class="profile-footer-meta">
+        Added ${safe(formatDateTime(personRow.created_at))}
+        ${personRow.updated_at ? " · Last updated " + safe(formatDateTime(personRow.updated_at)) : ""}
+      </p>
     `;
 
     if (window.lucide && typeof window.lucide.createIcons === "function") {
@@ -4952,6 +4957,11 @@
         <div class="ungani-section-title"><div><h3>Documents</h3></div></div>
         ${documentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No documents on file.</p>`}
       </div>
+
+      <p class="profile-footer-meta">
+        Added ${safe(formatDateTime(orgRow.created_at))}
+        ${orgRow.updated_at ? " · Last updated " + safe(formatDateTime(orgRow.updated_at)) : ""}
+      </p>
     `;
 
     if (window.lucide && typeof window.lucide.createIcons === "function") {
@@ -5087,6 +5097,11 @@
           <p class="ungani-small" style="white-space:pre-wrap;">${safe(getValue(docRow, ["notes", "description"], ""))}</p>
         </div>
       ` : ""}
+
+      <p class="profile-footer-meta">
+        Added ${safe(formatDateTime(docRow.created_at))}
+        ${docRow.updated_at ? " · Last updated " + safe(formatDateTime(docRow.updated_at)) : ""}
+      </p>
     `;
 
     if (window.lucide && typeof window.lucide.createIcons === "function") {
