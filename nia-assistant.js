@@ -1438,6 +1438,16 @@
         .nia-help-btn.nia-above-bottom-nav {
           bottom: 218px;
         }
+
+        /* client.html's quickadd-fab is 56px tall, bottom:18px - 84px
+           clears it with the same gap the bottom-nav variant above uses. */
+        .nia-fab.nia-above-quickadd-fab {
+          bottom: 84px;
+        }
+
+        .nia-help-btn.nia-above-quickadd-fab {
+          bottom: 152px;
+        }
       }
     `;
 
@@ -1474,9 +1484,20 @@
     // it here rather than in CSS alone (CSS can't detect DOM presence).
     const aboveBottomNav = document.querySelector(".ungani-bottom-nav") ? " nia-above-bottom-nav" : "";
 
+    // Regression fix: client.html (the only page with no .ungani-bottom-nav)
+    // has its own .quickadd-fab at bottom:18px/right:18px/z-index:85 - almost
+    // exactly on top of .nia-fab's plain mobile position (bottom:16px/
+    // right:16px). This was invisible while .nia-fab sat at z-index 99998
+    // (rendered above everything, including quickadd-fab), and only became
+    // a visible overlap once the modal-overlap fix above lowered .nia-fab
+    // to z-index 63 - quickadd-fab's z-index 85 now wins the stack and
+    // covers it. Same "lift above the other floating button" treatment as
+    // nia-above-bottom-nav, just for the other shell.
+    const aboveQuickAddFab = document.querySelector(".quickadd-fab") ? " nia-above-quickadd-fab" : "";
+
     const btn = document.createElement("button");
     btn.id = "niaFabBtn";
-    btn.className = "nia-fab" + aboveBottomNav;
+    btn.className = "nia-fab" + aboveBottomNav + aboveQuickAddFab;
     btn.type = "button";
     btn.title = "Nia — Your UNGANI Business Assistant";
     btn.innerHTML = '<span class="nia-avatar-graphic nia-fab-avatar">' + NIA_AVATAR_IMG + '</span>' + (hasSeenNia() ? "" : '<span class="nia-fab-dot"></span>');
@@ -1499,7 +1520,7 @@
     if (state.surface !== "admin") {
       const helpBtn = document.createElement("button");
       helpBtn.id = "niaHelpBtn";
-      helpBtn.className = "nia-help-btn" + aboveBottomNav;
+      helpBtn.className = "nia-help-btn" + aboveBottomNav + aboveQuickAddFab;
       helpBtn.type = "button";
       helpBtn.title = "Take a guided tour of UNGANI OS";
       helpBtn.setAttribute("aria-label", "Take a guided tour of UNGANI OS");
