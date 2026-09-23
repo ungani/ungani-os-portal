@@ -139,11 +139,18 @@ export default async function handler(req, res) {
 
     const todayStr = todayISO();
 
+    // Scalability fix: this used to be an unordered .limit(1000), so which
+    // 1000 rows got processed (and which got silently dropped past the cap)
+    // was arbitrary. Ordering oldest-due-first makes the cap deterministic -
+    // the most overdue tasks are always processed first, and anything
+    // pushed past the cap is picked up on tomorrow's run instead of being
+    // permanently skipped.
     const { data: candidateTasks, error: tasksError } = await supabaseAdmin
       .from("tasks")
       .select("id, tenant_id, task_title, due_date, status, assigned_to_team_member_id, assigned_to_is_owner")
       .lt("due_date", todayStr)
       .not("due_date", "is", null)
+      .order("due_date", { ascending: true })
       .limit(1000);
 
     if (tasksError) {
@@ -151,51 +158,95 @@ export default async function handler(req, res) {
     }
 
     const overdueTasks = (candidateTasks || []).filter((task) => isOverdueAndOpen(task, todayStr));
+    const eligibleTasks = overdueTasks.filter((task) => task.assigned_to_is_owner || task.assigned_to_team_member_id);
 
-    const results = [];
+    // Scalability fix: this whole block used to do up to 4 sequential DB
+    // round-trips PER overdue task (owner lookup or team-member lookup,
+    // alreadySent check, subscriptions fetch, markSent insert) - at
+    // thousands of tenants with hundreds of overdue tasks, that's
+    // thousands of awaited queries in one serverless invocation, risking a
+    // function timeout that silently leaves the remainder unprocessed
+    // until tomorrow. Replaced with a handful of bulk queries keyed by the
+    // distinct tenant/team-member/task/user ids actually involved.
 
-    for (const task of overdueTasks) {
-      if (!task.assigned_to_is_owner && !task.assigned_to_team_member_id) continue;
+    const ownerTenantIds = [...new Set(eligibleTasks.filter((t) => t.assigned_to_is_owner).map((t) => t.tenant_id))];
+    const teamMemberIds = [...new Set(eligibleTasks.filter((t) => !t.assigned_to_is_owner && t.assigned_to_team_member_id).map((t) => t.assigned_to_team_member_id))];
 
+    const ownerAuthByTenant = {};
+    if (ownerTenantIds.length > 0) {
+      const { data: ownerRegs } = await supabaseAdmin
+        .from("registrations")
+        .select("tenant_id, auth_user_id, created_at")
+        .in("tenant_id", ownerTenantIds)
+        .in("status", ["approved", "active", "trial"])
+        .order("created_at", { ascending: false });
+
+      for (const reg of ownerRegs || []) {
+        if (!ownerAuthByTenant[reg.tenant_id] && reg.auth_user_id) {
+          ownerAuthByTenant[reg.tenant_id] = reg.auth_user_id;
+        }
+      }
+    }
+
+    const teamMembersById = {};
+    if (teamMemberIds.length > 0) {
+      const { data: teamMembers } = await supabaseAdmin
+        .from("ungani_team_members")
+        .select("id, tenant_id, auth_user_id")
+        .in("id", teamMemberIds);
+
+      for (const tm of teamMembers || []) teamMembersById[tm.id] = tm;
+    }
+
+    const resolvedTasks = [];
+    for (const task of eligibleTasks) {
       let assigneeUserId = null;
 
       if (task.assigned_to_is_owner) {
-        const { data: reg } = await supabaseAdmin
-          .from("registrations")
-          .select("auth_user_id")
-          .eq("tenant_id", task.tenant_id)
-          .in("status", ["approved", "active", "trial"])
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        assigneeUserId = reg?.auth_user_id || null;
+        assigneeUserId = ownerAuthByTenant[task.tenant_id] || null;
       } else if (task.assigned_to_team_member_id) {
-        const { data: tm } = await supabaseAdmin
-          .from("ungani_team_members")
-          .select("auth_user_id")
-          .eq("id", task.assigned_to_team_member_id)
-          .eq("tenant_id", task.tenant_id)
-          .maybeSingle();
-
-        assigneeUserId = tm?.auth_user_id || null;
+        const tm = teamMembersById[task.assigned_to_team_member_id];
+        assigneeUserId = (tm && tm.tenant_id === task.tenant_id) ? tm.auth_user_id : null;
       }
 
-      if (!assigneeUserId) continue;
+      if (assigneeUserId) resolvedTasks.push({ task, assigneeUserId });
+    }
 
-      const recipientScope = assigneeUserId;
+    let alreadySentSet = new Set();
+    if (resolvedTasks.length > 0) {
+      const taskIds = [...new Set(resolvedTasks.map((r) => r.task.id))];
+      const { data: sentRows } = await supabaseAdmin
+        .from(SENT_LOG_TABLE)
+        .select("related_id, recipient_scope")
+        .eq("event_type", "task_overdue")
+        .in("related_id", taskIds);
 
-      if (await alreadySent(supabaseAdmin, "task_overdue", task.id, recipientScope)) {
-        continue;
-      }
+      alreadySentSet = new Set((sentRows || []).map((r) => r.related_id + "::" + r.recipient_scope));
+    }
 
-      const { data: subscriptions } = await supabaseAdmin
+    const toNotify = resolvedTasks.filter((r) => !alreadySentSet.has(r.task.id + "::" + r.assigneeUserId));
+
+    const subsByUser = {};
+    const assigneeIds = [...new Set(toNotify.map((r) => r.assigneeUserId))];
+    if (assigneeIds.length > 0) {
+      const { data: allSubs } = await supabaseAdmin
         .from(SUBSCRIPTIONS_TABLE)
-        .select("id, endpoint, p256dh, auth_key")
-        .eq("auth_user_id", assigneeUserId);
+        .select("id, endpoint, p256dh, auth_key, auth_user_id")
+        .in("auth_user_id", assigneeIds);
 
-      if (!subscriptions || subscriptions.length === 0) {
-        await markSent(supabaseAdmin, "task_overdue", task.id, recipientScope);
+      for (const sub of allSubs || []) {
+        (subsByUser[sub.auth_user_id] = subsByUser[sub.auth_user_id] || []).push(sub);
+      }
+    }
+
+    const results = [];
+    const sentLogInserts = [];
+
+    for (const { task, assigneeUserId } of toNotify) {
+      const subscriptions = subsByUser[assigneeUserId] || [];
+
+      if (subscriptions.length === 0) {
+        sentLogInserts.push({ event_type: "task_overdue", related_id: task.id, recipient_scope: assigneeUserId });
         continue;
       }
 
@@ -207,9 +258,13 @@ export default async function handler(req, res) {
       });
 
       const sendResults = await sendToSubscriptions(supabaseAdmin, subscriptions, payload);
-      await markSent(supabaseAdmin, "task_overdue", task.id, recipientScope);
+      sentLogInserts.push({ event_type: "task_overdue", related_id: task.id, recipient_scope: assigneeUserId });
 
       results.push({ taskId: task.id, sent: sendResults.filter((r) => r.ok).length });
+    }
+
+    if (sentLogInserts.length > 0) {
+      await supabaseAdmin.from(SENT_LOG_TABLE).insert(sentLogInserts);
     }
 
     return json(res, 200, {

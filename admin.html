@@ -811,6 +811,12 @@
     let users = [];
     let registrationsSubscription = null;
     let isBusy = false;
+    // Platform-wide exact counts for the metrics grid, kept independent of
+    // the (bounded, display-only) registrations/tenants arrays below - so
+    // the numbers stay accurate even once real row counts exceed the
+    // display limit at higher tenant volumes.
+    let registrationMetricCounts = { pending: 0, approved: 0, rejected: 0, withLogin: 0, withoutLogin: 0 };
+    let tenantsMetricCount = 0;
 
     var pageMainHtml = `
       <section class="card hero">
@@ -1224,19 +1230,41 @@
     async function loadPageData() {
       showToast("Loading registrations...");
 
-      const [registrationResponse, tenantResponse, userResponse] = await Promise.all([
+      // Scalability fix: this page used to pull the ENTIRE registrations,
+      // tenants, and users tables (select("*"), no limit) on every load AND
+      // on every realtime change to registrations platform-wide - at
+      // thousands of tenants that's an unbounded, ever-growing payload on
+      // every admin page view. The row fetches below are now capped
+      // (display/search still works normally at any scale seen so far);
+      // the metrics grid's counts are sourced from separate exact-count
+      // queries so they stay correct even past the display cap.
+      const DISPLAY_ROW_CAP = 5000;
+
+      const [
+        registrationResponse, tenantResponse, userResponse,
+        pendingCount, approvedCount, rejectedCount, withLoginCount, withoutLoginCount, tenantsCountRes
+      ] = await Promise.all([
         supabaseClient
           .from("registrations")
           .select("*")
-          .order("created_at", { ascending: false }),
+          .order("created_at", { ascending: false })
+          .limit(DISPLAY_ROW_CAP),
         supabaseClient
           .from("tenants")
           .select("*")
-          .order("created_at", { ascending: false }),
+          .order("created_at", { ascending: false })
+          .limit(DISPLAY_ROW_CAP),
         supabaseClient
           .from("users")
           .select("*")
           .order("created_at", { ascending: false })
+          .limit(DISPLAY_ROW_CAP),
+        supabaseClient.from("registrations").select("id", { count: "exact", head: true }).or("status.eq.pending,status.is.null"),
+        supabaseClient.from("registrations").select("id", { count: "exact", head: true }).eq("status", "approved"),
+        supabaseClient.from("registrations").select("id", { count: "exact", head: true }).eq("status", "rejected"),
+        supabaseClient.from("registrations").select("id", { count: "exact", head: true }).not("auth_user_id", "is", null),
+        supabaseClient.from("registrations").select("id", { count: "exact", head: true }).is("auth_user_id", null),
+        supabaseClient.from("tenants").select("id", { count: "exact", head: true })
       ]);
 
       if (registrationResponse.error) {
@@ -1253,6 +1281,15 @@
 
       users = userResponse.data || [];
 
+      registrationMetricCounts = {
+        pending: pendingCount.error ? registrations.filter(function (row) { return getStatus(row) === "pending"; }).length : (pendingCount.count || 0),
+        approved: approvedCount.error ? registrations.filter(function (row) { return getStatus(row) === "approved"; }).length : (approvedCount.count || 0),
+        rejected: rejectedCount.error ? registrations.filter(function (row) { return getStatus(row) === "rejected"; }).length : (rejectedCount.count || 0),
+        withLogin: withLoginCount.error ? registrations.filter(function (row) { return !!getValue(row, ["auth_user_id"], ""); }).length : (withLoginCount.count || 0),
+        withoutLogin: withoutLoginCount.error ? registrations.filter(function (row) { return !getValue(row, ["auth_user_id"], ""); }).length : (withoutLoginCount.count || 0)
+      };
+      tenantsMetricCount = tenantsCountRes.error ? tenants.length : (tenantsCountRes.count || 0);
+
       renderPage();
       showToast("Admin approvals updated ✓");
     }
@@ -1264,25 +1301,11 @@
     }
 
     function renderMetrics() {
-      const pending = registrations.filter(function (row) {
-        return getStatus(row) === "pending";
-      }).length;
-
-      const approved = registrations.filter(function (row) {
-        return getStatus(row) === "approved";
-      }).length;
-
-      const rejected = registrations.filter(function (row) {
-        return getStatus(row) === "rejected";
-      }).length;
-
-      const withLogin = registrations.filter(function (row) {
-        return !!getValue(row, ["auth_user_id"], "");
-      }).length;
-
-      const withoutLogin = registrations.filter(function (row) {
-        return !getValue(row, ["auth_user_id"], "");
-      }).length;
+      const pending = registrationMetricCounts.pending;
+      const approved = registrationMetricCounts.approved;
+      const rejected = registrationMetricCounts.rejected;
+      const withLogin = registrationMetricCounts.withLogin;
+      const withoutLogin = registrationMetricCounts.withoutLogin;
 
       const metrics = [
         ["Pending", pending, "Awaiting admin approval", pending > 0 ? "orange" : "green"],
@@ -1290,7 +1313,7 @@
         ["Rejected", rejected, "Rejected or invalid requests", rejected > 0 ? "red" : "blue"],
         ["With Login", withLogin, "Registered using email + password", "green"],
         ["Without Login", withoutLogin, "Old records that need re-registration", withoutLogin > 0 ? "red" : "green"],
-        ["Approved Clients", tenants.length, "Tenant/client accounts created", "blue"]
+        ["Approved Clients", tenantsMetricCount, "Tenant/client accounts created", "blue"]
       ];
 
       document.getElementById("metricsGrid").innerHTML = metrics.map(function (item) {

@@ -3196,25 +3196,26 @@
       });
 
       safeDataFetch(async function() {
+        var nowIso = new Date().toISOString();
         var fetches = await Promise.all([
           supabaseClient.from('tenants').select('status', { count: 'exact', head: true }).eq('status', 'pending'),
           supabaseClient.from('support_issues').select('status', { count: 'exact', head: true }).not('status', 'in', '("resolved","closed")'),
-          supabaseClient.from('tasks').select('status,due_date').neq('status', 'completed')
+          // Scalability fix: this used to fetch every non-completed task
+          // platform-wide (status+due_date, unbounded) just to count overdue
+          // ones in JS - at 10,000 tenants that's potentially hundreds of
+          // thousands of rows to the browser on every dashboard load. Same
+          // overdue logic (status='overdue' OR due_date passed, excluding
+          // completed), expressed as a zero-payload indexed COUNT instead.
+          supabaseClient.from('tasks').select('id', { count: 'exact', head: true })
+            .neq('status', 'completed')
+            .or('status.eq.overdue,due_date.lt.' + nowIso)
         ]);
 
         var pendingReg = fetches[0], openTickets = fetches[1], activeTasks = fetches[2];
 
         document.getElementById('todayRegistrations').textContent = (pendingReg.count !== null && pendingReg.count !== undefined) ? pendingReg.count : 0;
         document.getElementById('todaySupport').textContent = (openTickets.count !== null && openTickets.count !== undefined) ? openTickets.count : 0;
-
-        if (activeTasks.data) {
-          var overdue = activeTasks.data.filter(function(t) {
-            return t.status === 'overdue' || (t.due_date && new Date(t.due_date) < new Date() && t.status !== 'completed');
-          }).length;
-          document.getElementById('todayTasks').textContent = overdue;
-        } else {
-          document.getElementById('todayTasks').textContent = 0;
-        }
+        document.getElementById('todayTasks').textContent = (activeTasks.count !== null && activeTasks.count !== undefined) ? activeTasks.count : 0;
       }, function() {
         document.getElementById('todayRegistrations').textContent = 0;
         document.getElementById('todaySupport').textContent = 0;
@@ -4619,10 +4620,17 @@
       safeDataFetch(async function () {
         var sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
+        var nowIsoExp = new Date().toISOString();
         var results = await Promise.all([
           supabaseClient.rpc('get_admin_ungani_billing_page_data'),
-          supabaseClient.from('business_items').select('*').limit(10000),
-          supabaseClient.from('tasks').select('status,due_date').neq('status', 'completed'),
+          supabaseClient.from('business_items').select('status,item_status,asset_status,stock_status,quantity,custom_fields,item_type,asset_type,stock_type,type,category,tenant_id').limit(10000),
+          // Scalability fix: was an unbounded status+due_date fetch across
+          // every tenant's non-completed tasks, filtered in JS. Same
+          // overdue definition (status='overdue' OR due_date passed,
+          // excluding completed), expressed as a zero-payload indexed COUNT.
+          supabaseClient.from('tasks').select('id', { count: 'exact', head: true })
+            .neq('status', 'completed')
+            .or('status.eq.overdue,due_date.lt.' + nowIsoExp),
           supabaseClient.from('ungani_audit_log').select('id', { count: 'exact', head: true }).is('actor_tenant_id', null).gte('created_at', sevenDaysAgo),
           supabaseClient.from('tenants').select('id, created_at, stock_tracking_enabled')
         ]);
@@ -4636,20 +4644,14 @@
         // perfect factor score instead of being excluded from the score.
         var billingOk = !!(billingRes && !billingRes.error && billingRes.data && billingRes.data.ok);
         var itemsOk = !!(itemsRes && !itemsRes.error);
-        var tasksOk = !!(tasksRes && !tasksRes.error && Array.isArray(tasksRes.data));
+        var tasksOk = !!(tasksRes && !tasksRes.error && typeof tasksRes.count === 'number');
         var auditOk = !!(auditRes && !auditRes.error && typeof auditRes.count === 'number');
         var tenantsOk = !!(tenantsRes && !tenantsRes.error);
 
         var billing = processBillingRecords(billingOk ? billingRes.data.billing_records : []);
         var lowStockCount = itemsOk ? countLowStockItems(itemsRes.data, tenantsOk ? tenantsRes.data : []) : 0;
 
-        var overdueTasksCount = 0;
-        if (tasksOk) {
-          var todayDate = new Date();
-          overdueTasksCount = tasksRes.data.filter(function (t) {
-            return t.status === 'overdue' || (t.due_date && new Date(t.due_date) < todayDate && t.status !== 'completed');
-          }).length;
-        }
+        var overdueTasksCount = tasksOk ? tasksRes.count : 0;
 
         var staffActivityCount = auditOk ? auditRes.count : 0;
         var growth = tenantsOk ? processGrowth(tenantsRes.data) : { thisMonth: 0, lastMonth: 0 };
