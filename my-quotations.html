@@ -117,7 +117,7 @@
       try {
         const response = await currentContext.supabaseClient
           .from("client_people")
-          .select("id, full_name, person_type, phone, email")
+          .select("id, full_name, person_type, phone, email, address, kra_pin, parent_organization_id")
           .eq("tenant_id", currentContext.tenantId)
           .is("deleted_at", null)
           .order("full_name")
@@ -687,6 +687,11 @@
             </div>
 
             <div>
+              <label for="quotationCustomerPin">Customer KRA PIN (optional)</label>
+              <input type="text" id="quotationCustomerPin" placeholder="P051234567X" value="${quotation ? UnganiClientShared.attr(quotation.customer_pin || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
               <label for="quotationDeliveryAddress">Delivery address (optional)</label>
               <input type="text" id="quotationDeliveryAddress" value="${quotation ? UnganiClientShared.attr(quotation.delivery_address || "") : ""}" ${isLocked ? "disabled" : ""} />
             </div>
@@ -792,8 +797,14 @@
       const person = customerOptions.find(function (item) { return String(item.id) === String(select.value); });
 
       if (person) {
+        const org = person.parent_organization_id
+          ? customerOptions.find(function (item) { return String(item.id) === String(person.parent_organization_id); })
+          : null;
+
         document.getElementById("quotationCustomerName").value = person.full_name || "";
         document.getElementById("quotationCustomerContact").value = person.phone || person.email || "";
+        document.getElementById("quotationCustomerAddress").value = person.address || (org && org.address) || "";
+        document.getElementById("quotationCustomerPin").value = person.kra_pin || (org && org.kra_pin) || "";
       }
     }
 
@@ -997,6 +1008,7 @@
             p_customer_name: customerName,
             p_customer_address: UnganiClientShared.value("quotationCustomerAddress") || null,
             p_customer_contact: UnganiClientShared.value("quotationCustomerContact") || null,
+            p_customer_pin: UnganiClientShared.value("quotationCustomerPin") || null,
             p_valid_until: UnganiClientShared.value("quotationValidUntil") || null,
             p_delivery_address: UnganiClientShared.value("quotationDeliveryAddress") || null,
             p_delivery_date: UnganiClientShared.value("quotationDeliveryDate") || null,
@@ -1264,7 +1276,8 @@
                 <div class="invoice-party-body">
                   <strong>${UnganiClientShared.safe(quotation.customer_name)}</strong><br />
                   ${quotation.customer_address ? UnganiClientShared.safe(quotation.customer_address).replace(/\n/g, "<br />") + "<br />" : ""}
-                  ${quotation.customer_contact ? UnganiClientShared.safe(quotation.customer_contact) : ""}
+                  ${quotation.customer_contact ? UnganiClientShared.safe(quotation.customer_contact) + "<br />" : ""}
+                  ${quotation.customer_pin ? "PIN: " + UnganiClientShared.safe(quotation.customer_pin) : ""}
                 </div>
               </div>
 

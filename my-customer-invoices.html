@@ -116,7 +116,7 @@
       try {
         const response = await currentContext.supabaseClient
           .from("client_people")
-          .select("id, full_name, person_type, phone, email")
+          .select("id, full_name, person_type, phone, email, address, kra_pin, parent_organization_id")
           .eq("tenant_id", currentContext.tenantId)
           .is("deleted_at", null)
           .order("full_name")
@@ -489,6 +489,11 @@
             </div>
 
             <div>
+              <label for="invoiceCustomerPin">Customer KRA PIN (optional)</label>
+              <input type="text" id="invoiceCustomerPin" placeholder="P051234567X" value="${invoice ? UnganiClientShared.attr(invoice.customer_pin || "") : ""}" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
               <label for="invoiceDeliveryAddress">Delivery address (optional)</label>
               <input type="text" id="invoiceDeliveryAddress" value="${invoice ? UnganiClientShared.attr(invoice.delivery_address || "") : ""}" ${isLocked ? "disabled" : ""} />
             </div>
@@ -618,8 +623,18 @@
       const person = customerOptions.find(function (item) { return String(item.id) === String(select.value); });
 
       if (person) {
+        // If this person is linked to an Organization, its saved
+        // address/PIN cover cases where the person record itself has
+        // neither (a contact person invoiced under their employer's
+        // details) - the person's own values still win when present.
+        const org = person.parent_organization_id
+          ? customerOptions.find(function (item) { return String(item.id) === String(person.parent_organization_id); })
+          : null;
+
         document.getElementById("invoiceCustomerName").value = person.full_name || "";
         document.getElementById("invoiceCustomerContact").value = person.phone || person.email || "";
+        document.getElementById("invoiceCustomerAddress").value = person.address || (org && org.address) || "";
+        document.getElementById("invoiceCustomerPin").value = person.kra_pin || (org && org.kra_pin) || "";
       }
     }
 
@@ -822,6 +837,7 @@
             p_customer_name: customerName,
             p_customer_address: UnganiClientShared.value("invoiceCustomerAddress") || null,
             p_customer_contact: UnganiClientShared.value("invoiceCustomerContact") || null,
+            p_customer_pin: UnganiClientShared.value("invoiceCustomerPin") || null,
             p_due_date: UnganiClientShared.value("invoiceDueDate") || null,
             p_delivery_address: UnganiClientShared.value("invoiceDeliveryAddress") || null,
             p_delivery_date: UnganiClientShared.value("invoiceDeliveryDate") || null,
@@ -1106,7 +1122,8 @@
                 <div class="invoice-party-body">
                   <strong>${UnganiClientShared.safe(invoice.customer_name)}</strong><br />
                   ${invoice.customer_address ? UnganiClientShared.safe(invoice.customer_address).replace(/\n/g, "<br />") + "<br />" : ""}
-                  ${invoice.customer_contact ? UnganiClientShared.safe(invoice.customer_contact) : ""}
+                  ${invoice.customer_contact ? UnganiClientShared.safe(invoice.customer_contact) + "<br />" : ""}
+                  ${invoice.customer_pin ? "PIN: " + UnganiClientShared.safe(invoice.customer_pin) : ""}
                 </div>
               </div>
 

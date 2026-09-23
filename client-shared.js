@@ -4788,7 +4788,7 @@
 
     const allRelevantIds = [orgId].concat(linkedPeople.map(function (p) { return p.id; }));
 
-    const [paymentsRes, documentsRes, commitmentsRes] = await Promise.all([
+    const [paymentsRes, documentsRes, commitmentsRes, invoicesRes, quotationsRes] = await Promise.all([
       supabaseClient
         .from("transactions")
         .select("id, transaction_date, transaction_type, category, category_name, description, amount, amount_kes, currency, status, payment_method, related_person_id")
@@ -4806,6 +4806,24 @@
       supabaseClient
         .rpc("get_my_ungani_commitments")
         .then(function (res) { return res; })
+        .catch(function (error) { return { error: error }; }),
+      supabaseClient
+        .from("ungani_customer_invoices")
+        .select("id, invoice_number, customer_person_id, total_amount, amount_paid, currency, status, issue_date")
+        .eq("tenant_id", tenantId)
+        .in("customer_person_id", allRelevantIds)
+        .is("deleted_at", null)
+        .order("issue_date", { ascending: false })
+        .then(function (res) { return res; })
+        .catch(function (error) { return { error: error }; }),
+      supabaseClient
+        .from("ungani_quotations")
+        .select("id, quotation_number, customer_person_id, total_amount, currency, status, issue_date")
+        .eq("tenant_id", tenantId)
+        .in("customer_person_id", allRelevantIds)
+        .is("deleted_at", null)
+        .order("issue_date", { ascending: false })
+        .then(function (res) { return res; })
         .catch(function (error) { return { error: error }; })
     ]);
 
@@ -4819,7 +4837,9 @@
       linkedPeople: linkedPeople,
       payments: (paymentsRes && paymentsRes.data) || [],
       documents: (documentsRes && documentsRes.data) || [],
-      commitments: allCommitments.filter(function (c) { return relevantIdStrings.indexOf(String(c.person_id || "")) !== -1; })
+      commitments: allCommitments.filter(function (c) { return relevantIdStrings.indexOf(String(c.person_id || "")) !== -1; }),
+      invoices: (invoicesRes && !invoicesRes.error && invoicesRes.data) || [],
+      quotations: (quotationsRes && !quotationsRes.error && quotationsRes.data) || []
     };
   }
 
@@ -4909,6 +4929,26 @@
       `;
     }).join("");
 
+    const invoiceRowsHtml = (connections.invoices || []).map(function (inv) {
+      const whoName = nameById[String(inv.customer_person_id)] || "Unknown";
+      return `
+        <div class="detail-row">
+          <span>${safe(inv.invoice_number)}</span>
+          <span class="ungani-small">${safe(formatDate(inv.issue_date))} · ${safe(formatKES(Number(inv.total_amount || 0)))} · ${safe(inv.status)} · ${safe(whoName)}</span>
+        </div>
+      `;
+    }).join("");
+
+    const quotationRowsHtml = (connections.quotations || []).map(function (q) {
+      const whoName = nameById[String(q.customer_person_id)] || "Unknown";
+      return `
+        <div class="detail-row">
+          <span>${safe(q.quotation_number)}</span>
+          <span class="ungani-small">${safe(formatDate(q.issue_date))} · ${safe(formatKES(Number(q.total_amount || 0)))} · ${safe(q.status)} · ${safe(whoName)}</span>
+        </div>
+      `;
+    }).join("");
+
     const commitmentRowsHtml = (connections.commitments || []).map(function (c) {
       const range = (c.start_date || c.end_date)
         ? (c.start_date ? formatDate(c.start_date) : "—") + " to " + (c.end_date ? formatDate(c.end_date) : "—")
@@ -4945,6 +4985,20 @@
         <div class="ungani-section-title"><div><h3>Payment History (all linked people)</h3></div></div>
         ${paymentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No payments recorded yet.</p>`}
       </div>
+
+      ${connections.invoices && connections.invoices.length ? `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title"><div><h3>Invoices (all linked people)</h3></div></div>
+          ${invoiceRowsHtml}
+        </div>
+      ` : ""}
+
+      ${connections.quotations && connections.quotations.length ? `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title"><div><h3>Quotations (all linked people)</h3></div></div>
+          ${quotationRowsHtml}
+        </div>
+      ` : ""}
 
       ${connections.commitments && connections.commitments.length ? `
         <div class="ungani-card" style="margin-top:18px;">
