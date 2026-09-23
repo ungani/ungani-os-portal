@@ -4550,7 +4550,7 @@
   // and any lease/membership/contract (Cluster 4). Same pattern as
   // loadLocationConnections() above.
   async function loadPersonConnections(supabaseClient, tenantId, personId) {
-    const [paymentsRes, documentsRes, commitmentsRes] = await Promise.all([
+    const [paymentsRes, documentsRes, commitmentsRes, eventsRes] = await Promise.all([
       supabaseClient
         .from("transactions")
         .select("id, transaction_date, transaction_type, category, category_name, description, amount, amount_kes, currency, status, payment_method")
@@ -4568,7 +4568,20 @@
       supabaseClient
         .rpc("get_my_ungani_commitments")
         .then(function (res) { return res; })
-        .catch(function (error) { return { error: error }; })
+        .catch(function (error) { return { error: error }; }),
+      // Phase 4d (Business Events 360, recurring-customer case): Trip uses
+      // client_person_id, Booking/Deployment/Appointment use
+      // customer_person_id (added later, deliberately a separate column
+      // rather than a rename - see sql/business-events-customer-person-id.sql)
+      // - both resolve to the same client_people row, so one OR clause
+      // covers a person's full event history regardless of which business
+      // type they came from.
+      supabaseClient
+        .from("business_events")
+        .select("id, event_title, title, event_type, type, status, event_date, date, start_date, created_at, rate, booking_total_amount, deployment_rate, appointment_amount, client_person_id, customer_person_id")
+        .eq("tenant_id", tenantId)
+        .or("client_person_id.eq." + personId + ",customer_person_id.eq." + personId)
+        .order("event_date", { ascending: false })
     ]);
 
     const allCommitments = (commitmentsRes && !commitmentsRes.error && commitmentsRes.data && commitmentsRes.data.ok === true)
@@ -4578,6 +4591,7 @@
     return {
       payments: (paymentsRes && paymentsRes.data) || [],
       documents: (documentsRes && documentsRes.data) || [],
+      events: (eventsRes && eventsRes.data) || [],
       commitments: allCommitments.filter(function (c) { return String(c.person_id || "") === String(personId); })
     };
   }
@@ -4681,6 +4695,23 @@
       `;
     }).join("");
 
+    // Phase 4d (Business Events 360, recurring-customer case): a person's
+    // Trips/Bookings/Deployments/Appointments in one place - the concrete
+    // payoff of the customer_person_id work (see loadPersonConnections()
+    // above for the OR-clause that pulls both Trip's client_person_id and
+    // the newer shared customer_person_id).
+    const eventRowsHtml = (connections.events || []).slice(0, 20).map(function (e) {
+      const title = getValue(e, ["event_title", "title"], "Calendar Activity");
+      const date = getValue(e, ["event_date", "date", "start_date"], "");
+      const amount = Number(e.booking_total_amount || e.deployment_rate || e.appointment_amount || e.rate || 0);
+      return `
+        <div class="detail-row">
+          <span>${safe(title)}</span>
+          <span class="ungani-small">${safe(formatDate(date))}${amount > 0 ? " · " + safe(formatKES(amount)) : ""}</span>
+        </div>
+      `;
+    }).join("");
+
     document.getElementById("unganiPanelBody").innerHTML = `
       <div class="ungani-card">
         <p class="ungani-small">${safe(personType)} · ${safe(status)}</p>
@@ -4698,6 +4729,13 @@
         <div class="ungani-section-title"><div><h3>Payment History</h3></div></div>
         ${paymentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No payments recorded yet.</p>`}
       </div>
+
+      ${connections.events && connections.events.length ? `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title"><div><h3>Bookings / Trips / Appointments</h3></div></div>
+          ${eventRowsHtml}
+        </div>
+      ` : ""}
 
       ${connections.commitments && connections.commitments.length ? `
         <div class="ungani-card" style="margin-top:18px;">

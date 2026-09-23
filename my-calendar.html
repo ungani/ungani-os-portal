@@ -72,6 +72,7 @@
     let isHealthcare = false;
     let isGym = false;
     let appointmentStaffOptions = [];
+    let eventCustomerOptions = [];
 
     window.addEventListener("load", function () {
       UnganiClientShared.initPage({
@@ -115,6 +116,13 @@
 
       if (isSalon || isHealthcare || isGym) {
         await loadAppointmentStaffOptions();
+      }
+
+      // Phase 4 (Business Events 360): customer_person_id, shared by
+      // Booking/Deployment/Appointment - Trip already has its own
+      // client_person_id via loadLogisticsTripOptions() above, untouched.
+      if (isBookingBusinessType || isSecurity || isCleaning || isSalon || isHealthcare || isGym) {
+        await loadEventCustomerOptions();
       }
 
       const titleEl = document.querySelector(".ungani-topbar h2");
@@ -396,6 +404,28 @@
       } catch (error) {
         console.warn("Appointment staff options skipped:", error.message);
         appointmentStaffOptions = [];
+      }
+    }
+
+    // Phase 4 (Business Events 360): "customer" isn't a single canonical
+    // person_type the way staff roles are (Tourism/Events/Photography/
+    // Hospitality/Security/Cleaning/Salon/Healthcare/Gym each use different
+    // tags - client, customer, guest, patient, member...), so this
+    // deliberately loads ALL active people for the tenant rather than
+    // filtering by person_type like the staff-side loaders above do.
+    async function loadEventCustomerOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, person_type")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("full_name", { ascending: true });
+
+        eventCustomerOptions = (response && response.data) || [];
+      } catch (error) {
+        console.warn("Event customer options skipped:", error.message);
+        eventCustomerOptions = [];
       }
     }
 
@@ -1088,6 +1118,16 @@
                     <label for="eventBookingDepositDueDate">Deposit Due Date</label>
                     <input id="eventBookingDepositDueDate" type="date" />
                   </div>
+
+                  <div>
+                    <label for="eventCustomerPerson">Customer (optional)</label>
+                    <select id="eventCustomerPerson">
+                      <option value="">— No customer —</option>
+                      ${eventCustomerOptions.map(function (person) {
+                        return `<option value="${UnganiClientShared.attr(person.id)}">${UnganiClientShared.safe(person.full_name)}</option>`;
+                      }).join("")}
+                    </select>
+                  </div>
                 ` : ""}
 
                 ${(isSecurity || isCleaning) ? `
@@ -1114,6 +1154,16 @@
                   <div>
                     <label for="eventDeploymentRate">Rate</label>
                     <input id="eventDeploymentRate" type="number" min="0" step="0.01" placeholder="Example: 3000" />
+                  </div>
+
+                  <div>
+                    <label for="eventCustomerPerson">Customer (optional)</label>
+                    <select id="eventCustomerPerson">
+                      <option value="">— No customer —</option>
+                      ${eventCustomerOptions.map(function (person) {
+                        return `<option value="${UnganiClientShared.attr(person.id)}">${UnganiClientShared.safe(person.full_name)}</option>`;
+                      }).join("")}
+                    </select>
                   </div>
                 ` : ""}
 
@@ -1163,6 +1213,16 @@
                   <div>
                     <label for="eventAppointmentAmount">${isGym ? "Session Amount" : "Appointment Amount"} (optional)</label>
                     <input id="eventAppointmentAmount" type="number" min="0" step="0.01" placeholder="Example: 1500" />
+                  </div>
+
+                  <div>
+                    <label for="eventCustomerPerson">${isGym ? "Member" : "Customer"} (optional)</label>
+                    <select id="eventCustomerPerson">
+                      <option value="">— No ${isGym ? "member" : "customer"} —</option>
+                      ${eventCustomerOptions.map(function (person) {
+                        return `<option value="${UnganiClientShared.attr(person.id)}">${UnganiClientShared.safe(person.full_name)}</option>`;
+                      }).join("")}
+                    </select>
                   </div>
                 ` : ""}
 
@@ -1346,6 +1406,7 @@
 
                     return isUnresolved ? `<button class="ungani-btn small green" onclick="markEventCompleted('${UnganiClientShared.attr(row.id)}')">Done</button>` : "";
                   })()}
+                  <button class="ungani-btn small dark" onclick="openEventProfile('${UnganiClientShared.attr(row.id)}')">Details</button>
                   <button class="ungani-btn small gold" onclick="editEvent('${UnganiClientShared.attr(row.id)}')">Edit</button>
                   <button class="ungani-btn small red" onclick="deleteEvent('${UnganiClientShared.attr(row.id)}')">Delete</button>
                 </div>
@@ -1614,6 +1675,13 @@
         payload.deployment_rate = UnganiClientShared.value("eventDeploymentRate") ? Number(UnganiClientShared.value("eventDeploymentRate")) : null;
       }
 
+      // Phase 4 (Business Events 360) - one shared field/column across
+      // Booking/Deployment/Appointment, mirroring Trip's own
+      // client_person_id (set separately above, untouched).
+      if ((isBookingBusinessType || isSecurity || isCleaning || isSalon || isHealthcare || isGym) && document.getElementById("eventCustomerPerson")) {
+        payload.customer_person_id = UnganiClientShared.value("eventCustomerPerson") || null;
+      }
+
       if (isTourismDeployment && document.getElementById("eventTourGuide")) {
         payload.driver_person_id = UnganiClientShared.value("eventTourGuide") || null;
         payload.vehicle_item_id = UnganiClientShared.value("eventTourVehicle") || null;
@@ -1661,6 +1729,160 @@
       UnganiClientShared.showToast(editingEventId ? "Calendar activity updated ✓" : "Calendar activity added ✓");
       clearEventForm();
       await loadEventRows();
+    }
+
+    // Phase 4c (Business Events 360): the first detail/profile view any
+    // calendar activity has ever had in this codebase - previously the
+    // only way to see an activity's own info was the inline edit form.
+    // Deliberately lightweight rather than duplicating client.html's 4
+    // settlement calculators (computeTripSettlement etc.) here: shows the
+    // event's own type-specific fields directly off the row, its customer
+    // (client_person_id for Trip, customer_person_id for Booking/
+    // Deployment/Appointment - whichever is set) with a click-through to
+    // that person's own 360 profile, and any Money records linked via the
+    // existing transactions.related_event_id column.
+    async function openEventProfile(id) {
+      const row = eventRows.find(function (item) { return String(item.id) === String(id); });
+
+      if (!row) {
+        UnganiClientShared.showToast("Activity not found.");
+        return;
+      }
+
+      UnganiClientShared.openSidePanel({
+        title: getEventTitle(row),
+        bodyHtml: UnganiClientShared.loadingCard("Loading activity...")
+      });
+
+      const customerId = row.customer_person_id || row.client_person_id || null;
+
+      let customer = null;
+      let payments = [];
+
+      try {
+        const [customerRes, paymentsRes] = await Promise.all([
+          customerId
+            ? currentContext.supabaseClient.from("client_people").select("id, full_name, is_organization").eq("id", customerId).maybeSingle()
+            : Promise.resolve({ data: null }),
+          currentContext.supabaseClient
+            .from("transactions")
+            .select("id, transaction_date, description, category, category_name, transaction_type, amount, amount_kes")
+            .eq("tenant_id", currentContext.tenantId)
+            .eq("related_event_id", id)
+            .is("deleted_at", null)
+            .order("transaction_date", { ascending: false })
+        ]);
+
+        customer = (customerRes && customerRes.data) || null;
+        payments = (paymentsRes && paymentsRes.data) || [];
+      } catch (error) {
+        document.getElementById("unganiPanelBody").innerHTML = UnganiClientShared.errorCard("Could not load activity", error.message || "Network error.");
+        return;
+      }
+
+      renderEventProfilePanel(row, customer, payments);
+    }
+
+    function capitalizeWords(value) {
+      return String(value || "").replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+    }
+
+    function renderEventProfilePanel(row, customer, payments) {
+      const type = UnganiClientShared.getValue(row, ["event_type", "type"], "Calendar Activity");
+      const status = UnganiClientShared.getValue(row, ["status"], "scheduled");
+      const date = UnganiClientShared.getValue(row, ["event_date", "date", "start_date", "created_at"], "");
+      const notes = UnganiClientShared.getValue(row, ["notes", "description"], "");
+
+      const detailRows = [];
+      if (row.route) detailRows.push({ label: "Route", value: row.route });
+      if (row.trip_type) detailRows.push({ label: "Trip Type", value: capitalizeWords(row.trip_type) });
+      if (row.rate != null) detailRows.push({ label: "Rate", value: UnganiClientShared.formatKES(Number(row.rate)) + (row.rate_currency ? " " + row.rate_currency : "") });
+      if (row.trip_issue) detailRows.push({ label: "Issue", value: capitalizeWords(row.trip_issue) + (row.trip_issue_notes ? " - " + row.trip_issue_notes : "") });
+      if (row.booking_total_amount != null) detailRows.push({ label: "Total Amount", value: UnganiClientShared.formatKES(Number(row.booking_total_amount)) });
+      if (row.booking_deposit_required != null) detailRows.push({ label: "Deposit Required", value: UnganiClientShared.formatKES(Number(row.booking_deposit_required)) });
+      if (row.booking_deposit_due_date) detailRows.push({ label: "Deposit Due", value: UnganiClientShared.formatDate(row.booking_deposit_due_date) });
+      if (row.deployment_rate != null) detailRows.push({ label: "Deployment Rate", value: UnganiClientShared.formatKES(Number(row.deployment_rate)) });
+      if (row.appointment_amount != null) detailRows.push({ label: "Appointment Amount", value: UnganiClientShared.formatKES(Number(row.appointment_amount)) });
+
+      const customerRowHtml = customer ? `
+        <div class="detail-row" onclick="openEventCustomerProfile('${UnganiClientShared.attr(customer.id)}')" style="cursor:pointer;">
+          <span class="ungani-small">${customer.is_organization ? "Organization" : "Customer"}</span>
+          <span>${UnganiClientShared.safe(UnganiClientShared.getValue(customer, ["full_name", "name"], "Person"))}</span>
+        </div>
+      ` : "";
+
+      const paymentRowsHtml = payments.map(function (p) {
+        const amount = Number(p.amount_kes || p.amount || 0);
+        return `
+          <div class="detail-row">
+            <span>${UnganiClientShared.safe(p.description || p.category_name || p.category || p.transaction_type || "Transaction")}</span>
+            <span class="ungani-small">${UnganiClientShared.safe(UnganiClientShared.formatDate(p.transaction_date))} · ${UnganiClientShared.safe(UnganiClientShared.formatKES(amount))}</span>
+          </div>
+        `;
+      }).join("");
+
+      document.getElementById("unganiPanelBody").innerHTML = `
+        <div class="ungani-card">
+          <p class="ungani-small">${UnganiClientShared.safe(capitalizeWords(type))} · ${UnganiClientShared.safe(capitalizeWords(status))}${date ? " · " + UnganiClientShared.safe(UnganiClientShared.formatDate(date)) : ""}</p>
+          <div class="ungani-button-row" style="margin-top:14px;">
+            <button class="ungani-btn gold" type="button" onclick="UnganiClientShared.closeSidePanel(); editEvent('${UnganiClientShared.attr(row.id)}')">Edit</button>
+            <button class="ungani-btn red" type="button" onclick="UnganiClientShared.closeSidePanel(); deleteEvent('${UnganiClientShared.attr(row.id)}')">Delete</button>
+          </div>
+        </div>
+
+        ${(customerRowHtml || detailRows.length) ? `
+          <div class="ungani-card" style="margin-top:18px;">
+            <div class="ungani-section-title"><div><h3>Details</h3></div></div>
+            ${customerRowHtml}
+            ${detailRows.map(function (d) {
+              return `<div class="detail-row"><span class="ungani-small">${UnganiClientShared.safe(d.label)}</span><span>${UnganiClientShared.safe(d.value)}</span></div>`;
+            }).join("")}
+          </div>
+        ` : ""}
+
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title"><div><h3>Linked Payments</h3></div></div>
+          ${paymentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No payments linked yet.</p>`}
+        </div>
+
+        ${notes ? `
+          <div class="ungani-card" style="margin-top:18px;">
+            <div class="ungani-section-title"><div><h3>Notes</h3></div></div>
+            <p class="ungani-small" style="white-space:pre-wrap;">${UnganiClientShared.safe(notes)}</p>
+          </div>
+        ` : ""}
+      `;
+
+      if (window.lucide && typeof window.lucide.createIcons === "function") {
+        window.lucide.createIcons();
+      }
+    }
+
+    // Reuses the generic Person/Organization 360 panels rather than
+    // building a bespoke customer view - same pattern as my-documents.html's
+    // openDocumentLinkedPersonProfile().
+    async function openEventCustomerProfile(personId) {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("*")
+          .eq("id", personId)
+          .eq("tenant_id", currentContext.tenantId)
+          .maybeSingle();
+
+        if (!response.data) {
+          UnganiClientShared.showToast("Person not found.");
+          return;
+        }
+
+        if (response.data.is_organization) {
+          UnganiClientShared.openUnganiOrganizationProfile(currentContext, response.data, {});
+        } else {
+          UnganiClientShared.openUnganiPersonProfile(currentContext, response.data, {});
+        }
+      } catch (error) {
+        UnganiClientShared.showToast("Could not load person: " + (error.message || "Network error."));
+      }
     }
 
     function editEvent(id) {
@@ -1731,6 +1953,10 @@
         if (document.getElementById("eventAppointmentStaff")) {
           document.getElementById("eventAppointmentStaff").value = row.staff_person_id || "";
           document.getElementById("eventAppointmentAmount").value = row.appointment_amount != null ? row.appointment_amount : "";
+        }
+
+        if (document.getElementById("eventCustomerPerson")) {
+          document.getElementById("eventCustomerPerson").value = row.customer_person_id || "";
         }
 
         document.getElementById("eventNotes").value = UnganiClientShared.getValue(row, ["notes", "description"], "");
@@ -1856,6 +2082,7 @@
       if (document.getElementById("eventTourRate")) document.getElementById("eventTourRate").value = "";
       if (document.getElementById("eventAppointmentStaff")) document.getElementById("eventAppointmentStaff").value = "";
       if (document.getElementById("eventAppointmentAmount")) document.getElementById("eventAppointmentAmount").value = "";
+      if (document.getElementById("eventCustomerPerson")) document.getElementById("eventCustomerPerson").value = "";
       if (document.getElementById("eventNotes")) document.getElementById("eventNotes").value = "";
     }
 
