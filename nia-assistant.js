@@ -134,7 +134,7 @@
   const SEARCH_TABLES = [
     { table: "business_items", label: "Property / Item", href: "my-items.html", titleFields: ["property_name", "item_name", "name", "title"], detailFields: ["property_status", "item_status", "status", "property_location"] },
     { table: "tasks", label: "Task", href: "my-tasks.html", titleFields: ["task_title", "title", "name"], detailFields: ["status", "priority", "due_date", "assignee_name"] },
-    { table: "client_people", label: "Person / Lead", href: "my-people.html", titleFields: ["full_name", "name"], detailFields: ["person_type", "status", "phone", "email"] },
+    { table: "client_people", label: "Person / Lead", href: "my-people.html", titleFields: ["full_name", "name"], detailFields: ["person_type", "status", "phone", "email", "kra_pin", "address"] },
     { table: "documents", label: "Document", href: "my-documents.html", titleFields: ["document_title", "title", "file_name"], detailFields: ["document_type", "status"] },
     { table: "business_records", label: "Record", href: "my-records.html", titleFields: ["record_title", "title", "name"], detailFields: ["record_type", "status"] },
     { table: "transactions", label: "Money Record", href: "my-money.html", titleFields: ["category_name", "category", "description"], detailFields: ["transaction_type", "type", "status", "amount"] }
@@ -144,7 +144,10 @@
   // display label ("due_date" -> "Due Date") for the generic detail-line
   // renderer below, so SEARCH_TABLES' existing detailFields arrays can be
   // reused as-is instead of needing a second, parallel label config.
+  const FIELD_LABEL_OVERRIDES = { kra_pin: "KRA PIN" };
+
   function humanizeFieldLabel(field) {
+    if (FIELD_LABEL_OVERRIDES[field]) return FIELD_LABEL_OVERRIDES[field];
     return String(field || "")
       .replace(/_/g, " ")
       .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
