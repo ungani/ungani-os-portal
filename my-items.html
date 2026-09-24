@@ -1295,7 +1295,17 @@
       target.setHours(0, 0, 0, 0);
       now.setHours(0, 0, 0, 0);
 
-      return Math.round((target.getTime() - now.getTime()) / 86400000);
+      const days = Math.round((target.getTime() - now.getTime()) / 86400000);
+
+      // A malformed/garbage date value (e.g. a custom field saved with a
+      // stray digit) parses to a valid but implausible Date rather than
+      // NaN, producing things like "737792d ago" in the attention list -
+      // confirmed live. Anything more than 10 years out either direction
+      // isn't a real near-term expiry/maintenance alert, so treat it as
+      // absent instead of surfacing nonsense.
+      if (Math.abs(days) > 3650) return null;
+
+      return days;
     }
 
     function computeAttentionEntries(rows) {

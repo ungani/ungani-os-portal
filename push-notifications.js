@@ -254,14 +254,24 @@
         transition: 0.28s ease;
       }
       .ungani-push-banner.show { transform: translateY(0); opacity: 1; }
-      /* Desktop shell has a fixed 292px sidebar (client-shared.js
-         .ungani-sidebar, collapses to an off-canvas drawer below
-         860px) - left:18px alone put this banner's left portion
-         underneath the sidebar and its right portion overlapping
-         dashboard cards, confirmed live via screenshot. Only applies
-         above the same 860px breakpoint the sidebar itself uses. */
+      /* Desktop: bottom-left (even shifted clear of the sidebar) still
+         landed on top of real page content on 8 of 9 pages audited live
+         (KPI tiles, table rows, profile cards - whatever happened to sit
+         in that viewport region on initial load). Docked instead below
+         the sticky topbar (client-shared.js .ungani-topbar, ~92px tall)
+         at the right edge, a region every page keeps clear since content
+         starts below the topbar - not a candidate location, an empty one.
+         Mobile is untouched (that treatment - bottom, lifted above the
+         bottom nav - was already tuned for the fixed mobile shell). */
       @media (min-width: 861px) {
-        .ungani-push-banner { left: 310px; }
+        .ungani-push-banner {
+          left: auto;
+          right: 24px;
+          bottom: auto;
+          top: 96px;
+          transform: translateY(-12px);
+        }
+        .ungani-push-banner.show { transform: translateY(0); }
       }
       .ungani-push-banner-icon {
         width: 40px; height: 40px; border-radius: 999px;

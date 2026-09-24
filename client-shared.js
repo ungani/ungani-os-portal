@@ -6269,7 +6269,11 @@
       unread = items.filter(isNotificationActive).length;
     }
 
-    countEl.textContent = String(unread);
+    // Capped to match every other unread badge in the app (sidebar nav
+    // badges via applySidebarBadgeCounts() above) - this one was the only
+    // uncapped count, confirmed live showing the exact "119" while every
+    // other badge on the same tenant showed "99+".
+    countEl.textContent = unread > 99 ? "99+" : String(unread);
     countEl.style.display = unread > 0 ? "inline-flex" : "none";
 
     maybePlayNotificationSound(unread);
