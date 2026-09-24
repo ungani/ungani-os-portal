@@ -254,6 +254,15 @@
         transition: 0.28s ease;
       }
       .ungani-push-banner.show { transform: translateY(0); opacity: 1; }
+      /* Desktop shell has a fixed 292px sidebar (client-shared.js
+         .ungani-sidebar, collapses to an off-canvas drawer below
+         860px) - left:18px alone put this banner's left portion
+         underneath the sidebar and its right portion overlapping
+         dashboard cards, confirmed live via screenshot. Only applies
+         above the same 860px breakpoint the sidebar itself uses. */
+      @media (min-width: 861px) {
+        .ungani-push-banner { left: 310px; }
+      }
       .ungani-push-banner-icon {
         width: 40px; height: 40px; border-radius: 999px;
         display: flex; align-items: center; justify-content: center;
