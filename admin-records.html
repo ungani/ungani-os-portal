@@ -608,10 +608,13 @@
 
     async function safeSelect(tableName) {
       try {
-        const { data, error } = await supabaseClient
-          .from(tableName)
-          .select("*")
-          .limit(10000);
+        let query = supabaseClient.from(tableName).select("*");
+
+        if (tableName !== "tenants") {
+          query = query.is("deleted_at", null);
+        }
+
+        const { data, error } = await query.limit(10000);
 
         if (error) {
           console.log(tableName, error.message);

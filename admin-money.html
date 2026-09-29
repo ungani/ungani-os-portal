@@ -645,10 +645,18 @@
 
     async function safeSelect(tableName) {
       try {
-        const { data, error } = await supabaseClient
-          .from(tableName)
-          .select("*")
-          .limit(10000);
+        let query = supabaseClient.from(tableName).select("*");
+
+        // "tenants" has no deleted_at column; this platform-wide Money view
+        // reads every tenant's transactions with no tenant_id filter by
+        // design, so it also must exclude soft-deleted rows across all of
+        // them (confirmed live, 2026-09-29 - this had zero deleted_at
+        // filtering before, unlike the client-side Money pages).
+        if (tableName !== "tenants") {
+          query = query.is("deleted_at", null);
+        }
+
+        const { data, error } = await query.limit(10000);
 
         if (error) {
           console.log(tableName, error.message);

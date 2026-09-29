@@ -631,10 +631,16 @@
 
     async function safeSelect(tableName) {
       try {
-        const { data, error } = await supabaseClient
-          .from(tableName)
-          .select("*")
-          .limit(10000);
+        let query = supabaseClient.from(tableName).select("*");
+
+        // "tenants" has no deleted_at column; every other table this admin
+        // page reads does, and a soft-deleted row must not resurface in an
+        // admin-wide list or count (confirmed live, 2026-09-29).
+        if (tableName !== "tenants") {
+          query = query.is("deleted_at", null);
+        }
+
+        const { data, error } = await query.limit(10000);
 
         if (error) {
           console.log(tableName, error.message);
