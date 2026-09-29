@@ -16962,6 +16962,38 @@
       return Math.max(0, Math.min(100, Math.round(weighted / totalWeight)));
     }
 
+    // Each factor's raw `weight` is only meaningful relative to the OTHER
+    // applicable factors - it is not itself a percentage, since inapplicable
+    // factors (no data yet) are excluded from the score entirely. This
+    // converts the applicable factors' weights into their true share of the
+    // current score, as whole numbers that always add up to exactly 100
+    // (largest-remainder apportionment, so rounding never drifts the total).
+    // Must be the only place this conversion happens - the detail panel is
+    // the only surface that shows a per-factor percentage.
+    function effectiveScoreShares(entries) {
+      const applicable = entries.filter(function (e) { return e.applicable !== false; });
+      const totalWeight = applicable.reduce(function (sum, e) { return sum + e.weight; }, 0);
+      if (totalWeight <= 0) return entries.slice();
+
+      const raw = applicable.map(function (e) { return (e.weight / totalWeight) * 100; });
+      const floors = raw.map(Math.floor);
+      let remainder = 100 - floors.reduce(function (sum, n) { return sum + n; }, 0);
+
+      const order = raw
+        .map(function (r, i) { return { i: i, frac: r - floors[i] }; })
+        .sort(function (a, b) { return b.frac - a.frac; });
+
+      for (let k = 0; k < remainder; k++) floors[order[k].i] += 1;
+
+      let nextApplicableIndex = 0;
+      return entries.map(function (e) {
+        if (e.applicable === false) return e;
+        const share = floors[nextApplicableIndex];
+        nextApplicableIndex++;
+        return Object.assign({}, e, { effectivePercent: share });
+      });
+    }
+
     // Latest computed health object for whichever dashboard/section is
     // currently rendered - only one health gauge is ever visible at a
     // time in this single-page-per-load app, so a single module-scoped
@@ -17037,7 +17069,7 @@
           <div class="health-detail-factor" style="opacity:0.6;">
             <div class="health-detail-factor-head">
               <span class="health-detail-factor-label">${safe(entry.label)}</span>
-              <span class="health-detail-factor-weight">${entry.weight}% of score</span>
+              <span class="health-detail-factor-weight">Not counted yet</span>
             </div>
             <p class="health-detail-factor-text">Not scored yet — needs a bit more history before this counts toward your score.</p>
           </div>
@@ -17046,12 +17078,13 @@
 
       const band = healthBandFor(entry.score);
       const isWeak = entry.score < 65;
+      const pct = entry.effectivePercent !== undefined ? entry.effectivePercent : entry.weight;
 
       return `
         <div class="health-detail-factor">
           <div class="health-detail-factor-head">
             <span class="health-detail-factor-label"><i data-lucide="${isWeak ? "trending-down" : "square-check-big"}"></i>${safe(entry.label)}</span>
-            <span class="health-detail-factor-weight">${entry.weight}% of score · ${safe(band.label)}</span>
+            <span class="health-detail-factor-weight">${pct}% of score · ${safe(band.label)}</span>
           </div>
           <p class="health-detail-factor-text">${safe(entry.text)}</p>
           ${isWeak && entry.href ? `<a class="ungani-btn small gold" href="${attr(entry.href)}">${safe(entry.actionLabel || "Fix this")} →</a>` : ""}
@@ -17066,7 +17099,7 @@
 
       const health = currentHealthDetail;
       const band = healthBandFor(health.score);
-      const entries = (health.entries || []).slice().sort(function (a, b) {
+      const entries = effectiveScoreShares(health.entries || []).slice().sort(function (a, b) {
         if (a.applicable === false) return 1;
         if (b.applicable === false) return -1;
         return a.score - b.score;
@@ -17291,14 +17324,14 @@
       // to be kept in sync by hand.
       const entries = [
         {
-          key: "tasks", label: "overdue tasks", weight: 35, score: tasksScore, applicable: hasTaskData,
-          text: input.tasks.overdue === 1 ? "1 overdue task needs attention." : input.tasks.overdue + " overdue tasks need attention.",
-          actionLabel: "Follow up on overdue tasks", href: "my-tasks.html"
-        },
-        {
           key: "payments", label: "pending payments", weight: 30, score: paymentScore, applicable: hasMoneyData,
           text: "Outstanding pending payments are affecting your collection health.",
           actionLabel: "Record or chase pending payments", href: "my-money.html"
+        },
+        {
+          key: "tasks", label: "overdue tasks", weight: 25, score: tasksScore, applicable: hasTaskData,
+          text: input.tasks.overdue === 1 ? "1 overdue task needs attention." : input.tasks.overdue + " overdue tasks need attention.",
+          actionLabel: "Follow up on overdue tasks", href: "my-tasks.html"
         },
         {
           key: "support", label: "open support issues", weight: 20, score: supportScore, applicable: hasSupportData,
@@ -17311,7 +17344,7 @@
           actionLabel: "Log some recent activity", href: "my-tasks.html"
         },
         {
-          key: "stock", label: "low/out-of-stock items", weight: 15, score: stockScore, applicable: hasItemData,
+          key: "stock", label: "low/out-of-stock items", weight: 10, score: stockScore, applicable: hasItemData,
           text: stockAttentionCount === 1 ? "1 item is low or out of stock." : stockAttentionCount + " items are low or out of stock.",
           actionLabel: "Review low-stock items", href: "my-items.html"
         }

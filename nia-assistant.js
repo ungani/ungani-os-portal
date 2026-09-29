@@ -6510,22 +6510,41 @@
     const hasMoneyData = income > 0 || pending > 0;
     const recentCount = niaCountRecentActivity(data);
 
+    // Stock was missing from this list entirely until this fix - a real
+    // gap where Nia's health narration silently ignored a whole scoring
+    // dimension the dashboard's own gauge counted. computeAssetAttentionEntries
+    // already mirrors client.html's isOutOfStockItem/isLowStockItem/
+    // isOutOfStockHospitalityItem/isLowStockHospitalityItem (numeric
+    // quantity check, falling back to status-text for Hospitality F&B),
+    // so reusing it here instead of a third copy of the same logic.
+    const itemRows = data.items || [];
+    const stockAttentionIds = {};
+    computeAssetAttentionEntries(itemRows).forEach(function (e) {
+      if (e.kind === "stock") stockAttentionIds[e.id] = true;
+    });
+    const stockAttentionCount = Object.keys(stockAttentionIds).length;
+    const hasItemData = itemRows.length > 0;
+
     const tasksScore = niaTierScore(taskOverdue, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
     const pendingRatio = pending / Math.max(income, 1);
     const paymentScore = pendingRatio <= 0.05 ? 100 : pendingRatio <= 0.15 ? 80 : pendingRatio <= 0.30 ? 55 : 30;
     const supportScore = niaTierScore(supportOpen, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
     const activityScore = niaTierScore(recentCount, [[0, 45], [2, 70], [6, 90], [Infinity, 100]]);
+    const stockScore = niaTierScore(stockAttentionCount, [[0, 100], [2, 80], [5, 55], [Infinity, 30]]);
 
-    // actionLabel strings are kept identical to client.html's clickable
-    // Business Health Score panel (computeGenericHealthScore's entries) so
-    // Nia's chat answer and the dashboard's click-through panel always
-    // describe the same fix the same way - not two independently-worded
-    // answers to the same question.
+    // actionLabel strings, weights, and order are kept identical to
+    // client.html's clickable Business Health Score panel
+    // (computeGenericHealthScore's entries) so Nia's chat answer and the
+    // dashboard's click-through panel always describe the same fix the
+    // same way - not two independently-worded answers to the same
+    // question. Weights corrected 2026-09-29 to sum to 100 (were
+    // 35/30/20/15 with no stock factor at all).
     return [
-      { key: "tasks", weight: 35, score: tasksScore, label: "overdue tasks", applicable: hasTaskData, href: "my-tasks.html", actionLabel: "Follow up on overdue tasks", text: taskOverdue === 1 ? "1 overdue task needs attention." : taskOverdue + " overdue tasks need attention." },
       { key: "payments", weight: 30, score: paymentScore, label: "pending payments", applicable: hasMoneyData, href: "my-money.html", actionLabel: "Record or chase pending payments", text: "Outstanding pending payments are affecting your collection health." },
+      { key: "tasks", weight: 25, score: tasksScore, label: "overdue tasks", applicable: hasTaskData, href: "my-tasks.html", actionLabel: "Follow up on overdue tasks", text: taskOverdue === 1 ? "1 overdue task needs attention." : taskOverdue + " overdue tasks need attention." },
       { key: "support", weight: 20, score: supportScore, label: "open support issues", applicable: hasSupportData, href: "my-support.html", actionLabel: "Respond to open support issues", text: supportOpen === 1 ? "1 open support issue is waiting on a response." : supportOpen + " open support issues are waiting on a response." },
-      { key: "activity", weight: 15, score: activityScore, label: "recent activity", applicable: true, href: "my-tasks.html", actionLabel: "Log some recent activity", text: "It's been quiet — log some activity to keep your records current." }
+      { key: "activity", weight: 15, score: activityScore, label: "recent activity", applicable: true, href: "my-tasks.html", actionLabel: "Log some recent activity", text: "It's been quiet — log some activity to keep your records current." },
+      { key: "stock", weight: 10, score: stockScore, label: "low/out-of-stock items", applicable: hasItemData, href: "my-items.html", actionLabel: "Review low-stock items", text: stockAttentionCount === 1 ? "1 item is low or out of stock." : stockAttentionCount + " items are low or out of stock." }
     ];
   }
 
