@@ -272,6 +272,11 @@
           transform: translateY(-12px);
         }
         .ungani-push-banner.show { transform: translateY(0); }
+        /* client.html's own .welcome-back-toast (top:84px; right:18px)
+           sits in this exact same corner - stacking both here would just
+           relocate the original overlap bug rather than fix it. Shifted
+           down by its own typical height + margin when present. */
+        .ungani-push-banner.ungani-below-welcome-toast { top: 190px; }
       }
       .ungani-push-banner-icon {
         width: 40px; height: 40px; border-radius: 999px;
@@ -363,7 +368,9 @@
 
     const banner = document.createElement("div");
     banner.id = "unganiPushBanner";
-    banner.className = "ungani-push-banner" + (document.querySelector(".ungani-bottom-nav") ? " ungani-above-bottom-nav" : "");
+    banner.className = "ungani-push-banner" +
+      (document.querySelector(".ungani-bottom-nav") ? " ungani-above-bottom-nav" : "") +
+      (document.querySelector(".welcome-back-toast") ? " ungani-below-welcome-toast" : "");
     banner.innerHTML =
       '<button type="button" class="ungani-push-banner-close" aria-label="Close">✕</button>' +
       '<div class="ungani-push-banner-icon"><i data-lucide="bell"></i></div>' +
