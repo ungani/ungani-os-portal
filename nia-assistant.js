@@ -7099,20 +7099,26 @@
   // Mirrors my-money.html's getRowType/isIncomeRow/isExpenseRow exactly,
   // so Nia's numbers always agree with the Money page's own summary. Kept
   // as a separate copy (no module system in this repo to share it from).
+  // Matches client.html's isIncome()/isExpense() exactly (confirmed via
+  // live diagnostic, 2026-09-29): transaction_type only, never the legacy
+  // "type" column (which independently defaults to 'income' and can
+  // disagree), exact values only ('income'/'expense'/'petty_cash') - no
+  // category-keyword matching.
   function niaGetMoneyRowType(row) {
-    return String(pickField(row, ["transaction_type", "type"], "income")).toLowerCase();
+    return String(pickField(row, ["transaction_type"], "")).toLowerCase();
   }
 
   function niaIsIncomeRow(row) {
-    const type = niaGetMoneyRowType(row);
-    return type.indexOf("income") !== -1 || type.indexOf("sale") !== -1 || type.indexOf("rental") !== -1 ||
-      type.indexOf("revenue") !== -1 || type.indexOf("deposit") !== -1 || type.indexOf("payment") !== -1 || type.indexOf("fee") !== -1;
+    return niaGetMoneyRowType(row) === "income";
   }
 
   function niaIsExpenseRow(row) {
     const type = niaGetMoneyRowType(row);
-    return type.indexOf("expense") !== -1 || type.indexOf("petty") !== -1 || type.indexOf("cost") !== -1 ||
-      type.indexOf("commission") !== -1 || type.indexOf("maintenance") !== -1;
+    if (type === "expense" || type === "petty_cash") return true;
+    if (type !== "income" && type) {
+      console.warn("niaIsExpenseRow: unrecognized transaction_type '" + type + "' - excluded from income and expense totals.", row.id);
+    }
+    return false;
   }
 
   function computeNiaMoneySummary(rows) {

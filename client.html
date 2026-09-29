@@ -17867,41 +17867,26 @@
       };
     }
 
+    // Confirmed via live diagnostic (2026-09-29, Chris): every transactions
+    // row has transaction_type set, values in use are exactly 'income',
+    // 'expense', 'petty_cash' - the legacy "type" column is never read here
+    // (it independently defaults to 'income' and can disagree with
+    // transaction_type, e.g. 3 Billy Logistics rows with type='income' but
+    // transaction_type='expense' - transaction_type is the one to trust).
+    // Category-keyword matching is gone entirely - it used to misclassify
+    // anything whose category text happened to contain "payment"/"rent"/etc
+    // regardless of actual direction (e.g. "Trainer Payment", an expense).
     function isIncome(row) {
-      const type = String(getValue(row, ["transaction_type", "type"], "")).toLowerCase();
-      const category = String(getValue(row, ["category"], "")).toLowerCase();
-      const combined = type + " " + category;
-
-      // "Supplier Payment" is a defined expense category (Retail and others) that would
-      // otherwise match the "payment" keyword below and get miscounted as income.
-      if (combined.includes("supplier")) return false;
-
-      return combined.includes("income") ||
-        combined.includes("sale") ||
-        combined.includes("revenue") ||
-        combined.includes("deposit") ||
-        combined.includes("payment") ||
-        combined.includes("service fee") ||
-        combined.includes("agency") ||
-        combined.includes("rental") ||
-        combined.includes("rent");
+      return String(getValue(row, ["transaction_type"], "")).toLowerCase() === "income";
     }
 
     function isExpense(row) {
-      const type = String(getValue(row, ["transaction_type", "type"], "")).toLowerCase();
-      const category = String(getValue(row, ["category"], "")).toLowerCase();
-      const combined = type + " " + category;
-
-      return combined.includes("expense") ||
-        combined.includes("petty") ||
-        combined.includes("cost") ||
-        combined.includes("commission") ||
-        combined.includes("maintenance") ||
-        combined.includes("marketing") ||
-        combined.includes("advertising") ||
-        combined.includes("legal") ||
-        combined.includes("repair") ||
-        combined.includes("purchase");
+      const type = String(getValue(row, ["transaction_type"], "")).toLowerCase();
+      if (type === "expense" || type === "petty_cash") return true;
+      if (type !== "income" && type) {
+        console.warn("isExpense: unrecognized transaction_type '" + type + "' - excluded from income and expense totals.", row.id);
+      }
+      return false;
     }
 
     function statusText(row) {

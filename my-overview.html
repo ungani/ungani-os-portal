@@ -352,15 +352,20 @@
 
       overviewData.transactions.forEach(function (row) {
         const amount = Number(UnganiClientShared.getValue(row, ["amount_kes", "amount"], 0) || 0);
-        const type = String(UnganiClientShared.getValue(row, ["transaction_type", "type"], "")).toLowerCase();
+        // Matches client.html's isIncome()/isExpense() exactly (confirmed
+        // via live diagnostic, 2026-09-29): transaction_type only, never
+        // the legacy "type" column, exact values only.
+        const type = String(UnganiClientShared.getValue(row, ["transaction_type"], "")).toLowerCase();
         const status = String(UnganiClientShared.getValue(row, ["status"], "completed")).toLowerCase();
 
-        if (type.includes("income") || type.includes("sale") || type.includes("rental")) income += amount;
-        else if (type.includes("petty")) {
+        if (type === "income") income += amount;
+        else if (type === "petty_cash") {
           pettyCash += amount;
           expenses += amount;
-        } else if (type.includes("expense")) {
+        } else if (type === "expense") {
           expenses += amount;
+        } else if (type) {
+          console.warn("calculateMoney: unrecognized transaction_type '" + type + "' - excluded from totals.", row.id);
         }
 
         if (status.includes("pending")) pending += amount;
