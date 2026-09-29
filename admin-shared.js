@@ -1300,10 +1300,13 @@
       throw new Error("Your login exists, but your UNGANI admin profile was not found.");
     }
 
-    const role = String(userData.role || "").toLowerCase();
-    const isAdminRole = ["admin", "super_admin", "owner"].includes(role);
-
-    if (!rpcAdmin && !isAdminRole) {
+    // is_ungani_admin() is the ONLY source of truth for admin access.
+    // users.role is directly client-writable (confirmed live: any
+    // authenticated user can UPDATE their own row, including this
+    // column, with no server-side check) - trusting it as an
+    // alternative to the RPC let a plain client self-grant admin
+    // dashboard access by setting their own role to "admin".
+    if (!rpcAdmin) {
       throw new Error("This login is not allowed to access the Admin Dashboard.");
     }
 
