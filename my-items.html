@@ -44,6 +44,7 @@
   </script>
   <script src="ungani-business-config.js"></script>
   <script src="ungani-presets.js"></script>
+  <script src="ungani-stock-status.js"></script>
   <script src="nia-assistant.js"></script>
 </head>
 
@@ -1285,9 +1286,9 @@
 
         totalValue += value;
 
-        if (status.includes("out of stock") || status.includes("retired") || status.includes("expired") || status.includes("discontinued")) {
+        if (UnganiStockStatus.isOutOfStockByStatusText(row) || status.includes("retired") || status.includes("expired") || status.includes("discontinued")) {
           outOfStock++;
-        } else if (status.includes("low stock") || status.includes("maintenance") || status.includes("on hold")) {
+        } else if (UnganiStockStatus.isLowStockByStatusText(row) || status.includes("maintenance") || status.includes("on hold")) {
           lowStock++;
         } else if (status.includes("available") || status.includes("in stock") || status.includes("in use") || status.includes("cleared")) {
           inStock++;
@@ -1368,32 +1369,30 @@
           }
         }
 
-        // Prefer the precise numeric check when both fields exist on this
-        // item's field set; fall back to status text (e.g. a tenant who
-        // manually sets status to "Low Stock" on a field set without
-        // stock_quantity/reorder_level) so items on any business type still
-        // get flagged, just less precisely. Once Stock Tracking is enabled
-        // for the tenant, business_items.quantity/reorder_level (real
-        // columns, managed from my-stock-tracking.html) are the
-        // authoritative source instead of custom_fields.
-        const stockTrackingEnabled = !!(currentContext && currentContext.tenant && currentContext.tenant.stock_tracking_enabled === true);
-        const stockQty = stockTrackingEnabled ? Number(row.quantity) : Number(customFields.stock_quantity);
-        const reorderLevel = stockTrackingEnabled ? Number(row.reorder_level) : Number(customFields.reorder_level);
-        const hasNumericStock = stockTrackingEnabled
-          ? (row.quantity !== undefined && row.quantity !== null && row.reorder_level !== undefined && row.reorder_level !== null && !isNaN(stockQty) && !isNaN(reorderLevel))
-          : (customFields.stock_quantity !== undefined && customFields.stock_quantity !== null && customFields.stock_quantity !== "" &&
-             customFields.reorder_level !== undefined && customFields.reorder_level !== null && customFields.reorder_level !== "" &&
-             !isNaN(stockQty) && !isNaN(reorderLevel));
+        // Prefer the precise numeric check when a quantity is resolvable
+        // for this item (ungani-stock-status.js's getQuantity() covers
+        // both the pre-tracking custom_fields path and the tracked
+        // business_items.quantity path); fall back to status text only
+        // when no quantity exists at all (e.g. an asset/equipment field
+        // set that was never meant to carry a number). getEffectiveReorderLevel()
+        // always resolves to a real number now (item override -> tenant
+        // default -> legacy pre-tracking fallback), so an item with a
+        // quantity but no reorder_level of its own gets a real numeric
+        // verdict instead of falling through to text matching.
+        const stockQtyForAttention = UnganiStockStatus.getQuantity(row, currentContext && currentContext.tenant);
 
-        if (hasNumericStock) {
-          if (stockQty <= 0) {
+        if (stockQtyForAttention !== null) {
+          const effectiveReorderLevelForAttention = UnganiStockStatus.getEffectiveReorderLevel(row, currentContext && currentContext.tenant);
+          const stockStatusForAttention = UnganiStockStatus.getStockStatus(stockQtyForAttention, effectiveReorderLevelForAttention);
+
+          if (stockStatusForAttention === "out_of_stock") {
             entries.push({ id: row.id, name: name, href: href, severity: "red", icon: '<i data-lucide="package"></i>', label: "Out of stock", detail: "0 left", sortKey: 2000 });
-          } else if (stockQty <= reorderLevel) {
-            entries.push({ id: row.id, name: name, href: href, severity: "orange", icon: '<i data-lucide="package"></i>', label: "Low stock", detail: stockQty + " left, reorder at " + reorderLevel, sortKey: 2000 });
+          } else if (stockStatusForAttention === "low_stock") {
+            entries.push({ id: row.id, name: name, href: href, severity: "orange", icon: '<i data-lucide="package"></i>', label: "Low stock", detail: stockQtyForAttention + " left, reorder at " + effectiveReorderLevelForAttention, sortKey: 2000 });
           }
-        } else if (status.includes("out of stock")) {
+        } else if (UnganiStockStatus.isOutOfStockByStatusText(row)) {
           entries.push({ id: row.id, name: name, href: href, severity: "red", icon: '<i data-lucide="package"></i>', label: "Out of stock", detail: "", sortKey: 2000 });
-        } else if (status.includes("low stock")) {
+        } else if (UnganiStockStatus.isLowStockByStatusText(row)) {
           entries.push({ id: row.id, name: name, href: href, severity: "orange", icon: '<i data-lucide="package"></i>', label: "Low stock", detail: "", sortKey: 2000 });
         }
 

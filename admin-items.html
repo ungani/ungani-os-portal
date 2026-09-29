@@ -10,6 +10,7 @@
   <script src="pwa-register.js"></script>
   <script src="admin-shared.js"></script>
   <script src="ungani-admin-nav-config.js"></script>
+  <script src="ungani-stock-status.js"></script>
 
   <style>
     .page-grid {
@@ -570,6 +571,10 @@
       return !!(tenant && tenant.stock_tracking_enabled === true);
     }
 
+    function getTenantById(tenantId) {
+      return tenants.find(row => String(row.id) === String(tenantId)) || null;
+    }
+
     function getItemQuantity(row) {
       // Real quantity lives at business_items.quantity (when Stock Tracking
       // is enabled for the tenant, managed via adjust_ungani_stock) or at
@@ -622,14 +627,16 @@
       return getField(row, ["created_at", "updated_at"], "");
     }
 
+    // Delegates to ungani-stock-status.js, resolving the correct tenant
+    // per row since this page is cross-tenant. Previously hardcoded
+    // quantity <= 2 and never read reorder_level at all, disagreeing with
+    // every other stock surface in the app (which use the tenant's real
+    // reorder level, default 5 for consumable-stock types).
     function isLowStock(row) {
       const status = getItemStatus(row);
-      const quantity = Number(getItemQuantity(row));
-
       if (status === "low_stock") return true;
-      if (!isNaN(quantity) && quantity <= 2 && ["stock", "item", "other"].includes(getItemType(row))) return true;
 
-      return false;
+      return UnganiStockStatus.isItemLowStock(row, getTenantById(row.tenant_id));
     }
 
     function isBadStatus(row) {

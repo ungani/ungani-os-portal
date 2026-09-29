@@ -20,6 +20,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
 
   <script src="ungani-theme.js"></script>
+  <script src="ungani-stock-status.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js"></script>
   <script src="pwa-register.js"></script>
@@ -10388,66 +10389,27 @@
       }
     }
 
-    const LOW_STOCK_THRESHOLD = 5;
-
-    // Phase 2's item field-set engine stores a retail item's stock count
-    // in custom_fields.stock_quantity (no dedicated column) - units_available
-    // was only ever written by Real Estate's project-unit fields, so it's
-    // kept here purely as a fallback for any legacy row that happens to
-    // have it set, not the primary source.
-    //
-    // Once Stock Tracking is enabled for the tenant, business_items.quantity/
-    // reorder_level (real columns, managed via adjust_ungani_stock on
-    // my-stock-tracking.html) become authoritative instead.
+    // Thin wrappers over the shared ungani-stock-status.js module (single
+    // source of truth for quantity/reorder-level resolution and the
+    // out_of_stock/low_stock/in_stock rule, shared with my-items.html,
+    // my-stock-tracking.html, nia-assistant.js, admin-items.html,
+    // admin-home.html, reports.html, print-report.html). Kept as
+    // same-named local functions so every existing call site in this file
+    // is unaffected.
     function getStockQuantity(item) {
-      if (currentTenant && currentTenant.stock_tracking_enabled === true) {
-        const trackedQty = getValue(item, ["quantity"], null);
-        if (trackedQty !== null && trackedQty !== "") {
-          const trackedNum = Number(trackedQty);
-          if (!isNaN(trackedNum)) return trackedNum;
-        }
-      }
-
-      const customFields = getValue(item, ["custom_fields"], {}) || {};
-      const customQty = customFields.stock_quantity;
-
-      if (customQty !== undefined && customQty !== null && customQty !== "") {
-        const num = Number(customQty);
-        if (!isNaN(num)) return num;
-      }
-
-      const raw = getValue(item, ["units_available"], null);
-      if (raw === null || raw === "") return null;
-      const num = Number(raw);
-      return isNaN(num) ? null : num;
+      return UnganiStockStatus.getQuantity(item, currentTenant);
     }
 
     function getReorderLevel(item) {
-      if (currentTenant && currentTenant.stock_tracking_enabled === true) {
-        const trackedLevel = getValue(item, ["reorder_level"], null);
-        if (trackedLevel !== null && trackedLevel !== "") {
-          const trackedNum = Number(trackedLevel);
-          if (!isNaN(trackedNum) && trackedNum > 0) return trackedNum;
-        }
-      }
-
-      const customFields = getValue(item, ["custom_fields"], {}) || {};
-      const raw = customFields.reorder_level;
-
-      if (raw === undefined || raw === null || raw === "") return LOW_STOCK_THRESHOLD;
-
-      const num = Number(raw);
-      return isNaN(num) || num <= 0 ? LOW_STOCK_THRESHOLD : num;
+      return UnganiStockStatus.getEffectiveReorderLevel(item, currentTenant);
     }
 
     function isOutOfStockItem(item) {
-      const qty = getStockQuantity(item);
-      return qty !== null && qty <= 0;
+      return UnganiStockStatus.isItemOutOfStock(item, currentTenant);
     }
 
     function isLowStockItem(item) {
-      const qty = getStockQuantity(item);
-      return qty !== null && qty > 0 && qty <= getReorderLevel(item);
+      return UnganiStockStatus.isItemLowStock(item, currentTenant);
     }
 
     function isSupplierPaymentTransaction(row) {
@@ -10463,15 +10425,15 @@
 
     // Hospitality's Food & Beverage sections (Restaurant/Bar Lounge/
     // Catering) track menu items and beverages as stock, tagged via
-    // their own status vocab from the Phase 2 item field-set (low
-    // stock/out of stock), not the units_available column Retail's
-    // stock helpers above read - hence separate matchers here.
+    // their own status vocab (low stock/out of stock text), not a
+    // tracked quantity - kept as separate functions in
+    // ungani-stock-status.js, not folded into the numeric ones above.
     function isOutOfStockHospitalityItem(item) {
-      return String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase().includes("out of stock");
+      return UnganiStockStatus.isOutOfStockByStatusText(item);
     }
 
     function isLowStockHospitalityItem(item) {
-      return String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase().includes("low stock");
+      return UnganiStockStatus.isLowStockByStatusText(item);
     }
 
     function isFoodBeverageIncome(row) {

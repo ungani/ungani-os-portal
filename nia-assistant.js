@@ -3386,56 +3386,22 @@
 
   const ASSET_SUMMARY_COLUMNS = "id, status, item_status, property_status, item_name, name, title, property_name, quantity, reorder_level, custom_fields, units_available";
 
-  const LOW_STOCK_THRESHOLD = 5;
-
-  // Exact mirror of client.html's getStockQuantity()/getReorderLevel() -
-  // found via live testing to have drifted: this version used to require
-  // reorder_level to be explicitly set before treating an item as having
-  // any numeric stock at all, so an item relying on the default
-  // low-stock threshold (reorder_level left null - the common case,
-  // confirmed live on Billy Logistics where every item's reorder_level
-  // is null) was silently excluded from stock detection entirely. Kept
-  // as a duplicate (this repo has no module system to share it from),
-  // not a shorter version - the two must stay in lockstep or Nia's stock
-  // answers will silently disagree with the Items page and Health Score
-  // again, exactly as they did here.
+  // Thin wrappers over the shared ungani-stock-status.js module (also used
+  // by client.html, my-items.html, my-stock-tracking.html, admin-items.html,
+  // admin-home.html, reports.html, print-report.html). This file used to
+  // carry its own hand-maintained duplicate of client.html's logic, which
+  // drifted once already (a version that required reorder_level to be
+  // explicitly set before treating an item as numerically trackable at
+  // all - confirmed live on Billy Logistics, where every item's
+  // reorder_level was null, so Nia's stock answers silently disagreed
+  // with the Items page). Kept as same-named wrappers so every call site
+  // in this file is unaffected.
   function niaGetStockQuantity(item) {
-    if (state.tenant && state.tenant.stock_tracking_enabled === true) {
-      const trackedQty = item.quantity;
-      if (trackedQty !== null && trackedQty !== undefined && trackedQty !== "") {
-        const trackedNum = Number(trackedQty);
-        if (!isNaN(trackedNum)) return trackedNum;
-      }
-    }
-
-    const customFields = item.custom_fields || {};
-    const customQty = customFields.stock_quantity;
-    if (customQty !== undefined && customQty !== null && customQty !== "") {
-      const num = Number(customQty);
-      if (!isNaN(num)) return num;
-    }
-
-    const raw = item.units_available;
-    if (raw === null || raw === undefined || raw === "") return null;
-    const num = Number(raw);
-    return isNaN(num) ? null : num;
+    return UnganiStockStatus.getQuantity(item, state.tenant);
   }
 
   function niaGetReorderLevel(item) {
-    if (state.tenant && state.tenant.stock_tracking_enabled === true) {
-      const trackedLevel = item.reorder_level;
-      if (trackedLevel !== null && trackedLevel !== undefined && trackedLevel !== "") {
-        const trackedNum = Number(trackedLevel);
-        if (!isNaN(trackedNum) && trackedNum > 0) return trackedNum;
-      }
-    }
-
-    const customFields = item.custom_fields || {};
-    const raw = customFields.reorder_level;
-    if (raw === undefined || raw === null || raw === "") return LOW_STOCK_THRESHOLD;
-
-    const num = Number(raw);
-    return isNaN(num) || num <= 0 ? LOW_STOCK_THRESHOLD : num;
+    return UnganiStockStatus.getEffectiveReorderLevel(item, state.tenant);
   }
 
   function niaDaysUntil(dateStr) {

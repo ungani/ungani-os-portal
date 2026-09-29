@@ -44,6 +44,7 @@
   <script src="ungani-business-config.js"></script>
   <script src="ungani-analytics.js"></script>
   <script src="ungani-presets.js"></script>
+  <script src="ungani-stock-status.js"></script>
   <script src="nia-assistant.js"></script>
 </head>
 
@@ -116,12 +117,20 @@
       return UnganiClientShared.getValue(row, ["item_name", "name", "title", "property_name"], "Item");
     }
 
+    // Delegates to ungani-stock-status.js (shared with client.html,
+    // my-items.html, nia-assistant.js, admin-items.html, admin-home.html,
+    // reports.html, print-report.html). Previously used only the item's
+    // own reorder_level with no fallback - an item that never had one set
+    // could never show Low Stock here even when the tenant's default (or
+    // the dashboard) already flagged it.
     function stockStatus(row) {
-      const qty = Number(row.quantity) || 0;
-      const reorderLevel = row.reorder_level === null || row.reorder_level === undefined ? null : Number(row.reorder_level);
+      const tenant = currentContext && currentContext.tenant;
+      const qty = UnganiStockStatus.getQuantity(row, tenant);
+      const effectiveReorderLevel = UnganiStockStatus.getEffectiveReorderLevel(row, tenant);
+      const status = UnganiStockStatus.getStockStatus(qty, effectiveReorderLevel);
 
-      if (qty <= 0) return { label: "Out of Stock", className: "stock-status-out" };
-      if (reorderLevel !== null && qty <= reorderLevel) return { label: "Low Stock", className: "stock-status-low" };
+      if (status === "out_of_stock") return { label: "Out of Stock", className: "stock-status-out" };
+      if (status === "low_stock") return { label: "Low Stock", className: "stock-status-low" };
       return { label: "In Stock", className: "stock-status-ok" };
     }
 

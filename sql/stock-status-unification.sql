@@ -373,9 +373,11 @@ grant execute on function public.service_adjust_ungani_stock(uuid, uuid, text, n
 -- passes the result here - no business-type keyword matching is
 -- duplicated in SQL). Rejects null/negative outright, so a caller can
 -- never turn tracking on without also fixing Part A's constraint
--- requirement. If the tenant already has a default_reorder_level set
--- (e.g. re-enabling after a prior disable), that existing value wins -
--- this never clobbers an owner's own prior setting.
+-- requirement. Always writes p_default_reorder_level (no coalesce against
+-- the existing value) - my-settings.html always shows the tenant's true
+-- current default before Save is clicked, so whatever is submitted is the
+-- owner's informed intent, including a deliberate change to an
+-- already-set value.
 --
 -- Old zero-arg signature is explicitly dropped (not just replaced) so it
 -- can't linger as a stale overload alongside the new one - same class of
@@ -414,9 +416,17 @@ begin
     return jsonb_build_object('ok', false, 'message', 'A default reorder level (0 or greater) is required to enable stock tracking.');
   end if;
 
+  -- Always writes p_default_reorder_level, never coalesce()'d against the
+  -- existing value. Found live: my-settings.html's Save button always
+  -- shows the tenant's real current default in the input before
+  -- submitting, so whatever the owner submits IS their informed intent -
+  -- an earlier version of this function coalesced against the existing
+  -- value to protect a blind re-enable-after-disable from clobbering a
+  -- prior setting, but that meant an owner editing the number and hitting
+  -- Save had it silently ignored on every save after the first.
   update public.tenants
   set stock_tracking_enabled = true,
-      default_reorder_level = coalesce(default_reorder_level, p_default_reorder_level)
+      default_reorder_level = p_default_reorder_level
   where id = v_tenant_id;
 
   update public.business_items

@@ -26,6 +26,7 @@
   <script src="ungani-admin-nav-config.js" onerror="console.warn('ungani-admin-nav-config.js load failed - sidebar will be empty.');"></script>
   <script src="ungani-analytics.js" onerror="console.warn('ungani-analytics.js load failed - platform performance chart will be unavailable.');"></script>
   <script src="pwa-register.js" onerror="console.warn('pwa-register.js load failed.');"></script>
+  <script src="ungani-stock-status.js" onerror="console.warn('ungani-stock-status.js load failed.');"></script>
   <script src="nia-assistant.js" onerror="console.warn('nia-assistant.js load failed.');"></script>
   <script>
     (function () {
@@ -4300,41 +4301,28 @@
       return { thisMonth: thisMonth, lastMonth: lastMonth };
     }
 
+    // Delegates to ungani-stock-status.js (shared with client.html,
+    // my-items.html, my-stock-tracking.html, nia-assistant.js,
+    // admin-items.html, reports.html, print-report.html). Excludes
+    // is_test tenants - this count feeds a platform-wide health signal,
+    // and engineering test tenants (Billy Logistics etc.) shouldn't move
+    // it.
     function countLowStockItems(rows, tenantRows) {
       rows = rows || [];
-      // Real quantity lives at business_items.quantity (Stock Tracking
-      // enabled tenants) or custom_fields.stock_quantity (pre-Stock-Tracking
-      // default) - never at a flat top-level column read directly off row,
-      // mirroring client.html's getStockQuantity() dual-path logic.
-      var trackingByTenant = {};
+
+      var tenantById = {};
       (tenantRows || []).forEach(function (t) {
-        trackingByTenant[String(t.id)] = t.stock_tracking_enabled === true;
+        tenantById[String(t.id)] = t;
       });
 
       return rows.filter(function (row) {
+        var tenant = tenantById[String(row.tenant_id)];
+        if (!tenant || tenant.is_test === true) return false;
+
         var status = String(row.status || row.item_status || row.asset_status || row.stock_status || '').toLowerCase();
         if (status === 'low_stock') return true;
 
-        var qty = null;
-        if (trackingByTenant[String(row.tenant_id)]) {
-          var tracked = row.quantity;
-          if (tracked !== undefined && tracked !== null && tracked !== '') {
-            var trackedNum = Number(tracked);
-            if (!isNaN(trackedNum)) qty = trackedNum;
-          }
-        }
-        if (qty === null) {
-          var customFields = row.custom_fields || {};
-          var customQty = customFields.stock_quantity;
-          if (customQty !== undefined && customQty !== null && customQty !== '') {
-            var customNum = Number(customQty);
-            if (!isNaN(customNum)) qty = customNum;
-          }
-        }
-        if (qty === null) return false;
-
-        var type = String(row.item_type || row.asset_type || row.stock_type || row.type || row.category || 'other').toLowerCase();
-        return qty <= 2 && ['stock', 'item', 'other'].indexOf(type) !== -1;
+        return UnganiStockStatus.isItemLowStock(row, tenant);
       }).length;
     }
 
@@ -4624,7 +4612,7 @@
         var nowIsoExp = new Date().toISOString();
         var results = await Promise.all([
           supabaseClient.rpc('get_admin_ungani_billing_page_data'),
-          supabaseClient.from('business_items').select('status,item_status,asset_status,stock_status,quantity,custom_fields,item_type,asset_type,stock_type,type,category,tenant_id').limit(10000),
+          supabaseClient.from('business_items').select('status,item_status,asset_status,stock_status,quantity,reorder_level,custom_fields,units_available,item_type,asset_type,stock_type,type,category,tenant_id').limit(10000),
           // Scalability fix: was an unbounded status+due_date fetch across
           // every tenant's non-completed tasks, filtered in JS. Same
           // overdue definition (status='overdue' OR due_date passed,
@@ -4633,7 +4621,7 @@
             .neq('status', 'completed')
             .or('status.eq.overdue,due_date.lt.' + nowIsoExp),
           supabaseClient.from('ungani_audit_log').select('id', { count: 'exact', head: true }).is('actor_tenant_id', null).gte('created_at', sevenDaysAgo),
-          supabaseClient.from('tenants').select('id, created_at, stock_tracking_enabled')
+          supabaseClient.from('tenants').select('id, created_at, stock_tracking_enabled, default_reorder_level, is_test')
         ]);
 
         var billingRes = results[0], itemsRes = results[1], tasksRes = results[2], auditRes = results[3], tenantsRes = results[4];
