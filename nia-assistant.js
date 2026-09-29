@@ -188,6 +188,19 @@
       linkLabel: "Open Team Access"
     },
     {
+      key: "mpesa-bank-paybill",
+      match: [
+        "bank paybill", "equity paybill", "kcb paybill", "coop paybill", "co-op paybill",
+        "247247", "522522", "400200", "paybill not connecting", "paybill not working",
+        "mpesa not connecting", "mpesa connection failed", "why isn't my mpesa connected",
+        "why is my paybill not connected", "connect my paybill", "connect a bank paybill"
+      ],
+      question: "Why won't my bank paybill (e.g. Equity 247247) connect?",
+      answer: "Only your own Paybill or Till number works here. Bank paybills like Equity 247247, KCB 522522 or Co-op 400200 belong to the bank, not your business, so they can't be connected. If you receive payments using an account number under a bank paybill, this feature isn't available for your business right now. Contact UNGANI support if you need help.",
+      href: "my-settings.html",
+      linkLabel: "Open Settings"
+    },
+    {
       key: "subscription",
       match: [
         "subscription", "billing", "plan", "upgrade", "change my plan",

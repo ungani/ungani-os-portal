@@ -1281,9 +1281,14 @@
             Connect YOUR OWN Paybill or Till (not UNGANI's) so payments made straight to your own
             number are automatically captured and matched to the right person - the same matching
             already used for manually-entered M-Pesa payments in Money, just without typing it in
-            yourself. Get your Consumer Key, Consumer Secret, Initiator Name and Initiator Password
+            yourself. Get your Consumer Key and Consumer Secret
             from <a href="https://developer.safaricom.co.ke" target="_blank" rel="noopener">developer.safaricom.co.ke</a>.
           </p>
+
+          <div style="margin: 0 0 16px; padding: 14px 16px; border: 1px solid rgba(212,166,58,0.4); background: rgba(212,166,58,0.08); border-radius: 14px;">
+            <strong data-i18n="mpesa_bank_warning_title" style="display: block; color: var(--text); margin-bottom: 4px;">Only your own Paybill or Till number works here</strong>
+            <span data-i18n="mpesa_bank_warning_body" style="display: block; color: var(--muted); font-size: 13px; line-height: 1.55;">Bank paybills like Equity 247247, KCB 522522 or Co-op 400200 belong to the bank, not your business, so they can't be connected. If you receive payments using an account number under a bank paybill, this feature isn't available for your business right now. Contact UNGANI support if you need help.</span>
+          </div>
 
           <div id="mpesaPaybillStatusBox" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; margin-bottom: 16px;">
             <div>
@@ -1315,21 +1320,11 @@
               <label for="mpesaConsumerSecret">Consumer Secret</label>
               <input type="password" id="mpesaConsumerSecret" class="form-control" autocomplete="new-password" placeholder="Enter to set or change" />
             </div>
-
-            <div class="form-group">
-              <label for="mpesaInitiatorName">Initiator Name</label>
-              <input type="text" id="mpesaInitiatorName" class="form-control" autocomplete="off" placeholder="Your Paybill's API operator name" />
-            </div>
-
-            <div class="form-group">
-              <label for="mpesaInitiatorPassword">Initiator Password</label>
-              <input type="password" id="mpesaInitiatorPassword" class="form-control" autocomplete="new-password" placeholder="Enter to set or change" />
-            </div>
           </div>
 
           <p style="margin: 4px 0 0; color: var(--muted); font-size: 12px;">
-            Once saved, Consumer Secret and Initiator Password are never shown again - re-enter
-            them only if you need to change them.
+            Once saved, Consumer Secret is never shown again - re-enter it only if you need to
+            change it.
           </p>
 
           <div class="form-actions">
@@ -1683,7 +1678,9 @@
         card_dash_title: "Dashboard",
         card_dash_desc: "Return to your main client workspace.",
         card_security_title: "Security & Data",
-        card_security_desc: "Last login, recent activity, sessions, and data overview."
+        card_security_desc: "Last login, recent activity, sessions, and data overview.",
+        mpesa_bank_warning_title: "Only your own Paybill or Till works here",
+        mpesa_bank_warning_body: "Bank-shared paybills (e.g. Equity 247247, KCB 522522, Co-op 400200) cannot be connected - the shortcode belongs to the bank, not your business, so Safaricom won't register it for you. If you only have an account number under a bank paybill, this feature isn't available for your business yet. Contact UNGANI support and we'll let you know when bank-paybill support is available."
       },
       sw: {
         topbar_sub: "Mipangilio ya Mteja",
@@ -1757,7 +1754,9 @@
         card_dash_title: "Dashibodi",
         card_dash_desc: "Rudi kwenye nafasi yako kuu ya kazi.",
         card_security_title: "Usalama na Data",
-        card_security_desc: "Mwingilio wa mwisho, shughuli za hivi karibuni, vipindi, na muhtasari wa data."
+        card_security_desc: "Mwingilio wa mwisho, shughuli za hivi karibuni, vipindi, na muhtasari wa data.",
+        mpesa_bank_warning_title: "Ni Paybill au Till yako pekee inayofanya kazi hapa",
+        mpesa_bank_warning_body: "Paybill za benki zinazoshirikiwa (mfano Equity 247247, KCB 522522, Co-op 400200) haziwezi kuunganishwa - namba hiyo ni mali ya benki, si biashara yako, kwa hivyo Safaricom hataisajili kwa ajili yako. Ikiwa una namba ya akaunti chini ya paybill ya benki pekee, kipengele hiki bado hakipatikani kwa biashara yako. Wasiliana na msaada wa UNGANI nasi tutakujulisha itakapopatikana."
       }
     };
 
@@ -2071,9 +2070,9 @@
     // vault.sql, sql/mpesa-connection-status-rpc.sql) - a tenant's OWN
     // Paybill, distinct from UNGANI's own subscription/POS M-Pesa flow.
     // Status is read-only (shortcode/environment/status only, no
-    // secrets); the form always starts blank for the secret fields so a
-    // saved Consumer Secret/Initiator Password is never round-tripped
-    // back to the browser, even on reconnect.
+    // secrets); the form always starts blank for the secret field so a
+    // saved Consumer Secret is never round-tripped back to the browser,
+    // even on reconnect.
     async function loadMpesaPaybillStatus() {
       const statusText = document.getElementById("mpesaPaybillStatusText");
       const statusSubtext = document.getElementById("mpesaPaybillStatusSubtext");
@@ -2085,17 +2084,49 @@
         const { data, error } = await supabaseClient.rpc("owner_get_ungani_mpesa_connection_status");
         if (error) throw error;
 
-        if (data && data.connected) {
+        if (!data || data.ok === false) {
+          statusText.textContent = "Could not check connection";
+          statusSubtext.textContent = (data && data.message) || "";
+          return;
+        }
+
+        if (!data.status) {
+          // No row at all - credentials have never been saved.
+          statusText.textContent = "Not connected";
+          statusSubtext.textContent = "Connect your own Paybill/Till to auto-capture payments.";
+          if (connectBtn) connectBtn.textContent = "Connect Paybill";
+          return;
+        }
+
+        // A row exists (credentials saved at least once), so prefill the
+        // form regardless of status - a 'pending' or 'failed' connection
+        // still remembers its own shortcode/environment for retry.
+        const envSelect = document.getElementById("mpesaEnvironment");
+        const shortcodeInput = document.getElementById("mpesaShortcode");
+        if (envSelect) envSelect.value = data.environment;
+        if (shortcodeInput) shortcodeInput.value = data.shortcode;
+
+        if (data.status === "active") {
           statusText.textContent = "Connected - " + data.shortcode + " (" + data.environment + ")";
           statusSubtext.textContent = "Payments to this Shortcode are automatically captured.";
           if (connectBtn) connectBtn.textContent = "Update Connection";
-          const envSelect = document.getElementById("mpesaEnvironment");
-          const shortcodeInput = document.getElementById("mpesaShortcode");
-          if (envSelect) envSelect.value = data.environment;
-          if (shortcodeInput) shortcodeInput.value = data.shortcode;
-        } else if (data && data.ok === false) {
-          statusText.textContent = "Could not check connection";
-          statusSubtext.textContent = data.message || "";
+        } else if (data.status === "failed") {
+          // Safaricom rejected the last registration attempt (e.g. a bank-
+          // held paybill it will never provision to this business) - shown
+          // here instead of a generic "not connected yet" so a tenant who
+          // saved credentials once doesn't see the same bare message on
+          // every later visit with no explanation of what went wrong.
+          statusText.textContent = "Not connected - last attempt failed";
+          statusSubtext.textContent = data.last_error || "Safaricom did not accept this connection.";
+          if (connectBtn) connectBtn.textContent = "Try Again";
+        } else if (data.status === "pending") {
+          // Credentials saved but Daraja registration hasn't confirmed
+          // success or failure yet (e.g. the tab closed mid-flow) - not
+          // "Connected", since nothing captures payments until Daraja
+          // actually confirms the registration.
+          statusText.textContent = "Pending - " + data.shortcode + " (" + data.environment + ")";
+          statusSubtext.textContent = "Credentials saved. Click Connect to register with Safaricom.";
+          if (connectBtn) connectBtn.textContent = "Connect Paybill";
         } else {
           statusText.textContent = "Not connected";
           statusSubtext.textContent = "Connect your own Paybill/Till to auto-capture payments.";
@@ -2118,12 +2149,10 @@
       const environment = document.getElementById("mpesaEnvironment").value || "sandbox";
       const consumerKey = (document.getElementById("mpesaConsumerKey").value || "").trim();
       const consumerSecret = (document.getElementById("mpesaConsumerSecret").value || "").trim();
-      const initiatorName = (document.getElementById("mpesaInitiatorName").value || "").trim();
-      const initiatorPassword = (document.getElementById("mpesaInitiatorPassword").value || "").trim();
 
-      if (!shortcode || !consumerKey || !consumerSecret || !initiatorName || !initiatorPassword) {
+      if (!shortcode || !consumerKey || !consumerSecret) {
         msgSpan.className = "action-msg error";
-        msgSpan.textContent = "Shortcode, Consumer Key, Consumer Secret, Initiator Name and Initiator Password are all required.";
+        msgSpan.textContent = "Shortcode, Consumer Key and Consumer Secret are all required.";
         return;
       }
 
@@ -2135,8 +2164,6 @@
           p_shortcode: shortcode,
           p_consumer_key: consumerKey,
           p_consumer_secret: consumerSecret,
-          p_initiator_name: initiatorName,
-          p_initiator_password: initiatorPassword,
           p_environment: environment
         });
 
@@ -2173,7 +2200,6 @@
         msgSpan.textContent = "Paybill " + body.shortcode + " connected and ready to receive payments.";
 
         document.getElementById("mpesaConsumerSecret").value = "";
-        document.getElementById("mpesaInitiatorPassword").value = "";
 
         await loadMpesaPaybillStatus();
       } catch (err) {

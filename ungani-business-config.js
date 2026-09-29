@@ -1270,10 +1270,7 @@
       "pharmacy",
       "chemist",
       "medicine",
-      "agrovet",
-      "farm",
-      "farming",
-      "agriculture"
+      "agrovet"
     ],
     "dashboardTitle": "Retail Operations Dashboard",
     "chartsTitle": "Retail Analytics",

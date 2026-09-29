@@ -651,12 +651,32 @@ async function registerC2BUrls(req, res) {
     // Invalid ValidationURL - URL has the word MPESA" arrived as
     // errorMessage) avoids depending on a guessed success-code string.
     if (!registerResponse.ok || registerData.errorMessage || registerData.errorCode) {
+      const failureMessage = registerData.errorMessage || registerData.ResponseDescription || "Safaricom did not accept this Paybill connection - check the Shortcode and credentials.";
+
+      // Without this, the row saved by owner_connect_ungani_mpesa_paybill()
+      // stays status='active' forever even though Daraja just rejected the
+      // registration - every later visit to Settings/Integrations would
+      // silently read back "Connected" with no real registration behind it.
+      // Best-effort: if this update itself fails, the loud error response
+      // below still reaches the tenant either way.
+      await supabaseAdmin.rpc("service_mark_ungani_mpesa_registration_failed", {
+        p_tenant_id: caller.tenantId,
+        p_error: failureMessage
+      }).catch(() => {});
+
       return json(res, 502, {
         ok: false,
-        message: registerData.errorMessage || registerData.ResponseDescription || "Safaricom did not accept this Paybill connection - check the Shortcode and credentials.",
+        message: failureMessage,
         raw: registerData
       });
     }
+
+    // Only this confirmed-success path ever sets the connection 'active' -
+    // owner_connect_ungani_mpesa_paybill() (the credential-save RPC) only
+    // ever leaves it 'pending', by design.
+    await supabaseAdmin.rpc("service_mark_ungani_mpesa_registration_succeeded", {
+      p_tenant_id: caller.tenantId
+    }).catch(() => {});
 
     return json(res, 200, {
       ok: true,
@@ -664,6 +684,29 @@ async function registerC2BUrls(req, res) {
       shortcode: credResponse.shortcode
     });
   } catch (error) {
+    // Covers timeouts and any other exception thrown above (a rejected
+    // Daraja response is handled earlier and never reaches this catch) -
+    // without this, a network failure here left the connection stuck
+    // wherever owner_connect_ungani_mpesa_paybill() last set it instead of
+    // surfacing as a failed attempt.
+    if (SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const bearerToken = getBearerToken(req);
+        const caller = await resolveCaller(bearerToken);
+        if (caller && caller.tenantId) {
+          const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+            auth: { persistSession: false, autoRefreshToken: false }
+          });
+          await supabaseAdmin.rpc("service_mark_ungani_mpesa_registration_failed", {
+            p_tenant_id: caller.tenantId,
+            p_error: error.message
+          }).catch(() => {});
+        }
+      } catch (markError) {
+        // Best-effort only - the loud error response below still reaches
+        // the tenant either way.
+      }
+    }
     return json(res, 500, { ok: false, message: error.message });
   }
 }
@@ -681,22 +724,72 @@ async function registerC2BUrls(req, res) {
 // Shortcode is silently acknowledged and ignored.
 async function handleC2BConfirmation(req, res) {
   const ack = { ResultCode: 0, ResultDesc: "Success" };
+  const nack = { ResultCode: 1, ResultDesc: "Failed" };
+
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    // Can't write the raw callback log without this, so there is no way
+    // to record the payment at all - fail loudly so Safaricom retries
+    // instead of silently ACK-ing a payment we have zero trace of.
+    return json(res, 500, nack);
+  }
+
+  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+
+  // Every C2B confirmation is logged here FIRST, before any tenant
+  // lookup or processing - this is the one write that must succeed for
+  // the payment to ever be ACKed. A shortcode collision, a matching
+  // bug, or any other processing failure below still leaves the full
+  // raw payload sitting here for admin review, instead of vanishing.
+  let rawRowId = null;
+  try {
+    const { data: rawRow, error: rawInsertError } = await supabaseAdmin
+      .from("ungani_mpesa_c2b_callback_log")
+      .insert({
+        raw_payload: req.body || {},
+        shortcode: (req.body && req.body.BusinessShortCode) || null,
+        trans_id: (req.body && req.body.TransID) || null,
+        status: "received"
+      })
+      .select("id")
+      .single();
+
+    if (rawInsertError || !rawRow) {
+      return json(res, 500, nack);
+    }
+    rawRowId = rawRow.id;
+  } catch (rawError) {
+    return json(res, 500, nack);
+  }
+
+  // From here on the payment is safely captured regardless of outcome,
+  // so every remaining path ACKs 200 - Safaricom doesn't need to retry,
+  // and nothing is lost even on failure because it's sitting in the raw
+  // log above, marked for admin follow-up.
+  async function markRaw(status, reason, tenantId, transactionId) {
+    const patch = {
+      status: status,
+      error_reason: reason || null,
+      updated_at: new Date().toISOString()
+    };
+    if (tenantId) patch.tenant_id = tenantId;
+    if (transactionId) patch.transaction_id = transactionId;
+    await supabaseAdmin
+      .from("ungani_mpesa_c2b_callback_log")
+      .update(patch)
+      .eq("id", rawRowId)
+      .then(function () {}, function () {});
+  }
 
   try {
-    if (!SUPABASE_SERVICE_ROLE_KEY) {
-      return json(res, 200, ack);
-    }
-
     const shortcode = req.body.BusinessShortCode;
     const transId = req.body.TransID;
 
     if (!shortcode || !transId) {
+      await markRaw("error", "Missing BusinessShortCode or TransID.");
       return json(res, 200, ack);
     }
-
-    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false }
-    });
 
     const { data: connection } = await supabaseAdmin
       .from("ungani_tenant_mpesa_connections")
@@ -706,6 +799,7 @@ async function handleC2BConfirmation(req, res) {
       .maybeSingle();
 
     if (!connection) {
+      await markRaw("unmatched", "No active connection for shortcode " + shortcode + ".");
       return json(res, 200, ack);
     }
 
@@ -724,6 +818,7 @@ async function handleC2BConfirmation(req, res) {
       .maybeSingle();
 
     if (existing) {
+      await markRaw("matched", "Duplicate delivery of an already-recorded transaction.", tenantId, existing.id);
       return json(res, 200, ack);
     }
 
@@ -761,31 +856,39 @@ async function handleC2BConfirmation(req, res) {
     // for what it's for (rent vs. deposit vs. something else), so the
     // owner reclassifies it from Money, same "Not assigned" philosophy
     // already used for an unmatched payer phone.
-    await supabaseAdmin.from("transactions").insert({
-      tenant_id: tenantId,
-      type: "income",
-      transaction_type: "income",
-      category: "Uncategorized",
-      amount: transAmount,
-      currency: "KES",
-      exchange_rate: 1,
-      amount_kes: transAmount,
-      transaction_date: transactionDate,
-      payment_method: "M-Pesa",
-      status: "completed",
-      description: "Received via M-Pesa Paybill (auto-captured) - reclassify the category if needed.",
-      related_person_id: relatedPersonId,
-      payer_phone: normalizedPhone || req.body.MSISDN || null,
-      reference_no: transId,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    });
+    const { data: inserted, error: insertError } = await supabaseAdmin
+      .from("transactions")
+      .insert({
+        tenant_id: tenantId,
+        type: "income",
+        transaction_type: "income",
+        category: "Uncategorized",
+        amount: transAmount,
+        currency: "KES",
+        exchange_rate: 1,
+        amount_kes: transAmount,
+        transaction_date: transactionDate,
+        payment_method: "M-Pesa",
+        status: "completed",
+        description: "Received via M-Pesa Paybill (auto-captured) - reclassify the category if needed.",
+        related_person_id: relatedPersonId,
+        payer_phone: normalizedPhone || req.body.MSISDN || null,
+        reference_no: transId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select("id")
+      .single();
 
+    if (insertError || !inserted) {
+      await markRaw("error", (insertError && insertError.message) || "Transaction insert failed.", tenantId);
+      return json(res, 200, ack);
+    }
+
+    await markRaw("matched", null, tenantId, inserted.id);
     return json(res, 200, ack);
   } catch (error) {
-    // Always acknowledge with 200 even on our own internal error - same
-    // reasoning as the STK callback: Safaricom retries on non-2xx, and
-    // a genuine internal error here won't be fixed by a retry anyway.
+    await markRaw("error", error.message);
     return json(res, 200, ack);
   }
 }

@@ -109,6 +109,7 @@
           { key: "healthCheck", href: "admin-health.html", icon: "heart-pulse", label: "System Health", activeKey: "admin-health" },
           { key: "auditLogs", href: "admin-audit-logs.html", icon: "scroll-text", label: "Audit Logs", activeKey: "admin-audit-logs" },
           { key: "errorLog", href: "admin-error-log.html", icon: "bug", label: "Error Log", activeKey: "admin-error-log" },
+          { key: "mpesaCallbacks", href: "admin-mpesa-callbacks.html", icon: "banknote", label: "M-Pesa Callbacks", activeKey: "admin-mpesa-callbacks" },
           { key: "emailQueue", href: "admin-email-queue.html", icon: "mail", label: "Email Queue", activeKey: "admin-email-queue" },
           { key: "smartChecks", href: "admin-smart-checks.html", icon: "brain", label: "Smart Checks", activeKey: "admin-smart-checks" },
           { key: "launchReadiness", href: "admin-launch.html", icon: "rocket", label: "Launch Readiness", activeKey: "admin-launch" }
