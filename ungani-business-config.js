@@ -3320,6 +3320,28 @@
     return null;
   }
 
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // A GENERAL label is redundant for this type if one of the type's own
+  // labels already names the same concept more specifically - e.g.
+  // Logistics has its own "Maintenance Reminder" and "Delivery
+  // Confirmation", so GENERAL's bare "Maintenance" and "Delivery" would
+  // otherwise sit right next to them in the same dropdown as if they
+  // were two different, real options for one real action. Word-boundary
+  // matched (not a plain substring test) so a short GENERAL word like
+  // "Rent" doesn't wrongly swallow an unrelated own label like "Equipment
+  // Rental" - "Rent" only counts as covered if it appears as a whole
+  // word inside the own label.
+  function isCoveredByOwnLabel(generalLabel, ownLabels) {
+    const pattern = new RegExp("\\b" + escapeRegExp(generalLabel) + "\\b", "i");
+
+    return ownLabels.some(function (ownLabel) {
+      return ownLabel.toLowerCase() !== generalLabel.toLowerCase() && pattern.test(ownLabel);
+    });
+  }
+
   // Merges a resolved type (or null, for the no-match case) with GENERAL.
   // List fields (categories/types) are unioned rather than overwritten, so
   // every business type always has at least the universal General options
@@ -3331,7 +3353,12 @@
     const merged = Object.assign({}, GENERAL, source);
 
     MERGEABLE_FIELDS.forEach(function (field) {
-      merged[field] = unique([].concat(source[field] || [], GENERAL[field] || []));
+      const ownLabels = source[field] || [];
+      const applicableGeneralLabels = (GENERAL[field] || []).filter(function (generalLabel) {
+        return !isCoveredByOwnLabel(generalLabel, ownLabels);
+      });
+
+      merged[field] = unique([].concat(ownLabels, applicableGeneralLabels));
     });
 
     if (GENERAL.reportSections) {
