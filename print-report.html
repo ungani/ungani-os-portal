@@ -194,10 +194,15 @@
 
     async function safeSelect(tableName, dateColumn, cutoffISO, upperBoundISO) {
       try {
+        // Confirmed live (2026-09-29): none of these tables' RLS select
+        // policies filter deleted_at - matches the same fix applied to
+        // client.html's safeSelect(). A printed report must never include
+        // a record someone already deleted.
         let query = currentContext.supabaseClient
           .from(tableName)
           .select("*")
-          .eq("tenant_id", currentContext.tenantId);
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null);
 
         if (dateColumn && cutoffISO) {
           query = query.gte(dateColumn, cutoffISO.slice(0, 10));

@@ -5453,12 +5453,21 @@
         /network|fetch|failed to fetch|timeout/i.test(message || "");
     }
 
+    // Confirmed live (2026-09-29): none of the 8 tables this reads have a
+    // deleted_at filter in their RLS select policy either - a soft-deleted
+    // row came back from this exact query shape with no filter applied.
+    // The .is("deleted_at", null) below is the fix; every dashboard total,
+    // Health Score input, and Nia answer that goes through safeSelect()
+    // inherits it automatically. Recently Deleted / restore views must NOT
+    // call this function - they need the deleted rows and already use
+    // their own dedicated RPC (get_my_ungani_recently_deleted_v2).
     async function safeSelect(tableName, limitCount) {
       try {
         let response = await supabaseClient
           .from(tableName)
           .select("*")
           .eq("tenant_id", currentTenantId)
+          .is("deleted_at", null)
           .order("created_at", { ascending: false })
           .limit(limitCount || 250);
 
@@ -5472,6 +5481,7 @@
             .from(tableName)
             .select("*")
             .eq("tenant_id", currentTenantId)
+            .is("deleted_at", null)
             .limit(limitCount || 250);
         }
 
@@ -5493,10 +5503,11 @@
       }
     }
 
-    // ungani_customer_invoices has no deleted_at filter in its own select
-    // RLS policy (unlike the tables safeSelect reads), so a direct .from()
-    // read would leak soft-deleted invoices into the health calculation.
-    // The RPC already does the deleted_at is null filtering server-side.
+    // ungani_customer_invoices has no deleted_at filter in its RLS select
+    // policy, so a direct .from() read (unlike safeSelect() above, which
+    // now filters client-side) would leak soft-deleted invoices into the
+    // health calculation. The RPC already filters deleted_at is null
+    // server-side, so it's used here instead of a direct table read.
     async function safeInvoicesForHealth() {
       try {
         const response = await supabaseClient.rpc("get_my_ungani_customer_invoices");

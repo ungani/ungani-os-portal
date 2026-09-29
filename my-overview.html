@@ -126,11 +126,20 @@
 
     async function safeSelect(tableName) {
       try {
-        const response = await currentContext.supabaseClient
+        // Confirmed live (2026-09-29): these tables' RLS select policies
+        // don't filter deleted_at either - matches the same fix applied to
+        // client.html's safeSelect(). admin_client_messages/team_chat_messages
+        // have no deleted_at column at all (no soft-delete on chat), so the
+        // filter is scoped to just the 8 soft-deletable tables below.
+        const hasDeletedAt = tableName !== "admin_client_messages" && tableName !== "team_chat_messages";
+        let query = currentContext.supabaseClient
           .from(tableName)
           .select("*")
-          .eq("tenant_id", currentContext.tenantId)
-          .order("created_at", { ascending: false });
+          .eq("tenant_id", currentContext.tenantId);
+
+        if (hasDeletedAt) query = query.is("deleted_at", null);
+
+        const response = await query.order("created_at", { ascending: false });
 
         if (response.error) {
           console.warn(tableName, response.error.message);

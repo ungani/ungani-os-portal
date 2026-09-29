@@ -4864,10 +4864,10 @@
     try {
       const [invoiceResponse, peopleResponse, txResponse] = await Promise.all([
         state.supabaseClient.rpc("get_my_ungani_customer_invoices"),
-        state.supabaseClient.from("client_people").select("id, full_name, person_type").eq("tenant_id", state.tenantId),
+        state.supabaseClient.from("client_people").select("id, full_name, person_type").eq("tenant_id", state.tenantId).is("deleted_at", null),
         state.supabaseClient.from("transactions")
           .select("id, amount, amount_kes, status, transaction_type, type, related_person_id")
-          .eq("tenant_id", state.tenantId).eq("status", "pending").not("related_person_id", "is", null).limit(1000)
+          .eq("tenant_id", state.tenantId).is("deleted_at", null).eq("status", "pending").not("related_person_id", "is", null).limit(1000)
       ]);
 
       invoices = (invoiceResponse && !invoiceResponse.error && invoiceResponse.data && invoiceResponse.data.ok === true)
@@ -4986,11 +4986,12 @@
         state.supabaseClient.from("business_events")
           .select("id, event_title, event_date, status, booking_total_amount, booking_deposit_required")
           .eq("tenant_id", state.tenantId)
+          .is("deleted_at", null)
           .not("booking_total_amount", "is", null)
           .order("event_date", { ascending: true }),
         state.supabaseClient.from("transactions")
           .select("id, amount, amount_kes, transaction_type, type, related_event_id")
-          .eq("tenant_id", state.tenantId).not("related_event_id", "is", null).limit(1000)
+          .eq("tenant_id", state.tenantId).is("deleted_at", null).not("related_event_id", "is", null).limit(1000)
       ]);
 
       events = (!eventsResponse.error && eventsResponse.data) ? eventsResponse.data : [];
@@ -5101,11 +5102,12 @@
         state.supabaseClient.from("business_events")
           .select("id, event_title, event_date, status, deployment_rate")
           .eq("tenant_id", state.tenantId)
+          .is("deleted_at", null)
           .not("deployment_rate", "is", null)
           .order("event_date", { ascending: true }),
         state.supabaseClient.from("transactions")
           .select("id, amount, amount_kes, transaction_type, type, related_event_id")
-          .eq("tenant_id", state.tenantId).not("related_event_id", "is", null).limit(1000)
+          .eq("tenant_id", state.tenantId).is("deleted_at", null).not("related_event_id", "is", null).limit(1000)
       ]);
 
       events = (!eventsResponse.error && eventsResponse.data) ? eventsResponse.data : [];
@@ -5223,7 +5225,7 @@
           .order("job_due_date", { ascending: true }),
         state.supabaseClient.from("transactions")
           .select("id, amount, amount_kes, transaction_type, type, related_item_id")
-          .eq("tenant_id", state.tenantId).not("related_item_id", "is", null).limit(1000)
+          .eq("tenant_id", state.tenantId).is("deleted_at", null).not("related_item_id", "is", null).limit(1000)
       ]);
 
       items = (!itemsResponse.error && itemsResponse.data) ? itemsResponse.data : [];
@@ -5332,11 +5334,12 @@
         state.supabaseClient.from("business_events")
           .select("id, event_title, event_date, status, appointment_amount")
           .eq("tenant_id", state.tenantId)
+          .is("deleted_at", null)
           .not("appointment_amount", "is", null)
           .order("event_date", { ascending: true }),
         state.supabaseClient.from("transactions")
           .select("id, amount, amount_kes, transaction_type, type, related_event_id")
-          .eq("tenant_id", state.tenantId).not("related_event_id", "is", null).limit(1000)
+          .eq("tenant_id", state.tenantId).is("deleted_at", null).not("related_event_id", "is", null).limit(1000)
       ]);
 
       events = (!eventsResponse.error && eventsResponse.data) ? eventsResponse.data : [];
@@ -6443,14 +6446,14 @@
   // number than what they see on screen.
   async function fetchNiaHealthScoreData() {
     const results = await Promise.all([
-      state.supabaseClient.from("transactions").select("id, amount, amount_kes, category, category_name, transaction_type, type, status, related_person_id, transaction_date, created_at").eq("tenant_id", state.tenantId).limit(1000),
-      state.supabaseClient.from("business_items").select("id, item_status, property_status, status, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
-      state.supabaseClient.from("client_people").select("id, linked_item_id, lease_end_date, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
-      state.supabaseClient.from("business_records").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
-      state.supabaseClient.from("tasks").select("id, status, due_date, task_type, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
-      state.supabaseClient.from("documents").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
-      state.supabaseClient.from("business_events").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000),
-      state.supabaseClient.from("support_issues").select("id, status, priority, created_at, updated_at").eq("tenant_id", state.tenantId).limit(1000)
+      state.supabaseClient.from("transactions").select("id, amount, amount_kes, category, category_name, transaction_type, type, status, related_person_id, transaction_date, created_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
+      state.supabaseClient.from("business_items").select("id, item_status, property_status, status, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
+      state.supabaseClient.from("client_people").select("id, linked_item_id, lease_end_date, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
+      state.supabaseClient.from("business_records").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
+      state.supabaseClient.from("tasks").select("id, status, due_date, task_type, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
+      state.supabaseClient.from("documents").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
+      state.supabaseClient.from("business_events").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
+      state.supabaseClient.from("support_issues").select("id, status, priority, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000)
     ]);
 
     results.forEach(function (r) { if (r.error) throw new Error(r.error.message); });
