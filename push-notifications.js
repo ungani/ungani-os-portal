@@ -396,6 +396,23 @@
     document.body.appendChild(banner);
     setTimeout(function () { banner.classList.add("show"); }, 50);
 
+    // The className check above is a race, not a guarantee - confirmed
+    // live: client.html's welcome-back-toast is scheduled independently
+    // (900ms after its own, separately-timed trigger) and can appear
+    // AFTER this banner already exists. A short-lived observer catches
+    // that case and retroactively shifts the banner down instead of
+    // leaving it stacked under the toast for the rest of the page visit.
+    if (!banner.classList.contains("ungani-below-welcome-toast")) {
+      const observer = new MutationObserver(function () {
+        if (document.querySelector(".welcome-back-toast")) {
+          banner.classList.add("ungani-below-welcome-toast");
+          observer.disconnect();
+        }
+      });
+      observer.observe(document.body, { childList: true });
+      setTimeout(function () { observer.disconnect(); }, 5000);
+    }
+
     if (window.lucide) window.lucide.createIcons();
   }
 
