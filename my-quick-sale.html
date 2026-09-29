@@ -55,6 +55,13 @@
     let activeCategory = "all";
     let searchTerm = "";
     let cartLines = []; // [{item_id, description, unit_price, quantity}]
+    // Generated once per distinct checkout attempt (cleared whenever the
+    // cart contents change) and reused on a manual retry of that same
+    // attempt, so a repeated Complete Sale click - network retry, impatient
+    // double-click that slips past the button guard - never creates a
+    // second invoice or sends a second STK prompt. record_ungani_pos_sale
+    // returns replay:true when this id was already processed.
+    let currentSaleId = null;
     let priceListOptions = [];
     let selectedPriceListId = "";
     let activePriceListMap = null;
@@ -247,6 +254,10 @@
           quantity: 1
         });
       }
+      // A changed cart is a genuinely different sale, not a retry of the
+      // last attempt - it must get its own fresh id, otherwise it would be
+      // treated as a replay of whatever the last id's outcome was.
+      currentSaleId = null;
       renderQuickSalePage();
     }
 
@@ -257,11 +268,13 @@
       if (line.quantity <= 0) {
         cartLines = cartLines.filter(function (l) { return String(l.item_id) !== String(itemId); });
       }
+      currentSaleId = null;
       renderQuickSalePage();
     }
 
     function removeCartLine(itemId) {
       cartLines = cartLines.filter(function (l) { return String(l.item_id) !== String(itemId); });
+      currentSaleId = null;
       renderQuickSalePage();
     }
 
@@ -363,10 +376,17 @@
           };
         });
 
+        // Generated once per distinct cart (see addToCart/changeCartQuantity/
+        // removeCartLine, which clear it on any real change) and reused if
+        // this same click needs retrying, so a repeat submission is an
+        // idempotent no-op server-side instead of a second sale.
+        if (!currentSaleId) currentSaleId = crypto.randomUUID();
+
         const response = await currentContext.supabaseClient.rpc("record_ungani_pos_sale", {
           p_customer_name: customerName,
           p_payment_method: paymentMethod,
-          p_items: items
+          p_items: items,
+          p_sale_id: currentSaleId
         });
 
         if (response.error || !response.data || response.data.ok !== true) {
@@ -379,8 +399,18 @@
         if (paymentMethod === "cash" || paymentMethod === "mpesa_manual") {
           showReceipt(sale, customerName, paymentMethod === "cash" ? "Cash" : "M-Pesa (already paid)");
           cartLines = [];
+          currentSaleId = null;
           renderQuickSalePage();
           loadReconciliation();
+          return;
+        }
+
+        // M-Pesa: a replay means an earlier attempt with this same sale id
+        // already created the draft invoice and (most likely) already sent
+        // an STK prompt - show it as-is and stop, rather than prompting for
+        // a phone number again and sending a second prompt.
+        if (sale.replay === true) {
+          UnganiClientShared.showToast("This sale was already started - invoice " + sale.invoice_number + " (" + sale.status + ").");
           return;
         }
 
@@ -457,6 +487,7 @@
             clearInterval(mpesaPollTimer);
             mpesaPollTimer = null;
             cartLines = [];
+            currentSaleId = null;
             renderQuickSalePage();
             showReceipt(sale, customerName, "M-Pesa");
             loadReconciliation();

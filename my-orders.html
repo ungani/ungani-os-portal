@@ -64,6 +64,14 @@
     let editingOrderItems = [];
     let printOrderId = null;
     let printModeActive = false;
+    // Keyed by order_item_id: { id, qty }. Generated once when a Fulfil
+    // click starts and reused on a retry of that exact same click (same
+    // line, same quantity still in the input), so a repeated submission -
+    // network retry, impatient re-click after an error - is an idempotent
+    // no-op server-side instead of double-fulfilling. If the quantity in
+    // the input has changed since the cached attempt, that's a genuinely
+    // different action and gets its own fresh id.
+    let pendingFulfillments = {};
 
     window.addEventListener("load", function () {
       const params = new URLSearchParams(window.location.search);
@@ -924,7 +932,7 @@
               <div class="order-fulfil-row">
                 <span class="ungani-small" style="flex:1;">${UnganiClientShared.safe(item.description)}: ${item.fulfilled_quantity || 0}/${item.quantity} fulfilled</span>
                 <input type="number" min="0.01" max="${remaining}" step="0.01" id="fulfilQty_${index}" placeholder="Qty" value="${remaining}" />
-                <button type="button" class="ungani-btn green" style="padding:6px 12px;min-height:auto;" onclick="fulfilOrderLine('${UnganiClientShared.attr(item.id)}', ${index})">Fulfil</button>
+                <button type="button" class="ungani-btn green" style="padding:6px 12px;min-height:auto;" onclick="fulfilOrderLine('${UnganiClientShared.attr(item.id)}', ${index}, this)">Fulfil</button>
               </div>
             `;
           }).join("")}
@@ -1195,7 +1203,7 @@
       }
     }
 
-    async function fulfilOrderLine(orderItemId, index) {
+    async function fulfilOrderLine(orderItemId, index, buttonEl) {
       const qtyInput = document.getElementById("fulfilQty_" + index);
       const qty = Number(qtyInput ? qtyInput.value : 0);
 
@@ -1204,44 +1212,52 @@
         return;
       }
 
-      try {
-        const response = await currentContext.supabaseClient.rpc("fulfill_ungani_order_item", {
-          p_order_item_id: orderItemId,
-          p_fulfill_quantity: qty
-        });
+      await UnganiClientShared.withButtonLoading(buttonEl, async () => {
+        const cached = pendingFulfillments[orderItemId];
+        const fulfillmentEventId = (cached && cached.qty === qty) ? cached.id : crypto.randomUUID();
+        pendingFulfillments[orderItemId] = { id: fulfillmentEventId, qty: qty };
 
-        if (response.error || !response.data || response.data.ok !== true) {
-          UnganiClientShared.showToast("Could not fulfil: " + (response.error ? response.error.message : (response.data && response.data.message)));
-          return;
-        }
+        try {
+          const response = await currentContext.supabaseClient.rpc("fulfill_ungani_order_item", {
+            p_order_item_id: orderItemId,
+            p_fulfill_quantity: qty,
+            p_fulfillment_event_id: fulfillmentEventId
+          });
 
-        UnganiClientShared.closeModal();
+          if (response.error || !response.data || response.data.ok !== true) {
+            UnganiClientShared.showToast("Could not fulfil: " + (response.error ? response.error.message : (response.data && response.data.message)));
+            return;
+          }
 
-        // Nudge, not force: this fulfilment just completed the WHOLE
-        // order (not just this line), which is exactly the moment the
-        // owner is most likely to actually want to invoice it - catching
-        // it here beats hoping they later notice the "Ready to Invoice"
-        // KPI/row badge on the list. Declining just falls back to that
-        // passive reminder, nothing is lost either way.
-        if (response.data.order_status === "fulfilled" && editingOrderId) {
-          const orderId = editingOrderId;
+          delete pendingFulfillments[orderItemId];
+          UnganiClientShared.closeModal();
+
+          // Nudge, not force: this fulfilment just completed the WHOLE
+          // order (not just this line), which is exactly the moment the
+          // owner is most likely to actually want to invoice it - catching
+          // it here beats hoping they later notice the "Ready to Invoice"
+          // KPI/row badge on the list. Declining just falls back to that
+          // passive reminder, nothing is lost either way.
+          if (response.data.order_status === "fulfilled" && editingOrderId) {
+            const orderId = editingOrderId;
+            await loadOrderRows();
+            renderOrdersPage();
+
+            if (confirm("This order is now fully fulfilled. Convert it to an invoice now?")) {
+              await performOrderToInvoiceConversion(orderId);
+            } else {
+              UnganiClientShared.showToast("Fulfilled ✓ (fulfilled)");
+            }
+            return;
+          }
+
+          UnganiClientShared.showToast("Fulfilled ✓ (" + response.data.order_status.replace("_", " ") + ")");
           await loadOrderRows();
           renderOrdersPage();
-
-          if (confirm("This order is now fully fulfilled. Convert it to an invoice now?")) {
-            await performOrderToInvoiceConversion(orderId);
-          } else {
-            UnganiClientShared.showToast("Fulfilled ✓ (fulfilled)");
-          }
-          return;
+        } catch (error) {
+          UnganiClientShared.showToast("Could not fulfil: " + error.message);
         }
-
-        UnganiClientShared.showToast("Fulfilled ✓ (" + response.data.order_status.replace("_", " ") + ")");
-        await loadOrderRows();
-        renderOrdersPage();
-      } catch (error) {
-        UnganiClientShared.showToast("Could not fulfil: " + error.message);
-      }
+      });
     }
 
     async function convertOrderToInvoice(id) {

@@ -412,20 +412,30 @@ async function handleStkCallback(req, res) {
           .maybeSingle();
 
         if (tenantRow && tenantRow.stock_tracking_enabled === true) {
+          // ORDER BY sort_order is required here - without it Postgres
+          // doesn't guarantee row order, and line_index (used below to
+          // build each line's dedup key) must be stable across a retried
+          // callback for the same CheckoutRequestID.
           const { data: invoiceItems } = await supabaseAdmin
             .from("ungani_customer_invoice_items")
             .select("item_id, quantity")
-            .eq("invoice_id", invoiceId);
+            .eq("invoice_id", invoiceId)
+            .order("sort_order", { ascending: true });
 
-          for (const line of invoiceItems || []) {
+          for (let lineIndex = 0; lineIndex < (invoiceItems || []).length; lineIndex++) {
+            const line = invoiceItems[lineIndex];
             if (!line.item_id) continue;
 
+            // Keyed by line_index, not item_id - the same item can appear
+            // on two lines of one sale, and item_id alone would collide,
+            // silently skipping the second line as a false replay.
             const { data: stockResult } = await supabaseAdmin.rpc("service_adjust_ungani_stock", {
               p_tenant_id: transaction.tenant_id,
               p_item_id: line.item_id,
               p_movement_type: "sale",
               p_quantity_delta: -Number(line.quantity),
-              p_reason: "POS sale (M-Pesa)"
+              p_reason: "POS sale (M-Pesa)",
+              p_source_reference: "mpesa:" + stkCallback.CheckoutRequestID + ":" + lineIndex
             });
 
             // Money was already received via M-Pesa - a stock shortfall
