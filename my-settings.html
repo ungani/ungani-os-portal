@@ -1002,6 +1002,17 @@
                 <span style="color: var(--text);">Track stock quantity with a movement history</span>
               </label>
             </div>
+
+            <div class="form-group">
+              <label for="defaultReorderLevel">Default reorder level</label>
+              <input type="number" id="defaultReorderLevel" min="0" step="1" />
+              <p class="ungani-small" style="margin: 6px 0 0; color: var(--muted);">
+                Used for any item without its own reorder level. Items sold one at a time
+                (a vehicle, a unit, a booking slot) usually want 0 - only "none left"
+                counts as attention. Items sold in quantity (products, supplies, parts)
+                usually want a real number.
+              </p>
+            </div>
           </div>
 
           <div class="form-actions">
@@ -2442,7 +2453,7 @@
       try {
         const { data: row, error } = await supabaseClient
           .from("tenants")
-          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, debtors_payables_enabled, price_lists_enabled, pos_enabled, commitments_enabled, expense_approval_threshold_kes, hidden_nav_items")
+          .select("business_type, business_type_key, company_name, selected_sections, vat_registered, default_vat_rate, default_vat_pricing_mode, multi_currency_enabled, logo_url, branding_email, branding_phone, branding_address, kra_pin, owner_name, stock_tracking_enabled, default_reorder_level, debtors_payables_enabled, price_lists_enabled, pos_enabled, commitments_enabled, expense_approval_threshold_kes, hidden_nav_items")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -2635,10 +2646,64 @@
       });
     }
 
+    // Recommended reorder-level default per business type, agreed with
+    // Chris - keyed by the canonical type.key from ungani-business-config.js
+    // (resolved via UnganiBusinessConfig.resolve(), NOT the raw
+    // business_type_key column, which can be a differently-shaped slug or
+    // even a generic fallback like "general_business" for a type that
+    // isn't fully modeled yet - see sql/stock-status-unification.sql's
+    // comments on the Pwani Motors/showroom case). Unique-asset types
+    // (sold/tracked one at a time) default to 0: only "none left" is
+    // worth flagging. Genuine consumable-stock types get a real number.
+    const DEFAULT_REORDER_LEVELS_BY_TYPE_KEY = {
+      logistics: 0,
+      real_estate: 0,
+      hospitality: 5,
+      automotive: 5, // garages stock consumable parts - a future Car Showroom sub-type gets 0
+      salon: 5,
+      printing: 5,
+      retail: 5,
+      gym: 5,
+      warehouse: 10,
+      security: 0,
+      cleaning: 5,
+      construction: 0,
+      healthcare: 5,
+      school: 5,
+      events: 5,
+      photography: 0,
+      furniture: 5,
+      tourism: 0,
+      wholesale: 10,
+      general: 5
+    };
+
+    function resolveRecommendedReorderLevel(tenantRow) {
+      if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") {
+        return DEFAULT_REORDER_LEVELS_BY_TYPE_KEY.general;
+      }
+      const type = UnganiBusinessConfig.resolve(tenantRow || {});
+      const key = type && type.key;
+      return (key && DEFAULT_REORDER_LEVELS_BY_TYPE_KEY[key] !== undefined)
+        ? DEFAULT_REORDER_LEVELS_BY_TYPE_KEY[key]
+        : DEFAULT_REORDER_LEVELS_BY_TYPE_KEY.general;
+    }
+
     function renderStockTrackingPanel(tenantRow) {
       const el = document.getElementById("stockTrackingEnabled");
       if (!el) return;
       el.checked = !!(tenantRow && tenantRow.stock_tracking_enabled);
+
+      const reorderInput = document.getElementById("defaultReorderLevel");
+      if (reorderInput) {
+        // Already-set value wins (the owner's own choice, or a prior seed);
+        // only fall back to the type-recommended default when nothing is
+        // saved yet - matches enable_ungani_stock_tracking()'s own
+        // coalesce(default_reorder_level, p_default_reorder_level), so the
+        // number shown here is always what would actually be used.
+        const hasSavedValue = tenantRow && tenantRow.default_reorder_level !== null && tenantRow.default_reorder_level !== undefined;
+        reorderInput.value = hasSavedValue ? tenantRow.default_reorder_level : resolveRecommendedReorderLevel(tenantRow);
+      }
     }
 
     function renderDebtorsPayablesPanel(tenantRow) {
@@ -2940,12 +3005,20 @@
       }
 
       const wantsEnabled = document.getElementById("stockTrackingEnabled").checked;
+      const reorderLevelRaw = document.getElementById("defaultReorderLevel").value;
+      const defaultReorderLevel = reorderLevelRaw === "" ? null : Number(reorderLevelRaw);
+
+      if (wantsEnabled && (defaultReorderLevel === null || isNaN(defaultReorderLevel) || defaultReorderLevel < 0)) {
+        msgSpan.className = "action-msg error";
+        msgSpan.textContent = "Enter a default reorder level of 0 or greater.";
+        return;
+      }
 
       await withButtonLoading(btn, async () => {
         try {
-          const { data, error } = await supabaseClient.rpc(
-            wantsEnabled ? "enable_ungani_stock_tracking" : "disable_ungani_stock_tracking"
-          );
+          const { data, error } = wantsEnabled
+            ? await supabaseClient.rpc("enable_ungani_stock_tracking", { p_default_reorder_level: defaultReorderLevel })
+            : await supabaseClient.rpc("disable_ungani_stock_tracking");
 
           if (error) throw error;
           if (!data || data.ok !== true) throw new Error((data && data.message) || "Could not save.");

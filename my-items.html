@@ -1402,6 +1402,40 @@
         }
       });
 
+      // Single aggregate line, not per-item - only meaningful once Stock
+      // Tracking is on and the tenant's effective default reorder level is
+      // above 0 (a unique-asset type like Logistics/Real Estate/Automotive-
+      // showroom deliberately defaults to 0, where "no reorder level set"
+      // isn't a gap to fix - every item just uses the type's own 0/out-of-
+      // stock-only rule, by design).
+      const tenantForAttention = currentContext && currentContext.tenant;
+      const trackingOnForAttention = !!(tenantForAttention && tenantForAttention.stock_tracking_enabled === true);
+      const effectiveDefault = tenantForAttention ? Number(tenantForAttention.default_reorder_level) : NaN;
+
+      if (trackingOnForAttention && !isNaN(effectiveDefault) && effectiveDefault > 0) {
+        const noReorderLevelCount = rows.filter(function (row) {
+          return row.reorder_level === null || row.reorder_level === undefined || row.reorder_level === "";
+        }).length;
+
+        if (noReorderLevelCount > 0) {
+          entries.push({
+            id: "no-reorder-level-set",
+            // NOTE: links to the plain Items page, not a filtered view -
+            // my-items.html has no query-param-driven stock filter yet
+            // (only "section" and "highlight"). Building that filter is
+            // scoped into the pending 9-call-site ungani-stock-status.js
+            // migration, not added here as a one-off.
+            name: noReorderLevelCount + " item" + (noReorderLevelCount === 1 ? "" : "s") + " have no reorder level set",
+            href: "my-items.html",
+            severity: "gold",
+            icon: '<i data-lucide="sliders-horizontal"></i>',
+            label: "Using the default (" + effectiveDefault + ")",
+            detail: "",
+            sortKey: 2500
+          });
+        }
+      }
+
       const severityRank = { red: 0, orange: 1, gold: 2 };
 
       entries.sort(function (a, b) {

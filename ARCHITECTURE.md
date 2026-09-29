@@ -210,6 +210,52 @@ page-specific edit/delete/discuss functions without a hard import.
   column only when a feature genuinely needs to query on it (and then add
   the index — see the Performance section below).
 
+### Security: admin status and protected-column triggers
+
+These five rules came out of a full RLS/grants audit that found `authenticated`
+could directly `UPDATE` any column on `tenants` and `users` — including
+`role`, `package_key`, `subscription_status` — with no server-side check.
+Postgres RLS is row-scoped, not column-scoped: once an `UPDATE` policy's
+`USING`/`WITH CHECK` passes for a row, every column on it is writable by
+that caller. The fix is `BEFORE UPDATE` triggers
+(`protect_users_admin_only_columns`, `protect_tenant_admin_only_columns`)
+that reject changes to named protected columns unless the caller is
+privileged. Keep these invariants:
+
+1. **Admin status comes ONLY from `public.ungani_admins` via
+   `is_ungani_admin()`.** Never from `users.role` or any other
+   client-writable column. (`users.role` was previously trusted as an
+   `OR` fallback in `admin-shared.js`'s `loadAdminProfile()` — that let
+   any authenticated client self-escalate to admin by setting their own
+   `role` column. Fixed; do not reintroduce a role-based fallback.)
+2. **Every new column on `tenants` or `users` must be classified**
+   owner-editable or admin/system-only at the time it's added, and
+   admin/system-only columns must be added to the relevant protection
+   trigger in the *same* migration — not as a follow-up.
+3. **Protection triggers check `current_user in ('authenticated', 'anon')`,
+   never `auth.role()`.** `auth.role()` reads a session-level JWT claim
+   that stays `'authenticated'` even inside a `SECURITY DEFINER` RPC —
+   checking it there would reject the app's own legitimate RPCs (invoice/
+   quotation/order counters, feature-toggle RPCs). `current_user` is
+   standard Postgres semantics: it becomes the function's *owner* for the
+   duration of a `SECURITY DEFINER` call, so it correctly distinguishes a
+   raw client-side PostgREST update (blocked) from an owner-context RPC
+   (allowed).
+4. **New tables: never grant `TRUNCATE`, `REFERENCES`, or `TRIGGER` to
+   `anon` or `authenticated`.** `ALTER DEFAULT PRIVILEGES` now revokes
+   these three schema-wide for both roles, so new tables don't inherit
+   them — but don't add an explicit grant back for these on a new table
+   without a real reason.
+5. **The admin client gate (`admin-shared.js`) requires
+   `is_ungani_admin()`; no role-based fallback of any kind.**
+
+Per-column classifications recorded here as they're added (rule 2):
+`tenants.default_reorder_level` (added by `sql/stock-status-unification.sql`)
+is **owner-editable** — a business setting the owner sets directly in
+Settings, same class as the 4 unprotected feature toggles
+(`multi_currency_enabled` etc.) — and is deliberately **not** in
+`protect_tenant_admin_only_columns()`.
+
 ## Nia (the in-app assistant)
 
 `nia-assistant.js` (7,704 lines) is a single shared module included on
@@ -329,7 +375,36 @@ write path, earlier).
   accessibility permissions in this environment). Needs either a real
   Safari-capable CI runner or manual reproduction on an actual Mac with
   permissions granted.
+- **M-Pesa Paybill Connect does not work for bank-held paybills** (e.g.
+  Equity 247247, KCB 522522). Those shortcodes belong to the bank, not the
+  business — a tenant only has an account *number* under them, not the
+  paybill shortcode itself, and Safaricom's Daraja C2B `registerurl` API
+  will only succeed for a shortcode Safaricom has actually provisioned to
+  that specific registered business. Paybill Connect only works for a
+  Paybill or Till a business owns outright.
+  A second, related bug: `owner_connect_ungani_mpesa_paybill()`
+  (`sql/mpesa-tenant-paybill-connection-vault.sql`) sets
+  `ungani_tenant_mpesa_connections.status = 'active'` as soon as credentials
+  are saved, *before* the Daraja registration call happens at all — nothing
+  ever reverts it if that registration then fails. A bank-paybill attempt
+  shows a loud error once, then reads as "Connected" on every later visit
+  to Settings/Integrations with no real registration in effect.
+  Real bank-paybill support would need a per-bank integration (e.g. Equity
+  Jenga API) as part of the read-only Banking Integration Layer, not an
+  extension of Daraja C2B.
 - **i18n** (multi-language support) — scoped and phased, not started.
+- **The 4 tenant feature toggles have no package-tier enforcement at the
+  DB layer**: `multi_currency_enabled`, `debtors_payables_enabled`,
+  `commitments_enabled`, `price_lists_enabled` are set via direct
+  `tenants` update from `my-settings.html` with zero check that the
+  tenant's package actually includes the feature. Contrast with
+  `pos_enabled`/`stock_tracking_enabled`, which go through dedicated
+  `enable_ungani_*`/`disable_ungani_*` RPCs — those would be the model to
+  follow when this gets fixed.
+- **POS requires the Items edit permission**, not a dedicated POS
+  permission — a staff member with Items edit access can use POS even if
+  they weren't meant to have it. No dedicated `pos` permission key exists
+  yet in `ungani_staff_section_permissions`.
 - A long tail of smaller deferred items lives in the project's own task
   tracker/memory notes (theme consistency audit, button-style
   consolidation across ~12 standalone pages, a few in-progress
