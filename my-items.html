@@ -1451,10 +1451,21 @@
       return map[severity] || "#64748B";
     }
 
+    // Survives re-renders (e.g. after a data refresh) so the panel doesn't
+    // silently re-collapse under a user who already asked to see everything.
+    let attentionPanelExpanded = false;
+
+    function toggleAttentionPanelExpanded() {
+      attentionPanelExpanded = !attentionPanelExpanded;
+      renderItemsPage();
+    }
+    window.toggleAttentionPanelExpanded = toggleAttentionPanelExpanded;
+
     function renderAttentionPanel(entries) {
       const noun = isRealEstate ? "properties" : "items";
-      const shown = entries.slice(0, 8);
+      const shown = attentionPanelExpanded ? entries : entries.slice(0, 8);
       const remaining = entries.length - shown.length;
+      const linkStyle = "margin-top:10px; background:none; border:none; padding:0; font:inherit; color:var(--ungani-accent, #2563eb); cursor:pointer; text-decoration:underline;";
 
       return `
         <section class="ungani-card" style="margin-bottom:18px;">
@@ -1480,7 +1491,9 @@
                 `;
               }).join("")}
             </div>
-            ${remaining > 0 ? `<p class="ungani-small" style="margin-top:10px;">+${remaining} more item(s) need attention.</p>` : ""}
+            ${remaining > 0
+              ? `<button type="button" onclick="toggleAttentionPanelExpanded()" style="${linkStyle}">View all ${entries.length} →</button>`
+              : (attentionPanelExpanded && entries.length > 8 ? `<button type="button" onclick="toggleAttentionPanelExpanded()" style="${linkStyle}">Show less</button>` : "")}
           ` : `
             <div class="ungani-empty">
               <h3>All caught up ✓</h3>

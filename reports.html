@@ -163,7 +163,7 @@
       const taxSummary = calculateTaxSummary(filtered.transactions);
       const vatRegistered = currentContext.tenant && currentContext.tenant.vat_registered === true;
       const taskSummary = calculateTaskSummary(filtered.tasks);
-      const itemSummary = calculateItemSummary(filtered.items);
+      const itemSummary = calculateItemSummary(filtered.items, currentContext.tenant);
       const peopleSummary = calculatePeopleSummary(filtered.people);
       const documentSummary = calculateDocumentSummary(filtered.documents);
       const calendarSummary = calculateCalendarSummary(filtered.events);
@@ -822,7 +822,7 @@
       return { pending, completed, overdue, inProgress };
     }
 
-    function calculateItemSummary(rows) {
+    function calculateItemSummary(rows, tenant) {
       let available = 0;
       let closed = 0;
       let attention = 0;
@@ -830,9 +830,20 @@
       (rows || []).forEach(function (row) {
         const status = String(UnganiClientShared.getValue(row, ["property_status", "item_status", "status"], "available")).toLowerCase();
 
-        if (status.includes("available") || status.includes("active") || status.includes("in stock")) available++;
+        // Text-status check (for types that tag stock via a status word, e.g.
+        // Hospitality F&B) runs alongside a real quantity check via
+        // ungani-stock-status.js (for types that track a real number) -
+        // previously this function only ever looked at status text, so a
+        // tracked item at 0 with a normal status value like "available"
+        // (its status field describes something else entirely, e.g. a
+        // Logistics vehicle's availability) was invisible here even though
+        // every other stock surface already flagged it.
+        const trackedQty = UnganiStockStatus.getQuantity(row, tenant);
+        const trackedStatus = trackedQty !== null ? UnganiStockStatus.getItemStockStatus(row, tenant) : null;
+
+        if (status.includes("available") || status.includes("active") || status.includes("in stock") || trackedStatus === "in_stock") available++;
         if (status.includes("sold") || status.includes("rented") || status.includes("closed") || status.includes("completed")) closed++;
-        if (UnganiStockStatus.isLowStockByStatusText(row) || status.includes("damaged") || status.includes("lost") || status.includes("urgent")) attention++;
+        if (UnganiStockStatus.isLowStockByStatusText(row) || status.includes("damaged") || status.includes("lost") || status.includes("urgent") || trackedStatus === "low_stock" || trackedStatus === "out_of_stock") attention++;
       });
 
       return {
