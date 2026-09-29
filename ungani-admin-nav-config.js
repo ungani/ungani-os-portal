@@ -96,6 +96,7 @@
           { key: "upgradeRequests", href: "admin-upgrade-requests.html", icon: "arrow-up", label: "Upgrade Requests", activeKey: "admin-upgrade-requests" },
           { key: "billingAutomation", href: "admin-billing-automation.html", icon: "zap", label: "Billing Automation", activeKey: "admin-billing-automation" },
           { key: "billingReminders", href: "admin-billing-reminders.html", icon: "clock", label: "Billing Reminders", activeKey: "admin-billing-reminders" },
+          { key: "partners", href: "admin-partners.html", icon: "handshake", label: "Partners", activeKey: "admin-partners" },
           { key: "adminSettings", href: "admin-settings.html", icon: "settings", label: "Settings", activeKey: "admin-settings" }
         ]
       },

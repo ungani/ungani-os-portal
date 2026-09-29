@@ -95,6 +95,7 @@
     { key: "admin-payment-proofs", href: "admin-payment-proofs.html", icon: "banknote", label: "Payment Proofs", aliases: ["payment proofs", "proof of payment", "proofs"] },
     { key: "admin-billing-automation", href: "admin-billing-automation.html", icon: "zap", label: "Billing Automation", aliases: ["billing automation", "run billing"] },
     { key: "admin-billing-reminders", href: "admin-billing-reminders.html", icon: "clock", label: "Billing Reminders", aliases: ["billing reminders", "reminder history", "reminder logs"] },
+    { key: "admin-partners", href: "admin-partners.html", icon: "handshake", label: "Partners", aliases: ["partners", "partner", "referrals", "referral", "commissions", "add a partner"] },
     { key: "admin-sections", href: "sections.html", icon: "puzzle", label: "Business Types & Sections", aliases: ["sections", "business types", "categories"] },
     { key: "admin-onboarding", href: "admin-onboarding.html", icon: "compass", label: "Client Onboarding", aliases: ["onboarding", "onboarding checklist", "client onboarding"] },
     { key: "admin-branches", href: "admin-branches.html", icon: "store", label: "Branches", aliases: ["branches", "multi-branch", "branch control"] },

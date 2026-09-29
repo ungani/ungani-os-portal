@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Admin Partners | UNGANI OS</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#061C3D" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
+
+  <style>
+    :root {
+      --navy: #061C3D;
+      --navy-2: #082654;
+      --navy-3: #092A59;
+      --gold: #D4A63A;
+      --bg: #061426;
+      --card: #0B2346;
+      --panel: rgba(3, 18, 39, 0.72);
+      --text: #F5F5F3;
+      --text-soft: #F5F5F3;
+      --muted: #B8C3D6;
+      --border: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --success-text: #BBF7D0;
+      --success-bg: rgba(22, 101, 52, 0.35);
+      --warning-text: #FDE68A;
+      --warning-bg: rgba(146, 64, 14, 0.35);
+      --danger-text: #FECACA;
+      --danger-bg: rgba(153, 27, 27, 0.35);
+      --info-text: #BFDBFE;
+      --info-bg: rgba(30, 64, 175, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F5F5F3;
+      --card: #FFFFFF;
+      --panel: #F9FAFB;
+      --text: #061C3D;
+      --text-soft: #111827;
+      --muted: #6B7280;
+      --border: rgba(6, 28, 61, 0.12);
+      --shadow: 0 14px 35px rgba(6, 28, 61, 0.12);
+      --success-text: #166534;
+      --success-bg: #DCFCE7;
+      --warning-text: #92400E;
+      --warning-bg: #FEF3C7;
+      --danger-text: #991B1B;
+      --danger-bg: #FEE2E2;
+      --info-text: #1E40AF;
+      --info-bg: #DBEAFE;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 166, 58, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, var(--navy) 48%, var(--navy-3) 100%);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 26px 18px 44px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(8, 38, 84, 0.96), rgba(6, 28, 61, 0.96)),
+        radial-gradient(circle at top right, rgba(212, 166, 58, 0.22), transparent 32%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 29px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #B8C3D6;
+      max-width: 940px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .summary-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 17px;
+      padding: 15px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 7px;
+    }
+
+    .summary-card strong {
+      color: #FFFFFF;
+      font-size: 22px;
+      display: block;
+    }
+
+    .summary-card span {
+      margin-top: 8px;
+      display: block;
+      color: #B8C3D6;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .panel {
+      margin-top: 20px;
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(3, 18, 39, 0.34);
+    }
+
+    html[data-theme="light"] .panel-head {
+      background: #F9FAFB;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input,
+    select {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 10px 13px;
+      font-size: 13px;
+      outline: none;
+      min-height: 40px;
+    }
+
+    .search-input {
+      width: 310px;
+      max-width: 100%;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 900px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 13px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--gold);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.4px;
+      background: rgba(3, 18, 39, 0.42);
+      white-space: nowrap;
+    }
+
+    html[data-theme="light"] th {
+      background: #F9FAFB;
+    }
+
+    td {
+      color: var(--text-soft);
+    }
+
+    .chip {
+      display: inline-flex;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .chip.gold {
+      background: rgba(212, 166, 58, 0.16);
+      color: var(--gold);
+      border: 1px solid rgba(212, 166, 58, 0.28);
+    }
+
+    .chip.success {
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .chip.danger {
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .main-btn,
+    .ghost-btn,
+    .small-btn {
+      border: none;
+      border-radius: 999px;
+      padding: 9px 12px;
+      font-size: 12px;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .main-btn {
+      background: var(--gold);
+      color: var(--navy);
+      box-shadow: 0 12px 24px rgba(212, 166, 58, 0.18);
+    }
+
+    .ghost-btn,
+    .small-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    html[data-theme="light"] .ghost-btn,
+    html[data-theme="light"] .small-btn {
+      background: #FFFFFF;
+      color: var(--navy);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .loading,
+    .empty,
+    .error {
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .message {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 16px;
+      line-height: 1.55;
+      display: none;
+    }
+
+    .message.success {
+      display: block;
+      color: var(--success-text);
+      background: var(--success-bg);
+    }
+
+    .message.error {
+      display: block;
+      color: var(--danger-text);
+      background: var(--danger-bg);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .form-grid label {
+      display: block;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .form-grid input {
+      width: 100%;
+      border-radius: 12px;
+    }
+
+    .form-actions {
+      margin-top: 16px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .breakdown-list {
+      margin: 0;
+      padding-left: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 920px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .filters,
+      .search-input {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .content {
+        padding: 18px 12px 34px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="adminRoot"></div>
+
+  <script>
+    var pageMainHtml = `
+    <section class="hero">
+      <h1>Partners</h1>
+      <p>
+        UNGANI's referral partners - each with a personal registration link, an
+        automatic one-time onboarding commission and an ongoing commission on
+        every payment from tenants they refer. Payouts are manual, batched
+        monthly, and processed from admin-billing-automation.html's cadence
+        (this page shows what's owed - it does not process payouts).
+      </p>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <label>Total Partners</label>
+          <strong id="totalPartners">0</strong>
+          <span>Active and suspended combined.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Referred Clients</label>
+          <strong id="totalReferred">0</strong>
+          <span>Tenants attributed to a partner.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Total Owed</label>
+          <strong id="totalOwed">KSH 0</strong>
+          <span>Commissions not yet paid out.</span>
+        </div>
+
+        <div class="summary-card">
+          <label>Total Paid</label>
+          <strong id="totalPaid">KSH 0</strong>
+          <span>Commissions already paid out.</span>
+        </div>
+      </div>
+
+      <div id="messageBox" class="message"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>All Partners</h2>
+
+        <div class="filters">
+          <input
+            id="searchInput"
+            class="search-input"
+            type="search"
+            placeholder="Search name, code, business..."
+            oninput="renderPartners()"
+          />
+
+          <button class="ghost-btn" type="button" onclick="loadPartners()">Refresh</button>
+          <button class="main-btn" type="button" onclick="openAddPartnerModal()">+ Add Partner</button>
+        </div>
+      </div>
+
+      <div id="loadingBox" class="loading">
+        <span class="spinner"></span>
+        <span>Loading partners...</span>
+      </div>
+
+      <div id="errorBox" class="error" style="display: none;"></div>
+
+      <div id="emptyBox" class="empty" style="display: none;">
+        No partners set up yet. Use "+ Add Partner" to create one - their
+        registration link is <code>index.html?partner=&lt;code&gt;</code>,
+        shown once the partner is created below.
+      </div>
+
+      <div id="tableWrap" class="table-wrap" style="display: none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Partner</th>
+              <th>Code / Link</th>
+              <th>Status</th>
+              <th>Clients</th>
+              <th>Owed</th>
+              <th>Paid</th>
+              <th>Last Payout</th>
+            </tr>
+          </thead>
+          <tbody id="partnersBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="footer">
+      UNGANI OS · ungani.com · info@ungani.com
+    </div>
+    `;
+
+    let supabaseClient = null;
+    let currentAdmin = null;
+    let allPartners = [];
+
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "admin-partners",
+        pageTitle: "Partners",
+        pageSubtitle: "Referral partners, their referred clients, and commission totals.",
+        footerTitle: "Admin Partners",
+        footerVersion: "Admin Partners Version: Step 1",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "admin-partners",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Admin Partners",
+            footerVersion: "Admin Partners Version: Step 1"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadPartners();
+        }
+      });
+    });
+
+    function logout() {
+      return UnganiAdminShared.logoutAdmin();
+    }
+
+    function formatKES(value) {
+      const n = Number(value) || 0;
+      return "KSH " + n.toLocaleString("en-KE", { maximumFractionDigits: 0 });
+    }
+
+    function showMessage(text, type) {
+      const box = document.getElementById("messageBox");
+      if (!box) return;
+      box.className = "message " + (type || "info");
+      box.innerText = text;
+      box.style.display = "block";
+    }
+
+    async function loadPartners() {
+      const loadingBox = document.getElementById("loadingBox");
+      const errorBox = document.getElementById("errorBox");
+      const emptyBox = document.getElementById("emptyBox");
+      const tableWrap = document.getElementById("tableWrap");
+
+      loadingBox.style.display = "flex";
+      errorBox.style.display = "none";
+      emptyBox.style.display = "none";
+      tableWrap.style.display = "none";
+
+      try {
+        const response = await supabaseClient.rpc("admin_get_ungani_partners_overview");
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          throw new Error((response.error && response.error.message) || (response.data && response.data.message) || "Could not load partners.");
+        }
+
+        allPartners = response.data.partners || [];
+        loadingBox.style.display = "none";
+        renderSummary();
+        renderPartners();
+      } catch (error) {
+        loadingBox.style.display = "none";
+        errorBox.style.display = "block";
+        errorBox.innerText = "Could not load partners: " + error.message;
+      }
+    }
+
+    function renderSummary() {
+      const totalOwed = allPartners.reduce(function (sum, p) { return sum + (Number(p.owed_total) || 0); }, 0);
+      const totalPaid = allPartners.reduce(function (sum, p) { return sum + (Number(p.paid_total) || 0); }, 0);
+      const totalReferred = allPartners.reduce(function (sum, p) { return sum + (Number(p.tenant_count) || 0); }, 0);
+
+      document.getElementById("totalPartners").innerText = allPartners.length;
+      document.getElementById("totalReferred").innerText = totalReferred;
+      document.getElementById("totalOwed").innerText = formatKES(totalOwed);
+      document.getElementById("totalPaid").innerText = formatKES(totalPaid);
+    }
+
+    function renderPartners() {
+      const searchTerm = (document.getElementById("searchInput").value || "").toLowerCase();
+      const tableWrap = document.getElementById("tableWrap");
+      const emptyBox = document.getElementById("emptyBox");
+      const body = document.getElementById("partnersBody");
+
+      const filtered = allPartners.filter(function (p) {
+        if (!searchTerm) return true;
+        const haystack = [p.full_name, p.partner_code, p.status].join(" ").toLowerCase();
+        return haystack.indexOf(searchTerm) !== -1;
+      });
+
+      if (!filtered.length) {
+        tableWrap.style.display = "none";
+        emptyBox.style.display = "block";
+        return;
+      }
+
+      emptyBox.style.display = "none";
+      tableWrap.style.display = "block";
+
+      body.innerHTML = filtered.map(function (p) {
+        const statusChip = p.status === "active"
+          ? '<span class="chip success">Active</span>'
+          : '<span class="chip danger">Suspended</span>';
+
+        const lastPayout = (p.payouts && p.payouts.length)
+          ? new Date(p.payouts[0].payout_date).toLocaleDateString() + " - " + formatKES(p.payouts[0].total_amount)
+          : '<span class="muted">None yet</span>';
+
+        return `
+          <tr>
+            <td><strong>${escapeHtml(p.full_name)}</strong></td>
+            <td>
+              <span class="chip gold">${escapeHtml(p.partner_code)}</span><br />
+              <span class="muted">index.html?partner=${escapeHtml(p.partner_code)}</span>
+            </td>
+            <td>${statusChip}</td>
+            <td>${Number(p.tenant_count) || 0}</td>
+            <td>${formatKES(p.owed_total)}</td>
+            <td>${formatKES(p.paid_total)}</td>
+            <td>${lastPayout}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function escapeHtml(value) {
+      const div = document.createElement("div");
+      div.innerText = value == null ? "" : String(value);
+      return div.innerHTML;
+    }
+
+    function openAddPartnerModal() {
+      UnganiAdminShared.openModal({
+        title: "Add Partner",
+        bodyHtml: `
+          <form id="addPartnerForm" onsubmit="return submitAddPartner(event)">
+            <div class="form-grid">
+              <div>
+                <label>Full Name *</label>
+                <input id="partnerFullName" type="text" required placeholder="e.g. John Kamau" />
+              </div>
+              <div>
+                <label>Email *</label>
+                <input id="partnerEmail" type="email" required placeholder="john@example.com" />
+              </div>
+              <div>
+                <label>Phone</label>
+                <input id="partnerPhone" type="text" placeholder="07XXXXXXXX" />
+              </div>
+              <div>
+                <label>Business Name</label>
+                <input id="partnerBusinessName" type="text" placeholder="Optional" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="ghost-btn" onclick="UnganiAdminShared.closeModal()">Cancel</button>
+              <button type="submit" class="main-btn">Create Partner</button>
+            </div>
+          </form>
+        `
+      });
+    }
+
+    async function submitAddPartner(event) {
+      event.preventDefault();
+
+      const fullName = document.getElementById("partnerFullName").value.trim();
+      const email = document.getElementById("partnerEmail").value.trim();
+      const phone = document.getElementById("partnerPhone").value.trim();
+      const businessName = document.getElementById("partnerBusinessName").value.trim();
+
+      if (!fullName || !email) {
+        UnganiAdminShared.showToast("Full name and email are required.");
+        return false;
+      }
+
+      try {
+        const response = await supabaseClient.rpc("admin_create_ungani_partner", {
+          p_full_name: fullName,
+          p_email: email,
+          p_phone: phone || null,
+          p_business_name: businessName || null
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          throw new Error((response.error && response.error.message) || (response.data && response.data.message) || "Could not create partner.");
+        }
+
+        UnganiAdminShared.closeModal();
+        showMessage(
+          fullName + " added. Their registration link is index.html?partner=" + response.data.partner_code,
+          "success"
+        );
+        await loadPartners();
+      } catch (error) {
+        UnganiAdminShared.showToast("Could not create partner: " + error.message);
+      }
+
+      return false;
+    }
+  </script>
+</body>
+</html>
