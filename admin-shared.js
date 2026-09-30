@@ -1430,7 +1430,7 @@
     try {
       const proofsResponse = await fetchWithRetry(() =>
         client
-          .from("payment_proofs")
+          .from("ungani_payment_proofs")
           .select("id", { count: "exact", head: true })
           .eq("proof_status", "submitted")
       );
@@ -1989,6 +1989,7 @@
     getCurrentAdminId,
     getCurrentTheme,
     getCurrentLanguage,
-    setCurrentLanguage
+    setCurrentLanguage,
+    getAdminSidebarBadgeCounts
   };
 })();

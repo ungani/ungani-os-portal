@@ -752,8 +752,10 @@
       document.getElementById("messageText").value = "";
 
       UnganiAdminShared.showToast("Message sent ✓");
-      await loadPageData();
-      renderChat(selectedTenantId);
+      // No explicit loadPageData() here - startRealtime()'s subscription to
+      // admin_client_messages (event:"*", no filter) already fires for this
+      // exact insert and refreshes + re-renders. Calling it again here was
+      // firing the full unbounded tenants+messages fetch twice per send.
     }
 
     async function markSelectedAsRead(showNotice = true) {
@@ -782,8 +784,8 @@
       }
 
       if (showNotice) UnganiAdminShared.showToast("Client messages marked as read ✓");
-
-      await loadPageData();
+      // Same reasoning as sendAdminMessage() - the realtime subscription
+      // already refetches on this exact update, no need to double it here.
     }
 
     function startRealtime() {

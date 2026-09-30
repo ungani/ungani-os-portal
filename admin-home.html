@@ -23,6 +23,7 @@
   <script src="https://cdn.jsdelivr.net/npm/lucide@1.41.0/dist/umd/lucide.js"></script>
   <script src="ungani-theme.js"></script>
   <script src="client-shared.js" onerror="console.warn('client-shared.js load failed, using fallback mode.'); window.__unganiClientSharedFailed = true;"></script>
+  <script src="admin-shared.js" onerror="console.warn('admin-shared.js load failed - sidebar badge counts will be unavailable.');"></script>
   <script src="ungani-admin-nav-config.js" onerror="console.warn('ungani-admin-nav-config.js load failed - sidebar will be empty.');"></script>
   <script src="ungani-analytics.js" onerror="console.warn('ungani-analytics.js load failed - platform performance chart will be unavailable.');"></script>
   <script src="pwa-register.js" onerror="console.warn('pwa-register.js load failed.');"></script>
@@ -2964,123 +2965,6 @@
         .subscribe();
     }
 
-    // Sidebar badge counts are non-critical background reads, but they were
-    // observed 404-ing intermittently in live testing (2 of 3 fresh page
-    // loads) with the exact same auth token as adjacent, successful requests
-    // fired moments apart - ruling out a stale-session/token-refresh race.
-    // That points at a transient backend/PostgREST blip rather than anything
-    // wrong with the request itself, so a short retry is the right fix: cheap,
-    // and it self-heals the one-off case without masking a real, persistent
-    // failure (which still surfaces after 3 attempts).
-    async function fetchAdminHomeBadgeWithRetry(queryFn, attempts = 3, baseDelayMs = 300) {
-      let lastResponse = null;
-
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        lastResponse = await queryFn();
-        if (!lastResponse.error) return lastResponse;
-        if (attempt < attempts) {
-          await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
-        }
-      }
-
-      return lastResponse;
-    }
-
-    async function getAdminHomeSidebarBadgeCounts() {
-      if (!supabaseClient) return {};
-
-      const counts = {};
-
-      try {
-        const registrationsResponse = await fetchAdminHomeBadgeWithRetry(() =>
-          supabaseClient
-            .from("registrations")
-            .select("id", { count: "exact", head: true })
-            .eq("status", "pending")
-        );
-
-        if (!registrationsResponse.error) counts.registrations = registrationsResponse.count || 0;
-      } catch (error) {
-        console.warn("Admin home sidebar badge (registrations) skipped:", error.message);
-      }
-
-      try {
-        const supportResponse = await fetchAdminHomeBadgeWithRetry(() =>
-          supabaseClient
-            .from("support_issues")
-            .select("id", { count: "exact", head: true })
-            .is("deleted_at", null)
-            .in("status", ["open", "new", "pending", "in_progress"])
-        );
-
-        if (!supportResponse.error) counts.support = supportResponse.count || 0;
-      } catch (error) {
-        console.warn("Admin home sidebar badge (support) skipped:", error.message);
-      }
-
-      try {
-        const chatResponse = await fetchAdminHomeBadgeWithRetry(() =>
-          supabaseClient
-            .from("admin_client_messages")
-            .select("id", { count: "exact", head: true })
-            .eq("sender_role", "client")
-            .is("read_by_admin_at", null)
-        );
-
-        if (!chatResponse.error) counts.adminChat = chatResponse.count || 0;
-      } catch (error) {
-        console.warn("Admin home sidebar badge (chat) skipped:", error.message);
-      }
-
-      try {
-        const proofsResponse = await fetchAdminHomeBadgeWithRetry(() =>
-          supabaseClient
-            .from("payment_proofs")
-            .select("id", { count: "exact", head: true })
-            .eq("proof_status", "submitted")
-        );
-
-        if (!proofsResponse.error) counts.paymentProofs = proofsResponse.count || 0;
-      } catch (error) {
-        console.warn("Admin home sidebar badge (payment proofs) skipped:", error.message);
-      }
-
-      try {
-        const upgradeResponse = await fetchAdminHomeBadgeWithRetry(() =>
-          supabaseClient
-            .from("ungani_upgrade_requests")
-            .select("id", { count: "exact", head: true })
-            .eq("status", "pending")
-        );
-
-        if (!upgradeResponse.error) counts.upgradeRequests = upgradeResponse.count || 0;
-      } catch (error) {
-        console.warn("Admin home sidebar badge (upgrade requests) skipped:", error.message);
-      }
-
-      try {
-        // Canonical RPC (see sql/task10-unified-notification-count.sql) -
-        // this sidebar-badge count was missed during the notification
-        // unification pass (only the dashboard panel's separate
-        // loadNotifications() was updated) and was still reading the old
-        // unscoped ungani_notifications.neq("status","read") query - the
-        // exact "counts every client notification platform-wide" bug the
-        // unification work was meant to eliminate. Now matches
-        // admin-shared.js's version of this same badge.
-        const notificationsResponse = await fetchAdminHomeBadgeWithRetry(() =>
-          supabaseClient.rpc("get_my_ungani_unread_notification_count")
-        );
-
-        if (!notificationsResponse.error && typeof notificationsResponse.data === "number") {
-          counts.notifications = notificationsResponse.data;
-        }
-      } catch (error) {
-        console.warn("Admin home sidebar badge (notifications) skipped:", error.message);
-      }
-
-      return counts;
-    }
-
     function applyAdminHomeSidebarBadgeCounts(counts) {
       Object.keys(counts || {}).forEach(function (key) {
         const el = document.getElementById("adminHomeNavBadge-" + key);
@@ -3093,7 +2977,8 @@
     }
 
     async function loadAdminHomeSidebarBadgeCounts() {
-      const counts = await getAdminHomeSidebarBadgeCounts();
+      if (!window.UnganiAdminShared || typeof window.UnganiAdminShared.getAdminSidebarBadgeCounts !== "function") return;
+      const counts = await window.UnganiAdminShared.getAdminSidebarBadgeCounts();
       applyAdminHomeSidebarBadgeCounts(counts);
     }
 
@@ -4612,7 +4497,7 @@
         var nowIsoExp = new Date().toISOString();
         var results = await Promise.all([
           supabaseClient.rpc('get_admin_ungani_billing_page_data'),
-          supabaseClient.from('business_items').select('status,item_status,asset_status,stock_status,quantity,reorder_level,custom_fields,units_available,item_type,asset_type,stock_type,type,category,tenant_id').limit(10000),
+          supabaseClient.from('business_items').select('status,item_status,quantity,reorder_level,custom_fields,units_available,item_type,type,category,tenant_id').limit(10000),
           // Scalability fix: was an unbounded status+due_date fetch across
           // every tenant's non-completed tasks, filtered in JS. Same
           // overdue definition (status='overdue' OR due_date passed,
