@@ -3016,8 +3016,12 @@
     var __sharedFetchCache = {};
 
     function fetchShared(key, queryFn) {
+      // Supabase-js query/rpc builders are thenables that re-send their HTTP
+      // request on every .then()/await, unlike a real Promise which settles
+      // once. Wrapping in Promise.resolve() here forces exactly one request
+      // even when the same key is awaited from two different Promise.all()s.
       if (!__sharedFetchCache[key]) {
-        __sharedFetchCache[key] = queryFn();
+        __sharedFetchCache[key] = Promise.resolve(queryFn());
       }
       return __sharedFetchCache[key];
     }
