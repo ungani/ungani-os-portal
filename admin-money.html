@@ -670,13 +670,33 @@
       }
     }
 
+    // Unfiltered platform-wide totals from sql/admin-money-aggregate-rpcs.sql
+    // (settled income/expense/petty_cash rule, amount_kes only, is_test/
+    // deleted_at excluded, no 10,000-row cap). Filled once in loadPageData().
+    // Only valid to display when no client/date/search filter is active -
+    // it has no such parameters, so it's always the true "everyone,
+    // everywhen" total.
+    let platformMoneySummary = null;
+
+    function isMoneyFilterActive() {
+      return !!(
+        document.getElementById("clientFilter").value ||
+        document.getElementById("dateFrom").value ||
+        document.getElementById("dateTo").value ||
+        document.getElementById("searchBox").value.trim()
+      );
+    }
+
     async function loadPageData() {
       UnganiAdminShared.showToast("Loading money records...");
 
-      const [tenantRows, transactionRows] = await Promise.all([
+      const [tenantRows, transactionRows, moneySummaryRes] = await Promise.all([
         safeSelect("tenants"),
-        safeSelect("transactions")
+        safeSelect("transactions"),
+        supabaseClient.rpc('admin_get_ungani_money_summary')
       ]);
+
+      platformMoneySummary = (!moneySummaryRes.error && moneySummaryRes.data && moneySummaryRes.data[0]) || null;
 
       tenants = tenantRows;
       moneyRecords = transactionRows.sort((a, b) => new Date(getMoneyDate(b) || 0) - new Date(getMoneyDate(a) || 0));
@@ -854,10 +874,17 @@
     }
 
     function renderTaxOverview() {
-      const rows = baseFilteredMoneyRecords();
-      const overview = calculateTaxOverview(rows);
       const vatRegisteredCount = tenants.filter(t => t.vat_registered === true).length;
       const box = document.getElementById("taxOverviewBox");
+
+      const overview = (!isMoneyFilterActive() && platformMoneySummary)
+        ? {
+            vatPayable: Number(platformMoneySummary.vat_payable) || 0,
+            withholdingDeducted: Number(platformMoneySummary.withholding_deducted) || 0,
+            vatRecordCount: Number(platformMoneySummary.vat_record_count) || 0,
+            withholdingRecordCount: Number(platformMoneySummary.withholding_record_count) || 0
+          }
+        : calculateTaxOverview(baseFilteredMoneyRecords());
 
       if (vatRegisteredCount === 0 && overview.withholdingRecordCount === 0) {
         box.style.display = "none";
@@ -884,9 +911,28 @@
     function renderCategoryTiles() {
       const rows = baseFilteredMoneyRecords();
 
+      // Sums for income/expense/petty_cash use the corrected platform-wide
+      // RPC totals when unfiltered (settled rule, no 10,000-row cap,
+      // is_test excluded). "All Records"/"Other" sums and every tile's
+      // displayed record COUNT still come from the loaded (capped) rows -
+      // the RPC doesn't return per-category counts or an "other" bucket,
+      // so those stay a known, smaller residual gap rather than blocking
+      // the real fix on a full reconciliation.
+      const useRpc = !isMoneyFilterActive() && platformMoneySummary;
+      let rpcSums = null;
+
+      if (useRpc) {
+        const income = Number(platformMoneySummary.income) || 0;
+        const expensesMerged = Number(platformMoneySummary.expenses) || 0;
+        const pettyCash = Number(platformMoneySummary.petty_cash) || 0;
+        rpcSums = { income: income, expense: expensesMerged - pettyCash, petty_cash: pettyCash };
+      }
+
       document.getElementById("categoryTiles").innerHTML = MONEY_CATEGORIES.map(category => {
         const matchingRows = rows.filter(category.match);
-        const sum = matchingRows.reduce((total, row) => total + amountValue(row), 0);
+        const sum = (rpcSums && rpcSums[category.key] !== undefined)
+          ? rpcSums[category.key]
+          : matchingRows.reduce((total, row) => total + amountValue(row), 0);
         const isActive = category.key === activeMoneyCategory;
 
         return `
@@ -899,9 +945,11 @@
     }
 
     function renderBalanceBanner() {
-      const rows = baseFilteredMoneyRecords();
-      const summary = calculateSummary(rows);
       const banner = document.getElementById("balanceBanner");
+
+      const summary = (!isMoneyFilterActive() && platformMoneySummary)
+        ? { net: Number(platformMoneySummary.net) || 0, totalRecords: Number(platformMoneySummary.total_records) || 0 }
+        : calculateSummary(baseFilteredMoneyRecords());
 
       banner.style.setProperty("--balance-accent", summary.net >= 0 ? "var(--ungani-green)" : "var(--ungani-red)");
       banner.innerHTML = `

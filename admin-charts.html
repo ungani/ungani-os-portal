@@ -475,7 +475,9 @@
         tasks,
         records,
         items,
-        people
+        people,
+        moneyChartRes,
+        moneyMonthlyRes
       ] = await Promise.all([
         safeSelect("tenants"),
         safeSelect("registrations"),
@@ -489,7 +491,12 @@
         safeSelect("tasks"),
         safeSelect("business_records"),
         safeSelect("business_items"),
-        safeSelect("client_people")
+        safeSelect("client_people"),
+        // Server-side settled-rule totals (see sql/admin-money-aggregate-rpcs.sql) -
+        // used by renderMetrics()/drawCharts() whenever no client/date filter
+        // is active, instead of the raw-label bucketing over dataStore.transactions.
+        supabaseClient.rpc('admin_get_ungani_money_chart_data'),
+        supabaseClient.rpc('admin_get_ungani_money_monthly_income_expense', { p_months: 6 })
       ]);
 
       dataStore = {
@@ -505,7 +512,9 @@
         tasks,
         records,
         items,
-        people
+        people,
+        moneyChartRpc: moneyChartRes.error ? [] : (moneyChartRes.data || []),
+        moneyMonthlyRpc: moneyMonthlyRes.error ? [] : (moneyMonthlyRes.data || [])
       };
 
       fillClientFilter();
@@ -553,6 +562,16 @@
       return String(row.tenant_id || "") === String(clientId);
     }
 
+    // The money RPCs (see sql/admin-money-aggregate-rpcs.sql) compute
+    // unfiltered, platform-wide totals - they take no client/date
+    // parameters. Only safe to use when the admin hasn't scoped the view
+    // down; the moment any filter is active, fall back to the existing
+    // in-memory calculation over the (filter-scoped, so never large)
+    // dataStore.transactions rows.
+    function isMoneyFilterActive() {
+      return !!(document.getElementById("clientFilter").value || document.getElementById("dateFrom").value || document.getElementById("dateTo").value);
+    }
+
     function filteredRows(key) {
       return (dataStore[key] || []).filter(row => {
         if (key === "tenants") {
@@ -577,13 +596,26 @@
       const adminMessages = filteredRows("adminMessages");
       const events = filteredRows("events");
 
-      const income = transactions
-        .filter(row => ["income", "sale", "sales", "revenue", "received"].includes(moneyType(row)))
-        .reduce((sum, row) => sum + amountValue(row), 0);
+      // Unfiltered: use the settled-rule server-side totals (transaction_type
+      // exact match, amount_kes, is_test/deleted_at excluded, no 10,000 cap).
+      // Filtered: dataStore.transactions is already scoped by the active
+      // client/date filter, so the old in-memory label-matching stays as the
+      // (still small, still safe) fallback for that case.
+      const moneyRpc = dataStore.moneyChartRpc || [];
+      let income, expenses;
 
-      const expenses = transactions
-        .filter(row => ["expense", "expenses", "cost", "paid"].includes(moneyType(row)))
-        .reduce((sum, row) => sum + amountValue(row), 0);
+      if (!isMoneyFilterActive() && moneyRpc.length) {
+        income = Number((moneyRpc.find(r => r.bucket === "income") || {}).total || 0);
+        expenses = Number((moneyRpc.find(r => r.bucket === "expense") || {}).total || 0);
+      } else {
+        income = transactions
+          .filter(row => ["income", "sale", "sales", "revenue", "received"].includes(moneyType(row)))
+          .reduce((sum, row) => sum + amountValue(row), 0);
+
+        expenses = transactions
+          .filter(row => ["expense", "expenses", "cost", "paid"].includes(moneyType(row)))
+          .reduce((sum, row) => sum + amountValue(row), 0);
+      }
 
       const metrics = [
         { title: "Clients", value: tenants.length, note: "Client businesses in view", cls: "green" },
@@ -881,19 +913,37 @@
       }
 
       if (focus === "all" || focus === "money") {
-        createChart(
-          "moneyTypeChart",
-          "doughnut",
-          "Money Records",
-          countBy(transactions, row => cleanText(getField(row, ["record_type", "transaction_type", "type"], "record")))
-        );
+        // Unfiltered: server-side settled-rule totals (3 real buckets, no
+        // 10,000 cap, is_test/deleted_at excluded). Filtered: fall back to
+        // the old raw-label bucketing over the already-scoped rows.
+        if (!isMoneyFilterActive() && dataStore.moneyChartRpc && dataStore.moneyChartRpc.length) {
+          const chartData = {};
+          dataStore.moneyChartRpc.forEach(row => { chartData[row.bucket] = Number(row.total) || 0; });
+          createChart("moneyTypeChart", "doughnut", "Money Records", chartData);
+        } else {
+          createChart(
+            "moneyTypeChart",
+            "doughnut",
+            "Money Records",
+            countBy(transactions, row => cleanText(getField(row, ["record_type", "transaction_type", "type"], "record")))
+          );
+        }
 
-        createChart(
-          "moneyMonthlyChart",
-          "line",
-          "Monthly Money Activity",
-          sumBy(transactions, row => monthKey(row.created_at), row => amountValue(row))
-        );
+        if (!isMoneyFilterActive() && dataStore.moneyMonthlyRpc && dataStore.moneyMonthlyRpc.length) {
+          const monthlyData = {};
+          dataStore.moneyMonthlyRpc.forEach(row => {
+            const label = new Date(row.month_start).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+            monthlyData[label] = (Number(row.income) || 0) - (Number(row.expenses) || 0);
+          });
+          createChart("moneyMonthlyChart", "line", "Monthly Net (Income - Expenses)", monthlyData);
+        } else {
+          createChart(
+            "moneyMonthlyChart",
+            "line",
+            "Monthly Money Activity",
+            sumBy(transactions, row => monthKey(row.created_at), row => amountValue(row))
+          );
+        }
       }
 
       if (focus === "all" || focus === "tasks") {

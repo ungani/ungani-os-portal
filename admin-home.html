@@ -3041,26 +3041,30 @@
           supabaseClient.from('users').select('created_at').gte('created_at', sixMonthsAgo),
           supabaseClient.from('business_items').select('*', { count: 'exact', head: true }),
           supabaseClient.from('business_items').select('created_at').gte('created_at', sixMonthsAgo),
-          supabaseClient.from('transactions').select('amount'),
-          fetchShared('txTrend6mo', function () { return supabaseClient.from('transactions').select('amount, created_at').gte('created_at', sixMonthsAgo); })
+          // Server-side aggregate RPCs (see sql/admin-money-aggregate-rpcs.sql) -
+          // replaces an unbounded transactions.select('amount') across every
+          // tenant with no is_test/deleted_at exclusion. Shared cache key with
+          // loadPerformanceChart() below so this only runs once per page load.
+          supabaseClient.rpc('admin_get_ungani_ledger_summary'),
+          fetchShared('txTrend6mo', function () { return supabaseClient.rpc('admin_get_ungani_ledger_monthly_trend', { p_months: 6 }); })
         ]);
 
         var tenantsCount = results[0], tenantsTrend = results[1], usersCount = results[2], usersTrend = results[3],
-            itemsCount = results[4], itemsTrend = results[5], txSumRes = results[6], txTrendRes = results[7];
+            itemsCount = results[4], itemsTrend = results[5], ledgerSummaryRes = results[6], txTrendRes = results[7];
 
-        if (tenantsCount.error || usersCount.error || itemsCount.error || txSumRes.error) {
-          throw (tenantsCount.error || usersCount.error || itemsCount.error || txSumRes.error);
+        if (tenantsCount.error || usersCount.error || itemsCount.error || ledgerSummaryRes.error) {
+          throw (tenantsCount.error || usersCount.error || itemsCount.error || ledgerSummaryRes.error);
         }
 
         var tenantsTotal = (tenantsCount.count !== null && tenantsCount.count !== undefined) ? tenantsCount.count : 0;
         var usersTotal = (usersCount.count !== null && usersCount.count !== undefined) ? usersCount.count : 0;
         var itemsTotal = (itemsCount.count !== null && itemsCount.count !== undefined) ? itemsCount.count : 0;
-        var ledgerVolume = (txSumRes.data || []).reduce(function(sum, tx) { return sum + (parseFloat(tx.amount) || 0); }, 0);
+        var ledgerVolume = Number((ledgerSummaryRes.data && ledgerSummaryRes.data[0] && ledgerSummaryRes.data[0].ledger_volume) || 0);
 
         var tenantsSpark = buildMonthlyTrend(tenantsTrend.data || [], 'created_at', null, 6);
         var usersSpark = buildMonthlyTrend(usersTrend.data || [], 'created_at', null, 6);
         var itemsSpark = buildMonthlyTrend(itemsTrend.data || [], 'created_at', null, 6);
-        var ledgerSpark = buildMonthlyTrend(txTrendRes.data || [], 'created_at', function (tx) { return parseFloat(tx.amount) || 0; }, 6);
+        var ledgerSpark = rpcMonthlyToArray(txTrendRes.data || [], 6, 'ledger_volume');
 
         if (grid) {
           grid.innerHTML =
@@ -4682,6 +4686,31 @@
       return buckets.map(function (b) { return b.value; });
     }
 
+    // Same bucketing contract as buildMonthlyTrend() above (fixed-length
+    // array, oldest-to-newest, zero-filled), but sourced from an RPC that
+    // already returns one pre-aggregated row per month (month_start, value)
+    // instead of raw per-transaction rows to bucket client-side.
+    function rpcMonthlyToArray(rows, months, valueKey) {
+      var now = new Date();
+      var buckets = [];
+
+      for (var i = months - 1; i >= 0; i--) {
+        var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        buckets.push({ key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), value: 0 });
+      }
+
+      (rows || []).forEach(function (row) {
+        if (!row.month_start) return;
+        var date = new Date(row.month_start);
+        if (isNaN(date.getTime())) return;
+        var key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+        var bucket = buckets.find(function (b) { return b.key === key; });
+        if (bucket) bucket.value = Number(row[valueKey]) || 0;
+      });
+
+      return buckets.map(function (b) { return b.value; });
+    }
+
     // ---- Needs Attention (mirrors client.html's attentionRow/pulse-until-acknowledged pattern) ----
 
     var actionItems = {};
@@ -4903,7 +4932,8 @@
 
         var results = await Promise.all([
           fetchShared('tenantsTrend6mo', function () { return supabaseClient.from('tenants').select('created_at').gte('created_at', sixMonthsAgo); }),
-          fetchShared('txTrend6mo', function () { return supabaseClient.from('transactions').select('amount, created_at').gte('created_at', sixMonthsAgo); }),
+          // Shares loadKPIs()'s cache key - only fires once per page load.
+          fetchShared('txTrend6mo', function () { return supabaseClient.rpc('admin_get_ungani_ledger_monthly_trend', { p_months: 6 }); }),
           supabaseClient.from('support_issues').select('created_at, resolved_at').or('created_at.gte.' + sixMonthsAgo + ',resolved_at.gte.' + sixMonthsAgo)
         ]);
 
@@ -4918,7 +4948,7 @@
 
         var labels = buildMonthlyLabels(6);
         var signupsTrend = buildMonthlyTrend(tenantsTrendRes.data || [], 'created_at', null, 6);
-        var ledgerTrend = buildMonthlyTrend(txTrendRes.data || [], 'created_at', function (tx) { return parseFloat(tx.amount) || 0; }, 6);
+        var ledgerTrend = rpcMonthlyToArray(txTrendRes.data || [], 6, 'ledger_volume');
         var openedTrend = buildMonthlyTrend(supportRows, 'created_at', null, 6);
         var resolvedTrend = buildMonthlyTrend(resolvedRows, 'resolved_at', null, 6);
 
