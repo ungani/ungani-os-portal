@@ -13,6 +13,7 @@
   <script src="team-chat-shared.js"></script>
   <script src="ungani-connect-panel.js"></script>
   <script src="ungani-nav-config.js"></script>
+  <script src="ungani-print-branding.js"></script>
   <script>
     (function () {
       function showUnganiLoadError() {
@@ -54,8 +55,16 @@
     let stockItems = [];
     let stockMovements = [];
     let editingAdjustItemId = null;
+    let movementScopeItemId = null;
+    let movementFromDate = null;
+    let movementToDate = null;
+    let printStockListMode = false;
 
     window.addEventListener("load", function () {
+      const params = new URLSearchParams(window.location.search);
+      movementScopeItemId = params.get("item");
+      printStockListMode = params.get("print") === "1";
+
       UnganiClientShared.initPage({
         pageKey: "stock-tracking",
         pageTitle: "Stock Tracking",
@@ -83,14 +92,19 @@
 
       await loadStockItems();
       await loadStockMovements();
-      renderStockTrackingPage();
+
+      if (printStockListMode) {
+        renderPrintStockListView();
+      } else {
+        renderStockTrackingPage();
+      }
     }
 
     async function loadStockItems() {
       try {
         const response = await currentContext.supabaseClient
           .from("business_items")
-          .select("id, item_name, name, title, property_name, quantity, reorder_level")
+          .select("id, item_name, name, title, property_name, quantity, reorder_level, property_price")
           .eq("tenant_id", currentContext.tenantId)
           .is("deleted_at", null)
           .order("item_name", { ascending: true })
@@ -103,14 +117,46 @@
       }
     }
 
+    // get_my_ungani_stock_movements only accepts (p_item_id, p_limit) - no
+    // date-range param exists on the RPC (confirmed live, not guessed: a
+    // p_from_date/p_to_date call returns PGRST202 "no matches found").
+    // Date filtering below is done client-side against this capped fetch
+    // rather than adding a new RPC overload. 1000 is a real, visible cap
+    // (not a silent one) - large enough that no real tenant's history
+    // should exceed it before this page is reloaded again.
+    const STOCK_MOVEMENTS_FETCH_LIMIT = 1000;
+
     async function loadStockMovements() {
       try {
-        const response = await currentContext.supabaseClient.rpc("get_my_ungani_stock_movements", { p_limit: 100 });
+        const params = { p_limit: STOCK_MOVEMENTS_FETCH_LIMIT };
+        if (movementScopeItemId) params.p_item_id = movementScopeItemId;
+
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_stock_movements", params);
         stockMovements = (!response.error && response.data && response.data.ok === true) ? (response.data.movements || []) : [];
       } catch (error) {
         console.warn("Could not load stock movements:", error.message);
         stockMovements = [];
       }
+    }
+
+    function filteredStockMovements() {
+      return stockMovements.filter(function (m) {
+        if (movementFromDate && m.created_at < movementFromDate) return false;
+        if (movementToDate && m.created_at.slice(0, 10) > movementToDate) return false;
+        return true;
+      });
+    }
+
+    function applyMovementDateFilter() {
+      movementFromDate = UnganiClientShared.value("movementFromDateInput") || null;
+      movementToDate = UnganiClientShared.value("movementToDateInput") || null;
+      renderStockTrackingPage();
+    }
+
+    function clearMovementFilters() {
+      movementFromDate = null;
+      movementToDate = null;
+      window.location.href = "my-stock-tracking.html";
     }
 
     function stockItemName(row) {
@@ -172,6 +218,7 @@
               <h3>Items</h3>
               <p class="ungani-small">${stockItems.length} item(s) with stock tracking.</p>
             </div>
+            <a class="ungani-btn small dark" href="my-stock-tracking.html?print=1" target="_blank">Print Stock List</a>
           </div>
 
           ${renderStockItemsTable()}
@@ -180,8 +227,24 @@
         <section class="ungani-card" style="margin-top:18px;">
           <div class="ungani-section-title">
             <div>
-              <h3>Recent Stock Movements</h3>
-              <p class="ungani-small">Most recent ${Math.min(stockMovements.length, 20)} of ${stockMovements.length} logged movement(s).</p>
+              <h3>${movementScopeItemId ? "Stock History - " + UnganiClientShared.safe(scopedItemName()) : "Stock Movement History"}</h3>
+              <p class="ungani-small">${filteredStockMovements().length} of ${stockMovements.length} logged movement(s)${(movementFromDate || movementToDate) ? " matching this date range" : ""}.</p>
+            </div>
+            ${movementScopeItemId ? `<a class="ungani-btn small light" href="my-stock-tracking.html">All Items</a>` : ""}
+          </div>
+
+          <div class="stock-form-grid no-print" style="margin-top:4px;align-items:end;">
+            <div>
+              <label for="movementFromDateInput">From date</label>
+              <input type="date" id="movementFromDateInput" value="${movementFromDate || ""}" />
+            </div>
+            <div>
+              <label for="movementToDateInput">To date</label>
+              <input type="date" id="movementToDateInput" value="${movementToDate || ""}" />
+            </div>
+            <div class="ungani-button-row" style="grid-column:1/-1;">
+              <button type="button" class="ungani-btn gold" onclick="applyMovementDateFilter()">Apply</button>
+              ${(movementFromDate || movementToDate || movementScopeItemId) ? `<button type="button" class="ungani-btn light" onclick="clearMovementFilters()">Clear Filters</button>` : ""}
             </div>
           </div>
 
@@ -190,6 +253,12 @@
 
         <p class="ungani-small">Stock Tracking · ungani.com · info@ungani.com</p>
       `);
+    }
+
+    function scopedItemName() {
+      if (stockMovements.length) return stockMovements[0].item_name || "Item";
+      const row = stockItems.find(function (item) { return String(item.id) === String(movementScopeItemId); });
+      return row ? stockItemName(row) : "Item";
     }
 
     function stockKpi(label, value, sub, accent) {
@@ -231,13 +300,19 @@
     }
 
     function renderMovementLog() {
+      const movements = filteredStockMovements();
+
       if (!stockMovements.length) {
         return `<p class="ungani-small" style="padding:18px 0;">No stock movements logged yet. Adjustments you make will show up here.</p>`;
       }
 
+      if (!movements.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No records for this period.</p>`;
+      }
+
       return `
         <table class="movement-log-table">
-          ${stockMovements.slice(0, 20).map(function (m) {
+          ${movements.map(function (m) {
             const deltaText = (Number(m.quantity_delta) > 0 ? "+" : "") + m.quantity_delta;
             return `
               <tr>
@@ -388,6 +463,96 @@
           UnganiClientShared.showToast("Could not adjust stock: " + error.message);
         }
       });
+    }
+
+    // Printable stock list - current quantity, low/out status, and value
+    // (property_price is the real, live "value" field for an item across
+    // all business types - selling_price/cost_price are confirmed-dead
+    // columns, see my-items.html's own comment on this). Items with no
+    // property_price set contribute 0 to the total rather than being
+    // skipped, so the total is always an honest floor, not an overstatement.
+    function renderPrintStockListView() {
+      const tenant = currentContext.tenant;
+      const totalValue = stockItems.reduce(function (sum, row) {
+        return sum + Number(UnganiClientShared.getValue(row, ["property_price"], 0) || 0);
+      }, 0);
+      const anyValueSet = stockItems.some(function (row) { return Number(row.property_price || 0) > 0; });
+
+      UnganiClientShared.setContent(`
+        <style>
+          .stock-print-shell { max-width: 900px; margin: 0 auto; background: #FFFFFF; color: #111827; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border: 1px solid #E5E7EB; }
+          .stock-print-shell, .stock-print-shell * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+          .stock-print-toolbar { max-width: 900px; margin: 0 auto 16px; display: flex; justify-content: flex-end; gap: 10px; }
+          .stock-print-topbar { height: 8px; background: linear-gradient(90deg, #061C3D, #D4A63A); }
+          .stock-print-body { padding: 36px; }
+          .stock-print-table { width: 100%; border-collapse: collapse; margin-top: 24px; border: 1px solid #E5E7EB; border-radius: 10px; overflow: hidden; }
+          .stock-print-table thead th { background: #061C3D; color: #FFFFFF; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+          .stock-print-table tbody td { padding: 10px 12px; border-bottom: 1px solid #EEF0F3; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+          .stock-print-table tbody tr:nth-child(even) { background: #FAFAFA; }
+          .stock-print-table tbody tr:last-child td { border-bottom: none; }
+          .stock-print-totals { display: flex; justify-content: flex-end; margin-top: 18px; }
+          .stock-print-totals table { min-width: 260px; border-collapse: collapse; }
+          .stock-print-totals td { padding: 6px 4px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+          .stock-total-row td { padding-top: 12px; border-top: 2px solid #061C3D; font-size: 17px; font-weight: 900; color: #061C3D; }
+
+          @media print {
+            @page { size: A4; margin: 12mm; }
+            body { background: #FFFFFF !important; }
+            .no-print, .ungani-sidebar, .ungani-mobile-bottom, .ungani-mobile-nav, .ungani-topbar, .ungani-toast,
+            .stock-print-toolbar, #niaFabBtn, #niaTagline, #niaHelpBtn, #unganiPushBanner, .nia-fab, .nia-tagline, .ungani-push-banner {
+              display: none !important;
+            }
+            .ungani-app-shell, .ungani-main, .ungani-content { display: block !important; margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: none !important; }
+            .stock-print-shell { box-shadow: none !important; border-radius: 0 !important; border: none !important; }
+          }
+        </style>
+
+        <div class="stock-print-toolbar">
+          <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
+          <a class="ungani-btn light" href="my-stock-tracking.html">Back to Stock Tracking</a>
+        </div>
+
+        <div class="stock-print-shell">
+          <div class="stock-print-topbar"></div>
+          <div class="stock-print-body">
+            ${UnganiPrintBranding.renderHeaderBlock(tenant, { logoSize: 74, contactColor: "#6B7280", nameColor: "#061C3D" })}
+
+            <h2 style="margin:24px 0 2px;font-size:22px;color:#061C3D;">Stock List</h2>
+            <p class="ungani-small" style="margin:0;">As of ${UnganiClientShared.formatDateTime(new Date().toISOString())} · ${stockItems.length} item(s)</p>
+
+            <table class="stock-print-table">
+              <thead>
+                <tr><th>Item</th><th>Quantity</th><th>Reorder Level</th><th>Status</th>${anyValueSet ? "<th style=\"text-align:right;\">Value</th>" : ""}</tr>
+              </thead>
+              <tbody>
+                ${stockItems.map(function (row) {
+                  const status = stockStatus(row);
+                  const value = Number(UnganiClientShared.getValue(row, ["property_price"], 0) || 0);
+                  return `
+                    <tr>
+                      <td><strong>${UnganiClientShared.safe(stockItemName(row))}</strong></td>
+                      <td>${UnganiClientShared.safe(row.quantity === null || row.quantity === undefined ? "0" : String(row.quantity))}</td>
+                      <td>${row.reorder_level === null || row.reorder_level === undefined ? "—" : UnganiClientShared.safe(String(row.reorder_level))}</td>
+                      <td>${UnganiClientShared.safe(status.label)}</td>
+                      ${anyValueSet ? `<td style="text-align:right;">${value > 0 ? UnganiClientShared.formatKES(value) : "—"}</td>` : ""}
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+
+            ${anyValueSet ? `
+              <div class="stock-print-totals">
+                <table>
+                  <tr class="stock-total-row"><td>Total Stock Value</td><td style="text-align:right;">${UnganiClientShared.formatKES(totalValue)}</td></tr>
+                </table>
+              </div>
+            ` : ""}
+
+            ${UnganiPrintBranding.renderPoweredByFooter()}
+          </div>
+        </div>
+      `);
     }
   </script>
 
