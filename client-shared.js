@@ -4724,6 +4724,7 @@
         <div class="ungani-button-row" style="margin-top:14px;">
           ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.editFnName}('${attr(personId)}')">Edit</button>` : ""}
           ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.discussFnName}('${attr(personId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
+          <a class="ungani-btn light" href="my-customer-invoices.html?statement=${encodeURIComponent(personId)}" target="_blank">Statement</a>
           ${o.deleteFnName ? `<button class="ungani-btn red" type="button" onclick="${o.deleteFnName}('${attr(personId)}')">Delete</button>` : ""}
         </div>
       </div>
@@ -4974,6 +4975,7 @@
         <div class="ungani-button-row" style="margin-top:14px;">
           ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.editFnName}('${attr(orgId)}')">Edit</button>` : ""}
           ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.discussFnName}('${attr(orgId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
+          <a class="ungani-btn light" href="my-customer-invoices.html?statement=${encodeURIComponent(orgId)}" target="_blank">Statement</a>
           ${o.deleteFnName ? `<button class="ungani-btn red" type="button" onclick="${o.deleteFnName}('${attr(orgId)}')">Delete</button>` : ""}
         </div>
       </div>

@@ -64,12 +64,18 @@
     let editingInvoiceItems = [];
     let printInvoiceId = null;
     let receiptPaymentId = null;
+    let statementPersonId = null;
+    let statementFrom = null;
+    let statementTo = null;
     let printModeActive = false;
 
     window.addEventListener("load", function () {
       const params = new URLSearchParams(window.location.search);
       printInvoiceId = params.get("print");
       receiptPaymentId = params.get("receipt");
+      statementPersonId = params.get("statement");
+      statementFrom = params.get("from");
+      statementTo = params.get("to");
 
       UnganiClientShared.initPage({
         pageKey: "customer-invoices",
@@ -107,6 +113,8 @@
         renderPrintView(printInvoiceId);
       } else if (receiptPaymentId) {
         renderReceiptView(receiptPaymentId);
+      } else if (statementPersonId) {
+        renderStatementView(statementPersonId, statementFrom, statementTo);
       } else {
         renderInvoicesPage();
 
@@ -1303,6 +1311,208 @@
             </div>
 
             ${payment.notes ? `<div style="margin-top:16px;font-size:13px;color:#6B7280;">${UnganiClientShared.safe(payment.notes)}</div>` : ""}
+
+            ${UnganiPrintBranding.renderPoweredByFooter()}
+          </div>
+        </div>
+      `);
+
+      if (new URLSearchParams(window.location.search).get("autoprint") === "1") {
+        setTimeout(function () { window.print(); }, 500);
+      }
+    }
+
+    function statementPresetRange(key) {
+      const today = new Date();
+      const toStr = today.toISOString().slice(0, 10);
+      const from = new Date(today);
+      if (key === "month") from.setMonth(from.getMonth() - 1);
+      if (key === "3months") from.setMonth(from.getMonth() - 3);
+      return { from: from.toISOString().slice(0, 10), to: toStr };
+    }
+
+    function navigateStatement(personId, from, to) {
+      const params = new URLSearchParams();
+      params.set("statement", personId);
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      window.location.href = "my-customer-invoices.html?" + params.toString();
+    }
+
+    // Customer statement - a chronological ledger of a customer's invoices
+    // (charges) and payments (credits) with a running balance, filterable
+    // to a period via ?from=&to=. Cancelled invoices never billed the
+    // customer, so they're excluded entirely rather than shown at zero.
+    async function renderStatementView(personId, fromParam, toParam) {
+      printModeActive = true;
+
+      const personResponse = await currentContext.supabaseClient
+        .from("client_people")
+        .select("id, full_name, phone, email, address, kra_pin, is_organization")
+        .eq("id", personId)
+        .eq("tenant_id", currentContext.tenantId)
+        .maybeSingle();
+
+      if (personResponse.error || !personResponse.data) {
+        UnganiClientShared.setContent(`<p style="padding:40px;">Could not load this customer. ${UnganiClientShared.safe(personResponse.error ? personResponse.error.message : "Customer not found.")}</p>`);
+        return;
+      }
+
+      const person = personResponse.data;
+
+      // Organizations roll up invoices billed to any of their linked
+      // people too (same union loadOrganizationConnections() uses for
+      // Company 360), not just invoices billed to the org record itself.
+      let statementPersonIds = [personId];
+      if (person.is_organization) {
+        const linkedResponse = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id")
+          .eq("tenant_id", currentContext.tenantId)
+          .eq("parent_organization_id", personId)
+          .is("deleted_at", null);
+        if (!linkedResponse.error && linkedResponse.data) {
+          statementPersonIds = statementPersonIds.concat(linkedResponse.data.map(function (p) { return p.id; }));
+        }
+      }
+
+      const invoicesResponse = await currentContext.supabaseClient
+        .from("ungani_customer_invoices")
+        .select("id, invoice_number, total_amount, amount_paid, currency, status, issue_date")
+        .eq("tenant_id", currentContext.tenantId)
+        .in("customer_person_id", statementPersonIds)
+        .is("deleted_at", null)
+        .neq("status", "cancelled")
+        .order("issue_date", { ascending: true });
+
+      const invoices = (!invoicesResponse.error && invoicesResponse.data) || [];
+      const invoiceIds = invoices.map(function (inv) { return inv.id; });
+
+      let payments = [];
+      if (invoiceIds.length) {
+        const paymentsResponse = await currentContext.supabaseClient
+          .from("ungani_customer_invoice_payments")
+          .select("id, invoice_id, amount, paid_at, method, reference")
+          .in("invoice_id", invoiceIds)
+          .order("paid_at", { ascending: true });
+        payments = (!paymentsResponse.error && paymentsResponse.data) || [];
+      }
+
+      const invoiceById = {};
+      invoices.forEach(function (inv) { invoiceById[String(inv.id)] = inv; });
+
+      const ledger = [];
+      invoices.forEach(function (inv) {
+        ledger.push({ date: inv.issue_date, type: "invoice", label: "Invoice " + inv.invoice_number, amount: Number(inv.total_amount) });
+      });
+      payments.forEach(function (p) {
+        const inv = invoiceById[String(p.invoice_id)];
+        ledger.push({ date: p.paid_at, type: "payment", label: "Payment" + (inv ? " — " + inv.invoice_number : "") + (p.method ? " (" + p.method + ")" : ""), amount: -Number(p.amount) });
+      });
+      ledger.sort(function (a, b) { return (a.date || "").localeCompare(b.date || "") || (a.type === "invoice" ? -1 : 1); });
+
+      const fromDate = fromParam || null;
+      const toDate = toParam || null;
+
+      let openingBalance = 0;
+      const periodEntries = [];
+      ledger.forEach(function (entry) {
+        const inRange = (!fromDate || entry.date >= fromDate) && (!toDate || entry.date <= toDate);
+        if (!inRange) {
+          if (fromDate && entry.date < fromDate) openingBalance += entry.amount;
+          return;
+        }
+        periodEntries.push(entry);
+      });
+
+      let runningBalance = openingBalance;
+      const rows = periodEntries.map(function (entry) {
+        runningBalance += entry.amount;
+        return {
+          date: entry.date,
+          label: entry.label,
+          charge: entry.amount > 0 ? entry.amount : null,
+          credit: entry.amount < 0 ? -entry.amount : null,
+          balance: runningBalance
+        };
+      });
+
+      const closingBalance = runningBalance;
+      const tenant = currentContext.tenant;
+      const customerName = UnganiClientShared.safe(person.full_name || "Customer");
+      const periodLabel = fromDate || toDate
+        ? (fromDate ? UnganiClientShared.formatDate(fromDate) : "Start") + " – " + (toDate ? UnganiClientShared.formatDate(toDate) : "Today")
+        : "All time";
+      const lastMonthRange = statementPresetRange("month");
+      const last3MonthsRange = statementPresetRange("3months");
+
+      UnganiClientShared.setContent(`
+        ${invoicePrintStyleBlock()}
+        <style>
+          .statement-toolbar-filters { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+          .statement-toolbar-filters input[type="date"] { padding:6px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:transparent; color:inherit; }
+        </style>
+
+        <div class="invoice-print-toolbar">
+          <div class="statement-toolbar-filters no-print">
+            <button type="button" class="ungani-btn light" onclick="navigateStatement('${UnganiClientShared.attr(personId)}', null, null)">All Time</button>
+            <button type="button" class="ungani-btn light" onclick="navigateStatement('${UnganiClientShared.attr(personId)}', '${lastMonthRange.from}', '${lastMonthRange.to}')">Last Month</button>
+            <button type="button" class="ungani-btn light" onclick="navigateStatement('${UnganiClientShared.attr(personId)}', '${last3MonthsRange.from}', '${last3MonthsRange.to}')">Last 3 Months</button>
+            <input type="date" id="statementFromInput" value="${fromDate || ""}" />
+            <input type="date" id="statementToInput" value="${toDate || ""}" />
+            <button type="button" class="ungani-btn light" onclick="navigateStatement('${UnganiClientShared.attr(personId)}', document.getElementById('statementFromInput').value || null, document.getElementById('statementToInput').value || null)">Apply</button>
+          </div>
+          <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
+          <a class="ungani-btn light" href="my-customer-invoices.html">Back to Invoices</a>
+        </div>
+
+        <div class="invoice-print-shell">
+          <div class="invoice-print-topbar"></div>
+          <div class="invoice-print-body">
+
+            <div class="invoice-print-header">
+              ${UnganiPrintBranding.renderHeaderBlock(tenant, { logoSize: 74, contactColor: "#6B7280", nameColor: "#061C3D" })}
+
+              <div class="invoice-meta-box">
+                <div class="invoice-meta-title">STATEMENT</div>
+                <div class="invoice-meta-sub">${UnganiClientShared.safe(periodLabel)}</div>
+                <table class="invoice-meta-table">
+                  <tr><td>Opening balance</td><td>${UnganiClientShared.formatKES(openingBalance)}</td></tr>
+                  <tr><td>Closing balance</td><td>${UnganiClientShared.formatKES(closingBalance)}</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="invoice-parties">
+              <div class="invoice-party-box">
+                <div class="invoice-party-label">Statement For</div>
+                <div class="invoice-party-body">
+                  <strong>${customerName}</strong><br />
+                  ${person.address ? UnganiClientShared.safe(person.address).replace(/\n/g, "<br />") + "<br />" : ""}
+                  ${person.phone || person.email ? UnganiClientShared.safe([person.phone, person.email].filter(Boolean).join(" / ")) : ""}
+                </div>
+              </div>
+            </div>
+
+            ${rows.length || fromDate ? `
+              <table class="invoice-print-table">
+                <thead>
+                  <tr><th>Date</th><th>Description</th><th style="text-align:right;">Charge</th><th style="text-align:right;">Payment</th><th style="text-align:right;">Balance</th></tr>
+                </thead>
+                <tbody>
+                  ${fromDate ? `<tr><td>${UnganiClientShared.formatDate(fromDate)}</td><td>Opening balance</td><td></td><td></td><td style="text-align:right;">${UnganiClientShared.formatKES(openingBalance)}</td></tr>` : ""}
+                  ${rows.map(function (r) {
+                    return `<tr><td>${UnganiClientShared.formatDate(r.date)}</td><td>${UnganiClientShared.safe(r.label)}</td><td style="text-align:right;">${r.charge != null ? UnganiClientShared.formatKES(r.charge) : ""}</td><td style="text-align:right;">${r.credit != null ? UnganiClientShared.formatKES(r.credit) : ""}</td><td style="text-align:right;">${UnganiClientShared.formatKES(r.balance)}</td></tr>`;
+                  }).join("")}
+                </tbody>
+              </table>
+            ` : `<p class="ungani-small" style="margin-top:30px;">No records for this period.</p>`}
+
+            <div class="invoice-print-totals" style="margin-top:18px;">
+              <table>
+                <tr class="invoice-total-due"><td>Balance Due</td><td style="text-align:right;">${UnganiClientShared.formatKES(closingBalance)}</td></tr>
+              </table>
+            </div>
 
             ${UnganiPrintBranding.renderPoweredByFooter()}
           </div>
