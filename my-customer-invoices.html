@@ -63,11 +63,13 @@
     let editingInvoiceId = null;
     let editingInvoiceItems = [];
     let printInvoiceId = null;
+    let receiptPaymentId = null;
     let printModeActive = false;
 
     window.addEventListener("load", function () {
       const params = new URLSearchParams(window.location.search);
       printInvoiceId = params.get("print");
+      receiptPaymentId = params.get("receipt");
 
       UnganiClientShared.initPage({
         pageKey: "customer-invoices",
@@ -103,6 +105,8 @@
 
       if (printInvoiceId) {
         renderPrintView(printInvoiceId);
+      } else if (receiptPaymentId) {
+        renderReceiptView(receiptPaymentId);
       } else {
         renderInvoicesPage();
 
@@ -606,7 +610,7 @@
           ${payments.length ? `
             <table style="width:100%;margin-top:10px;font-size:13px;">
               ${payments.map(function (payment) {
-                return `<tr><td>${UnganiClientShared.formatDate(payment.paid_at)}</td><td>${UnganiClientShared.safe(payment.method || "—")}</td><td>${UnganiClientShared.formatKES(payment.amount)}</td></tr>`;
+                return `<tr><td>${UnganiClientShared.formatDate(payment.paid_at)}</td><td>${UnganiClientShared.safe(payment.method || "—")}</td><td>${UnganiClientShared.formatKES(payment.amount)}</td><td style="text-align:right;"><button type="button" class="ungani-btn light" style="padding:4px 10px;font-size:11px;" onclick="printReceiptFromModal('${UnganiClientShared.attr(payment.id)}')">Receipt</button></td></tr>`;
               }).join("")}
             </table>
           ` : `<p class="ungani-small" style="margin:8px 0 0;">No payments recorded yet.</p>`}
@@ -917,6 +921,22 @@
         UnganiClientShared.showToast("Payment recorded ✓");
         await loadInvoiceRows();
         renderInvoicesPage();
+
+        // record_ungani_invoice_payment doesn't return the new row's id, so
+        // the just-inserted payment is looked up by recency to open its
+        // receipt automatically - this is the only payment matching
+        // invoice_id just inserted this instant, so created_at desc is safe.
+        const paymentLookup = await currentContext.supabaseClient
+          .from("ungani_customer_invoice_payments")
+          .select("id")
+          .eq("invoice_id", id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!paymentLookup.error && paymentLookup.data) {
+          printReceiptFromModal(paymentLookup.data.id);
+        }
       } catch (error) {
         UnganiClientShared.showToast("Could not record payment: " + error.message);
       }
@@ -993,25 +1013,11 @@
       return map[status] || map.draft;
     }
 
-    async function renderPrintView(id) {
-      printModeActive = true;
-
-      const response = await currentContext.supabaseClient.rpc("get_ungani_customer_invoice_detail", { p_invoice_id: id });
-
-      if (response.error || !response.data || response.data.ok !== true) {
-        UnganiClientShared.setContent(`<p style="padding:40px;">Could not load this invoice. ${UnganiClientShared.safe(response.error ? response.error.message : (response.data && response.data.message) || "")}</p>`);
-        return;
-      }
-
-      const invoice = response.data.invoice;
-      const items = response.data.items || [];
-      const payments = response.data.payments || [];
-      const balance = Number(invoice.total_amount) - Number(invoice.amount_paid);
-      const grossSubtotal = Number(invoice.subtotal) + Number(invoice.discount_amount || 0);
-      const statusMeta = invoiceStatusMeta(computeInvoicePrintStatus(invoice));
-      const tenant = currentContext.tenant;
-
-      UnganiClientShared.setContent(`
+    // Shared by renderPrintView and renderReceiptView - both are separate
+    // setContent() calls (not a persistent stylesheet), so the CSS lives
+    // here once instead of being duplicated in both functions.
+    function invoicePrintStyleBlock() {
+      return `
         <style>
           .invoice-print-shell {
             max-width: 820px; margin: 0 auto; background: #FFFFFF; color: #111827;
@@ -1092,6 +1098,29 @@
             .invoice-print-shell { box-shadow: none !important; border-radius: 0 !important; border: none !important; }
           }
         </style>
+      `;
+    }
+
+    async function renderPrintView(id) {
+      printModeActive = true;
+
+      const response = await currentContext.supabaseClient.rpc("get_ungani_customer_invoice_detail", { p_invoice_id: id });
+
+      if (response.error || !response.data || response.data.ok !== true) {
+        UnganiClientShared.setContent(`<p style="padding:40px;">Could not load this invoice. ${UnganiClientShared.safe(response.error ? response.error.message : (response.data && response.data.message) || "")}</p>`);
+        return;
+      }
+
+      const invoice = response.data.invoice;
+      const items = response.data.items || [];
+      const payments = response.data.payments || [];
+      const balance = Number(invoice.total_amount) - Number(invoice.amount_paid);
+      const grossSubtotal = Number(invoice.subtotal) + Number(invoice.discount_amount || 0);
+      const statusMeta = invoiceStatusMeta(computeInvoicePrintStatus(invoice));
+      const tenant = currentContext.tenant;
+
+      UnganiClientShared.setContent(`
+        ${invoicePrintStyleBlock()}
 
         <div class="invoice-print-toolbar">
           <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
@@ -1182,6 +1211,104 @@
       // themselves, matching print-report.html's existing autoprint
       // pattern. The manual "Print / Save PDF" button above is untouched
       // for every other caller of this same ?print=<id> deep link.
+      if (new URLSearchParams(window.location.search).get("autoprint") === "1") {
+        setTimeout(function () { window.print(); }, 500);
+      }
+    }
+
+    function printReceiptFromModal(paymentId) {
+      window.open("my-customer-invoices.html?receipt=" + encodeURIComponent(paymentId), "_blank");
+    }
+
+    // record_ungani_invoice_payment doesn't return the new payment row's id,
+    // so the receipt is addressed by payment id, looked up directly - RLS on
+    // ungani_customer_invoice_payments already scopes this to the caller's
+    // own tenant, same table my-customer-invoices.html's payments list reads.
+    async function renderReceiptView(paymentId) {
+      printModeActive = true;
+
+      const paymentResponse = await currentContext.supabaseClient
+        .from("ungani_customer_invoice_payments")
+        .select("id, invoice_id, amount, method, paid_at, reference, notes")
+        .eq("id", paymentId)
+        .maybeSingle();
+
+      if (paymentResponse.error || !paymentResponse.data) {
+        UnganiClientShared.setContent(`<p style="padding:40px;">Could not load this receipt. ${UnganiClientShared.safe(paymentResponse.error ? paymentResponse.error.message : "Payment not found.")}</p>`);
+        return;
+      }
+
+      const payment = paymentResponse.data;
+      const response = await currentContext.supabaseClient.rpc("get_ungani_customer_invoice_detail", { p_invoice_id: payment.invoice_id });
+
+      if (response.error || !response.data || response.data.ok !== true) {
+        UnganiClientShared.setContent(`<p style="padding:40px;">Could not load the invoice for this receipt. ${UnganiClientShared.safe(response.error ? response.error.message : (response.data && response.data.message) || "")}</p>`);
+        return;
+      }
+
+      const invoice = response.data.invoice;
+      const tenant = currentContext.tenant;
+
+      // amount_paid already reflects every recorded payment, including this
+      // one - so "balance before" is just adding this payment's amount back,
+      // regardless of what order payments were recorded in.
+      const balanceAfter = Number(invoice.total_amount) - Number(invoice.amount_paid);
+      const balanceBefore = balanceAfter + Number(payment.amount);
+      const isPaidInFull = balanceAfter <= 0;
+
+      UnganiClientShared.setContent(`
+        ${invoicePrintStyleBlock()}
+
+        <div class="invoice-print-toolbar">
+          <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
+          <a class="ungani-btn light" href="my-customer-invoices.html">Back to Invoices</a>
+        </div>
+
+        <div class="invoice-print-shell">
+          <div class="invoice-print-topbar"></div>
+          <div class="invoice-print-body">
+
+            <div class="invoice-print-header">
+              ${UnganiPrintBranding.renderHeaderBlock(tenant, { logoSize: 74, contactColor: "#6B7280", nameColor: "#061C3D" })}
+
+              <div class="invoice-meta-box">
+                <div class="invoice-meta-title">RECEIPT</div>
+                <div class="invoice-meta-sub">For Invoice ${UnganiClientShared.safe(invoice.invoice_number)}</div>
+                <table class="invoice-meta-table">
+                  <tr><td>Date paid</td><td>${UnganiClientShared.formatDate(payment.paid_at)}</td></tr>
+                  ${payment.method ? `<tr><td>Method</td><td>${UnganiClientShared.safe(payment.method)}</td></tr>` : ""}
+                  ${payment.reference ? `<tr><td>Reference</td><td>${UnganiClientShared.safe(payment.reference)}</td></tr>` : ""}
+                </table>
+                <div class="invoice-status-chip" style="background:${isPaidInFull ? "#DCFCE7" : "#FDF0D5"};color:${isPaidInFull ? "#15803D" : "#92600E"};">${isPaidInFull ? "Paid In Full" : "Partial Payment"}</div>
+              </div>
+            </div>
+
+            <div class="invoice-parties">
+              <div class="invoice-party-box">
+                <div class="invoice-party-label">Received From</div>
+                <div class="invoice-party-body">
+                  <strong>${UnganiClientShared.safe(invoice.customer_name)}</strong><br />
+                  ${invoice.customer_contact ? UnganiClientShared.safe(invoice.customer_contact) : ""}
+                </div>
+              </div>
+            </div>
+
+            <div class="invoice-print-totals" style="margin-top:30px;">
+              <table>
+                <tr><td>Invoice total</td><td style="text-align:right;">${UnganiClientShared.formatKES(invoice.total_amount)}</td></tr>
+                <tr><td>Balance before this payment</td><td style="text-align:right;">${UnganiClientShared.formatKES(balanceBefore)}</td></tr>
+                <tr class="invoice-total-due"><td>Amount Paid</td><td style="text-align:right;">${UnganiClientShared.formatKES(payment.amount)}</td></tr>
+                <tr><td>Balance remaining</td><td style="text-align:right;">${UnganiClientShared.formatKES(balanceAfter)}</td></tr>
+              </table>
+            </div>
+
+            ${payment.notes ? `<div style="margin-top:16px;font-size:13px;color:#6B7280;">${UnganiClientShared.safe(payment.notes)}</div>` : ""}
+
+            ${UnganiPrintBranding.renderPoweredByFooter()}
+          </div>
+        </div>
+      `);
+
       if (new URLSearchParams(window.location.search).get("autoprint") === "1") {
         setTimeout(function () { window.print(); }, 500);
       }
