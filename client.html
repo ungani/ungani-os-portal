@@ -3344,6 +3344,12 @@
     let currentUserFullName = "";
     let currentUserIsOwner = true;
     let currentUserTeamMemberId = null;
+    // Per-section {view,create,edit,delete} object from get_my_ungani_staff_access
+    // (the real source staff-permission-guard.js/staff-visibility-filter.js
+    // already gate whole pages with - "money"/"items"/"tasks" are the
+    // section keys those files already map my-money.html/my-items.html/
+    // my-tasks.html to). Null for an owner (owners always pass regardless).
+    let currentUserPermissions = null;
 
     // Branch UX Phase B (see get_my_ungani_staff_access/get_my_ungani_
     // multi_branch_status - the same RPCs Nia/my-branches.html/my-team-
@@ -3390,10 +3396,12 @@
         // the dashboard's My To-Do widget can scope a staff member to
         // their own tasks the same way.
         currentUserTeamMemberId = access.team_member_id || null;
+        currentUserPermissions = access.permissions || null;
       } catch (error) {
         currentUserIsOwner = true;
         currentUserBranchId = null;
         currentUserTeamMemberId = null;
+        currentUserPermissions = null;
       }
 
       try {
@@ -6438,6 +6446,21 @@
           ${content.attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(data.transactions))}
+        ${!isScoped ? renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices)) : ""}
+        ${(() => {
+          const activeSection = isScoped ? scopeLabel : (getSoleSelectedSection() || "Rentals");
+          return activeSection === "Sales"
+            ? renderAvailabilitySectionHtml(calculateAvailabilityCardData(data.items, { primary: "Available", secondary: "Reserved", tertiary: "Sold" }, function (status) {
+                if (isSoldPropertyStatus(status)) return "tertiary";
+                if (isNegotiationPropertyStatus(status)) return "secondary";
+                return null;
+              }))
+            : renderAvailabilitySectionHtml(calculateAvailabilityCardData(data.items, { primary: "Vacant / Wazi", secondary: "Occupied / Imejaa", tertiary: null }, function (status) {
+                return isOccupiedItemStatus(status) ? "secondary" : null;
+              }));
+        })()}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -6477,6 +6500,21 @@
 
           ${renderCalendarPreview(calendarPreview)}
         </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(data.tasks))}
+
+        ${!isScoped ? `
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+        ` : ""}
 
         ${contactSupportCard()}
 
@@ -8538,6 +8576,10 @@
           ${attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
+        ${renderAvailabilitySectionHtml(calculateAvailabilityCardData(dashboardData.items, { primary: "Vacant / Wazi", secondary: "Occupied / Imejaa", tertiary: null }, function (status) { return isOccupiedItemStatus(status) ? "secondary" : null; }))}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -8579,6 +8621,19 @@
           </div>
 
           ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
         </section>
 
         ${contactSupportCard()}
@@ -9056,6 +9111,10 @@
           ${content.attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(data.transactions))}
+        ${!isScoped ? renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices)) : ""}
+        ${!isScoped ? renderStockSectionHtml(calculateStockCardData(dashboardData.items)) : ""}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -9095,6 +9154,21 @@
 
           ${renderCalendarPreview(calendarPreview, false, "Restock dates, deliveries, supplier follow-ups, and payment reminders will appear here.")}
         </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(data.tasks))}
+
+        ${!isScoped ? `
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+        ` : ""}
 
         ${contactSupportCard()}
 
@@ -9685,6 +9759,17 @@
           ${content.attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(data.transactions))}
+        ${!isScoped ? renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices)) : ""}
+        ${(() => {
+          const activeSection = isScoped ? scopeLabel : (getSoleSelectedSection() || "Hotel");
+          return HOSPITALITY_FNB_SECTIONS.indexOf(activeSection) !== -1
+            ? renderStockSectionHtml(calculateStockCardData(data.items))
+            : renderAvailabilitySectionHtml(calculateAvailabilityCardData(data.items, { primary: "Vacant / Wazi", secondary: "Occupied / Imejaa", tertiary: null }, function (status) {
+                return isOccupiedItemStatus(status) ? "secondary" : null;
+              }));
+        })()}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -9724,6 +9809,21 @@
 
           ${renderCalendarPreview(calendarPreview, false, isFnbView ? "Reservations, event bookings, and supplier restock dates will appear here." : "Check-ins, reservations, checkouts, and housekeeping/maintenance activities will appear here.")}
         </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(data.tasks))}
+
+        ${!isScoped ? `
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+        ` : ""}
 
         ${contactSupportCard()}
 
@@ -12139,6 +12239,9 @@
           ${content.attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(data.transactions))}
+        ${!isScoped ? renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices)) : ""}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -12178,6 +12281,21 @@
 
           ${renderCalendarPreview(calendarPreview)}
         </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(data.tasks))}
+
+        ${!isScoped ? `
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+        ` : ""}
 
         ${contactSupportCard()}
 
@@ -12912,6 +13030,9 @@
           ${content.attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(data.transactions))}
+        ${!isScoped ? renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices)) : ""}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -12951,6 +13072,21 @@
 
           ${renderCalendarPreview(calendarPreview)}
         </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(data.tasks))}
+
+        ${!isScoped ? `
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+        ` : ""}
 
         ${contactSupportCard()}
 
@@ -13503,6 +13639,9 @@
           ${content.attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(data.transactions))}
+        ${!isScoped ? renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices)) : ""}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -13542,6 +13681,21 @@
 
           ${renderCalendarPreview(calendarPreview)}
         </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(data.tasks))}
+
+        ${!isScoped ? `
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+        ` : ""}
 
         ${contactSupportCard()}
 
@@ -14100,6 +14254,9 @@
           ${content.attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(data.transactions))}
+        ${!isScoped ? renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices)) : ""}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -14139,6 +14296,21 @@
 
           ${renderCalendarPreview(calendarPreview)}
         </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(data.tasks))}
+
+        ${!isScoped ? `
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+        ` : ""}
 
         ${contactSupportCard()}
 
@@ -14596,6 +14768,9 @@
           ${attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -14637,6 +14812,19 @@
           </div>
 
           ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
         </section>
 
         ${contactSupportCard()}
@@ -14923,6 +15111,9 @@
           ${attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -14964,6 +15155,19 @@
           </div>
 
           ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
         </section>
 
         ${contactSupportCard()}
@@ -15228,6 +15432,10 @@
           ${attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
+        ${renderStockSectionHtml(calculateStockCardData(dashboardData.items))}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -15269,6 +15477,19 @@
           </div>
 
           ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
         </section>
 
         ${contactSupportCard()}
@@ -15546,6 +15767,9 @@
           ${attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -15587,6 +15811,19 @@
           </div>
 
           ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
         </section>
 
         ${contactSupportCard()}
@@ -15882,6 +16119,9 @@
           ${attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
+
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -15923,6 +16163,19 @@
           </div>
 
           ${renderCalendarPreview(calendarPreview)}
+        </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
         </section>
 
         ${contactSupportCard()}
@@ -16066,6 +16319,9 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, today's job deadlines, and material restocks due — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -16088,6 +16344,19 @@
           <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Job deadlines and client approvals coming up.</p></div><a class="ungani-btn small gold" href="my-calendar.html">Open Calendar</a></div>
           ${renderCalendarPreview(calendarPreview)}
         </section>
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+
         ${contactSupportCard()}
         <p class="footer">Client Dashboard Version: Printing / Branding Company · ungani.com · info@ungani.com</p>
       `;
@@ -16229,6 +16498,9 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, today's cleaning jobs, and supply restocks due — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -16251,6 +16523,19 @@
           <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Cleaning jobs and site visits coming up.</p></div><a class="ungani-btn small gold" href="my-calendar.html">Open Calendar</a></div>
           ${renderCalendarPreview(calendarPreview)}
         </section>
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+
         ${contactSupportCard()}
         <p class="footer">Client Dashboard Version: Cleaning / Facility Services · ungani.com · info@ungani.com</p>
       `;
@@ -16387,6 +16672,9 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks and upcoming inspections — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -16409,6 +16697,19 @@
           <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Inspections, site visits, and material deliveries coming up.</p></div><a class="ungani-btn small gold" href="my-calendar.html">Open Calendar</a></div>
           ${renderCalendarPreview(calendarPreview)}
         </section>
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+
         ${contactSupportCard()}
         <p class="footer">Client Dashboard Version: Construction / Contractors · ungani.com · info@ungani.com</p>
       `;
@@ -16541,6 +16842,9 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks and upcoming shoots — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -16563,6 +16867,19 @@
           <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Shoots, editing deadlines, and client meetings coming up.</p></div><a class="ungani-btn small gold" href="my-calendar.html">Open Calendar</a></div>
           ${renderCalendarPreview(calendarPreview)}
         </section>
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+
         ${contactSupportCard()}
         <p class="footer">Client Dashboard Version: Photography / Videography · ungani.com · info@ungani.com</p>
       `;
@@ -16702,6 +17019,9 @@
           <div class="section-title"><div><h3>Needs Attention Today</h3><p>Overdue tasks, material follow-ups, and upcoming order deadlines — in priority order.</p></div></div>
           ${attentionHtml}
         </section>
+
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+        ${renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices))}
         <section class="card money-snapshot">
           ${renderFinancialSnapshotHtml(data.transactions)}
         </section>
@@ -16724,6 +17044,19 @@
           <div class="section-title"><div><h3>Calendar — Next 5 Days</h3><p>Order deadlines and material deliveries coming up.</p></div><a class="ungani-btn small gold" href="my-calendar.html">Open Calendar</a></div>
           ${renderCalendarPreview(calendarPreview)}
         </section>
+        ${renderMyTodoSectionHtml(calculateMyTodoData(dashboardData.tasks))}
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+
         ${contactSupportCard()}
         <p class="footer">Client Dashboard Version: Furniture / Carpentry · ungani.com · info@ungani.com</p>
       `;
@@ -17020,21 +17353,45 @@
       `;
     }
 
+    // "money"/"items"/"tasks" are the exact section keys staff-permission-
+    // guard.js/staff-visibility-filter.js already map my-money.html/
+    // my-debtors-payables.html, my-items.html/my-stock-tracking.html, and
+    // my-tasks.html to - reusing the same keys here means a staff member
+    // who can't open the real page also doesn't see its dashboard card.
+    // Owners (currentUserPermissions null/missing) always pass.
+    function canViewDashboardSection(sectionKey) {
+      if (currentUserIsOwner) return true;
+      if (!currentUserPermissions) return true; // fail open, matches existing loadUserRole() fallback behavior
+      const perm = currentUserPermissions[sectionKey];
+      return !perm || perm.view !== false;
+    }
+
+    // Bilingual label helper - English primary, Swahili following, same
+    // inline pattern already used for the Payment Instructions note (no
+    // app-wide i18n system exists yet).
+    function biLabel(en, sw) {
+      return en + " / " + sw;
+    }
+
     function renderMoneySectionHtml(moneyData) {
+      if (!canViewDashboardSection("money")) return "";
+
       const grid = `
         <div class="kpi-grid">
-          ${kpiCard("Today", formatKes(moneyData.todayNet), formatKes(moneyData.todayIncome) + " in · " + formatKes(moneyData.todayExpense) + " out", "#D4A63A", "my-money.html", null, null, "wallet")}
-          ${kpiCard("This Month", formatKes(moneyData.monthNet), formatKes(moneyData.monthIncome) + " in · " + formatKes(moneyData.monthExpense) + " out", "#2563EB", "my-money.html", null, null, "trending-up")}
+          ${kpiCard(biLabel("Today", "Leo"), formatKes(moneyData.todayNet), formatKes(moneyData.todayIncome) + " in · " + formatKes(moneyData.todayExpense) + " out", "#D4A63A", "my-money.html", null, null, "wallet")}
+          ${kpiCard(biLabel("This Month", "Mwezi Huu"), formatKes(moneyData.monthNet), formatKes(moneyData.monthIncome) + " in · " + formatKes(moneyData.monthExpense) + " out", "#2563EB", "my-money.html", null, null, "trending-up")}
         </div>
       `;
-      return dashboardSectionHtml("Money", grid);
+      return dashboardSectionHtml(biLabel("Money", "Pesa"), grid);
     }
 
     function renderOwedToYouSectionHtml(owedData) {
+      if (!canViewDashboardSection("money")) return "";
+
       if (!owedData.outstanding) {
-        return dashboardSectionHtml("Owed to You", `
+        return dashboardSectionHtml(biLabel("Owed to You", "Unadaiwa"), `
           <div class="card" style="padding: 16px 20px;">
-            <p class="muted" style="margin:0;">Nothing outstanding right now - every invoice is settled.</p>
+            <p class="muted" style="margin:0;">Nothing outstanding right now - every invoice is settled. / Hakuna deni kwa sasa - ankara zote zimelipwa.</p>
           </div>
         `);
       }
@@ -17050,16 +17407,18 @@
 
       const grid = `
         <div class="kpi-grid">
-          ${kpiCard("Outstanding", formatKes(owedData.outstanding), "Total unpaid balance", "#2563EB", "my-debtors-payables.html", null, null, "receipt")}
-          ${kpiCard("Overdue", formatKes(owedData.overdueTotal), owedData.overdueCount + " invoice" + (owedData.overdueCount === 1 ? "" : "s"), "#DC2626", "my-debtors-payables.html", null, null, "alert-triangle")}
-          ${kpiCard("Due This Week", formatKes(owedData.dueThisWeekTotal), owedData.dueThisWeekCount + " invoice" + (owedData.dueThisWeekCount === 1 ? "" : "s"), "#C77700", "my-debtors-payables.html", null, null, "calendar-clock")}
+          ${kpiCard(biLabel("Outstanding", "Deni Lote"), formatKes(owedData.outstanding), "Total unpaid balance", "#2563EB", "my-debtors-payables.html", null, null, "receipt")}
+          ${kpiCard(biLabel("Overdue", "Limechelewa"), formatKes(owedData.overdueTotal), owedData.overdueCount + " invoice" + (owedData.overdueCount === 1 ? "" : "s"), "#DC2626", "my-debtors-payables.html", null, null, "alert-triangle")}
+          ${kpiCard(biLabel("Due This Week", "Wiki Hii"), formatKes(owedData.dueThisWeekTotal), owedData.dueThisWeekCount + " invoice" + (owedData.dueThisWeekCount === 1 ? "" : "s"), "#C77700", "my-debtors-payables.html", null, null, "calendar-clock")}
         </div>
         ${topRows ? `<div class="todo-list" style="margin-top:10px;">${topRows}</div>` : ""}
       `;
-      return dashboardSectionHtml("Owed to You", grid);
+      return dashboardSectionHtml(biLabel("Owed to You", "Unadaiwa"), grid);
     }
 
     function renderStockSectionHtml(stockData) {
+      if (!canViewDashboardSection("items")) return "";
+
       const topRows = stockData.topItems.map(function (item) {
         const name = getValue(item, ["item_name", "name"], "Item");
         const out = isOutOfStockItem(item);
@@ -17073,33 +17432,43 @@
 
       const grid = `
         <div class="kpi-grid">
-          ${kpiCard("Total Items", stockData.total, "Tracked items", "#2563EB", "my-items.html", null, null, "package")}
-          ${kpiCard("Low Stock", stockData.lowCount, "Below reorder level", "#C77700", "my-items.html", null, null, "trending-down")}
-          ${kpiCard("Out of Stock", stockData.outCount, "Needs restocking", "#DC2626", "my-items.html", null, null, "package-x")}
+          ${kpiCard(biLabel("Total Items", "Jumla ya Bidhaa"), stockData.total, "Tracked items", "#2563EB", "my-items.html", null, null, "package")}
+          ${kpiCard(biLabel("Low Stock", "Hisa Chache"), stockData.lowCount, "Below reorder level", "#C77700", "my-items.html", null, null, "trending-down")}
+          ${kpiCard(biLabel("Out of Stock", "Imeisha"), stockData.outCount, "Needs restocking", "#DC2626", "my-items.html", null, null, "package-x")}
         </div>
         ${topRows ? `<div class="todo-list" style="margin-top:10px;">${topRows}</div>` : ""}
       `;
-      return dashboardSectionHtml("Stock", grid);
+      return dashboardSectionHtml(biLabel("Stock", "Hisa"), grid);
     }
 
+    // Supports either 2 or 3 buckets - labels.tertiary is null for business
+    // types whose real data only distinguishes 2 states (e.g. Real Estate
+    // Rentals' Vacant/Occupied has no tracked "under maintenance" status);
+    // omitting the 3rd card there rather than showing an always-zero count
+    // that would look like invented data.
     function renderAvailabilitySectionHtml(availData) {
-      const grid = `
-        <div class="kpi-grid">
-          ${kpiCard(availData.labels.primary, availData.primary, "of " + availData.total, "#2563EB", "my-items.html", null, null, "circle-check")}
-          ${kpiCard(availData.labels.secondary, availData.secondary, "of " + availData.total, "#C77700", "my-items.html", null, null, "circle-dot")}
-          ${kpiCard(availData.labels.tertiary, availData.tertiary, "of " + availData.total, "#16A34A", "my-items.html", null, null, "circle-check-big")}
-        </div>
-      `;
-      return dashboardSectionHtml("Availability", grid);
+      if (!canViewDashboardSection("items")) return "";
+
+      const cards = [
+        kpiCard(availData.labels.primary, availData.primary, "of " + availData.total, "#2563EB", "my-items.html", null, null, "circle-check"),
+        kpiCard(availData.labels.secondary, availData.secondary, "of " + availData.total, "#C77700", "my-items.html", null, null, "circle-dot")
+      ];
+      if (availData.labels.tertiary) {
+        cards.push(kpiCard(availData.labels.tertiary, availData.tertiary, "of " + availData.total, "#16A34A", "my-items.html", null, null, "circle-check-big"));
+      }
+
+      return dashboardSectionHtml(biLabel("Availability", "Upatikanaji"), `<div class="kpi-grid">${cards.join("")}</div>`);
     }
 
     function renderMyTodoSectionHtml(todoData) {
-      const title = currentUserIsOwner ? "My To-Do (Team)" : "My To-Do";
+      if (!canViewDashboardSection("tasks")) return "";
+
+      const title = currentUserIsOwner ? biLabel("My To-Do (Team)", "Kazi za Timu") : biLabel("My To-Do", "Kazi Zangu");
 
       if (!todoData.rows.length) {
         return dashboardSectionHtml(title, `
           <div class="card" style="padding: 16px 20px;">
-            <p class="muted" style="margin:0;">Nothing overdue or due today. 🎉</p>
+            <p class="muted" style="margin:0;">Nothing overdue or due today. 🎉 / Hakuna kazi iliyochelewa au ya leo.</p>
             <div style="margin-top:10px;">${quickAddTaskFormHtml()}</div>
           </div>
         `);
@@ -17123,8 +17492,8 @@
 
       const summary = `
         <div class="kpi-grid">
-          ${kpiCard("Overdue", todoData.overdueCount, "Past due date", "#DC2626", "my-tasks.html", null, null, "alert-circle")}
-          ${kpiCard("Due Today", todoData.dueTodayCount, "Needs attention today", "#C77700", "my-tasks.html", null, null, "calendar")}
+          ${kpiCard(biLabel("Overdue", "Zilizochelewa"), todoData.overdueCount, "Past due date", "#DC2626", "my-tasks.html", null, null, "alert-circle")}
+          ${kpiCard(biLabel("Due Today", "Za Leo"), todoData.dueTodayCount, "Needs attention today", "#C77700", "my-tasks.html", null, null, "calendar")}
         </div>
       `;
 
@@ -18103,20 +18472,32 @@
 
     // Availability card - generalizes the one-off status helpers that
     // already exist per type (isOccupiedItemStatus, isSoldPropertyStatus,
-    // isNegotiationPropertyStatus) into one 3-bucket breakdown for unique-
-    // asset types that don't track stock quantity. `vocab` lets each type
-    // label the same 3 buckets in its own words (e.g. Real Estate:
-    // Vacant/Occupied/Sold; Security: Available/Deployed/Unavailable).
-    function calculateAvailabilityCardData(items, vocab) {
+    // isNegotiationPropertyStatus) into one 2-or-3-bucket breakdown for
+    // unique-asset types that don't track stock quantity. `vocab` lets
+    // each type label the buckets in its own words (vocab.tertiary null
+    // for a 2-bucket type, e.g. Real Estate Rentals' Vacant/Occupied has
+    // no tracked "under maintenance" state - the 3rd card is then simply
+    // omitted by renderAvailabilitySectionHtml rather than showing an
+    // always-zero invented number). `classify(statusText)` returns
+    // "secondary"/"tertiary" or nothing (= primary) - defaults to the
+    // Real Estate Sales rule (Sold/Reserved/Available) for callers that
+    // don't pass one.
+    function calculateAvailabilityCardData(items, vocab, classify) {
       const rows = items || [];
-      const labels = vocab || { primary: "Available", secondary: "Occupied", tertiary: "Sold" };
+      const labels = vocab || { primary: "Available", secondary: "Reserved", tertiary: "Sold" };
+      const classifyFn = classify || function (status) {
+        if (isSoldPropertyStatus(status)) return "tertiary";
+        if (isNegotiationPropertyStatus(status)) return "secondary";
+        return null;
+      };
       let primary = 0, secondary = 0, tertiary = 0;
 
       rows.forEach(item => {
         const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
+        const bucket = classifyFn(status);
 
-        if (isSoldPropertyStatus(status)) tertiary++;
-        else if (isOccupiedItemStatus(status)) secondary++;
+        if (bucket === "tertiary") tertiary++;
+        else if (bucket === "secondary") secondary++;
         else primary++;
       });
 
