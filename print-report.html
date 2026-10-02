@@ -71,8 +71,15 @@
       week: "This Week",
       month: "This Month",
       year: "This Year",
+      last_week: "Last Week",
+      last_month: "Last Month",
+      last_6_months: "Last 6 Months",
+      custom: "Custom Range",
       all: "All Time"
     };
+
+    let customFromDate = null;
+    let customToDate = null;
 
     // Real calendar boundaries, not rolling windows - "month" means the
     // 1st of the current calendar month, not "the last 30 days," so this
@@ -81,6 +88,7 @@
     // silently disagree with each other).
     function getRangeCutoffISO(range) {
       if (range === "all") return null;
+      if (range === "custom") return customFromDate ? new Date(customFromDate + "T00:00:00").toISOString() : null;
 
       const from = new Date();
 
@@ -98,6 +106,23 @@
       } else if (range === "yesterday") {
         from.setDate(from.getDate() - 1);
         from.setHours(0, 0, 0, 0);
+      } else if (range === "last_week") {
+        // Monday of the PREVIOUS calendar week (closed range - see the
+        // matching upper bound below).
+        const day = from.getDay();
+        const diffToThisMonday = day === 0 ? 6 : day - 1;
+        from.setDate(from.getDate() - diffToThisMonday - 7);
+        from.setHours(0, 0, 0, 0);
+      } else if (range === "last_month") {
+        // 1st of the PREVIOUS calendar month (closed range).
+        from.setDate(1);
+        from.setMonth(from.getMonth() - 1);
+        from.setHours(0, 0, 0, 0);
+      } else if (range === "last_6_months") {
+        // Rolling lookback, not a closed calendar range - same open-ended
+        // "since X, through now" shape as week/month/year above.
+        from.setMonth(from.getMonth() - 6);
+        from.setHours(0, 0, 0, 0);
       } else {
         from.setHours(0, 0, 0, 0);
       }
@@ -105,15 +130,32 @@
       return from.toISOString();
     }
 
-    // Every other range is open-ended ("since X, through now") - only
-    // "yesterday" is a single closed calendar day, so it's the one range
-    // that needs an exclusive upper bound too (today's midnight), or it
-    // would silently include today's records as well via the plain .gte()
-    // every other range relies on in safeSelect().
+    // Most ranges are open-ended ("since X, through now") - "yesterday",
+    // "last_week", "last_month", and "custom" are closed ranges that need
+    // an exclusive upper bound too, or they'd silently include everything
+    // from the cutoff through today via the plain .gte() every open-ended
+    // range relies on in safeSelect().
     function getRangeUpperBoundISO(range) {
-      if (range !== "yesterday") return null;
+      if (range === "custom") return customToDate ? new Date(new Date(customToDate + "T00:00:00").getTime() + 86400000).toISOString() : null;
+      if (range !== "yesterday" && range !== "last_week" && range !== "last_month") return null;
 
       const to = new Date();
+
+      if (range === "yesterday") {
+        to.setHours(0, 0, 0, 0);
+        return to.toISOString();
+      }
+
+      if (range === "last_week") {
+        const day = to.getDay();
+        const diffToThisMonday = day === 0 ? 6 : day - 1;
+        to.setDate(to.getDate() - diffToThisMonday);
+        to.setHours(0, 0, 0, 0);
+        return to.toISOString();
+      }
+
+      // last_month: 1st of the CURRENT month is the exclusive upper bound.
+      to.setDate(1);
       to.setHours(0, 0, 0, 0);
       return to.toISOString();
     }
@@ -134,6 +176,8 @@
       const params = new URLSearchParams(window.location.search || "");
       const requestedRange = String(params.get("range") || "all").toLowerCase();
       currentRange = RANGE_LABELS[requestedRange] ? requestedRange : "all";
+      customFromDate = params.get("from") || null;
+      customToDate = params.get("to") || null;
 
       const titleEl = document.querySelector(".ungani-topbar h2");
       const subEl = document.querySelector(".ungani-topbar p");
@@ -153,6 +197,25 @@
 
       const url = new URL(window.location.href);
       url.searchParams.set("range", currentRange);
+      url.searchParams.delete("autoprint");
+      if (currentRange !== "custom") {
+        url.searchParams.delete("from");
+        url.searchParams.delete("to");
+      }
+      window.history.replaceState(null, "", url.toString());
+
+      loadPrintData();
+    }
+
+    function applyCustomRange() {
+      customFromDate = UnganiClientShared.value("printCustomFrom") || null;
+      customToDate = UnganiClientShared.value("printCustomTo") || null;
+      currentRange = "custom";
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("range", "custom");
+      if (customFromDate) url.searchParams.set("from", customFromDate); else url.searchParams.delete("from");
+      if (customToDate) url.searchParams.set("to", customToDate); else url.searchParams.delete("to");
       url.searchParams.delete("autoprint");
       window.history.replaceState(null, "", url.toString());
 
@@ -628,10 +691,22 @@
           </div>
         </div>
 
-        <div class="ungani-button-row no-print" style="margin-bottom:18px;">
-          ${["day", "week", "month", "year", "all"].map(function (rangeKey) {
+        <div class="ungani-button-row no-print" style="margin-bottom:10px;">
+          ${["day", "week", "month", "last_week", "last_month", "last_6_months", "year", "all"].map(function (rangeKey) {
             return `<button class="ungani-btn ${rangeKey === currentRange ? "gold" : "light"}" onclick="setRange('${rangeKey}')">${UnganiClientShared.safe(RANGE_LABELS[rangeKey])}</button>`;
           }).join("")}
+        </div>
+
+        <div class="no-print" style="display:flex;gap:14px;flex-wrap:wrap;align-items:end;margin-bottom:18px;">
+          <div>
+            <label for="printCustomFrom">Custom from</label><br />
+            <input type="date" id="printCustomFrom" value="${currentRange === "custom" && customFromDate ? customFromDate : ""}" />
+          </div>
+          <div>
+            <label for="printCustomTo">Custom to</label><br />
+            <input type="date" id="printCustomTo" value="${currentRange === "custom" && customToDate ? customToDate : ""}" />
+          </div>
+          <button type="button" class="ungani-btn ${currentRange === "custom" ? "gold" : "light"}" onclick="applyCustomRange()">Apply Custom Range</button>
         </div>
 
         <article class="print-report">
@@ -653,7 +728,9 @@
           <section class="print-meta-grid">
             ${metaCard("Business", tenantName)}
             ${metaCard("Business Type", businessPreset.name)}
-            ${metaCard("Report Period", RANGE_LABELS[currentRange])}
+            ${metaCard("Report Period", currentRange === "custom"
+              ? (customFromDate || "Start") + " – " + (customToDate || "Today")
+              : RANGE_LABELS[currentRange])}
             ${metaCard("Generated", generatedDate)}
             ${metaCard("Prepared By", "UNGANI OS")}
           </section>
@@ -835,9 +912,13 @@
 
     function renderCategoryList(rows, emptyMessage, isMoney) {
       if (!rows || rows.length === 0) {
+        // "No X yet" reads like the business has never had any - wrong
+        // when the real cause is just an empty period (e.g. Last Month
+        // selected on a tenant that's been active for a year).
+        const message = currentRange === "all" ? emptyMessage : "No records for this period.";
         return `
           <div class="print-list">
-            ${printRow("No records", "—", emptyMessage)}
+            ${printRow("No records", "—", message)}
           </div>
         `;
       }
@@ -910,9 +991,12 @@
       });
 
       if (rows.length === 0) {
+        const message = currentRange === "all"
+          ? "Tasks, records, calendar activities, documents, and support issues will appear here."
+          : "No records for this period.";
         return `
           <div class="print-list">
-            ${printRow("No recent activity", "—", "Tasks, records, calendar activities, documents, and support issues will appear here.")}
+            ${printRow("No recent activity", "—", message)}
           </div>
         `;
       }
@@ -1171,11 +1255,16 @@
           text: "Recorded expenses are currently higher than income. Review costs and pending payments."
         });
       } else {
-        insights.push({
+        insights.push(currentRange === "all" ? {
           icon: '<i data-lucide="wallet"></i>',
           color: "#D4A63A",
           title: "No money movement yet",
           text: "Add income and expense records so the report can explain business performance."
+        } : {
+          icon: '<i data-lucide="wallet"></i>',
+          color: "#D4A63A",
+          title: "No records for this period",
+          text: "No income or expenses were recorded for " + RANGE_LABELS[currentRange].toLowerCase() + "."
         });
       }
 
