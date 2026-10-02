@@ -15,6 +15,61 @@ const INFO_PASSWORD = process.env.UNGANI_INFO_EMAIL_PASSWORD;
 const SUPPORT_EMAIL = process.env.UNGANI_SUPPORT_EMAIL;
 const SUPPORT_PASSWORD = process.env.UNGANI_SUPPORT_EMAIL_PASSWORD;
 
+// Presence of this key alone is the "swap to Resend" switch - set it in
+// Vercel once the ungani.com domain shows Verified in the Resend
+// dashboard, redeploy, and every automated send from here on goes
+// through Resend's API instead of the SMTP mailbox below. Nothing else
+// in this file changes: same queue table, same sender routing, same
+// templates, same triggers - only the transport underneath buildEmail()
+// changes. The SMTP mailbox itself is untouched and keeps working for
+// normal human inbox use, since this only affects app-triggered sends.
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+
+// Go-forward suppression memory for addresses that have genuinely hard-
+// bounced (mailbox doesn't exist - a permanent failure), kept separate
+// from fake/test addresses (detected inline below, no table needed).
+const HARD_BOUNCE_TABLE = "ungani_email_hard_bounces";
+
+// A permanent "this mailbox doesn't exist" rejection, NOT the generic
+// "550 high-probability spam" reputation rejection every current
+// failure actually is - conflating the two would suppress real
+// addresses just because the sender's reputation was bad that day.
+function isHardBounceSignature(message) {
+  const text = String(message || "").toLowerCase();
+  if (text.includes("spam")) return false;
+  return (
+    text.includes("no such user") ||
+    text.includes("user unknown") ||
+    text.includes("mailbox unavailable") ||
+    text.includes("mailbox not found") ||
+    text.includes("does not exist") ||
+    text.includes("no mailbox") ||
+    text.includes("recipient rejected") ||
+    text.includes("550 5.1.1") ||
+    text.includes("invalid recipient")
+  );
+}
+
+// Fake/test recipients never go anywhere near a real mail provider -
+// checked against data already on the row (recipient_email, tenant_id),
+// no schema change needed. Matches the real fake domains already
+// confirmed live in this queue (ungani-test.local, example.com,
+// ungani-branchtest.local) plus the general patterns test fixtures use.
+function isFakeRecipient(record, testTenantIds) {
+  const email = String(record.recipient_email || record.to_email || record.email_to || record.email || "").toLowerCase();
+
+  if (record.tenant_id && testTenantIds.has(record.tenant_id)) return true;
+  if (!email) return false;
+
+  return (
+    /@example\.(com|org)$/.test(email) ||
+    /\.local$/.test(email) ||
+    /@test\./.test(email) ||
+    /\btest\./.test(email) ||
+    /\.test$/.test(email)
+  );
+}
+
 // Legacy static-secret path, kept for backward compatibility with any
 // existing external caller (e.g. a third-party scheduler configured
 // before Vercel Cron / admin-triggered auth existed below).
@@ -203,6 +258,55 @@ function buildEmail(record) {
   };
 }
 
+// Same email shape (to/subject/html/text), same sender identity - only
+// the transport differs from the nodemailer/SMTP path below. Resend
+// returns its own id as messageId so the rest of the file (queue update,
+// results array) doesn't need to know which transport was used.
+async function sendViaResend(email, sender) {
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + RESEND_API_KEY
+    },
+    body: JSON.stringify({
+      from: `${sender.label} <${sender.email}>`,
+      reply_to: sender.email,
+      to: email.to,
+      subject: email.subject,
+      text: email.text,
+      html: email.html
+    })
+  });
+
+  const result = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error((result && (result.message || result.name)) || "Resend send failed with status " + response.status);
+  }
+
+  return { messageId: result && result.id };
+}
+
+async function getTestTenantIds(supabase) {
+  const { data, error } = await supabase.from("tenants").select("id").eq("is_test", true);
+  if (error) return new Set();
+  return new Set((data || []).map((row) => row.id));
+}
+
+async function getHardBouncedEmails(supabase) {
+  const { data, error } = await supabase.from(HARD_BOUNCE_TABLE).select("email");
+  if (error) return new Set();
+  return new Set((data || []).map((row) => String(row.email || "").toLowerCase()));
+}
+
+async function recordHardBounce(supabase, email, reason) {
+  if (!email) return;
+  await supabase
+    .from(HARD_BOUNCE_TABLE)
+    .upsert({ email: email.toLowerCase(), reason, bounced_at: new Date().toISOString() }, { onConflict: "email" });
+}
+
 async function updateQueueRecord(supabase, id, patch) {
   const { error } = await supabase
     .from(QUEUE_TABLE)
@@ -214,6 +318,26 @@ async function updateQueueRecord(supabase, id, patch) {
   }
 
   return { ok: true };
+}
+
+async function getRegistrationAlertRow(supabase, relatedId) {
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from(QUEUE_TABLE)
+    .select("*")
+    .eq("related_table", "registrations")
+    .eq("related_id", relatedId)
+    .eq("email_type", "registration_received_admin")
+    .in(STATUS_COLUMN, PENDING_STATUSES)
+    .gte("created_at", tenMinutesAgo)
+    .limit(1);
+
+  if (error) {
+    return { ok: false, message: error.message, rows: [] };
+  }
+
+  return { ok: true, rows: data || [] };
 }
 
 async function getPendingEmails(supabase, limit, tenantId) {
@@ -270,18 +394,41 @@ export default async function handler(req, res) {
       }
     }
 
+    // Immediate UNGANI-admin alert for a brand-new registration - the
+    // person submitting the form isn't logged in (no bearer token), so
+    // none of the paths above can match. Checked only after every
+    // authenticated path above has already missed, and deliberately
+    // narrow: the server re-derives everything from relatedId itself
+    // (never trusts a subject/body/recipient from the request), and
+    // getRegistrationAlertRow() below only ever matches ONE specific
+    // email_type, created in the last 10 minutes, still pending - so
+    // this can never be used to trigger an arbitrary send.
+    let registrationAlertRelatedId = null;
+
+    if (!via && req.method === "POST" && req.body && req.body.instantRegistrationAlert === true && req.body.relatedId) {
+      registrationAlertRelatedId = String(req.body.relatedId);
+      via = "registration_alert";
+    }
+
     if (!via) {
       return json(res, 401, { ok: false, message: "Unauthorized email sender request." });
     }
 
     const requiredEnv = {
       SUPABASE_SERVICE_ROLE_KEY,
-      UNGANI_SMTP_HOST: SMTP_HOST,
       UNGANI_INFO_EMAIL: INFO_EMAIL,
-      UNGANI_INFO_EMAIL_PASSWORD: INFO_PASSWORD,
-      UNGANI_SUPPORT_EMAIL: SUPPORT_EMAIL,
-      UNGANI_SUPPORT_EMAIL_PASSWORD: SUPPORT_PASSWORD
+      UNGANI_SUPPORT_EMAIL: SUPPORT_EMAIL
     };
+
+    // Mailbox passwords are only needed for the SMTP transport - once
+    // RESEND_API_KEY is set, Resend is used instead and these become
+    // irrelevant (the "from" addresses above are still required either
+    // way, since Resend sends as them too).
+    if (!RESEND_API_KEY) {
+      requiredEnv.UNGANI_SMTP_HOST = SMTP_HOST;
+      requiredEnv.UNGANI_INFO_EMAIL_PASSWORD = INFO_PASSWORD;
+      requiredEnv.UNGANI_SUPPORT_EMAIL_PASSWORD = SUPPORT_PASSWORD;
+    }
 
     const missing = Object.entries(requiredEnv)
       .filter(([, value]) => !value)
@@ -308,7 +455,9 @@ export default async function handler(req, res) {
       ? Math.max(1, Math.min(requestedLimit, 5))
       : Math.max(1, Math.min(requestedLimit, 25));
 
-    const pendingResult = await getPendingEmails(supabase, limit, via === "tenant_self" ? requestingTenantId : null);
+    const pendingResult = via === "registration_alert"
+      ? await getRegistrationAlertRow(supabase, registrationAlertRelatedId)
+      : await getPendingEmails(supabase, limit, via === "tenant_self" ? requestingTenantId : null);
 
     if (!pendingResult.ok) {
       return json(res, 500, { ok: false, message: pendingResult.message });
@@ -316,6 +465,14 @@ export default async function handler(req, res) {
 
     const rows = pendingResult.rows;
     const results = [];
+
+    // Fetched once per invocation (cheap, both sets stay small) rather
+    // than per row - a single registration_alert row still pays this
+    // cost, but that path only ever processes one row anyway.
+    const [testTenantIds, hardBouncedEmails] = await Promise.all([
+      getTestTenantIds(supabase),
+      getHardBouncedEmails(supabase)
+    ]);
 
     for (const record of rows) {
       const attempts = Number(record[ATTEMPTS_COLUMN] || 0) + 1;
@@ -333,19 +490,38 @@ export default async function handler(req, res) {
         continue;
       }
 
-      const sender = getSenderForQueueRecord(record);
+      // Suppression: fake/test recipients and known hard-bounces never
+      // reach a real mail provider - marked 'cancelled' (an existing,
+      // already-used status) with a clear reason instead of 'failed', so
+      // they don't get confused with a genuine delivery problem.
+      if (isFakeRecipient(record, testTenantIds)) {
+        await updateQueueRecord(supabase, record.id, {
+          [STATUS_COLUMN]: "cancelled",
+          [ERROR_COLUMN]: "Suppressed: fake/test recipient (never sent).",
+          updated_at: new Date().toISOString()
+        });
 
-      if (!sender.email || !sender.password) {
-        results.push({ id: record.id, ok: false, message: "Sender email credentials missing." });
+        results.push({ id: record.id, ok: false, suppressed: true, to: email.to, message: "Suppressed: fake/test recipient." });
         continue;
       }
 
-      const transporter = nodemailer.createTransport({
-        host: SMTP_HOST,
-        port: SMTP_PORT,
-        secure: SMTP_SECURE,
-        auth: { user: sender.email, pass: sender.password }
-      });
+      if (hardBouncedEmails.has(email.to.toLowerCase())) {
+        await updateQueueRecord(supabase, record.id, {
+          [STATUS_COLUMN]: "cancelled",
+          [ERROR_COLUMN]: "Suppressed: address previously hard-bounced (never sent).",
+          updated_at: new Date().toISOString()
+        });
+
+        results.push({ id: record.id, ok: false, suppressed: true, to: email.to, message: "Suppressed: previously hard-bounced." });
+        continue;
+      }
+
+      const sender = getSenderForQueueRecord(record);
+
+      if (!sender.email || (!RESEND_API_KEY && !sender.password)) {
+        results.push({ id: record.id, ok: false, message: "Sender email credentials missing." });
+        continue;
+      }
 
       try {
         await updateQueueRecord(supabase, record.id, {
@@ -354,14 +530,21 @@ export default async function handler(req, res) {
           updated_at: new Date().toISOString()
         });
 
-        const sent = await transporter.sendMail({
-          from: `"${sender.label}" <${sender.email}>`,
-          replyTo: sender.email,
-          to: email.to,
-          subject: email.subject,
-          text: email.text,
-          html: email.html
-        });
+        const sent = RESEND_API_KEY
+          ? await sendViaResend(email, sender)
+          : await nodemailer.createTransport({
+              host: SMTP_HOST,
+              port: SMTP_PORT,
+              secure: SMTP_SECURE,
+              auth: { user: sender.email, pass: sender.password }
+            }).sendMail({
+              from: `"${sender.label}" <${sender.email}>`,
+              replyTo: sender.email,
+              to: email.to,
+              subject: email.subject,
+              text: email.text,
+              html: email.html
+            });
 
         await updateQueueRecord(supabase, record.id, {
           [STATUS_COLUMN]: "sent",
@@ -383,6 +566,10 @@ export default async function handler(req, res) {
           [ERROR_COLUMN]: sendError.message,
           updated_at: new Date().toISOString()
         });
+
+        if (isHardBounceSignature(sendError.message)) {
+          await recordHardBounce(supabase, email.to, sendError.message);
+        }
 
         results.push({ id: record.id, ok: false, to: email.to, message: sendError.message });
       }

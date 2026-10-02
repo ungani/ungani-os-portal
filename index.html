@@ -1088,9 +1088,35 @@
 
         if (error || !data || data.ok !== true) {
           console.warn("Could not queue registration confirmation email:", (error && error.message) || (data && data.message));
+          return;
         }
+
+        instantSendRegistrationAdminAlert(registrationId);
       } catch (error) {
         console.warn("Could not queue registration confirmation email:", error.message);
+      }
+    }
+
+    // The admin alert email was just queued (by the RPC call above) but
+    // would otherwise sit until the once-daily cron - this fires it
+    // immediately instead. Anonymous and best-effort, same pattern as
+    // notifyAdminsPushNewRegistration() above: the server re-derives the
+    // actual email row itself from registrationId and only ever sends
+    // that one row, so nothing here can be used to trigger an arbitrary
+    // send. A failure here never blocks or alters the registration that
+    // already succeeded - the row still goes out on the next cron run.
+    async function instantSendRegistrationAdminAlert(registrationId) {
+      if (!registrationId) return;
+
+      try {
+        await fetch("/api/send-email-queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instantRegistrationAlert: true, relatedId: registrationId }),
+          keepalive: true
+        });
+      } catch (error) {
+        console.warn("Could not trigger instant registration admin alert:", error.message);
       }
     }
 
