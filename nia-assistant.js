@@ -6957,6 +6957,34 @@
       const upper = new Date(now);
       upper.setHours(0, 0, 0, 0);
       upperBoundISO = upper.toISOString();
+    } else if (rangeKey === "last_week") {
+      // Same math as print-report.html's getRangeCutoffISO/
+      // getRangeUpperBoundISO for "last_week" - Monday of the PREVIOUS
+      // calendar week through (exclusive) Monday of the current week, so
+      // "last week" never silently disagrees between chat and the report.
+      const day = from.getDay();
+      const diffToThisMonday = day === 0 ? 6 : day - 1;
+      from.setDate(from.getDate() - diffToThisMonday - 7);
+      from.setHours(0, 0, 0, 0);
+      const upper = new Date(now);
+      const upperDay = upper.getDay();
+      const upperDiffToMonday = upperDay === 0 ? 6 : upperDay - 1;
+      upper.setDate(upper.getDate() - upperDiffToMonday);
+      upper.setHours(0, 0, 0, 0);
+      upperBoundISO = upper.toISOString();
+    } else if (rangeKey === "last_month") {
+      from.setDate(1);
+      from.setMonth(from.getMonth() - 1);
+      from.setHours(0, 0, 0, 0);
+      const upper = new Date(now);
+      upper.setDate(1);
+      upper.setHours(0, 0, 0, 0);
+      upperBoundISO = upper.toISOString();
+    } else if (rangeKey === "last_6_months") {
+      // Rolling lookback, not a closed range - same open-ended "since X,
+      // through now" shape as week/month/year above.
+      from.setMonth(from.getMonth() - 6);
+      from.setHours(0, 0, 0, 0);
     } else {
       from.setHours(0, 0, 0, 0);
     }
@@ -6965,13 +6993,21 @@
       return d.toLocaleDateString("en-KE", { month: "short", day: "numeric" });
     };
 
-    const labels = { year: "This Year", month: "This Month", week: "This Week", day: "Today", yesterday: "Yesterday" };
+    const labels = {
+      year: "This Year", month: "This Month", week: "This Week", day: "Today", yesterday: "Yesterday",
+      last_week: "Last Week", last_month: "Last Month", last_6_months: "Last 6 Months"
+    };
+
+    // Closed ranges (an explicit upper bound) should show that bound as
+    // the end of the period, not "through today" - last week's Sunday,
+    // not today, is what "last week" actually ended on.
+    const rangeEnd = upperBoundISO ? new Date(new Date(upperBoundISO).getTime() - 86400000) : to;
 
     return {
       cutoffISO: from.toISOString(),
       upperBoundISO: upperBoundISO,
       label: labels[rangeKey] || "This Week",
-      rangeText: (rangeKey === "day" || rangeKey === "yesterday") ? fmt(from) : fmt(from) + " – " + fmt(to)
+      rangeText: (rangeKey === "day" || rangeKey === "yesterday") ? fmt(from) : fmt(from) + " – " + fmt(rangeEnd)
     };
   }
 
@@ -6983,6 +7019,14 @@
   function detectSummaryRangeFromText(text) {
     const lower = text.toLowerCase();
     if (/\byesterday\b/.test(lower)) return "yesterday";
+    // "last"/"past"/"previous" + period checked BEFORE the bare "this
+    // period" checks below - "last month" contains the word "month" and
+    // would otherwise match the THIS-month branch instead, silently
+    // showing the wrong period to someone who explicitly asked for last
+    // month's numbers.
+    if (/\b(last|past|previous)\s+6\s+months\b/.test(lower)) return "last_6_months";
+    if (/\b(last|past|previous)\s+(week|wk)\b/.test(lower)) return "last_week";
+    if (/\b(last|past|previous)\s+month\b/.test(lower)) return "last_month";
     if (/\b(year|yearly|annual|annually)\b/.test(lower)) return "year";
     if (/\b(month|monthly)\b/.test(lower)) return "month";
     if (/\b(today|day|daily)\b/.test(lower)) return "day";
@@ -7179,10 +7223,27 @@
     const money = computeNiaMoneySummary(moneyRows);
     const tasks = summarizeNiaTasks(taskRows, meta.cutoffISO);
 
+    // overdue/dueToday are deliberately NOT period-scoped (an overdue task
+    // from last month is still relevant to a "this week" summary - same
+    // reasoning as print-report.html's own tasks table), so they don't
+    // count toward "this period had no data." Only money movement and
+    // completions actually happened (or didn't) within the period asked
+    // about - showing "Income: KSh 0 · Expenses: KSh 0" for a genuinely
+    // empty period reads as a real (if boring) answer; it should instead
+    // say plainly that nothing was recorded, so a flat zero isn't mistaken
+    // for "nothing happened in your business" versus "no data for this
+    // specific slice of time."
+    const hasPeriodData = moneyRows.length > 0 || tasks.completedInRange > 0;
+
     const html =
       `<strong>${safe(meta.label)}</strong> <span style="opacity:0.7;">(${safe(meta.rangeText)})</span>` +
-      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Income: ${safe(formatNiaKES(money.income))} · Expenses: ${safe(formatNiaKES(money.expenses))} · Net: ${safe(formatNiaKES(money.net))}</div>` +
-      `<div style="margin-top:4px;"><i data-lucide="square-check-big"></i> ${tasks.completedInRange} task${tasks.completedInRange === 1 ? "" : "s"} completed · ${tasks.overdue} overdue · ${tasks.dueToday} due today</div>` +
+      (hasPeriodData
+        ? `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Income: ${safe(formatNiaKES(money.income))} · Expenses: ${safe(formatNiaKES(money.expenses))} · Net: ${safe(formatNiaKES(money.net))}</div>` +
+          `<div style="margin-top:4px;"><i data-lucide="square-check-big"></i> ${tasks.completedInRange} task${tasks.completedInRange === 1 ? "" : "s"} completed · ${tasks.overdue} overdue · ${tasks.dueToday} due today</div>`
+        : `<div style="margin-top:8px;"><i data-lucide="info"></i> No money movement or completed tasks recorded for this period.</div>` +
+          (tasks.overdue > 0 || tasks.dueToday > 0
+            ? `<div style="margin-top:4px;"><i data-lucide="square-check-big"></i> ${tasks.overdue} overdue · ${tasks.dueToday} due today</div>`
+            : "")) +
       `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">` +
       `<a class="nia-link-btn" style="margin-top:0;" href="print-report.html?range=${attr(rangeKey)}">See full printable report →</a>` +
       `</div>`;
@@ -7190,8 +7251,10 @@
     addNiaMessage(html);
 
     return {
-      spoken: meta.label + ": income " + formatNiaKES(money.income) + ", expenses " + formatNiaKES(money.expenses) +
-        ", " + tasks.completedInRange + " tasks completed, " + tasks.overdue + " overdue."
+      spoken: hasPeriodData
+        ? meta.label + ": income " + formatNiaKES(money.income) + ", expenses " + formatNiaKES(money.expenses) +
+          ", " + tasks.completedInRange + " tasks completed, " + tasks.overdue + " overdue."
+        : meta.label + ": no money movement or completed tasks recorded for this period."
     };
   }
 
