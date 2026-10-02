@@ -4553,7 +4553,7 @@
   // and any lease/membership/contract (Cluster 4). Same pattern as
   // loadLocationConnections() above.
   async function loadPersonConnections(supabaseClient, tenantId, personId) {
-    const [paymentsRes, documentsRes, commitmentsRes, eventsRes] = await Promise.all([
+    const [paymentsRes, documentsRes, commitmentsRes, eventsRes, invoicesRes] = await Promise.all([
       supabaseClient
         .from("transactions")
         .select("id, transaction_date, transaction_type, category, category_name, description, amount, amount_kes, currency, status, payment_method")
@@ -4584,7 +4584,18 @@
         .select("*")
         .eq("tenant_id", tenantId)
         .or("client_person_id.eq." + personId + ",customer_person_id.eq." + personId)
-        .order("event_date", { ascending: false })
+        .order("event_date", { ascending: false }),
+      // Customer Invoices (item 4) - same table/columns Company 360 already
+      // reads via customer_person_id, just scoped to this one person.
+      supabaseClient
+        .from("ungani_customer_invoices")
+        .select("id, invoice_number, total_amount, amount_paid, currency, status, issue_date")
+        .eq("tenant_id", tenantId)
+        .eq("customer_person_id", personId)
+        .is("deleted_at", null)
+        .order("issue_date", { ascending: false })
+        .then(function (res) { return res; })
+        .catch(function (error) { return { error: error }; })
     ]);
 
     const allCommitments = (commitmentsRes && !commitmentsRes.error && commitmentsRes.data && commitmentsRes.data.ok === true)
@@ -4595,8 +4606,18 @@
       payments: (paymentsRes && paymentsRes.data) || [],
       documents: (documentsRes && documentsRes.data) || [],
       events: (eventsRes && eventsRes.data) || [],
-      commitments: allCommitments.filter(function (c) { return String(c.person_id || "") === String(personId); })
+      commitments: allCommitments.filter(function (c) { return String(c.person_id || "") === String(personId); }),
+      invoices: (invoicesRes && !invoicesRes.error && invoicesRes.data) || []
     };
+  }
+
+  // Outstanding balance across a customer's invoices - cancelled invoices
+  // never billed the customer, so they're excluded (same rule the
+  // statement ledger in my-customer-invoices.html uses).
+  function computeCustomerInvoiceBalance(invoices) {
+    return (invoices || [])
+      .filter(function (inv) { return inv.status !== "cancelled"; })
+      .reduce(function (sum, inv) { return sum + (Number(inv.total_amount) - Number(inv.amount_paid)); }, 0);
   }
 
   // Facts-only summary badges, deliberately no invented rating. Payment
@@ -4632,6 +4653,12 @@
 
     const documents = connections.documents || [];
     badges.push(documents.length + " document" + (documents.length === 1 ? "" : "s") + " on file");
+
+    const invoices = (connections.invoices || []).filter(function (inv) { return inv.status !== "cancelled"; });
+    if (invoices.length) {
+      const balance = computeCustomerInvoiceBalance(connections.invoices);
+      badges.push(invoices.length + " invoice" + (invoices.length === 1 ? "" : "s") + (balance > 0 ? ", " + formatKES(balance) + " balance due" : ", fully paid"));
+    }
 
     return badges;
   }
@@ -4698,6 +4725,16 @@
       `;
     }).join("");
 
+    const invoiceRowsHtml = (connections.invoices || []).map(function (inv) {
+      const balance = Number(inv.total_amount) - Number(inv.amount_paid);
+      return `
+        <div class="detail-row">
+          <span>${safe(inv.invoice_number)}</span>
+          <span class="ungani-small">${safe(formatDate(inv.issue_date))} · ${safe(formatKES(inv.total_amount))} · ${safe(inv.status)}${inv.status !== "cancelled" && balance > 0 ? " · " + safe(formatKES(balance)) + " due" : ""}</span>
+        </div>
+      `;
+    }).join("");
+
     // Phase 4d (Business Events 360, recurring-customer case): a person's
     // Trips/Bookings/Deployments/Appointments in one place - the concrete
     // payoff of the customer_person_id work (see loadPersonConnections()
@@ -4733,6 +4770,13 @@
         <div class="ungani-section-title"><div><h3>Payment History</h3></div></div>
         ${paymentRowsHtml || `<p class="ungani-small" style="padding:10px 0;">No payments recorded yet.</p>`}
       </div>
+
+      ${connections.invoices && connections.invoices.length ? `
+        <div class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title"><div><h3>Invoices</h3></div></div>
+          ${invoiceRowsHtml}
+        </div>
+      ` : ""}
 
       ${connections.events && connections.events.length ? `
         <div class="ungani-card" style="margin-top:18px;">
@@ -4865,6 +4909,12 @@
     if (payments.length) {
       const total = payments.reduce(function (sum, p) { return sum + Number(p.amount_kes || p.amount || 0); }, 0);
       badges.push(payments.length + " payment" + (payments.length === 1 ? "" : "s") + " recorded (all linked people), " + formatKES(total) + " total");
+    }
+
+    const invoices = (connections.invoices || []).filter(function (inv) { return inv.status !== "cancelled"; });
+    if (invoices.length) {
+      const balance = computeCustomerInvoiceBalance(connections.invoices);
+      badges.push(invoices.length + " invoice" + (invoices.length === 1 ? "" : "s") + (balance > 0 ? ", " + formatKES(balance) + " balance due" : ", fully paid"));
     }
 
     return badges;
