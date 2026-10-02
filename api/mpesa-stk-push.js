@@ -215,6 +215,41 @@ async function initiateStkPush(req, res) {
       if (!totalAmount || totalAmount <= 0) {
         return json(res, 400, { ok: false, message: "This sale has no amount to charge." });
       }
+    } else if (req.body && req.body.pendingPaymentId) {
+      // Package-change-via-payment path (item 1 addendum): the client
+      // already chose a package on my-package.html, which called
+      // client_request_ungani_package_payment to create/reuse a pending
+      // ungani_payments row carrying the CHOSEN package_key and the exact
+      // amount due for it - already locked in at that moment, branch
+      // add-on included. Trusting that row here (not recalculating from
+      // the tenant's current package) is what lets an STK upgrade payment
+      // charge the NEW package's price instead of silently re-billing
+      // whatever package the tenant is on today.
+      const { data: pendingPayment, error: pendingError } = await supabaseAdmin
+        .from("ungani_payments")
+        .select("id, tenant_id, package_key, amount, branch_addon_amount, billable_branch_count, payment_status")
+        .eq("id", req.body.pendingPaymentId)
+        .maybeSingle();
+
+      if (pendingError || !pendingPayment || pendingPayment.tenant_id !== caller.tenantId) {
+        return json(res, 404, { ok: false, message: "Payment record not found." });
+      }
+
+      if (pendingPayment.payment_status !== "pending") {
+        return json(res, 400, { ok: false, message: "This payment is no longer awaiting payment - please choose your package again." });
+      }
+
+      packageKey = pendingPayment.package_key || "starter";
+      totalAmount = Number(pendingPayment.amount);
+      branchAddonAmount = Number(pendingPayment.branch_addon_amount) || 0;
+      billableBranchCount = Number(pendingPayment.billable_branch_count) || 0;
+      relatedTable = "ungani_payments";
+      relatedId = pendingPayment.id;
+      transactionDesc = "UNGANI OS " + packageKey + " package";
+
+      if (!totalAmount || totalAmount <= 0) {
+        return json(res, 500, { ok: false, message: "This package has no price configured yet - contact UNGANI support." });
+      }
     } else {
       // Resolve the real amount owed via the single canonical calculation
       // function - package price (by billing_cycle) + branch add-on, with
@@ -222,7 +257,9 @@ async function initiateStkPush(req, res) {
       // (ungani_subscriptions.package_key, not the stale tenants.package_key).
       // set_ungani_subscription_period_from_payment() calls this same
       // function independently at confirmation time to detect (not block)
-      // any mismatch, so both sides of the flow always agree.
+      // any mismatch, so both sides of the flow always agree. Used for a
+      // plain renewal of the CURRENT package (no pendingPaymentId - the
+      // client didn't go through package selection).
       const { data: amountDue, error: amountError } = await supabaseAdmin.rpc(
         "calculate_ungani_subscription_amount",
         { p_tenant_id: caller.tenantId }
@@ -493,23 +530,50 @@ async function handleStkCallback(req, res) {
         return json(res, 200, { ResultCode: 0, ResultDesc: "Accepted." });
       }
 
-      const { data: payment, error: paymentError } = await supabaseAdmin
-        .from("ungani_payments")
-        .insert({
-          tenant_id: transaction.tenant_id,
-          package_key: transaction.package_key,
-          amount: amountPaid,
-          branch_addon_amount: transaction.branch_addon_amount,
-          billable_branch_count: transaction.billable_branch_count,
-          currency: "KES",
-          paid_at: paidAt,
-          payment_status: "paid",
-          payment_method: "mpesa",
-          payment_reference: mpesaReceiptNumber,
-          notes: "M-Pesa STK Push - " + transaction.phone_number
-        })
-        .select("id")
-        .single();
+      // A package-change-via-payment STK push (pendingPaymentId was
+      // supplied at initiate time) already has its ungani_payments row -
+      // created by client_request_ungani_package_payment with the chosen
+      // package_key and locked-in amount. Update THAT row to paid rather
+      // than inserting a second one, which would leave the original
+      // sitting pending forever while a disconnected "paid" row did the
+      // real work. A plain renewal (no related payment row) keeps the
+      // original insert-on-success behavior unchanged.
+      const hasRelatedPayment = transaction.transaction_type === "subscription"
+        && transaction.related_table === "ungani_payments"
+        && transaction.related_id;
+
+      const { data: payment, error: paymentError } = hasRelatedPayment
+        ? await supabaseAdmin
+            .from("ungani_payments")
+            .update({
+              amount: amountPaid,
+              paid_at: paidAt,
+              payment_status: "paid",
+              payment_method: "mpesa",
+              payment_reference: mpesaReceiptNumber,
+              notes: "M-Pesa STK Push - " + transaction.phone_number,
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", transaction.related_id)
+            .select("id")
+            .single()
+        : await supabaseAdmin
+            .from("ungani_payments")
+            .insert({
+              tenant_id: transaction.tenant_id,
+              package_key: transaction.package_key,
+              amount: amountPaid,
+              branch_addon_amount: transaction.branch_addon_amount,
+              billable_branch_count: transaction.billable_branch_count,
+              currency: "KES",
+              paid_at: paidAt,
+              payment_status: "paid",
+              payment_method: "mpesa",
+              payment_reference: mpesaReceiptNumber,
+              notes: "M-Pesa STK Push - " + transaction.phone_number
+            })
+            .select("id")
+            .single();
 
       if (paymentError) {
         await supabaseAdmin
@@ -532,25 +596,15 @@ async function handleStkCallback(req, res) {
       // manual mark-paid admin path already calls - this is the one and
       // only place subscription_ends_at/subscription_status get set from
       // a payment, so an M-Pesa payment behaves identically to an
-      // admin-approved payment proof.
+      // admin-approved payment proof. As of the item-1 billing fix, this
+      // function also decides and queues the correct email itself (full
+      // receipt if the period completed, balance-due notice if this was
+      // a partial payment) - queuing the receipt unconditionally here,
+      // as this used to do, would send a misleading "payment confirmed"
+      // email on an underpayment.
       await supabaseAdmin.rpc("set_ungani_subscription_period_from_payment", {
         p_payment_id: payment.id
       });
-
-      // The 3 admin "mark paid" RPCs all queue a receipt email alongside
-      // the subscription-period update; this path unlocked the
-      // subscription but never sent the receipt. Wrapped separately so a
-      // failure here can never skip recording the transaction as
-      // successful below - same exception-swallowing intent as the SQL
-      // side's own `begin ... exception when others then null; end;`.
-      try {
-        await supabaseAdmin.rpc("queue_ungani_payment_confirmation_email", {
-          p_payment_id: payment.id
-        });
-      } catch (emailError) {
-        // Non-fatal - the payment and subscription update already
-        // succeeded above.
-      }
 
       await supabaseAdmin
         .from("ungani_mpesa_transactions")
@@ -915,6 +969,17 @@ async function handleC2BConfirmation(req, res) {
 // exactly one file, now handling four purposes by body shape:
 // STK-initiate, STK-callback, C2B-confirmation, and register-C2B-urls.
 export default async function handler(req, res) {
+  // Lets the client decide whether to show "Pay with M-Pesa prompt" (item
+  // 1 addendum #2) without exposing MPESA_ENV itself - a GET on this same
+  // file rather than a 13th serverless function, which would exceed
+  // Vercel Hobby's 12-function cap (see the comment above this handler -
+  // that cap has already broken a deploy once this project). Nothing
+  // secret in the response - sandbox vs. production is not sensitive.
+  if (req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    return json(res, 200, { ok: true, production: MPESA_ENV === "production" });
+  }
+
   if (req.method === "POST" && req.body && req.body.Body && req.body.Body.stkCallback) {
     return handleStkCallback(req, res);
   }

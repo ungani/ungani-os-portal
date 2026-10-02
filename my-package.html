@@ -687,6 +687,17 @@
       border-width: 2px;
     }
 
+    /* (hover: hover) and (pointer: fine) scopes this to real mouse/trackpad
+       input - without it, tapping a card on a touch device leaves it
+       "stuck" in :hover state until the user taps elsewhere (iOS/Android
+       both do this), which would look identical to the original bug. */
+    @media (hover: hover) and (pointer: fine) {
+      .tier-compare-card:hover {
+        border-color: var(--gold);
+        border-width: 2px;
+      }
+    }
+
     .tier-recommended-badge {
       position: absolute;
       top: -12px;
@@ -1224,85 +1235,30 @@
             <span id="trialNoticeText"></span>
           </div>
 
-          <h3>My Upgrade Requests</h3>
-          <p>
-            You can view your recent package upgrade requests below. Admin will review
-            and update your package from the admin side.
-          </p>
-
-          <div id="requestsLoadingBox" class="notice hidden">
-            <div class="loading">
-              <span class="spinner"></span>
-              <span>Loading your upgrade requests...</span>
-            </div>
-          </div>
-
-          <div id="requestsList" class="request-list">
-            <div class="request-item">
-              <div class="request-meta">No upgrade requests loaded yet.</div>
-            </div>
+          <div id="pendingDowngradeNotice" class="notice warning hidden">
+            <strong>Plan change scheduled:</strong>
+            <span id="pendingDowngradeText"></span>
           </div>
         </div>
 
         <aside class="card">
-          <h2>Request a Package Change</h2>
+          <h2>Changing Your Package</h2>
           <p class="ungani-small" style="opacity:0.75;">
-            Picked a package above? Use "Select this package" on its card to fill this in automatically — or choose manually below.
-          </p>
-
-          <p class="ungani-small" style="opacity:0.75;">
-            Just renewing your current plan? Selecting your current package (above or below) takes you straight to <a href="my-billing.html" class="gold-link" style="color: var(--gold); font-weight: 800; text-decoration: none;">Billing</a> to pay instantly via M-Pesa — no request or admin review needed. The steps below only apply when you're moving to a <em>different</em> package.
-          </p>
-
-          <h3>Request a Different Package</h3>
-          <p>
-            Moving to a different package isn't a single click-to-pay button — it's a few steps:
+            Choosing a package above goes straight to payment — no request form, no waiting on admin approval.
           </p>
 
           <ol class="process-steps">
             <li>
               <span class="process-step-num">1</span>
-              <span class="process-step-text"><strong>Request your plan</strong> — choose the new package below and submit.</span>
+              <span class="process-step-text"><strong>Upgrading or renewing?</strong> Pick the package above — you're taken straight to <a href="my-billing.html" class="gold-link" style="color: var(--gold); font-weight: 800; text-decoration: none;">Billing</a> to pay the full price for that plan. It activates the moment payment is confirmed, and any time remaining on your current plan is kept.</span>
             </li>
             <li>
               <span class="process-step-num">2</span>
-              <span class="process-step-text"><strong>UNGANI reviews it</strong> — admin checks your request and updates your package.</span>
-            </li>
-            <li>
-              <span class="process-step-num">3</span>
-              <span class="process-step-text"><strong>Pay instantly via M-Pesa</strong> — once approved, head to <a href="my-billing.html" class="gold-link" style="color: var(--gold); font-weight: 800; text-decoration: none;">Billing</a> and pay with M-Pesa for automatic confirmation, or use bank transfer + proof upload as a fallback.</span>
-            </li>
-            <li>
-              <span class="process-step-num">4</span>
-              <span class="process-step-text"><strong>UNGANI confirms it</strong> — your account is reactivated on the new plan.</span>
+              <span class="process-step-text"><strong>Moving to a cheaper plan?</strong> No payment is needed now — the change is scheduled for your next renewal, with no refund for the current period.</span>
             </li>
           </ol>
 
-          <div class="form-group">
-            <label for="requestedPackage">Requested Package</label>
-            <select id="requestedPackage" class="form-select" onchange="handlePackageSelectionMaybeRedirect(this.value)">
-              <option value="">Select package</option>
-              <option value="starter">Starter — KSh 5,000/month</option>
-              <option value="growth">Growth — KSh 8,500/month</option>
-              <option value="business">Business — KSh 14,000/month</option>
-              <option value="custom">Custom — Manual pricing</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="upgradeReason">Reason / Message</label>
-            <textarea
-              id="upgradeReason"
-              class="form-textarea"
-              placeholder="Example: We need more users for our team and would like to upgrade."
-            ></textarea>
-          </div>
-
           <div class="actions">
-            <button class="ungani-btn gold" type="button" id="submitUpgradeBtn" data-ungani-allow-readonly onclick="submitUpgradeRequest()">
-              Submit Upgrade Request
-            </button>
-
             <a class="ungani-btn dark" href="my-support.html">
               Contact UNGANI Support
             </a>
@@ -1312,13 +1268,7 @@
             </a>
           </div>
 
-          <div id="upgradeMessageBox" class="notice hidden"></div>
-
-          <div class="notice warning">
-            <strong>Important:</strong>
-            You can view and request package changes here, but you cannot edit your package,
-            payment status, trial dates, or account status from the client side.
-          </div>
+          <div id="packageActionMessageBox" class="notice hidden"></div>
         </aside>
       </section>
 
@@ -1759,7 +1709,7 @@
 
         renderPackage(subscription);
         await loadCurrentUsers(subscription);
-        await loadMyUpgradeRequests(subscription);
+        await loadPendingDowngradeNotice();
 
         loadingBox.classList.add("hidden");
         packageArea.classList.remove("hidden");
@@ -1903,30 +1853,8 @@
         progressText.textContent = trialProgress + "% used";
       }
 
-      setRequestedPackageOptions(packageKey);
       renderFeatures(packageKey);
       renderTrialNotice(subscriptionStatus, daysLeft);
-    }
-
-    // The current-package option used to be disabled here, on the
-    // assumption this screen is only ever used to move to a DIFFERENT
-    // (higher) package. That silently locks out a client whose trial
-    // just ended and simply wants to pay to continue on their existing
-    // package - if that package happens to be their lowest/only option
-    // (e.g. Starter), disabling it left them with no selectable option
-    // at all and no way to proceed to payment. Left selectable, just
-    // labeled, so "request my current plan" (a renewal) is always a
-    // real, submittable choice alongside actual upgrades.
-    function setRequestedPackageOptions(packageKey) {
-      const select = document.getElementById("requestedPackage");
-
-      Array.from(select.options).forEach(option => {
-        option.disabled = false;
-
-        if (option.value && option.value === packageKey && option.textContent.indexOf("— Current") === -1) {
-          option.textContent = option.textContent + " — Current";
-        }
-      });
     }
 
     function renderTrialNotice(subscriptionStatus, daysLeft) {
@@ -2059,7 +1987,7 @@
             '<ul class="tier-compare-list">' +
               listItems.map(function (text) { return '<li>' + escapeHtmlPkg(text) + '</li>'; }).join('') +
             '</ul>' +
-            '<button type="button" class="ungani-btn ' + (isRecommended ? 'gold' : 'light') + ' tier-compare-select-btn" data-ungani-allow-readonly onclick="selectTierCard(\'' + key + '\')">' +
+            '<button type="button" class="ungani-btn ' + ((isRecommended || isSelected) ? 'gold' : 'light') + ' tier-compare-select-btn" data-ungani-allow-readonly onclick="selectTierCard(\'' + key + '\')">' +
               (isCurrent ? 'Continue on this plan' : 'Select this package') +
             '</button>' +
           '</div>'
@@ -2067,47 +1995,80 @@
       }).join('');
     }
 
-    // A same-package "upgrade" is really a renewal - nothing about the
-    // tenant's package_id/user_limit needs to change, and M-Pesa
-    // (my-billing.html) already charges whatever the tenant's CURRENT
-    // package costs. Routing that case through the request form meant
-    // a client renewing Starter->Starter saw an upgrade-flavored
-    // "why do you want to upgrade" reason field and then had to wait on
-    // an admin who has nothing to actually approve. Redirecting straight
-    // to Billing skips the dead request/approval step entirely for
-    // renewals, while genuine different-package upgrades (which DO need
-    // admin review to change package_id before the new price applies)
-    // still go through the form below unchanged.
-    function handlePackageSelectionMaybeRedirect(packageKey) {
-      if (packageKey && packageKey === currentPackageKey) {
-        window.location.href = "my-billing.html";
-        return true;
-      }
-      return false;
-    }
+    // Every package choice (same package, upgrade, or downgrade) goes
+    // through this single RPC - it decides what happens:
+    //  - 'scheduled_downgrade': cheaper package, no payment now, applies
+    //    at the next renewal. Shown as a notice right here.
+    //  - 'proof_pending_review': a payment for this exact package already
+    //    has proof uploaded and is awaiting UNGANI review - sent to
+    //    Billing to see it, not a new payment.
+    //  - 'payment_required': same package (renewal) or a genuine upgrade
+    //    - a pending payment row now exists with the real amount; sent to
+    //    Billing to pay it.
+    let tierSelectionInFlight = false;
 
-    // Card "Select" button: fills the existing, real upgrade-request form
-    // rather than bypassing it - the actual RPC/admin-review flow stays
-    // exactly as-is, this just removes the need to hunt for the right
-    // dropdown option manually.
-    function selectTierCard(packageKey) {
-      if (handlePackageSelectionMaybeRedirect(packageKey)) return;
-
-      const select = document.getElementById("requestedPackage");
-      const reasonBox = document.getElementById("upgradeReason");
-
-      if (select) select.value = packageKey;
-
+    async function selectTierCard(packageKey) {
+      if (tierSelectionInFlight) return;
+      tierSelectionInFlight = true;
       selectedTierKey = packageKey;
       renderFeatures(currentPackageKey);
 
-      const aside = document.getElementById("requestedPackage");
-      if (aside) {
-        aside.closest(".card").scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+      const messageBox = document.getElementById("packageActionMessageBox");
+      messageBox.className = "notice hidden";
+      messageBox.textContent = "";
 
-      if (reasonBox) {
-        setTimeout(function () { reasonBox.focus(); }, 350);
+      try {
+        const { data, error } = await supabaseClient.rpc("client_request_ungani_package_payment", {
+          p_package_key: packageKey
+        });
+
+        if (error) throw error;
+        if (!data || data.ok !== true) {
+          throw new Error((data && data.message) || "Unable to process this package change.");
+        }
+
+        if (data.action === "scheduled_downgrade") {
+          showToast(data.message || "Plan change scheduled for your next renewal.", "success");
+          await loadMyPackage();
+          return;
+        }
+
+        if (data.action === "proof_pending_review" || data.action === "payment_required") {
+          window.location.href = "my-billing.html?pay=" + encodeURIComponent(data.payment_id);
+          return;
+        }
+
+        throw new Error("Unexpected response - please try again or contact UNGANI support.");
+      } catch (error) {
+        const message = error && error.message
+          ? error.message
+          : "Unable to process this package change. Please contact UNGANI support.";
+        messageBox.className = "notice danger";
+        messageBox.textContent = message;
+        showToast(message, "error");
+      } finally {
+        tierSelectionInFlight = false;
+      }
+    }
+
+    async function loadPendingDowngradeNotice() {
+      const notice = document.getElementById("pendingDowngradeNotice");
+      const text = document.getElementById("pendingDowngradeText");
+      if (!notice || !text) return;
+
+      try {
+        const { data, error } = await supabaseClient.rpc("get_my_ungani_billing_status");
+        if (error || !data || !data.ok || !data.pending_downgrade_package_key) {
+          notice.classList.add("hidden");
+          return;
+        }
+
+        const effectiveDate = data.subscription_ends_at ? formatDateTime(data.subscription_ends_at) : "your next renewal";
+        text.textContent = "Your plan will change to " + (data.pending_downgrade_package_name || titleCase(data.pending_downgrade_package_key)) +
+          " on " + effectiveDate + ". No refund applies for the current period.";
+        notice.classList.remove("hidden");
+      } catch (error) {
+        notice.classList.add("hidden");
       }
     }
 
@@ -2150,185 +2111,6 @@
       }
 
       currentUsersElement.textContent = "Current users: unavailable";
-    }
-
-    async function loadMyUpgradeRequests(subscription) {
-      const requestsList = document.getElementById("requestsList");
-      const loadingBox = document.getElementById("requestsLoadingBox");
-
-      const tenantId =
-        pickValue(subscription, ["tenant_id", "client_id"], null) ||
-        currentTenantId ||
-        getStoredTenantId();
-
-      if (!tenantId) {
-        requestsList.innerHTML = `
-          <div class="request-item">
-            <div class="request-meta">Upgrade request history is unavailable for this workspace.</div>
-          </div>
-        `;
-        return;
-      }
-
-      loadingBox.classList.remove("hidden");
-
-      try {
-        const { data, error } = await supabaseClient
-          .from("ungani_upgrade_requests")
-          .select("*")
-          .eq("tenant_id", tenantId)
-          .order("created_at", { ascending: false })
-          .limit(5);
-
-        if (error) {
-          throw error;
-        }
-
-        const requests = Array.isArray(data) ? data : [];
-
-        if (!requests.length) {
-          requestsList.innerHTML = `
-            <div class="request-item">
-              <div class="request-meta">No upgrade requests submitted yet.</div>
-            </div>
-          `;
-          loadingBox.classList.add("hidden");
-          return;
-        }
-
-        requestsList.innerHTML = "";
-
-        requests.forEach(request => {
-          const item = document.createElement("div");
-          item.className = "request-item";
-
-          item.innerHTML = `
-            <div class="request-top">
-              <div class="request-title">
-                ${escapeHtml(titleCase(request.current_package || "Current"))}
-                → ${escapeHtml(titleCase(request.requested_package || "Requested"))}
-              </div>
-              <span class="status-badge ${getRequestStatusClass(request.status)}">
-                ${escapeHtml(titleCase(request.status || "pending"))}
-              </span>
-            </div>
-            <div class="request-meta">
-              Submitted: ${escapeHtml(formatDateTime(request.created_at))}
-            </div>
-            <div class="request-meta">
-              Updated: ${escapeHtml(formatDateTime(request.updated_at))}
-            </div>
-            <div class="request-meta">
-              Message: ${escapeHtml(request.reason || "No message provided.")}
-            </div>
-            ${
-              request.admin_notes
-                ? `<div class="request-meta">Admin notes: ${escapeHtml(request.admin_notes)}</div>`
-                : ""
-            }
-          `;
-
-          requestsList.appendChild(item);
-        });
-
-        loadingBox.classList.add("hidden");
-      } catch (error) {
-        loadingBox.classList.add("hidden");
-
-        requestsList.innerHTML = `
-          <div class="request-item">
-            <div class="request-meta">Unable to load upgrade request history right now.</div>
-          </div>
-        `;
-      }
-    }
-
-    async function submitUpgradeRequest() {
-      const requestedPackage = document.getElementById("requestedPackage").value;
-      const reason = document.getElementById("upgradeReason").value.trim();
-      const submitBtn = document.getElementById("submitUpgradeBtn");
-      const messageBox = document.getElementById("upgradeMessageBox");
-
-      messageBox.className = "notice hidden";
-      messageBox.textContent = "";
-
-      if (!requestedPackage) {
-        showUpgradeMessage("Please select the package you want to request.", "danger");
-        return;
-      }
-
-      if (!reason) {
-        showUpgradeMessage("Please add a short reason or message for your upgrade request.", "warning");
-        return;
-      }
-
-      await withButtonLoading(submitBtn, async () => {
-        try {
-          const { data, error } = await supabaseClient.rpc(
-            "client_submit_ungani_upgrade_request",
-            {
-              p_requested_package: requestedPackage,
-              p_reason: reason
-            }
-          );
-
-          if (error) {
-            throw error;
-          }
-
-          const isRenewal = requestedPackage === currentPackageKey;
-          document.getElementById("requestedPackage").value = "";
-          document.getElementById("upgradeReason").value = "";
-
-          const successText = isRenewal
-            ? "Request submitted successfully. UNGANI will review it and send you payment instructions once approved."
-            : "Upgrade request submitted successfully. UNGANI will review it and send you payment instructions once approved.";
-
-          showUpgradeMessage(successText, "success");
-
-          showToast(successText, "success");
-
-          await loadMyPackage();
-        } catch (error) {
-          const message =
-            error && error.message
-              ? error.message
-              : "Unable to submit upgrade request. Please contact UNGANI support.";
-
-          showUpgradeMessage(message, "danger");
-          showToast(message, "error");
-        }
-      });
-    }
-
-    function showUpgradeMessage(message, type) {
-      const messageBox = document.getElementById("upgradeMessageBox");
-
-      messageBox.className = "notice";
-
-      if (type === "success") {
-        messageBox.classList.add("success");
-      } else if (type === "danger") {
-        messageBox.classList.add("danger");
-      } else {
-        messageBox.classList.add("warning");
-      }
-
-      messageBox.textContent = message;
-    }
-
-    function getRequestStatusClass(status) {
-      const clean = normalizeStatus(status);
-
-      if (clean === "approved" || clean === "active" || clean === "paid") {
-        return "status-active";
-      }
-
-      if (clean === "rejected" || clean === "cancelled" || clean === "canceled") {
-        return "status-cancelled";
-      }
-
-      return "status-pending";
     }
 
     function showToast(message, type) {

@@ -870,6 +870,16 @@
         </div>
       </section>
 
+      <section class="panel" id="paymentAttentionPanel" style="display: none;">
+        <div class="panel-header">
+          <h3>Payment Processing - Needs Attention</h3>
+        </div>
+        <div class="panel-body">
+          <div id="duplicatePaymentsArea"></div>
+          <div id="processingFailuresArea"></div>
+        </div>
+      </section>
+
       <div class="footer-note">
         UNGANI OS · Connecting businesses · Admin Billing
       </div>
@@ -1216,10 +1226,12 @@
     }
 
     function updateStats() {
-      const paidRecords = billingRecords.filter((record) => {
-        const status = recordStatus(record);
-        return status === "paid" || !!recordPaidDate(record);
-      });
+      // Exact status match only - a refunded duplicate payment still has
+      // a paid_date set (kept for audit history) but must not count
+      // toward revenue, which the old `|| !!recordPaidDate(record)`
+      // fallback broke (any row with a paid_date counted regardless of
+      // status).
+      const paidRecords = billingRecords.filter((record) => recordStatus(record) === "paid");
 
       const pendingRecords = billingRecords.filter((record) => {
         const status = recordStatus(record);
@@ -1229,8 +1241,7 @@
       const overdueRecords = billingRecords.filter((record) => {
         const status = recordStatus(record);
         const due = recordDueDate(record);
-        const paid = status === "paid" || !!recordPaidDate(record);
-        return due && due < today() && !paid;
+        return due && due < today() && status !== "paid" && status !== "refunded" && status !== "cancelled";
       });
 
       const totalPaid = paidRecords.reduce((sum, record) => sum + recordAmount(record), 0);
@@ -1483,8 +1494,130 @@
       populateClientSelect();
       updateStats();
       renderBillingRecords();
+      loadPaymentAttentionItems();
 
       showNotice("Admin billing loaded successfully.", "success");
+    }
+
+    function escapeHtmlAttn(value) {
+      const div = document.createElement("div");
+      div.textContent = value == null ? "" : String(value);
+      return div.innerHTML;
+    }
+
+    function formatKshAttn(value) {
+      return "KSh " + Number(value || 0).toLocaleString("en-KE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    // Item 1 billing fix: duplicate payment_reference detections and
+    // silently-swallowed processing failures both surface here instead
+    // of only in Postgres logs. Panel stays hidden entirely when both
+    // lists are empty - most admin sessions should never see this.
+    async function loadPaymentAttentionItems() {
+      const panel = document.getElementById("paymentAttentionPanel");
+      const dupArea = document.getElementById("duplicatePaymentsArea");
+      const failArea = document.getElementById("processingFailuresArea");
+      if (!panel || !dupArea || !failArea) return;
+
+      try {
+        const [dupResponse, failResponse] = await Promise.all([
+          supabaseClient.rpc("admin_get_ungani_payment_duplicate_flags"),
+          supabaseClient.rpc("admin_get_ungani_payment_processing_failures")
+        ]);
+
+        const flags = (!dupResponse.error && dupResponse.data && dupResponse.data.ok) ? dupResponse.data.flags || [] : [];
+        const failures = (!failResponse.error && failResponse.data && failResponse.data.ok) ? failResponse.data.failures || [] : [];
+
+        if (flags.length === 0 && failures.length === 0) {
+          panel.style.display = "none";
+          return;
+        }
+
+        panel.style.display = "block";
+
+        dupArea.innerHTML = flags.length === 0 ? "" : `
+          <h4 style="margin: 0 0 10px;">Duplicate Payment References (${flags.length})</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Flagged</th><th>Reference</th><th>Amount</th><th>Duplicate Of</th><th>Action</th></tr></thead>
+              <tbody>
+                ${flags.map((f) => `
+                  <tr>
+                    <td>${escapeHtmlAttn(new Date(f.flagged_at).toLocaleString())}</td>
+                    <td>${escapeHtmlAttn(f.payment_reference)}</td>
+                    <td>${formatKshAttn(f.amount)}</td>
+                    <td><code>${escapeHtmlAttn(f.duplicate_of_payment_id)}</code></td>
+                    <td>
+                      <button class="ungani-btn small" type="button" onclick="resolvePaymentDuplicate('${f.id}', 'applied_as_extra_period')">Apply as extra period</button>
+                      <button class="ungani-btn small" type="button" onclick="resolvePaymentDuplicate('${f.id}', 'marked_for_refund')">Mark for refund</button>
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+
+        failArea.innerHTML = failures.length === 0 ? "" : `
+          <h4 style="margin: 16px 0 10px;">Processing Failures (${failures.length})</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Occurred</th><th>Stage</th><th>Error</th><th>Action</th></tr></thead>
+              <tbody>
+                ${failures.map((f) => `
+                  <tr>
+                    <td>${escapeHtmlAttn(new Date(f.occurred_at).toLocaleString())}</td>
+                    <td>${escapeHtmlAttn(f.failure_stage)}</td>
+                    <td>${escapeHtmlAttn(f.error_message)}</td>
+                    <td><button class="ungani-btn small" type="button" onclick="resolvePaymentFailure('${f.id}')">Mark resolved</button></td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      } catch (error) {
+        console.warn("payment attention items", error.message);
+      }
+    }
+
+    async function resolvePaymentDuplicate(flagId, resolution) {
+      const note = window.prompt(resolution === "marked_for_refund"
+        ? "Note for this refund decision (optional):"
+        : "Note for applying this as an extra period (optional):");
+      if (note === null) return;
+
+      const response = await supabaseClient.rpc("admin_resolve_ungani_payment_duplicate", {
+        p_flag_id: flagId,
+        p_resolution: resolution,
+        p_note: note || null
+      });
+
+      if (response.error || !response.data || response.data.ok !== true) {
+        showNotice("Could not resolve duplicate: " + ((response.data && response.data.message) || (response.error && response.error.message) || "unknown error"), "error");
+        return;
+      }
+
+      showNotice("Duplicate payment resolved.", "success");
+      loadPaymentAttentionItems();
+    }
+
+    async function resolvePaymentFailure(failureId) {
+      const note = window.prompt("Note for this resolution (optional):");
+      if (note === null) return;
+
+      const response = await supabaseClient.rpc("admin_resolve_ungani_payment_processing_failure", {
+        p_failure_id: failureId,
+        p_note: note || null
+      });
+
+      if (response.error || !response.data || response.data.ok !== true) {
+        showNotice("Could not resolve failure: " + ((response.data && response.data.message) || (response.error && response.error.message) || "unknown error"), "error");
+        return;
+      }
+
+      showNotice("Processing failure marked resolved.", "success");
+      loadPaymentAttentionItems();
     }
 
   </script>

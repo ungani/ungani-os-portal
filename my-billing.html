@@ -892,6 +892,8 @@
       <div class="notice">
         Upload payment proof only after making payment. Accepted files: JPG, PNG, WEBP, or PDF. Maximum size: 10MB.
       </div>
+
+      <div id="billingStatusBox" style="display: none;"></div>
     </section>
 
     <section class="panel">
@@ -1035,17 +1037,85 @@
     let currentTenantId = null;
     let selectedPaymentForProof = null;
 
-    // TODO: Once UNGANI has real payment details for OTHER methods (bank
-    // transfer, etc.), set PAYMENT_INSTRUCTIONS_READY to true and fill in
-    // PAYMENT_INSTRUCTIONS_HTML below - renderPaymentInstructions() already
-    // handles both states, so no other change is needed. M-Pesa STK Push
-    // below works independently of this flag (Sandbox now, production once
-    // the real Paybill/Consumer Key/Secret/Passkey are confirmed - swapping
-    // is a Vercel env-var change only, not a rebuild).
+    // M-Pesa Paybill leads (manual pay-then-upload-proof path, alongside
+    // the automated STK Push widget above), Bank transfer is secondary.
+    // TODO: REPLACE_MPESA_ACCOUNT_NUMBER and REPLACE_EQUITY_ACCOUNT_NUMBER
+    // below with the real account numbers before this goes live - Chris
+    // has not provided either yet. HOLD: kept false (fallback copy shown
+    // instead) until both are filled in and Chris confirms - do not flip
+    // this to true without the real numbers in place.
     const PAYMENT_INSTRUCTIONS_READY = false;
-    const PAYMENT_INSTRUCTIONS_HTML = "";
+    const PAYMENT_INSTRUCTIONS_HTML = `
+      <p class="muted" style="margin: 0 0 12px; line-height: 1.55;">
+        Prefer to pay directly from your M-Pesa app or by USSD instead of the quick-pay button above?
+        Use our Paybill, then upload your M-Pesa confirmation message as proof below.
+      </p>
+      <div style="background: var(--card-alt, var(--card)); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; max-width: 420px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; gap: 12px;"><span class="muted">Paybill Number</span><strong>247247</strong></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px;"><span class="muted">Account Number</span><strong>REPLACE_MPESA_ACCOUNT_NUMBER</strong></div>
+      </div>
+
+      <p class="muted" style="margin: 0 0 12px; line-height: 1.55;">
+        Prefer a bank transfer? Pay directly to our Equity Bank account, then upload your payment
+        proof below so we can confirm it against your invoice.
+      </p>
+      <div style="background: var(--card-alt, var(--card)); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; max-width: 420px;">
+        <div style="display: flex; justify-content: space-between; gap: 12px;"><span class="muted">Bank</span><strong>Equity Bank Kenya</strong></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px;"><span class="muted">Account name</span><strong>UNGANI OS</strong></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px;"><span class="muted">Account number</span><strong>REPLACE_EQUITY_ACCOUNT_NUMBER</strong></div>
+      </div>
+      <p class="muted" style="margin: 12px 0 0; line-height: 1.55;">
+        Use your business name as the payment reference so we can match it to your account quickly.
+      </p>
+    `;
 
     let mpesaPollTimer = null;
+
+    // ?pay=<payment_id> arrives from my-package.html after
+    // client_request_ungani_package_payment creates/finds a pending
+    // payment for the package the client just chose - this is "the
+    // payment screen" for that one specific payment, showing its exact
+    // amount/period rather than the tenant's generic current-package
+    // price. No pay param (plain visit to Billing) keeps the original
+    // generic STK/renewal behavior unchanged.
+    const urlParams = new URLSearchParams(window.location.search);
+    const payPaymentId = urlParams.get("pay");
+    let payPaymentRecord = null;
+
+    // "Pay with M-Pesa prompt" only appears once MPESA_ENV is actually
+    // production - /api/mpesa-stk-push's GET branch exposes just this
+    // one boolean (never the credentials themselves). Until then the
+    // only live path is Paybill + proof upload, below.
+    let mpesaProductionReady = false;
+
+    async function checkMpesaEnvironment() {
+      try {
+        const response = await fetch("/api/mpesa-stk-push", { method: "GET" });
+        const result = await response.json().catch(() => null);
+        mpesaProductionReady = !!(result && result.ok && result.production);
+      } catch (error) {
+        mpesaProductionReady = false;
+      }
+    }
+
+    async function loadPayPaymentRecord() {
+      if (!payPaymentId) return;
+
+      try {
+        const { data, error } = await supabaseClient
+          .from("ungani_payments")
+          .select("id, package_key, amount, currency, billing_period_start, billing_period_end, payment_status")
+          .eq("id", payPaymentId)
+          .maybeSingle();
+
+        if (!error && data && data.payment_status === "pending") {
+          payPaymentRecord = data;
+        }
+      } catch (error) {
+        // payPaymentRecord stays null - the panel just falls back to the
+        // generic (non-payment-specific) copy below.
+      }
+    }
 
     function renderPaymentInstructions() {
       const body = document.getElementById("paymentInstructionsBody");
@@ -1055,8 +1125,9 @@
         ? PAYMENT_INSTRUCTIONS_HTML
         : `
           <p class="muted" style="margin: 0 0 10px; line-height: 1.55;">
-            Other payment methods (bank transfer, etc.) will appear here once your package
-            request is approved — you don't need to guess or ask separately.
+            Pay via M-Pesa Paybill <strong>247247</strong> using your business name as the reference,
+            then upload your M-Pesa confirmation message as proof below. Bank transfer is also
+            available — contact UNGANI support if you need those details right away.
           </p>
           <p class="muted" style="margin: 0; line-height: 1.55;">
             Haven't requested a package yet?
@@ -1065,7 +1136,16 @@
           </p>
         `;
 
-      body.innerHTML = `
+      const summaryHtml = payPaymentRecord ? `
+        <div style="background: var(--card-alt, var(--card)); border: 1px solid var(--gold); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px;">
+          <strong style="display: block; margin-bottom: 6px;">Complete your payment</strong>
+          <div class="muted">Package: <strong>${escapeHtml(titleCase(payPaymentRecord.package_key || ""))}</strong></div>
+          <div class="muted">Amount due: <strong>${escapeHtml(formatMoney(payPaymentRecord.amount, payPaymentRecord.currency))}</strong></div>
+          <div class="muted">Period: <strong>${escapeHtml(formatDate(payPaymentRecord.billing_period_start))} – ${escapeHtml(formatDate(payPaymentRecord.billing_period_end))}</strong></div>
+        </div>
+      ` : "";
+
+      const stkHtml = mpesaProductionReady ? `
         <div style="margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--border);">
           <p class="muted" style="margin: 0 0 12px; line-height: 1.55;">
             Pay instantly with M-Pesa — enter your Safaricom number and confirm the prompt on your phone.
@@ -1078,13 +1158,22 @@
               style="flex: 1 1 200px; min-width: 180px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--input-bg, var(--card)); color: var(--text);"
             />
             <button id="mpesaPayButton" class="ungani-btn gold" type="button" data-ungani-allow-readonly onclick="initiateMpesaPayment()">
-              Pay with M-Pesa
+              Pay with M-Pesa prompt
             </button>
           </div>
           <div id="mpesaStatus" style="margin-top: 12px; display: none;"></div>
         </div>
-        ${fallback}
-      `;
+      ` : "";
+
+      const uploadProofHtml = payPaymentRecord ? `
+        <div style="margin-bottom: 16px;">
+          <button class="ungani-btn gold" type="button" data-ungani-allow-readonly onclick="openProofModal('${escapeJs(payPaymentRecord.id)}')">
+            Upload Proof for This Payment
+          </button>
+        </div>
+      ` : "";
+
+      body.innerHTML = summaryHtml + stkHtml + uploadProofHtml + fallback;
     }
 
     function setMpesaStatus(message, tone) {
@@ -1132,13 +1221,18 @@
           return;
         }
 
+        const requestBody = { phone: phone };
+        if (payPaymentRecord) {
+          requestBody.pendingPaymentId = payPaymentRecord.id;
+        }
+
         const response = await fetch("/api/mpesa-stk-push", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: "Bearer " + accessToken
           },
-          body: JSON.stringify({ phone: phone })
+          body: JSON.stringify(requestBody)
         });
 
         const result = await response.json();
@@ -1208,11 +1302,72 @@
       }, 3000);
     }
 
-    document.addEventListener("DOMContentLoaded", () => {
+    document.addEventListener("DOMContentLoaded", async () => {
       applyExistingThemeSetting();
+      await Promise.all([checkMpesaEnvironment(), loadPayPaymentRecord()]);
       renderPaymentInstructions();
       loadBillingData();
+      loadBillingStatus();
     });
+
+    // Shows the current period's payment progress and any carried-forward
+    // credit - only rendered when there's something worth saying (a
+    // partial payment in progress, or credit on the account). A fully
+    // caught-up account with no credit stays silent, matching the rest
+    // of this page's economical-UI convention.
+    async function loadBillingStatus() {
+      const box = document.getElementById("billingStatusBox");
+      if (!box) return;
+
+      try {
+        const response = await supabaseClient.rpc("get_my_ungani_billing_status");
+        if (response.error || !response.data || response.data.ok !== true) return;
+
+        const status = response.data;
+        const paymentStatus = status.payment_status;
+        const creditKsh = Number(status.credit_balance_ksh) || 0;
+
+        if (paymentStatus !== "partial" && creditKsh <= 0) {
+          box.style.display = "none";
+          return;
+        }
+
+        const formatKsh = (value) => "KSh " + Number(value || 0).toLocaleString("en-KE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+        let html = "";
+
+        if (paymentStatus === "partial") {
+          const due = Number(status.period_amount_due_ksh) || 0;
+          const paid = Number(status.period_amount_paid_ksh) || 0;
+          const balance = Math.max(due - paid, 0);
+          html += `
+            <div style="background: var(--warning-bg, #FFF7E0); border: 1px solid var(--warning-border, #E9C55B); border-radius: 12px; padding: 14px 16px; margin-bottom: ${creditKsh > 0 ? "10px" : "0"};">
+              <strong style="display: block; margin-bottom: 4px;">Partial payment received</strong>
+              <span class="muted">
+                ${formatKsh(paid)} of ${formatKsh(due)} paid toward this billing period.
+                Balance due: <strong>${formatKsh(balance)}</strong>. Your subscription will extend once fully paid.
+              </span>
+            </div>
+          `;
+        }
+
+        if (creditKsh > 0) {
+          html += `
+            <div style="background: var(--success-bg, #E8F5E9); border: 1px solid var(--success-border, #86C29A); border-radius: 12px; padding: 14px 16px;">
+              <strong style="display: block; margin-bottom: 4px;">Account credit</strong>
+              <span class="muted">
+                You have ${formatKsh(creditKsh)} in credit, automatically applied toward your next billing period.
+              </span>
+            </div>
+          `;
+        }
+
+        box.innerHTML = html;
+        box.style.display = "block";
+      } catch (error) {
+        console.warn("billing status", error.message);
+      }
+    }
 
     function toggleSidebar() {
       document.getElementById("sidebar").classList.toggle("open");
@@ -1513,7 +1668,11 @@
     }
 
     function openProofModal(paymentId) {
-      const payment = allPayments.find(item => String(item.id) === String(paymentId));
+      // Falls back to the directly-fetched payPaymentRecord - the "Upload
+      // Proof for This Payment" button on a ?pay= visit can be clicked
+      // before loadBillingData() (which populates allPayments) finishes.
+      const payment = allPayments.find(item => String(item.id) === String(paymentId)) ||
+        (payPaymentRecord && String(payPaymentRecord.id) === String(paymentId) ? payPaymentRecord : null);
 
       if (!payment) {
         alert("Payment record not found.");

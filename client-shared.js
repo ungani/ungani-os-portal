@@ -5674,7 +5674,7 @@
         <strong>Read-only mode active</strong>
         <p>${safe(readOnlyState.message)}</p>
       </div>
-      <a class="ungani-btn gold" href="my-package.html#requestedPackage">Choose a Plan</a>
+      <a class="ungani-btn gold" href="my-package.html#tierCompareGrid">Choose a Plan</a>
     `;
 
     topbar.insertAdjacentElement("afterend", banner);
@@ -5717,7 +5717,7 @@
         <p>Choose a plan now to keep full access. Nothing is blocked yet - this is just a heads-up.</p>
       </div>
       <div class="ungani-trial-warning-actions">
-        <a class="ungani-btn gold" href="my-package.html#requestedPackage">Choose a Plan</a>
+        <a class="ungani-btn gold" href="my-package.html#tierCompareGrid">Choose a Plan</a>
         <button class="ungani-icon-button ungani-trial-warning-dismiss" type="button" title="Dismiss for today" aria-label="Dismiss">✕</button>
       </div>
     `;

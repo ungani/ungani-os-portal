@@ -4160,7 +4160,10 @@
       records.forEach(function (r) {
         var status = String(r.payment_status || r.status || 'pending').toLowerCase();
         var amount = Number(r.amount) || 0;
-        var isPaid = status === 'paid' || !!r.paid_date;
+        // Exact status match only - a refunded duplicate payment still
+        // has paid_date set (kept for audit history) but must not count
+        // toward revenue, which the old `|| !!r.paid_date` fallback broke.
+        var isPaid = status === 'paid';
 
         if (isPaid && r.paid_date) {
           var key = String(r.paid_date).slice(0, 7);

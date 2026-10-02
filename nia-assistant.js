@@ -210,7 +210,7 @@
         "trial ended", "trial has ended", "continue after trial", "after my trial"
       ],
       question: "How do I pay / continue after my trial?",
-      answer: "It's a few steps, not a single click-to-pay button: 1) Request your package on My Package (or select your current one to renew). 2) UNGANI reviews it. 3) Once approved, you'll receive payment instructions (e.g. M-Pesa Paybill or bank details). 4) Upload your proof of payment on Billing. 5) UNGANI confirms it and your full access is restored.",
+      answer: "Choose your package on My Package - it goes straight to payment, no request or admin approval step. Upgrading or renewing takes you to Billing to pay the exact amount for that plan (M-Pesa Paybill 247247 with proof upload, or the instant M-Pesa prompt where available); it activates the moment payment is confirmed. Moving to a cheaper plan needs no payment now - it's scheduled for your next renewal automatically.",
       href: "my-package.html",
       linkLabel: "Open Package"
     },
