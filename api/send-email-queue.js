@@ -580,6 +580,7 @@ export default async function handler(req, res) {
       message: "Email queue processing completed.",
       via,
       table: QUEUE_TABLE,
+      resendConfigured: Boolean(RESEND_API_KEY),
       processed: results.length,
       results
     });
