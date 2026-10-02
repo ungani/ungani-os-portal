@@ -162,10 +162,11 @@
       }).join("");
     }
 
-    // Optional per-line link to a real item, purely for pulling in its
-    // price/name - never persisted (ungani_customer_invoice_items has no
-    // item_id column, unlike Orders, since an invoice line is a
-    // point-in-time snapshot, not a tracked link). Only loaded when Price
+    // Optional per-line link to a real item - pulls in its price/name,
+    // and is now persisted (ungani_customer_invoice_items.item_id):
+    // sending the invoice deducts stock for any line with one of these
+    // set, via sync_ungani_invoice_stock. A line left as free text never
+    // gets an item_id, so it never touches stock. Only loaded when Price
     // Lists is on.
     async function loadStockItemOptions() {
       if (!currentContext.tenant || currentContext.tenant.price_lists_enabled !== true) {
@@ -821,7 +822,7 @@
 
       const items = editingInvoiceItems
         .filter(function (item) { return item.description && item.description.trim(); })
-        .map(function (item) { return { description: item.description.trim(), quantity: Number(item.quantity) || 1, unit_price: Number(item.unit_price) || 0 }; });
+        .map(function (item) { return { description: item.description.trim(), quantity: Number(item.quantity) || 1, unit_price: Number(item.unit_price) || 0, item_id: item.item_id || null }; });
 
       if (!items.length) {
         UnganiClientShared.showToast("Add at least one line item with a description.");
