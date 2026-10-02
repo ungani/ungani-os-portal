@@ -311,6 +311,14 @@
       linkLabel: "Open Settings"
     },
     {
+      key: "dashboard-layout-explained",
+      match: ["what's on my dashboard", "whats on my dashboard", "explain my dashboard", "dashboard layout", "what does my dashboard show"],
+      question: "What's on my dashboard?",
+      answer: "Top to bottom: a greeting with the current time, Needs Attention (real actions only — overdue invoices, low stock, overdue tasks, expiring documents), Money (today and this month), Owed to You (outstanding and overdue invoices), your business-specific section, Stock or Availability depending on your business type, My To-Do (built on your real tasks, tick to complete), and Recent Activity. Every card is a short summary — click it to open the full page.",
+      href: "client.html",
+      linkLabel: "Open Dashboard"
+    },
+    {
       key: "who-is-nia",
       match: ["who are you", "what can you do", "what is nia", "are you a real person", "are you ai"],
       question: "Who are you, and what can you do?",

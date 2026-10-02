@@ -1616,6 +1616,69 @@
       contain: layout style;
     }
 
+    /* Step 4 Dashboard Restructure: one shared section/eyebrow/list
+       treatment reused by Money, Owed to You, Stock, Availability, and
+       My To-Do - same spacing/text sizes as the rest of the dashboard
+       (.kpi-grid, .card) so these new sections sit indistinguishably
+       alongside the existing business-specific cards. */
+    .dash-section {
+      margin-bottom: 22px;
+    }
+
+    .section-eyebrow {
+      font-size: 12.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-soft);
+      margin-bottom: 10px;
+    }
+
+    .todo-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      background: var(--card-alt, var(--card));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .todo-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      text-decoration: none;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    .todo-row:last-child {
+      border-bottom: none;
+    }
+
+    .todo-row span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .todo-row strong {
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 720px) {
+      .todo-row {
+        font-size: 13.5px;
+        padding: 10px 14px;
+      }
+    }
+
     .money-snapshot-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3280,6 +3343,7 @@
     let currentUserRole = "";
     let currentUserFullName = "";
     let currentUserIsOwner = true;
+    let currentUserTeamMemberId = null;
 
     // Branch UX Phase B (see get_my_ungani_staff_access/get_my_ungani_
     // multi_branch_status - the same RPCs Nia/my-branches.html/my-team-
@@ -3321,9 +3385,15 @@
         // so an empty/missing response must NOT be read as "not owner."
         currentUserIsOwner = access.is_owner === true || !isConfirmedStaffRecord;
         currentUserBranchId = access.branch_id || null;
+        // Same field my-tasks.html's "My Tasks Only" filter matches
+        // against (tasks.assigned_to_team_member_id) - captured here so
+        // the dashboard's My To-Do widget can scope a staff member to
+        // their own tasks the same way.
+        currentUserTeamMemberId = access.team_member_id || null;
       } catch (error) {
         currentUserIsOwner = true;
         currentUserBranchId = null;
+        currentUserTeamMemberId = null;
       }
 
       try {
@@ -5769,6 +5839,14 @@
         health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
       }
 
+      // Step 4 Dashboard Restructure: the 5 new shared sections, same data
+      // dashboardData already loads for the existing cards above - no new
+      // queries.
+      const moneyTodayMonth = calculateMoneyTodayAndMonth(dashboardData.transactions);
+      const owedData = calculateOwedToYou(dashboardData.invoices);
+      const stockData = calculateStockCardData(dashboardData.items);
+      const todoData = calculateMyTodoData(dashboardData.tasks);
+
       document.getElementById("content").innerHTML = `
         <section class="hero">
           <div class="hero-grid">
@@ -5824,6 +5902,11 @@
             { value: unreadNotifications, color: "#16A34A" }
           ], attentionTotal > 0 ? "Tasks, calendar, docs, support, alerts" : "All caught up"), "bell")}
         </section>
+
+        ${renderMoneySectionHtml(moneyTodayMonth)}
+        ${renderOwedToYouSectionHtml(owedData)}
+        ${renderStockSectionHtml(stockData)}
+        ${renderMyTodoSectionHtml(todoData)}
 
         ${eventsNeedingOutcome.length > 0 ? `
           <section class="card">
@@ -7868,6 +7951,9 @@
           ${content.attentionHtml}
         </section>
 
+        ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(data.transactions))}
+        ${!isScoped ? renderOwedToYouSectionHtml(calculateOwedToYou(dashboardData.invoices)) : ""}
+
         ${content.tripsSection ? `
           <section class="card">
             <div class="section-title">
@@ -7920,6 +8006,21 @@
 
           ${renderCalendarPreview(calendarPreview)}
         </section>
+
+        ${renderMyTodoSectionHtml(calculateMyTodoData(data.tasks))}
+
+        ${!isScoped ? `
+          <section class="card">
+            <div class="section-title">
+              <div>
+                <h3>Recent Activity</h3>
+                <p>Latest updates across tasks, records, documents, and support.</p>
+              </div>
+              <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+            </div>
+            ${renderRecentActivity(buildRecentActivity())}
+          </section>
+        ` : ""}
 
         ${contactSupportCard()}
 
@@ -16902,6 +17003,190 @@
       `;
     }
 
+    // ---------------------------------------------------------------------
+    // Step 4 Dashboard Restructure: section renderers for the new 8-part
+    // layout. Each returns a self-contained "section" block (eyebrow +
+    // card) sharing the same .card/.kpi-grid primitives every existing
+    // business-type dashboard already uses, so visually they sit exactly
+    // like the rest of the page - no new CSS system, just new content.
+    // ---------------------------------------------------------------------
+
+    function dashboardSectionHtml(eyebrow, bodyHtml) {
+      return `
+        <div class="dash-section">
+          <div class="section-eyebrow">${safe(eyebrow)}</div>
+          ${bodyHtml}
+        </div>
+      `;
+    }
+
+    function renderMoneySectionHtml(moneyData) {
+      const grid = `
+        <div class="kpi-grid">
+          ${kpiCard("Today", formatKes(moneyData.todayNet), formatKes(moneyData.todayIncome) + " in · " + formatKes(moneyData.todayExpense) + " out", "#D4A63A", "my-money.html", null, null, "wallet")}
+          ${kpiCard("This Month", formatKes(moneyData.monthNet), formatKes(moneyData.monthIncome) + " in · " + formatKes(moneyData.monthExpense) + " out", "#2563EB", "my-money.html", null, null, "trending-up")}
+        </div>
+      `;
+      return dashboardSectionHtml("Money", grid);
+    }
+
+    function renderOwedToYouSectionHtml(owedData) {
+      if (!owedData.outstanding) {
+        return dashboardSectionHtml("Owed to You", `
+          <div class="card" style="padding: 16px 20px;">
+            <p class="muted" style="margin:0;">Nothing outstanding right now - every invoice is settled.</p>
+          </div>
+        `);
+      }
+
+      const topRows = owedData.topOverdue.map(function (inv) {
+        return `
+          <a class="todo-row" href="my-customer-invoices.html?highlight=${attr(inv.id)}">
+            <span>${safe(truncateName(inv.customerName || inv.invoiceNumber || "Invoice", 26))}</span>
+            <strong>${safe(formatKes(inv.balance))}</strong>
+          </a>
+        `;
+      }).join("");
+
+      const grid = `
+        <div class="kpi-grid">
+          ${kpiCard("Outstanding", formatKes(owedData.outstanding), "Total unpaid balance", "#2563EB", "my-debtors-payables.html", null, null, "receipt")}
+          ${kpiCard("Overdue", formatKes(owedData.overdueTotal), owedData.overdueCount + " invoice" + (owedData.overdueCount === 1 ? "" : "s"), "#DC2626", "my-debtors-payables.html", null, null, "alert-triangle")}
+          ${kpiCard("Due This Week", formatKes(owedData.dueThisWeekTotal), owedData.dueThisWeekCount + " invoice" + (owedData.dueThisWeekCount === 1 ? "" : "s"), "#C77700", "my-debtors-payables.html", null, null, "calendar-clock")}
+        </div>
+        ${topRows ? `<div class="todo-list" style="margin-top:10px;">${topRows}</div>` : ""}
+      `;
+      return dashboardSectionHtml("Owed to You", grid);
+    }
+
+    function renderStockSectionHtml(stockData) {
+      const topRows = stockData.topItems.map(function (item) {
+        const name = getValue(item, ["item_name", "name"], "Item");
+        const out = isOutOfStockItem(item);
+        return `
+          <a class="todo-row" href="my-items.html?highlight=${attr(item.id)}">
+            <span>${safe(truncateName(name, 26))}</span>
+            <strong style="color:${out ? "#DC2626" : "#C77700"};">${out ? "Out of stock" : "Low stock"}</strong>
+          </a>
+        `;
+      }).join("");
+
+      const grid = `
+        <div class="kpi-grid">
+          ${kpiCard("Total Items", stockData.total, "Tracked items", "#2563EB", "my-items.html", null, null, "package")}
+          ${kpiCard("Low Stock", stockData.lowCount, "Below reorder level", "#C77700", "my-items.html", null, null, "trending-down")}
+          ${kpiCard("Out of Stock", stockData.outCount, "Needs restocking", "#DC2626", "my-items.html", null, null, "package-x")}
+        </div>
+        ${topRows ? `<div class="todo-list" style="margin-top:10px;">${topRows}</div>` : ""}
+      `;
+      return dashboardSectionHtml("Stock", grid);
+    }
+
+    function renderAvailabilitySectionHtml(availData) {
+      const grid = `
+        <div class="kpi-grid">
+          ${kpiCard(availData.labels.primary, availData.primary, "of " + availData.total, "#2563EB", "my-items.html", null, null, "circle-check")}
+          ${kpiCard(availData.labels.secondary, availData.secondary, "of " + availData.total, "#C77700", "my-items.html", null, null, "circle-dot")}
+          ${kpiCard(availData.labels.tertiary, availData.tertiary, "of " + availData.total, "#16A34A", "my-items.html", null, null, "circle-check-big")}
+        </div>
+      `;
+      return dashboardSectionHtml("Availability", grid);
+    }
+
+    function renderMyTodoSectionHtml(todoData) {
+      const title = currentUserIsOwner ? "My To-Do (Team)" : "My To-Do";
+
+      if (!todoData.rows.length) {
+        return dashboardSectionHtml(title, `
+          <div class="card" style="padding: 16px 20px;">
+            <p class="muted" style="margin:0;">Nothing overdue or due today. 🎉</p>
+            <div style="margin-top:10px;">${quickAddTaskFormHtml()}</div>
+          </div>
+        `);
+      }
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const rows = todoData.rows.map(function (row) {
+        const due = String(getValue(row, ["due_date"], "")).slice(0, 10);
+        const isOverdue = due && due < todayStr;
+        const title = getValue(row, ["task_title"], "Task");
+        return `
+          <div class="todo-row">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;min-width:0;">
+              <input type="checkbox" onchange="markDashboardTaskComplete('${attr(row.id)}', this)" />
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${safe(truncateName(title, 32))}</span>
+            </label>
+            <strong style="color:${isOverdue ? "#DC2626" : "#C77700"};">${isOverdue ? "Overdue" : "Today"}</strong>
+          </div>
+        `;
+      }).join("");
+
+      const summary = `
+        <div class="kpi-grid">
+          ${kpiCard("Overdue", todoData.overdueCount, "Past due date", "#DC2626", "my-tasks.html", null, null, "alert-circle")}
+          ${kpiCard("Due Today", todoData.dueTodayCount, "Needs attention today", "#C77700", "my-tasks.html", null, null, "calendar")}
+        </div>
+      `;
+
+      return dashboardSectionHtml(title, `
+        ${summary}
+        <div class="todo-list" style="margin-top:10px;">${rows}</div>
+        <div style="margin-top:10px;">${quickAddTaskFormHtml()}</div>
+      `);
+    }
+
+    function quickAddTaskFormHtml() {
+      return `
+        <form onsubmit="return quickAddDashboardTask(event)" style="display:flex;gap:8px;">
+          <input type="text" id="dashQuickTaskInput" placeholder="Add a task…" style="flex:1;min-width:0;" required />
+          <button type="submit" class="ungani-btn gold" style="white-space:nowrap;">Add</button>
+        </form>
+      `;
+    }
+
+    async function markDashboardTaskComplete(id, checkboxEl) {
+      try {
+        const response = await supabaseClient.from("tasks").update({ status: "completed" }).eq("id", id).eq("tenant_id", currentTenantId);
+        if (response.error) {
+          alert("Could not update task: " + response.error.message);
+          checkboxEl.checked = false;
+          return;
+        }
+        await loadDashboardData();
+        renderDashboard();
+      } catch (error) {
+        alert("Could not update task: " + error.message);
+        checkboxEl.checked = false;
+      }
+    }
+
+    async function quickAddDashboardTask(event) {
+      event.preventDefault();
+      const input = document.getElementById("dashQuickTaskInput");
+      const title = (input && input.value || "").trim();
+      if (!title) return false;
+
+      try {
+        const response = await supabaseClient.from("tasks").insert([{
+          tenant_id: currentTenantId,
+          task_title: title,
+          priority: "normal",
+          status: "pending",
+          due_date: new Date().toISOString().slice(0, 10),
+          assigned_to_team_member_id: currentUserIsOwner ? null : currentUserTeamMemberId
+        }]);
+        if (response.error) {
+          alert("Could not add task: " + response.error.message);
+          return false;
+        }
+        await loadDashboardData();
+        renderDashboard();
+      } catch (error) {
+        alert("Could not add task: " + error.message);
+      }
+      return false;
+    }
+
     const HEALTH_BANDS = [
       { min: 85, label: "Thriving", color: "#16A34A" },
       { min: 65, label: "Steady", color: "#D4A63A" },
@@ -17704,6 +17989,167 @@
         pending,
         balance: income - expenses
       };
+    }
+
+    // ---------------------------------------------------------------------
+    // Step 4 Dashboard Restructure: shared formatting + new section
+    // builders (today/month money split, Owed to You, generalized Stock/
+    // Availability, My To-Do). Reuse the same amount_kes/isIncome/
+    // isExpense/deleted_at rules already proven above - no new money or
+    // stock logic invented, only new groupings over the same data.
+    // ---------------------------------------------------------------------
+
+    function formatKes(amount) {
+      const value = Math.round(Number(amount) || 0);
+      return "Ksh " + value.toLocaleString();
+    }
+
+    function truncateName(text, maxLen) {
+      const value = String(text || "");
+      const limit = maxLen || 28;
+      return value.length > limit ? value.slice(0, limit - 1) + "…" : value;
+    }
+
+    function calculateMoneyTodayAndMonth(rows) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+      let todayIncome = 0, todayExpense = 0, monthIncome = 0, monthExpense = 0;
+
+      rows.forEach(row => {
+        const amount = Number(getValue(row, ["amount_kes", "amount"], 0) || 0);
+        const dateStr = String(getValue(row, ["transaction_date", "created_at"], "")).slice(0, 10);
+        if (!dateStr) return;
+
+        const income = isIncome(row);
+        const expense = isExpense(row);
+
+        if (dateStr.slice(0, 7) === monthKey) {
+          if (income) monthIncome += amount;
+          if (expense) monthExpense += amount;
+        }
+        if (dateStr === todayStr) {
+          if (income) todayIncome += amount;
+          if (expense) todayExpense += amount;
+        }
+      });
+
+      return {
+        todayIncome, todayExpense, todayNet: todayIncome - todayExpense,
+        monthIncome, monthExpense, monthNet: monthIncome - monthExpense
+      };
+    }
+
+    // "Owed to you" - built from the exact same data shape my-debtors-
+    // payables.html's loadDebtors() already uses (get_my_ungani_customer_
+    // invoices RPC, total_amount/amount_paid/status/effective_status/
+    // due_date) - no new data source, just a dashboard-sized summary of
+    // the same numbers that page already computes correctly.
+    function calculateOwedToYou(invoices) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const weekAheadStr = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+      let outstanding = 0, overdueTotal = 0, overdueCount = 0, dueThisWeekTotal = 0, dueThisWeekCount = 0;
+      const overdueRows = [];
+
+      (invoices || []).forEach(inv => {
+        const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
+        if (balance <= 0 || inv.status === "cancelled" || inv.status === "draft") return;
+
+        outstanding += balance;
+
+        if (inv.effective_status === "overdue") {
+          overdueTotal += balance;
+          overdueCount++;
+          overdueRows.push({ id: inv.id, invoiceNumber: inv.invoice_number, customerName: inv.customer_name, balance, dueDate: inv.due_date });
+        } else if (inv.due_date && inv.due_date >= todayStr && inv.due_date <= weekAheadStr) {
+          dueThisWeekTotal += balance;
+          dueThisWeekCount++;
+        }
+      });
+
+      overdueRows.sort((a, b) => b.balance - a.balance);
+
+      return {
+        outstanding, overdueTotal, overdueCount, dueThisWeekTotal, dueThisWeekCount,
+        topOverdue: overdueRows.slice(0, 3)
+      };
+    }
+
+    // Stock card, generalized across ANY business type's items by reusing
+    // UnganiStockStatus exactly as the existing Retail/Hospitality cards
+    // do (isItemOutOfStock/isItemLowStock via isOutOfStockItem/
+    // isLowStockItem below) - just no longer limited to those two types.
+    function calculateStockCardData(items) {
+      const rows = items || [];
+      let lowCount = 0, outCount = 0;
+      const needsAttention = [];
+
+      rows.forEach(item => {
+        const out = isOutOfStockItem(item);
+        const low = !out && isLowStockItem(item);
+        if (out) { outCount++; needsAttention.push({ item, urgency: 2 }); }
+        else if (low) { lowCount++; needsAttention.push({ item, urgency: 1 }); }
+      });
+
+      needsAttention.sort((a, b) => b.urgency - a.urgency);
+
+      return {
+        total: rows.length,
+        lowCount,
+        outCount,
+        topItems: needsAttention.slice(0, 3).map(x => x.item)
+      };
+    }
+
+    // Availability card - generalizes the one-off status helpers that
+    // already exist per type (isOccupiedItemStatus, isSoldPropertyStatus,
+    // isNegotiationPropertyStatus) into one 3-bucket breakdown for unique-
+    // asset types that don't track stock quantity. `vocab` lets each type
+    // label the same 3 buckets in its own words (e.g. Real Estate:
+    // Vacant/Occupied/Sold; Security: Available/Deployed/Unavailable).
+    function calculateAvailabilityCardData(items, vocab) {
+      const rows = items || [];
+      const labels = vocab || { primary: "Available", secondary: "Occupied", tertiary: "Sold" };
+      let primary = 0, secondary = 0, tertiary = 0;
+
+      rows.forEach(item => {
+        const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
+
+        if (isSoldPropertyStatus(status)) tertiary++;
+        else if (isOccupiedItemStatus(status)) secondary++;
+        else primary++;
+      });
+
+      return { total: rows.length, primary, secondary, tertiary, labels };
+    }
+
+    // My To-Do - real task rows (not just counts), scoped to the signed-in
+    // user: staff see only tasks assigned to their own team_member_id
+    // (the same field my-tasks.html's "My Tasks Only" filter matches), the
+    // owner sees the whole team's. Reuses the same overdue/due-today rule
+    // already proven in calculateTaskSummary/countTasksDueToday below,
+    // just surfacing the actual rows instead of a count.
+    function calculateMyTodoData(tasks) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const rows = (tasks || []).filter(row => {
+        const status = statusText(row);
+        if (status.includes("completed") || status.includes("cancelled")) return false;
+
+        if (!currentUserIsOwner && currentUserTeamMemberId) {
+          const assignedId = getValue(row, ["assigned_to_team_member_id"], null);
+          if (String(assignedId || "") !== String(currentUserTeamMemberId)) return false;
+        }
+        return true;
+      });
+
+      const overdue = rows.filter(row => {
+        const due = String(getValue(row, ["due_date"], "")).slice(0, 10);
+        return due && due < todayStr;
+      });
+      const dueToday = rows.filter(row => String(getValue(row, ["due_date"], "")).slice(0, 10) === todayStr);
+
+      const combined = overdue.concat(dueToday).slice(0, 8);
+      return { overdueCount: overdue.length, dueTodayCount: dueToday.length, rows: combined };
     }
 
     function calculateTaskSummary(rows) {
