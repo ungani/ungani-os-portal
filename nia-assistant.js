@@ -38,6 +38,7 @@
     { key: "customer-invoices", href: "my-customer-invoices.html", icon: "banknote", label: "Customer Invoices", aliases: ["customer invoices", "invoices", "invoice", "invoicing", "bill a customer"] },
     { key: "quotations", href: "my-quotations.html", icon: "file-pen", label: "Quotations", aliases: ["quotations", "quotation", "quote", "quotes", "estimate", "estimates"] },
     { key: "orders", href: "my-orders.html", icon: "shopping-cart", label: "Orders", aliases: ["orders", "order", "customer order", "sales order", "fulfilment", "fulfillment", "fulfil an order", "fulfill an order"] },
+    { key: "purchases", href: "my-purchases.html", icon: "truck", label: "Purchases", aliases: ["purchases", "purchase", "purchase order", "purchase orders", "stock in", "receive stock", "received stock", "restock", "restocking", "goods received", "buy stock", "buying stock"] },
     { key: "quick-sale", href: "my-quick-sale.html", icon: "shopping-bag", label: "Quick Sale (POS)", aliases: ["quick sale", "point of sale", "checkout", "cash register", "pos terminal"] },
     { key: "price-lists", href: "my-price-lists.html", icon: "wallet", label: "Price Lists", aliases: ["price lists", "price list", "prices", "price", "wholesale pricing"] },
     { key: "commitments", href: "my-commitments.html", icon: "file-clock", label: "Leases / Memberships / Contracts", aliases: ["leases", "lease", "tenancy", "tenancies", "memberships", "membership", "service contracts", "service contract", "contracts", "contract", "renewals", "renewal"] },
@@ -640,6 +641,7 @@
     { key: "createInvoice", match: ["create invoice", "add invoice", "new invoice", "bill a customer", "invoice a customer"], href: "my-customer-invoices.html", params: { action: "add" }, confirm: "Opening Customer Invoices with a new invoice ready to fill in." },
     { key: "createQuotation", match: ["create quotation", "add quotation", "new quotation", "create quote", "add quote", "new quote", "quote a customer"], href: "my-quotations.html", params: { action: "add" }, confirm: "Opening Quotations with a new quote ready to fill in." },
     { key: "createOrder", match: ["create order", "add order", "new order", "create a customer order", "log an order"], href: "my-orders.html", params: { action: "add" }, confirm: "Opening Orders with a new order ready to fill in." },
+    { key: "createPurchase", match: ["create purchase", "add purchase", "new purchase", "log a purchase", "record a purchase", "create purchase order", "log stock in", "record stock in"], href: "my-purchases.html", params: { action: "add" }, confirm: "Opening Purchases with a new purchase ready to fill in." },
     { key: "createPriceList", match: ["create price list", "add price list", "new price list", "create a wholesale price list"], href: "my-price-lists.html", params: { action: "add" }, confirm: "Opening Price Lists with a new price list ready to fill in." },
     { key: "uploadDocument", match: ["upload document", "upload a document", "add document"], href: "my-documents.html", params: { action: "add" }, confirm: "Opening Documents with a new document ready to fill in." },
     { key: "openCalendar", match: ["open calendar"], href: "my-calendar.html", params: {}, confirm: "Opening Calendar." },
@@ -2920,6 +2922,18 @@
         }
 
         return runOrderQueryIntent();
+      }
+
+      // Live-data purchases question ("purchase", "purchases", "stock in",
+      // "restock") - same reasoning as orders above. Checked right after
+      // orders since both are stock-moving document types.
+      if (isPurchaseQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("Purchases aren't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runPurchaseQueryIntent();
       }
 
       // Live-data price list question ("price", "prices", "price list") -
@@ -5705,6 +5719,64 @@
     return {
       spoken: "Pending fulfilment: " + formatNiaKES(pendingTotal) + " across " + pendingRows.length +
         " order" + (pendingRows.length === 1 ? "" : "s") + ". " + readyCount + " ready to invoice. " + overdueText + "."
+    };
+  }
+
+  // ---- Purchases (Task 8) ----
+  // No dedicated get_my_ungani_purchases() RPC exists - my-purchases.html
+  // itself queries the ungani_purchases table directly (RLS-scoped), so
+  // Nia mirrors that exact query rather than inventing an RPC call.
+  function isPurchaseQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["purchase", "purchases", "stock in", "restock", "restocking", "goods received", "receive stock", "received stock"]
+      .some(function (word) { return lower.indexOf(word) !== -1; });
+  }
+
+  async function runPurchaseQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your purchases...");
+
+    let response;
+    try {
+      response = await state.supabaseClient
+        .from("ungani_purchases")
+        .select("status, total_amount")
+        .eq("tenant_id", state.tenantId)
+        .is("deleted_at", null)
+        .limit(500);
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const purchases = (response && !response.error && response.data) ? response.data : [];
+
+    if (!purchases.length) {
+      addNiaMessage(
+        "No purchases yet. Record one from " + goldLink("my-purchases.html", "Purchases") + "."
+      );
+      return { spoken: "No purchases yet." };
+    }
+
+    const draftRows = purchases.filter(function (p) { return p.status === "draft"; });
+    const receivedRows = purchases.filter(function (p) { return p.status === "received"; });
+    const receivedTotal = receivedRows.reduce(function (sum, p) { return sum + (Number(p.total_amount) || 0); }, 0);
+
+    const html =
+      `<strong>Purchases</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="truck"></i> Received: ${safe(formatNiaKES(receivedTotal))} across ${receivedRows.length} purchase${receivedRows.length === 1 ? "" : "s"}</div>` +
+      `<div style="margin-top:4px;"><i data-lucide="file-clock"></i> Still in draft: ${draftRows.length}</div>` +
+      `<div style="margin-top:8px;">${goldLink("my-purchases.html", "See all purchases →")}</div>`;
+
+    addNiaMessage(html);
+
+    return {
+      spoken: "Received: " + formatNiaKES(receivedTotal) + " across " + receivedRows.length +
+        " purchase" + (receivedRows.length === 1 ? "" : "s") + ". " + draftRows.length + " still in draft."
     };
   }
 

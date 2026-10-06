@@ -115,7 +115,8 @@
     }
 
     const inventoryItems = [
-      ["items", "my-items.html", "tag", "Items / Assets / Stock"]
+      ["items", "my-items.html", "tag", "Items / Assets / Stock"],
+      ["purchases", "my-purchases.html", "truck", "Purchases"]
     ];
 
     if (tenant && tenant.stock_tracking_enabled === true) {

@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Purchases</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-context-menu.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="ungani-stock-status.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let purchaseRows = [];
+    let supplierOptions = [];
+    let stockItemOptions = [];
+    let editingPurchaseId = null;
+    let editingPurchaseItems = [];
+    // item_id -> last received unit_cost for that item, built once per
+    // page load from this tenant's own purchase history - powers the
+    // "pre-fill unit cost from last purchase" request without a dedicated
+    // RPC (direct select, same read pattern as every other list here).
+    let lastUnitCostByItem = {};
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "purchases",
+        pageTitle: "Purchases",
+        pageSubtitle: "Record stock-in from suppliers - receiving updates stock and books the expense.",
+        onReady: startPurchasesPage
+      });
+
+      if (window.UnganiContextMenu) {
+        UnganiContextMenu.init({
+          ungani_purchases: [
+            { key: "delete", label: "Delete", icon: "trash-2", danger: true, handler: function (el) { deletePurchaseRecord(el.getAttribute("data-record-id")); } }
+          ]
+        });
+      }
+    });
+
+    async function startPurchasesPage(context) {
+      currentContext = context;
+
+      const titleEl = document.querySelector(".ungani-topbar h2");
+      const subEl = document.querySelector(".ungani-topbar p");
+      if (titleEl) titleEl.innerText = "Purchases";
+      if (subEl) subEl.innerText = "Record stock-in from suppliers - receiving updates stock and books the expense.";
+
+      await loadSupplierOptions();
+      await loadStockItemOptions();
+      await loadPurchaseRows();
+      await loadLastUnitCosts();
+
+      renderPurchasesPage();
+
+      const applyAction = new URLSearchParams(window.location.search).get("action");
+      if (applyAction === "add") {
+        setTimeout(function () { openPurchaseModal(); }, 250);
+      }
+    }
+
+    async function loadSupplierOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("client_people")
+          .select("id, full_name, person_type, phone, email")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("full_name")
+          .limit(500);
+
+        supplierOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load People for supplier picker:", error.message);
+        supplierOptions = [];
+      }
+    }
+
+    async function loadStockItemOptions() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("business_items")
+          .select("id, item_name, name, title, property_name, quantity, variant_group")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .limit(1000);
+
+        stockItemOptions = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load Items for purchase-line picker:", error.message);
+        stockItemOptions = [];
+      }
+    }
+
+    function stockItemLabel(item) {
+      return item.item_name || item.name || item.title || item.property_name || "Item";
+    }
+
+    // Groups items sharing a variant_group under an <optgroup>, same
+    // pattern as my-orders.html/my-quotations.html's item pickers.
+    function buildGroupedStockOptionsHtml(items, selectedId, renderLabelFn) {
+      const groups = {};
+      const ungrouped = [];
+
+      items.forEach(function (item) {
+        const group = String(item.variant_group || "").trim();
+        if (group) {
+          if (!groups[group]) groups[group] = [];
+          groups[group].push(item);
+        } else {
+          ungrouped.push(item);
+        }
+      });
+
+      function optionHtml(item) {
+        const selected = String(item.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(item.id)}"${selected}>${UnganiClientShared.safe(renderLabelFn(item))}</option>`;
+      }
+
+      const groupedHtml = Object.keys(groups).sort().map(function (groupName) {
+        return `<optgroup label="${UnganiClientShared.attr(groupName)}">${groups[groupName].map(optionHtml).join("")}</optgroup>`;
+      }).join("");
+
+      return groupedHtml + ungrouped.map(optionHtml).join("");
+    }
+
+    function stockItemOptionsHtml(selectedId) {
+      const options = buildGroupedStockOptionsHtml(stockItemOptions, selectedId, function (item) {
+        return stockItemLabel(item) + " (" + (item.quantity === null || item.quantity === undefined ? "0" : item.quantity) + " in stock)";
+      });
+
+      return `<option value="">— Not linked to a stock item —</option>${options}`;
+    }
+
+    // One pass over this tenant's own purchase_items (joined to purchases
+    // to know which were actually received) to build a last-cost lookup
+    // per item, newest first. Direct select, RLS-scoped - no RPC needed.
+    async function loadLastUnitCosts() {
+      lastUnitCostByItem = {};
+
+      try {
+        const response = await currentContext.supabaseClient
+          .from("ungani_purchase_items")
+          .select("item_id, unit_cost, created_at:purchase_id, ungani_purchases!inner(purchase_date, status)")
+          .eq("tenant_id", currentContext.tenantId)
+          .not("item_id", "is", null);
+
+        if (response.error || !response.data) return;
+
+        const received = response.data
+          .filter(function (row) { return row.ungani_purchases && row.ungani_purchases.status === "received"; })
+          .sort(function (a, b) { return String(b.ungani_purchases.purchase_date || "").localeCompare(String(a.ungani_purchases.purchase_date || "")); });
+
+        received.forEach(function (row) {
+          if (!(row.item_id in lastUnitCostByItem)) {
+            lastUnitCostByItem[row.item_id] = Number(row.unit_cost);
+          }
+        });
+      } catch (error) {
+        console.warn("Could not load last purchase costs:", error.message);
+      }
+    }
+
+    async function loadPurchaseRows() {
+      try {
+        const response = await currentContext.supabaseClient
+          .from("ungani_purchases")
+          .select("*")
+          .eq("tenant_id", currentContext.tenantId)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(500);
+
+        purchaseRows = (!response.error && response.data) ? response.data : [];
+      } catch (error) {
+        console.warn("Could not load purchases:", error.message);
+        purchaseRows = [];
+      }
+    }
+
+    // ---- List page ----
+
+    function renderPurchasesPage() {
+      const draftRows = purchaseRows.filter(function (row) { return row.status === "draft"; });
+      const receivedRows = purchaseRows.filter(function (row) { return row.status === "received"; });
+      const receivedTotal = receivedRows.reduce(function (sum, row) { return sum + Number(row.total_amount); }, 0);
+
+      UnganiClientShared.setContent(`
+        <style>
+          .money-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+          .money-form-grid .wide { grid-column: span 3; }
+          @media (max-width: 720px) { .money-form-grid { grid-template-columns: 1fr; } .money-form-grid .wide { grid-column: span 1; } }
+
+          .purchases-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          .purchases-table th, .purchases-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.1)); font-size: 14px; }
+          .purchases-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--ungani-muted, #6B7280); }
+          .purchases-table tr { cursor: pointer; }
+          .purchases-table tr:hover { background: rgba(212,166,58,0.06); }
+          .purchase-status-badge { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+          .purchase-status-draft { background: rgba(107,114,128,0.15); color: #6B7280; }
+          .purchase-status-received { background: rgba(22,163,74,0.15); color: #16A34A; }
+          .purchase-status-cancelled { background: rgba(107,114,128,0.15); color: #6B7280; text-decoration: line-through; }
+          .purchase-items-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+          .purchase-items-table td { padding: 8px 6px; vertical-align: top; }
+          .purchase-items-table input, .purchase-items-table select { width: 100%; }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Purchases</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">Stock in, booked correctly.</h2>
+          <p>Record what you bought from a supplier. Marking it received updates stock for every linked item and books the expense automatically.</p>
+
+          <div class="ungani-button-row">
+            <button class="ungani-btn gold" onclick="openPurchaseModal()">+ New Purchase</button>
+            <button class="ungani-btn green" onclick="refreshPurchasesPage()">Refresh</button>
+          </div>
+        </section>
+
+        <section class="money-kpi-grid" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
+          ${purchaseKpi("Draft", String(draftRows.length), "Not yet received", "#6B7280")}
+          ${purchaseKpi("Received", UnganiAnalytics.compactMoney(receivedTotal), receivedRows.length + " purchase(s), stock updated", "#16A34A")}
+          ${purchaseKpi("Total Purchases", String(purchaseRows.length), "All purchase records", "#2563EB")}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>All Purchases</h3>
+              <p class="ungani-small">${purchaseRows.length} purchase(s).</p>
+            </div>
+          </div>
+
+          ${renderPurchasesTable()}
+        </section>
+
+        <p class="ungani-small">Purchases · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    function purchaseKpi(label, value, sub, accent) {
+      return `
+        <div class="ungani-card" style="border-left:4px solid ${accent};box-shadow:none;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ungani-muted,#6B7280);font-weight:800;">${UnganiClientShared.safe(label)}</div>
+          <div style="font-size:26px;font-weight:900;margin:6px 0 2px;">${UnganiClientShared.safe(value)}</div>
+          <div class="ungani-small">${UnganiClientShared.safe(sub)}</div>
+        </div>
+      `;
+    }
+
+    function renderPurchasesTable() {
+      if (!purchaseRows.length) {
+        return `<p class="ungani-small" style="padding:18px 0;">No purchases yet. Click "+ New Purchase" to record your first one.</p>`;
+      }
+
+      return `
+        <table class="purchases-table">
+          <thead>
+            <tr><th>Purchase #</th><th>Supplier</th><th>Date</th><th>Total</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            ${purchaseRows.map(function (row) {
+              return `
+                <tr data-record-id="${UnganiClientShared.attr(row.id)}" data-record-table="ungani_purchases" onclick="openPurchaseModal('${UnganiClientShared.attr(row.id)}')">
+                  <td><strong>${UnganiClientShared.safe(row.purchase_number)}</strong></td>
+                  <td>${UnganiClientShared.safe(row.supplier_name)}</td>
+                  <td>${UnganiClientShared.formatDate(row.purchase_date)}</td>
+                  <td>${UnganiClientShared.formatKES(row.total_amount)}</td>
+                  <td><span class="purchase-status-badge purchase-status-${UnganiClientShared.attr(row.status)}">${UnganiClientShared.safe(row.status)}</span></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function refreshPurchasesPage() {
+      await loadPurchaseRows();
+      await loadLastUnitCosts();
+      renderPurchasesPage();
+      UnganiClientShared.showToast("Refreshed ✓");
+    }
+
+    // ---- Add/Edit modal ----
+
+    function supplierOptionsHtml(selectedId) {
+      const options = supplierOptions.map(function (person) {
+        const suffix = person.person_type ? " (" + person.person_type + ")" : "";
+        const selected = String(person.id) === String(selectedId) ? " selected" : "";
+        return `<option value="${UnganiClientShared.attr(person.id)}"${selected}>${UnganiClientShared.safe(person.full_name)}${UnganiClientShared.safe(suffix)}</option>`;
+      }).join("");
+
+      return `<option value="">— Type supplier name manually below —</option>${options}`;
+    }
+
+    async function openPurchaseModal(id) {
+      const row = id ? purchaseRows.find(function (item) { return String(item.id) === String(id); }) : null;
+
+      if (id && !row) {
+        UnganiClientShared.showToast("Purchase not found.");
+        return;
+      }
+
+      editingPurchaseId = row ? row.id : null;
+
+      if (editingPurchaseId) {
+        await loadPurchaseDetailAndOpenModal(editingPurchaseId, row);
+        return;
+      }
+
+      editingPurchaseItems = [{ item_id: null, description: "", quantity: 1, unit_cost: 0 }];
+      openPurchaseModalForm(null);
+    }
+
+    async function loadPurchaseDetailAndOpenModal(id, row) {
+      UnganiClientShared.showToast("Loading purchase...");
+
+      try {
+        const response = await currentContext.supabaseClient
+          .from("ungani_purchase_items")
+          .select("*")
+          .eq("purchase_id", id)
+          .order("sort_order");
+
+        editingPurchaseItems = (!response.error && response.data || []).map(function (item) {
+          return { item_id: item.item_id, description: item.description, quantity: item.quantity, unit_cost: item.unit_cost };
+        });
+
+        if (!editingPurchaseItems.length) {
+          editingPurchaseItems = [{ item_id: null, description: "", quantity: 1, unit_cost: 0 }];
+        }
+
+        openPurchaseModalForm(row);
+      } catch (error) {
+        UnganiClientShared.showToast("Could not load purchase: " + error.message);
+      }
+    }
+
+    function openPurchaseModalForm(purchase) {
+      const isLocked = purchase && purchase.status !== "draft";
+
+      const bodyHtml = `
+        <form onsubmit="savePurchaseRecord(event)">
+          ${isLocked ? `<p class="ungani-small" style="color:#DC2626;margin:0 0 12px;">This purchase is ${UnganiClientShared.safe(purchase.status)} and can no longer be edited.</p>` : ""}
+
+          <div class="money-form-grid">
+            <div>
+              <label for="purchaseSupplierPerson">Supplier (from People)</label>
+              <select id="purchaseSupplierPerson" onchange="handlePurchaseSupplierPersonChange()" ${isLocked ? "disabled" : ""}>
+                ${supplierOptionsHtml(purchase ? purchase.supplier_person_id : "")}
+              </select>
+            </div>
+
+            <div>
+              <label for="purchaseSupplierName">Supplier name *</label>
+              <input type="text" id="purchaseSupplierName" autocomplete="off" value="${purchase ? UnganiClientShared.attr(purchase.supplier_name) : ""}" required ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="purchaseDate">Purchase date</label>
+              <input type="date" id="purchaseDate" value="${purchase && purchase.purchase_date ? purchase.purchase_date : new Date().toISOString().slice(0, 10)}" ${isLocked ? "disabled" : ""} />
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <label>Line items</label>
+            <table class="purchase-items-table" id="purchaseItemsTable"></table>
+            ${isLocked ? "" : `<button type="button" class="ungani-btn light" style="margin-top:8px;" onclick="addPurchaseItemRow()">+ Add Line</button>`}
+          </div>
+
+          <div class="money-form-grid" style="margin-top:16px;">
+            <div>
+              <label style="display:flex;align-items:center;gap:10px;">
+                <input type="checkbox" id="purchaseVatApplicable" onchange="handlePurchaseTotalsChange()" ${purchase && purchase.vat_applicable ? "checked" : ""} ${isLocked ? "disabled" : ""} style="width:18px;height:18px;" />
+                VAT applies to this purchase
+              </label>
+            </div>
+
+            <div>
+              <label for="purchaseVatRate">VAT rate (%)</label>
+              <input type="number" id="purchaseVatRate" min="0" max="100" step="0.01" value="${purchase && purchase.vat_rate != null ? purchase.vat_rate : (currentContext.tenant && currentContext.tenant.default_vat_rate) || 16}" oninput="handlePurchaseTotalsChange()" ${isLocked ? "disabled" : ""} />
+            </div>
+
+            <div>
+              <label for="purchaseVatPricingMode">VAT pricing</label>
+              <select id="purchaseVatPricingMode" onchange="handlePurchaseTotalsChange()" ${isLocked ? "disabled" : ""}>
+                <option value="exclusive" ${!purchase || purchase.vat_pricing_mode !== "inclusive" ? "selected" : ""}>VAT added on top</option>
+                <option value="inclusive" ${purchase && purchase.vat_pricing_mode === "inclusive" ? "selected" : ""}>Cost includes VAT</option>
+              </select>
+            </div>
+
+            <div class="wide" style="grid-column:1/-1;">
+              <label for="purchaseNotes">Notes</label>
+              <textarea id="purchaseNotes" rows="2" ${isLocked ? "disabled" : ""}>${purchase ? UnganiClientShared.safe(purchase.notes || "") : ""}</textarea>
+            </div>
+          </div>
+
+          <div id="purchaseTotalsBox" style="margin-top:14px;padding:14px;border-radius:14px;background:rgba(212,166,58,0.08);"></div>
+
+          <div class="ungani-button-row" style="margin-top:18px;justify-content:space-between;">
+            <div>
+              ${purchase && purchase.status === "draft" ? `<button type="button" class="ungani-btn green" onclick="setPurchaseStatus('${UnganiClientShared.attr(purchase.id)}', 'received')">Mark Received</button>` : ""}
+              ${purchase && purchase.status !== "cancelled" ? `<button type="button" class="ungani-btn red" onclick="setPurchaseStatus('${UnganiClientShared.attr(purchase.id)}', 'cancelled')">Cancel Purchase</button>` : ""}
+            </div>
+            <div class="ungani-button-row" style="margin:0;">
+              <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Close</button>
+              ${isLocked ? "" : `<button type="submit" class="ungani-btn gold">${purchase ? "Update Purchase" : "Create Purchase"}</button>`}
+            </div>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({
+        title: purchase ? ("Purchase " + purchase.purchase_number) : "New Purchase",
+        bodyHtml: bodyHtml,
+        onOpen: function () {
+          renderPurchaseItemsTable();
+          handlePurchaseTotalsChange();
+        }
+      });
+    }
+
+    function handlePurchaseSupplierPersonChange() {
+      const select = document.getElementById("purchaseSupplierPerson");
+      const person = supplierOptions.find(function (item) { return String(item.id) === String(select.value); });
+
+      if (person) {
+        document.getElementById("purchaseSupplierName").value = person.full_name || "";
+      }
+    }
+
+    function renderPurchaseItemsTable() {
+      const table = document.getElementById("purchaseItemsTable");
+      if (!table) return;
+
+      const isLocked = document.getElementById("purchaseSupplierName").disabled;
+
+      table.innerHTML = editingPurchaseItems.map(function (item, index) {
+        return `
+          <tr>
+            <td style="width:25%;">
+              <select onchange="updatePurchaseItemField(${index}, 'item_id', this.value)" ${isLocked ? "disabled" : ""}>
+                ${stockItemOptionsHtml(item.item_id)}
+              </select>
+            </td>
+            <td style="width:30%;"><input type="text" placeholder="Description" value="${UnganiClientShared.attr(item.description)}" oninput="updatePurchaseItemField(${index}, 'description', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:13%;"><input type="number" min="0" step="0.01" placeholder="Qty" value="${item.quantity}" oninput="updatePurchaseItemField(${index}, 'quantity', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:17%;"><input type="number" min="0" step="0.01" placeholder="Unit cost" value="${item.unit_cost}" oninput="updatePurchaseItemField(${index}, 'unit_cost', this.value)" ${isLocked ? "disabled" : ""} /></td>
+            <td style="width:10%;text-align:right;" class="purchase-item-line-total" data-row="${index}">${UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_cost) || 0))}</td>
+            <td style="width:5%;">${isLocked ? "" : `<button type="button" class="ungani-btn red" style="padding:4px 8px;min-height:auto;" onclick="removePurchaseItemRow(${index})">✕</button>`}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function addPurchaseItemRow() {
+      editingPurchaseItems.push({ item_id: null, description: "", quantity: 1, unit_cost: 0 });
+      renderPurchaseItemsTable();
+      handlePurchaseTotalsChange();
+    }
+
+    function removePurchaseItemRow(index) {
+      editingPurchaseItems.splice(index, 1);
+      if (!editingPurchaseItems.length) editingPurchaseItems.push({ item_id: null, description: "", quantity: 1, unit_cost: 0 });
+      renderPurchaseItemsTable();
+      handlePurchaseTotalsChange();
+    }
+
+    function updatePurchaseItemField(index, field, value) {
+      if (!editingPurchaseItems[index]) return;
+
+      if (field === "item_id") {
+        editingPurchaseItems[index].item_id = value || null;
+
+        let changed = false;
+
+        if (value && !editingPurchaseItems[index].description) {
+          const picked = stockItemOptions.find(function (it) { return String(it.id) === String(value); });
+          if (picked) {
+            editingPurchaseItems[index].description = stockItemLabel(picked);
+            changed = true;
+          }
+        }
+
+        // Pre-fill unit cost from this item's last RECEIVED purchase -
+        // only when the field is still at its untouched default (0), same
+        // "never overwrite something the user already typed" rule the
+        // description auto-fill above follows.
+        if (value && Number(editingPurchaseItems[index].unit_cost) === 0 && value in lastUnitCostByItem) {
+          editingPurchaseItems[index].unit_cost = lastUnitCostByItem[value];
+          changed = true;
+        }
+
+        if (changed) {
+          renderPurchaseItemsTable();
+          handlePurchaseTotalsChange();
+        }
+        return;
+      }
+
+      editingPurchaseItems[index][field] = field === "description" ? value : Number(value) || 0;
+
+      const item = editingPurchaseItems[index];
+      const lineTotalCell = document.querySelector('.purchase-item-line-total[data-row="' + index + '"]');
+      if (lineTotalCell) {
+        lineTotalCell.textContent = UnganiClientShared.formatKES((Number(item.quantity) || 0) * (Number(item.unit_cost) || 0));
+      }
+
+      handlePurchaseTotalsChange();
+    }
+
+    // Client-side preview only, mirrors owner_upsert_ungani_purchase()'s
+    // VAT math exactly - the real, authoritative totals are always
+    // recomputed server-side.
+    function handlePurchaseTotalsChange() {
+      const box = document.getElementById("purchaseTotalsBox");
+      if (!box) return;
+
+      const subtotal = editingPurchaseItems.reduce(function (sum, item) {
+        return sum + ((Number(item.quantity) || 0) * (Number(item.unit_cost) || 0));
+      }, 0);
+
+      const vatApplicable = document.getElementById("purchaseVatApplicable").checked;
+      const vatRate = Number(document.getElementById("purchaseVatRate").value) || 0;
+      const vatMode = document.getElementById("purchaseVatPricingMode").value;
+
+      let vatAmount = 0;
+      let total = subtotal;
+
+      if (vatApplicable && vatRate > 0) {
+        if (vatMode === "inclusive") {
+          vatAmount = Math.round((subtotal * vatRate / (100 + vatRate)) * 100) / 100;
+          total = subtotal;
+        } else {
+          vatAmount = Math.round((subtotal * vatRate / 100) * 100) / 100;
+          total = subtotal + vatAmount;
+        }
+      }
+
+      box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Subtotal</span><strong>${UnganiClientShared.formatKES(subtotal)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>VAT</span><strong>${UnganiClientShared.formatKES(vatAmount)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0 0;border-top:1px solid rgba(212,166,58,0.3);font-size:18px;"><span>Total</span><strong>${UnganiClientShared.formatKES(total)}</strong></div>
+      `;
+    }
+
+    async function savePurchaseRecord(event) {
+      event.preventDefault();
+
+      const supplierName = UnganiClientShared.value("purchaseSupplierName").trim();
+      if (!supplierName) {
+        UnganiClientShared.showToast("Supplier name is required.");
+        return;
+      }
+
+      const items = editingPurchaseItems
+        .filter(function (item) { return item.description && item.description.trim(); })
+        .map(function (item) {
+          return {
+            item_id: item.item_id || null,
+            description: item.description.trim(),
+            quantity: Number(item.quantity) || 1,
+            unit_cost: Number(item.unit_cost) || 0
+          };
+        });
+
+      if (!items.length) {
+        UnganiClientShared.showToast("Add at least one line item with a description.");
+        return;
+      }
+
+      const submitBtn = event.target.querySelector("button[type=submit]");
+
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        try {
+          const response = await currentContext.supabaseClient.rpc("owner_upsert_ungani_purchase", {
+            p_purchase_id: editingPurchaseId,
+            p_supplier_person_id: UnganiClientShared.value("purchaseSupplierPerson") || null,
+            p_supplier_name: supplierName,
+            p_purchase_date: UnganiClientShared.value("purchaseDate") || null,
+            p_vat_applicable: document.getElementById("purchaseVatApplicable").checked,
+            p_vat_rate: Number(UnganiClientShared.value("purchaseVatRate")) || null,
+            p_vat_pricing_mode: UnganiClientShared.value("purchaseVatPricingMode") || "exclusive",
+            p_currency: "KES",
+            p_notes: UnganiClientShared.value("purchaseNotes") || null,
+            p_items: items
+          });
+
+          if (response.error || !response.data || response.data.ok !== true) {
+            UnganiClientShared.showToast("Could not save purchase: " + (response.error ? response.error.message : (response.data && response.data.message)));
+            return;
+          }
+
+          UnganiClientShared.closeModal();
+          UnganiClientShared.showToast(editingPurchaseId ? "Purchase updated ✓" : "Purchase created ✓");
+          await loadPurchaseRows();
+          renderPurchasesPage();
+        } catch (error) {
+          UnganiClientShared.showToast("Could not save purchase: " + error.message);
+        }
+      });
+    }
+
+    async function setPurchaseStatus(id, status) {
+      if (status === "cancelled" && !confirm("Cancel this purchase? If it was already received, stock and the booked expense will be reversed.")) return;
+      if (status === "received" && !confirm("Mark this purchase received? Stock will be updated for every linked item and an expense will be booked.")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("update_ungani_purchase_status", { p_purchase_id: id, p_status: status });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not update status: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Status updated ✓");
+        await loadPurchaseRows();
+        await loadLastUnitCosts();
+        renderPurchasesPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not update status: " + error.message);
+      }
+    }
+
+    async function deletePurchaseRecord(id) {
+      if (!confirm("Delete this purchase record? This only removes the record - it does not reverse stock or money (cancel it first if it was received).")) return;
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("soft_delete_ungani_record", {
+          p_table_name: "ungani_purchases",
+          p_record_id: id,
+          p_delete_reason: "Deleted from Purchases page"
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast("Could not delete purchase: " + (response.error ? response.error.message : (response.data && response.data.message)));
+          return;
+        }
+
+        UnganiClientShared.closeModal();
+        UnganiClientShared.showToast("Purchase deleted ✓");
+        await loadPurchaseRows();
+        renderPurchasesPage();
+      } catch (error) {
+        UnganiClientShared.showToast("Could not delete purchase: " + error.message);
+      }
+    }
+  </script>
+
+  <script src="pwa-register.js"></script>
+</body>
+</html>
