@@ -1401,6 +1401,16 @@
       const invoiceById = {};
       invoices.forEach(function (inv) { invoiceById[String(inv.id)] = inv; });
 
+      // Security deposit (held money, not income - shown separately from
+      // the invoice ledger above, never folded into charges/payments).
+      const commitmentsResponse = await currentContext.supabaseClient.rpc("get_my_ungani_commitments").catch(function (error) { return { error: error }; });
+      const allCommitments = (commitmentsResponse && !commitmentsResponse.error && commitmentsResponse.data && commitmentsResponse.data.ok === true)
+        ? (commitmentsResponse.data.commitments || [])
+        : [];
+      const depositLease = allCommitments.find(function (c) {
+        return statementPersonIds.map(String).indexOf(String(c.person_id)) !== -1 && c.deposit_amount_kes;
+      });
+
       const ledger = [];
       invoices.forEach(function (inv) {
         ledger.push({ date: inv.issue_date, type: "invoice", label: "Invoice " + inv.invoice_number, amount: Number(inv.total_amount) });
@@ -1492,6 +1502,16 @@
                   ${person.phone || person.email ? UnganiClientShared.safe([person.phone, person.email].filter(Boolean).join(" / ")) : ""}
                 </div>
               </div>
+              ${depositLease ? `
+                <div class="invoice-party-box">
+                  <div class="invoice-party-label">Security Deposit (held, not income)</div>
+                  <div class="invoice-party-body">
+                    ${depositLease.deposit_status === "settled"
+                      ? `Settled: ${UnganiClientShared.formatKES(depositLease.deposit_refunded_kes || 0)} refunded${depositLease.deposit_refund_method ? " via " + UnganiClientShared.safe(depositLease.deposit_refund_method) : ""}, ${UnganiClientShared.formatKES(depositLease.deposit_deducted_kes || 0)} deducted (${depositLease.deposit_deduction_type === "unpaid_rent" ? "unpaid rent" : "damages"})`
+                      : `${UnganiClientShared.formatKES(depositLease.deposit_amount_kes)} held`}
+                  </div>
+                </div>
+              ` : ""}
             </div>
 
             ${rows.length || fromDate ? `

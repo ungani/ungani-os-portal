@@ -298,6 +298,11 @@
                   ${row.amount != null ? UnganiClientShared.formatKES(row.amount) + " / " + UnganiClientShared.safe(row.billing_frequency || "monthly") + " · " : ""}
                   ${row.end_date ? "Ends " + UnganiClientShared.formatDate(row.end_date) : "No end date set"}
                 </p>
+                ${row.deposit_amount_kes ? `
+                  <span class="ungani-small" style="display:inline-block;margin-top:8px;padding:2px 9px;border-radius:999px;background:${row.deposit_status === "settled" ? "rgba(107,114,128,0.15)" : "rgba(212,166,58,0.18)"};color:${row.deposit_status === "settled" ? "#6B7280" : "#8A6A1A"};font-weight:700;">
+                    Deposit ${row.deposit_status === "settled" ? "settled" : "held"}: Ksh ${Number(row.deposit_amount_kes).toLocaleString()}
+                  </span>
+                ` : ""}
               </div>
             `;
           }).join("")}
@@ -373,6 +378,17 @@
             <div class="lease-print-field"><div class="label">Start Date</div><div class="value">${row.start_date ? UnganiClientShared.formatDate(row.start_date) : "—"}</div></div>
             <div class="lease-print-field"><div class="label">End / Renewal Date</div><div class="value">${row.end_date ? UnganiClientShared.formatDate(row.end_date) : "No end date set"}</div></div>
           </div>
+
+          ${row.deposit_amount_kes ? `
+            <div class="lease-print-field" style="border-bottom:none;margin-top:4px;">
+              <div class="label">Security Deposit</div>
+              <div class="value">
+                ${row.deposit_status === "settled"
+                  ? `Settled — Ksh ${Number(row.deposit_refunded_kes || 0).toLocaleString()} refunded${row.deposit_refund_method ? " via " + row.deposit_refund_method : ""}, Ksh ${Number(row.deposit_deducted_kes || 0).toLocaleString()} deducted (${row.deposit_deduction_type === "unpaid_rent" ? "unpaid rent" : "damages"}) on ${UnganiClientShared.formatDate(row.deposit_settled_at)}`
+                  : `Ksh ${Number(row.deposit_amount_kes).toLocaleString()} held (not income - refundable at move-out)`}
+              </div>
+            </div>
+          ` : ""}
 
           ${row.notes ? `<div class="lease-print-notes"><strong>Notes:</strong><br />${UnganiClientShared.safe(row.notes)}</div>` : ""}
 
@@ -455,6 +471,22 @@
             </div>
           </div>
 
+          ${commitmentType === "lease" ? `
+            <div style="margin-top:12px;">
+              <label for="commitmentDepositAmount">Deposit Held (Ksh)</label>
+              <input type="number" min="0" step="0.01" id="commitmentDepositAmount"
+                value="${row && row.deposit_amount_kes != null ? UnganiClientShared.attr(row.deposit_amount_kes) : ""}"
+                ${row && row.deposit_status === "settled" ? "disabled" : ""} />
+              ${row && row.deposit_status === "settled" ? `
+                <p style="margin:4px 0 0;font-size:0.85em;color:var(--muted-text,#8a8f98);">
+                  Deposit already settled (refunded Ksh ${UnganiClientShared.safe(Number(row.deposit_refunded_kes || 0).toLocaleString())}, deducted Ksh ${UnganiClientShared.safe(Number(row.deposit_deducted_kes || 0).toLocaleString())}) - amount is locked.
+                </p>
+              ` : `
+                <p style="margin:4px 0 0;font-size:0.85em;color:var(--muted-text,#8a8f98);">Held money, not income. Leave blank if no deposit was collected.</p>
+              `}
+            </div>
+          ` : ""}
+
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div>
               <label for="commitmentStart">Start Date</label>
@@ -486,6 +518,7 @@
             <div style="display:flex;gap:8px;">
               ${row ? `<button type="button" class="ungani-btn red" onclick="deleteCommitmentRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
               ${row ? `<button type="button" class="ungani-btn dark" onclick="printCommitmentFromModal('${UnganiClientShared.attr(row.id)}')">Print</button>` : ""}
+              ${row && row.deposit_status === "held" ? `<button type="button" class="ungani-btn gold" onclick="openSettleDepositModal('${UnganiClientShared.attr(row.id)}')">Settle Deposit</button>` : ""}
             </div>
             <div class="ungani-button-row" style="margin:0;">
               <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Close</button>
@@ -498,6 +531,97 @@
       UnganiClientShared.openModal({
         title: row ? vocab.singular + ": " + (row.plan_name || row.person_name || "") : "New " + vocab.singular,
         bodyHtml: bodyHtml
+      });
+    }
+
+    // ---- Settle Deposit ----
+
+    function openSettleDepositModal(id) {
+      const row = commitmentRows.find(function (item) { return String(item.id) === String(id); });
+      if (!row || row.deposit_status !== "held") {
+        UnganiClientShared.showToast("No held deposit found on this lease.");
+        return;
+      }
+
+      const depositAmount = Number(row.deposit_amount_kes || 0);
+
+      const bodyHtml = `
+        <form onsubmit="saveDepositSettlement(event, '${UnganiClientShared.attr(row.id)}')">
+          <p style="margin-top:0;">Deposit held: <strong>Ksh ${depositAmount.toLocaleString()}</strong> for ${UnganiClientShared.safe(row.person_name || "this tenant")}.</p>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label for="depositRefundAmount">Refund Amount (Ksh)</label>
+              <input type="number" min="0" max="${depositAmount}" step="0.01" id="depositRefundAmount" value="${depositAmount}" />
+            </div>
+            <div>
+              <label for="depositDeductionAmount">Deduction Amount (Ksh)</label>
+              <input type="number" min="0" max="${depositAmount}" step="0.01" id="depositDeductionAmount" value="0" />
+            </div>
+          </div>
+
+          <label for="depositDeductionType" style="margin-top:12px;">Deduction Reason (only if deducting)</label>
+          <select id="depositDeductionType">
+            <option value="">— N/A, no deduction —</option>
+            <option value="damages">Damages (becomes income)</option>
+            <option value="unpaid_rent">Unpaid rent (clears rent owed)</option>
+          </select>
+
+          <label for="depositRefundMethod" style="margin-top:12px;">Refund Method (only if refunding)</label>
+          <input type="text" id="depositRefundMethod" placeholder="e.g. Cash, M-Pesa, Bank Transfer" />
+
+          <label for="depositSettlementNote">Note</label>
+          <textarea id="depositSettlementNote" rows="2" placeholder="e.g. Ksh 5,000 deducted for a broken window, balance refunded."></textarea>
+
+          <p style="font-size:0.85em;color:var(--muted-text,#8a8f98);">Refund + deduction must not exceed the deposit held. A deduction posts as real income; a refund does not touch Money — it's recorded on the deposit itself. This cannot be edited once saved.</p>
+
+          <div class="ungani-button-row" style="margin-top:18px;justify-content:flex-end;">
+            <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Cancel</button>
+            <button type="submit" class="ungani-btn gold">Settle Deposit</button>
+          </div>
+        </form>
+      `;
+
+      UnganiClientShared.openModal({ title: "Settle Deposit", bodyHtml: bodyHtml });
+    }
+
+    async function saveDepositSettlement(event, commitmentId) {
+      event.preventDefault();
+
+      const refundAmount = Number(UnganiClientShared.value("depositRefundAmount") || 0);
+      const deductionAmount = Number(UnganiClientShared.value("depositDeductionAmount") || 0);
+      const deductionType = UnganiClientShared.value("depositDeductionType") || null;
+
+      if (deductionAmount > 0 && !deductionType) {
+        UnganiClientShared.showToast("Choose a deduction reason.");
+        return;
+      }
+
+      const submitBtn = event.target.querySelector("button[type=submit]");
+
+      await UnganiClientShared.withButtonLoading(submitBtn, async () => {
+        try {
+          const response = await currentContext.supabaseClient.rpc("owner_settle_ungani_commitment_deposit", {
+            p_commitment_id: commitmentId,
+            p_refund_amount: refundAmount,
+            p_deduction_amount: deductionAmount,
+            p_deduction_type: deductionType,
+            p_refund_method: UnganiClientShared.value("depositRefundMethod") || null,
+            p_note: UnganiClientShared.value("depositSettlementNote") || null
+          });
+
+          if (response.error || !response.data || response.data.ok !== true) {
+            UnganiClientShared.showToast("Could not settle deposit: " + (response.error ? response.error.message : (response.data && response.data.message)));
+            return;
+          }
+
+          UnganiClientShared.closeModal();
+          UnganiClientShared.showToast("Deposit settled ✓");
+          await loadCommitmentRows();
+          renderCommitmentsPage();
+        } catch (error) {
+          UnganiClientShared.showToast("Could not settle deposit: " + error.message);
+        }
       });
     }
 
@@ -520,7 +644,10 @@
             p_end_date: UnganiClientShared.value("commitmentEnd") || null,
             p_status: UnganiClientShared.value("commitmentStatus") || "active",
             p_auto_renew: !!document.getElementById("commitmentAutoRenew").checked,
-            p_notes: UnganiClientShared.value("commitmentNotes") || null
+            p_notes: UnganiClientShared.value("commitmentNotes") || null,
+            p_deposit_amount: document.getElementById("commitmentDepositAmount") && !document.getElementById("commitmentDepositAmount").disabled && UnganiClientShared.value("commitmentDepositAmount")
+              ? Number(UnganiClientShared.value("commitmentDepositAmount"))
+              : null
           });
 
           if (response.error || !response.data || response.data.ok !== true) {

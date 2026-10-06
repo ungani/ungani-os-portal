@@ -2961,6 +2961,19 @@
         return runCommitmentQueryIntent();
       }
 
+      // Deposits (Real Estate lease security deposits) - checked right
+      // after Commitments since a deposit always lives on a lease row.
+      // Word-boundary isn't needed here ("deposit" has no short-word
+      // collision risk the way "lease" does against "please").
+      if (isDepositQueryPhrase(text)) {
+        if (state.surface === "admin") {
+          addNiaMessage("That isn't available on the admin side.");
+          return { spoken: "That's not available on the admin side." };
+        }
+
+        return runDepositQueryIntent();
+      }
+
       // Live-data POS/Quick Sale question ("today's POS sales", "how much
       // have I sold today") - checked ahead of the static pos-explained
       // HELP_TOPICS answer, same reasoning as stock/debtors above. Uses a
@@ -6043,6 +6056,66 @@
       `<div style="margin-top:8px;"><i data-lucide="file-clock"></i> ${safe(summary)}</div>` +
       expiringHtml +
       `<div style="margin-top:8px;">${goldLink("my-commitments.html", "See all " + labels.plural + " →")}</div>`;
+
+    addNiaMessage(html);
+
+    return { spoken: summary + "." };
+  }
+
+  // ---- Deposits (Real Estate lease security deposits) ----
+  // Deliberately a held-money concept, never folded into Money/income
+  // totals - same get_my_ungani_commitments() RPC as the Commitments
+  // intent above, filtered to rows that actually have a deposit on file.
+  function isDepositQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    return lower.indexOf("deposit") !== -1;
+  }
+
+  async function runDepositQueryIntent() {
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_commitments");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const commitments = (response && !response.error && response.data && response.data.ok === true)
+      ? (response.data.commitments || [])
+      : [];
+    const withDeposits = commitments.filter(function (c) { return c.deposit_amount_kes; });
+
+    if (!withDeposits.length) {
+      addNiaMessage(
+        "No deposits on file yet. Add one when you create or edit a lease — " + goldLink("my-commitments.html", "Open Leases") + "."
+      );
+      return { spoken: "No deposits on file yet." };
+    }
+
+    const held = withDeposits.filter(function (c) { return c.deposit_status === "held"; });
+    const settled = withDeposits.filter(function (c) { return c.deposit_status === "settled"; });
+    const heldTotal = held.reduce(function (sum, c) { return sum + Number(c.deposit_amount_kes || 0); }, 0);
+
+    const summary = held.length + " deposit" + (held.length === 1 ? "" : "s") + " held (Ksh " + heldTotal.toLocaleString() + " total)" +
+      (settled.length ? ", " + settled.length + " settled" : "");
+
+    const heldHtml = held.length
+      ? `<div style="margin-top:8px;">${held.slice(0, 5).map(function (c) {
+          return safe(c.person_name || "Tenant") + (c.linked_item_name ? " (" + safe(c.linked_item_name) + ")" : "") + " — Ksh " + Number(c.deposit_amount_kes).toLocaleString();
+        }).join("<br>")}</div>`
+      : "";
+
+    const html =
+      `<strong>Deposits</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="shield-check"></i> ${safe(summary)}</div>` +
+      heldHtml +
+      `<div style="margin-top:8px;">Deposits are held money, not income — they only post to Money when settled at move-out.</div>` +
+      `<div style="margin-top:8px;">${goldLink("my-commitments.html", "Open Leases →")}</div>`;
 
     addNiaMessage(html);
 

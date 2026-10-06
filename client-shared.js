@@ -4744,11 +4744,17 @@
       const range = (c.start_date || c.end_date)
         ? (c.start_date ? formatDate(c.start_date) : "—") + " to " + (c.end_date ? formatDate(c.end_date) : "—")
         : "No dates set";
+      const depositLine = c.deposit_amount_kes
+        ? (c.deposit_status === "settled"
+          ? "Deposit settled: " + formatKES(c.deposit_refunded_kes || 0) + " refunded" + (c.deposit_refund_method ? " via " + c.deposit_refund_method : "") + ", " + formatKES(c.deposit_deducted_kes || 0) + " deducted"
+          : "Deposit held: " + formatKES(c.deposit_amount_kes) + " (not income)")
+        : "";
       return `
         <div class="detail-row">
           <span>${safe(c.plan_name || c.commitment_type || "Commitment")}</span>
           <span class="ungani-small">${safe(range)}</span>
         </div>
+        ${depositLine ? `<div class="detail-row"><span class="ungani-small">${safe(depositLine)}</span></div>` : ""}
       `;
     }).join("");
 
