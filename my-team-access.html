@@ -15,6 +15,7 @@
   <script src="ungani-business-config.js"></script>
   <script src="ungani-nav-config.js"></script>
   <script src="ungani-analytics.js"></script>
+  <script src="ungani-print-branding.js"></script>
 
   <style>
     :root {
@@ -817,7 +818,7 @@
       try {
         const response = await supabaseClient
           .from("tenants")
-          .select("id, business_type_key, business_type, business_name, company_name, name")
+          .select("id, business_type_key, business_type, business_name, company_name, name, logo_url, branding_address, branding_phone, branding_email, kra_pin")
           .eq("id", currentTenantId)
           .maybeSingle();
 
@@ -837,6 +838,12 @@
 
     async function initPage() {
       updateThemeButton();
+
+      const statementPayeeId = new URLSearchParams(window.location.search).get("statement");
+      if (statementPayeeId) {
+        await renderPayeeStatementView(statementPayeeId);
+        return;
+      }
 
       const userResponse = await supabaseClient.auth.getUser();
       currentUser = userResponse && userResponse.data ? userResponse.data.user : null;
@@ -997,6 +1004,109 @@
       `;
     }
 
+    // Supplier/payee statement - same ?statement=<id> pattern as
+    // my-customer-invoices.html's customer statement, self-contained
+    // (fetches its own tenant_id/tenant row) rather than depending on
+    // loadTenantForSidebar()'s separate "load" listener, since that race
+    // isn't guaranteed to resolve first.
+    async function renderPayeeStatementView(payeeId) {
+      let tenantId = currentTenantId;
+      if (!tenantId) {
+        const rpcResponse = await supabaseClient.rpc("get_my_ungani_tenant_id");
+        if (!rpcResponse.error && rpcResponse.data) tenantId = rpcResponse.data;
+      }
+
+      if (!tenantId) {
+        document.body.innerHTML = '<p style="padding:40px;">Please log in first.</p>';
+        return;
+      }
+
+      const [payeeRes, tenantRes, transactionsRes] = await Promise.all([
+        supabaseClient.rpc("get_my_ungani_payees"),
+        supabaseClient
+          .from("tenants")
+          .select("company_name, logo_url, branding_address, branding_phone, branding_email, kra_pin")
+          .eq("id", tenantId)
+          .maybeSingle(),
+        supabaseClient
+          .from("transactions")
+          .select("id, transaction_date, created_at, category, category_name, description, amount, amount_kes, transaction_type")
+          .eq("tenant_id", tenantId)
+          .eq("related_payee_id", payeeId)
+          .is("deleted_at", null)
+          .order("transaction_date", { ascending: false })
+      ]);
+
+      const payeesList = (!payeeRes.error && payeeRes.data && payeeRes.data.ok === true) ? (payeeRes.data.payees || []) : [];
+      const payee = payeesList.find(function (p) { return String(p.id) === String(payeeId); });
+      const tenant = (!tenantRes.error && tenantRes.data) ? tenantRes.data : null;
+      const rows = (!transactionsRes.error && transactionsRes.data) ? transactionsRes.data : [];
+
+      if (!payee) {
+        document.body.innerHTML = '<p style="padding:40px;">Could not find this payee. It may have been deleted.</p>';
+        return;
+      }
+
+      const total = rows.reduce(function (sum, row) {
+        return sum + Number(row.amount_kes != null ? row.amount_kes : (row.amount || 0));
+      }, 0);
+
+      document.body.innerHTML = `
+        <style>
+          body { background: #F3F4F6; }
+          .statement-toolbar { display: flex; gap: 10px; margin: 18px; }
+          .statement-shell { background: #FFFFFF; color: #111827; border-radius: 16px; border: 1px solid #E5E7EB; max-width: 760px; margin: 0 auto 40px; padding: 40px 44px; }
+          .statement-title { font-size: 26px; font-weight: 900; color: #061C3D; margin: 22px 0 4px; }
+          .statement-sub { font-size: 13px; color: #6B7280; margin-bottom: 26px; }
+          .statement-table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+          .statement-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #9CA3AF; padding: 8px 10px; border-bottom: 2px solid #E5E7EB; }
+          .statement-table td { padding: 10px; border-bottom: 1px solid #EEF0F3; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+          .statement-total-row td { font-weight: 800; border-top: 2px solid #061C3D; border-bottom: none; }
+          @media print {
+            @page { size: A4; margin: 12mm; }
+            .no-print { display: none !important; }
+            .statement-shell { box-shadow: none !important; border: none !important; }
+          }
+        </style>
+
+        <div class="statement-toolbar no-print">
+          <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
+          <a class="ungani-btn light" href="my-team-access.html">Back to Team Access</a>
+        </div>
+
+        <div class="statement-shell">
+          ${UnganiPrintBranding.renderHeaderBlock(tenant, { logoSize: 70, contactColor: "#6B7280", nameColor: "#061C3D" })}
+
+          <div class="statement-title">Supplier Statement</div>
+          <div class="statement-sub">${safe(payee.full_name)}${payee.job_title ? " &middot; " + safe(payee.job_title) : ""} &middot; Generated ${new Date().toLocaleDateString()}</div>
+
+          <table class="statement-table">
+            <thead>
+              <tr><th>Date</th><th>Description</th><th style="text-align:right;">Amount</th></tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.map(function (row) {
+                const amount = Number(row.amount_kes != null ? row.amount_kes : (row.amount || 0));
+                return `<tr>
+                  <td>${new Date(row.transaction_date || row.created_at).toLocaleDateString()}</td>
+                  <td>${safe(row.description || row.category_name || row.category || "Payment")}</td>
+                  <td style="text-align:right;">${safe(formatMoney(amount))}</td>
+                </tr>`;
+              }).join("") : `<tr><td colspan="3" style="text-align:center;color:#9CA3AF;">No payments recorded yet.</td></tr>`}
+              ${rows.length ? `
+                <tr class="statement-total-row">
+                  <td colspan="2">Total</td>
+                  <td style="text-align:right;">${safe(formatMoney(total))}</td>
+                </tr>
+              ` : ""}
+            </tbody>
+          </table>
+
+          ${UnganiPrintBranding.renderPoweredByFooter()}
+        </div>
+      `;
+    }
+
     async function loadPayees() {
       try {
         const response = await supabaseClient.rpc("get_my_ungani_payees");
@@ -1031,7 +1141,10 @@
                 <small>${safe(payee.job_title || "No job title")}</small>
                 <small>Paid this month: ${safe(formatMoney(paidThisMonth))}</small>
               </div>
-              <button class="ungani-btn small red" type="button" onclick="disablePayee('${attr(payee.id)}', this)">Deactivate</button>
+              <div class="ungani-button-row" style="margin:0;">
+                <a class="ungani-btn small light" href="my-team-access.html?statement=${attr(payee.id)}" target="_blank">Statement</a>
+                <button class="ungani-btn small red" type="button" onclick="disablePayee('${attr(payee.id)}', this)">Deactivate</button>
+              </div>
             </div>
           </div>
         `;
