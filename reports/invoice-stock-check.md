@@ -303,7 +303,28 @@ select scenario, expected, actual, status from test_results order by seq;
 rollback;
 ```
 
-## 5. Commitments "generic" type bug — explained, NOT fixed (holding per instruction)
+## 5. Follow-up verification (2026-10-06, same day)
+
+**Invoice status domain** (live CHECK constraint on `ungani_customer_invoices.status`): exactly `draft`, `sent`, `partially_paid`, `paid`, `cancelled`. No `overdue` — that's a client-computed label (`my-customer-invoices.html`, compares `due_date` to today), never stored.
+
+**Every writer of `ungani_customer_invoices.status`** (live-definitions sweep): `owner_upsert_ungani_customer_invoice` (sets `draft` on create only, never changes status on edit), `update_ungani_invoice_status` (the only function that can ever set `cancelled`), `record_ungani_invoice_payment` / `service_record_ungani_invoice_payment` (forward-only into `partially_paid`/`paid`, and both explicitly refuse to record a payment against a `cancelled` invoice), `convert_ungani_order_to_invoice` / `convert_ungani_quotation_to_invoice` (both set `draft` on the new invoice they create, never touch an existing invoice's status).
+
+`update_ungani_invoice_status`'s own `WHERE ... and status not in ('partially_paid', 'paid')` guard means a `paid`/`partially_paid` invoice can **never** reach `cancelled` through any live code path. So `sync_ungani_invoice_stock`'s restore condition only needing `old_status = 'sent'` is correct, not a gap — confirmed empirically by scenario 10 below (attempting to cancel a paid invoice is rejected, stock and status both unchanged).
+
+**Direct frontend writes:** none. Every `.from("ungani_customer_invoices")` call that isn't one of the 5 RPC sites above is a plain `.select()`. No trigger exists on either invoice table (confirmed earlier). Nothing can bypass `sync_ungani_invoice_stock`.
+
+**Commitments Part A — zero rows confirmed by a standalone re-query:** no CHECK constraint exists on `ungani_commitments` at all. The original migration's `constraint ungani_commitments_type_check` was never actually applied live — the 5th confirmed instance of this table drifting from its migration file. The real (and only) blocker on saving a non-lease/membership/service_contract commitment is `owner_upsert_ungani_commitment`'s own validation line, not a DB constraint — simplifying the eventual fix to a one-function change, no `ALTER TABLE` needed.
+
+## 6. FINAL TEST RESULT: 11/11 PASS (2026-10-06)
+
+Ran against the real Billy Logistics tenant, fully rolled back, no real emails sent. All 11 scenarios (draft doesn't deduct, send deducts once, resend doesn't double-deduct, cancel restores, re-cancel doesn't double-restore, service lines ignored, mixed-line invoice only moves the stock line, order-fulfilled-then-converted-then-sent doesn't double-deduct, insufficient stock is blocked with invoice status and stock both unchanged, and a paid invoice cannot be cancelled at all) returned **PASS**. Invoice stock-deduction is confirmed working as designed.
+
+## 7. Known gaps / backlog (not built, flagged for later)
+
+- Editing a line's quantity on an already-`sent` invoice does not re-trigger a stock adjustment (no status transition occurs) — documented as deliberately out-of-scope in `sql/invoice-stock-deduction.sql`'s own header comment.
+- **Credit notes for paid invoices (returns/refunds)** — added 2026-10-06 per Chris. No mechanism currently exists to reverse stock or money for a paid invoice (by design, cancellation is blocked once paid — see §5). A real return/refund flow would need its own document type and its own stock-restore path, separate from the cancel/restore mechanism audited here.
+
+## 8. Commitments "generic" type bug — explained, NOT fixed (holding per instruction)
 
 `my-commitments.html`'s `commitmentTypeForTenant()` falls back to `"generic"` for any business type outside Real Estate/Gym/Security/Cleaning (code comment there says this fallback is intentional — "opt-in, so this is reachable by any business type, not just these 4"). But `ungani_commitments.commitment_type` has a live CHECK constraint restricting it to `('lease', 'membership', 'service_contract')` — `"generic"` was never added as a legal value, and `owner_upsert_ungani_commitment`'s own validation list matches that same 3-value set. So any tenant whose business type isn't one of the 4 designed ones can open the New Commitment modal (since the UI gate is just `commitments_enabled`), fill it in, and always get rejected on save with "A valid commitment type is required" — with no picker shown to let them choose a different type, since the field is hidden by design.
 
