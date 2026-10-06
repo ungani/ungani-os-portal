@@ -1224,9 +1224,46 @@
         }
 
         members = response.data.members || [];
+        await loadMemberTaskCounts();
         renderMembers();
       } catch (error) {
         box.innerHTML = `<div class="empty">Could not load team members: ${safe(error.message)}</div>`;
+      }
+    }
+
+    // "Open tasks per person" (explicit ask alongside add/remove/roles) -
+    // tasks.assigned_to_team_member_id is the real id column (assigned_to
+    // itself only stores a display name, confirmed by reading
+    // my-tasks.html's own save payload before building this).
+    let memberTaskCounts = {};
+
+    async function loadMemberTaskCounts() {
+      memberTaskCounts = {};
+      if (!members.length) return;
+
+      try {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const response = await supabaseClient
+          .from("tasks")
+          .select("assigned_to_team_member_id, status, due_date")
+          .eq("tenant_id", currentTenantId)
+          .is("deleted_at", null)
+          .not("assigned_to_team_member_id", "is", null);
+
+        if (response.error) return;
+
+        (response.data || []).forEach(function (task) {
+          const id = task.assigned_to_team_member_id;
+          const status = String(task.status || "pending").toLowerCase();
+          const isOpen = status !== "completed" && status !== "cancelled";
+          const isOverdue = isOpen && task.due_date && task.due_date < todayStr;
+
+          if (!memberTaskCounts[id]) memberTaskCounts[id] = { open: 0, overdue: 0 };
+          if (isOpen) memberTaskCounts[id].open += 1;
+          if (isOverdue) memberTaskCounts[id].overdue += 1;
+        });
+      } catch (error) {
+        console.warn("loadMemberTaskCounts error:", error.message);
       }
     }
 
@@ -1241,6 +1278,7 @@
       box.innerHTML = members.map(member => {
         const permissions = member.permissions || {};
         const paidThisMonth = staffPaymentsByMember[member.id] || 0;
+        const taskCounts = memberTaskCounts[member.id] || { open: 0, overdue: 0 };
 
         return `
           <div class="member-card">
@@ -1250,6 +1288,9 @@
                 <small>${safe(member.email || "No email")} · ${safe(member.phone || "No phone")}</small>
                 <small>
                   ${member.monthly_salary ? `Salary: ${safe(formatMoney(member.monthly_salary))} / ${safe(member.pay_frequency || "period")} · ` : ""}Paid this month: ${safe(formatMoney(paidThisMonth))}
+                </small>
+                <small>
+                  Open Tasks: ${taskCounts.open}${taskCounts.overdue > 0 ? ` <span style="color:#d64545;font-weight:600;">(${taskCounts.overdue} overdue)</span>` : ""}
                 </small>
               </div>
               <span class="badge">${safe(member.role_key || "staff")} · ${safe(member.status || "active")}</span>
