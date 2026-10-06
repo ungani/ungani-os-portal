@@ -1092,7 +1092,11 @@
           payment_status: sub.payment_status || tenant.payment_status || "trial",
           trial_start_at: sub.trial_start_at || tenant.trial_start_at || "",
           trial_end_at: sub.trial_end_at || tenant.trial_end_at || "",
-          notes: sub.notes || ""
+          notes: sub.notes || "",
+          trial_granted_package_key: sub.trial_granted_package_key || "",
+          trial_granted_by: sub.trial_granted_by || "",
+          trial_granted_at: sub.trial_granted_at || "",
+          trial_grant_note: sub.trial_grant_note || ""
         };
       });
     }
@@ -1210,6 +1214,125 @@
       });
     }
 
+    // Trial Control (item 1) - who-granted-it display name, resolved from
+    // the `users` list this page already loads for the merge step, not a
+    // new query.
+    function adminNameById(id) {
+      if (!id) return "";
+      const match = users.find(function (u) { return u.id === id; });
+      return match ? (match.full_name || match.email || "Admin") : "Admin";
+    }
+
+    function trialDateInputValue(value) {
+      if (!value) return "";
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return "";
+      return d.toISOString().slice(0, 10);
+    }
+
+    function trialControlBlock(client, tenantId) {
+      const grantedLine = client.trial_granted_package_key
+        ? `Currently granted: <strong>${escapeHtml(client.trial_granted_package_key)}</strong> user limit` +
+          (client.trial_granted_by ? ` · by ${escapeHtml(adminNameById(client.trial_granted_by))}` : "") +
+          (client.trial_granted_at ? ` on ${escapeHtml(formatDate(client.trial_granted_at))}` : "")
+        : "No extended trial granted - capped at 1 user (default).";
+
+      return `
+        <div class="edit-grid" style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--border, #D8DEE9);">
+          <div class="field field-full">
+            <label>Trial Control</label>
+            <p style="margin:0 0 10px;font-size:13px;color:var(--muted,#64748B);">${grantedLine}</p>
+          </div>
+
+          <div class="field">
+            <label>Trial Package (user limit)</label>
+            <select id="trialPackage_${tenantId}">
+              <option value="">— Default (1 user) —</option>
+              ${packageOptions(client.trial_granted_package_key)}
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Trial Start Date</label>
+            <input id="trialGrantStart_${tenantId}" type="date" value="${escapeAttr(trialDateInputValue(client.trial_start_at))}" />
+          </div>
+
+          <div class="field">
+            <label>Trial End Date</label>
+            <input id="trialGrantEnd_${tenantId}" type="date" value="${escapeAttr(trialDateInputValue(client.trial_end_at))}" />
+          </div>
+
+          <div class="field field-full">
+            <div class="row-actions" style="margin:0 0 10px;">
+              <button type="button" class="ungani-btn small dark" onclick="setTrialQuickRange('${tenantId}', 7)">1 Week</button>
+              <button type="button" class="ungani-btn small dark" onclick="setTrialQuickRange('${tenantId}', 14)">2 Weeks</button>
+              <button type="button" class="ungani-btn small dark" onclick="setTrialQuickRange('${tenantId}', 30)">1 Month</button>
+              <button type="button" class="ungani-btn small dark" onclick="setTrialQuickRange('${tenantId}', 90)">3 Months</button>
+            </div>
+          </div>
+
+          <div class="field field-full">
+            <label>Trial Grant Note</label>
+            <textarea id="trialGrantNote_${tenantId}" placeholder="Why this trial was extended...">${escapeHtml(client.trial_grant_note)}</textarea>
+          </div>
+
+          <div class="field field-full">
+            <button type="button" class="ungani-btn gold" onclick="saveTrialGrant('${tenantId}')">Save Trial Grant</button>
+            ${client.trial_granted_package_key ? `<button type="button" class="ungani-btn dark" onclick="clearTrialGrant('${tenantId}')">Clear Grant (back to 1 user)</button>` : ""}
+          </div>
+        </div>
+      `;
+    }
+
+    function setTrialQuickRange(tenantId, days) {
+      const startInput = document.getElementById("trialGrantStart_" + tenantId);
+      const endInput = document.getElementById("trialGrantEnd_" + tenantId);
+
+      const start = startInput.value ? new Date(startInput.value + "T00:00:00") : new Date();
+      if (!startInput.value) startInput.value = start.toISOString().slice(0, 10);
+
+      const end = new Date(start.getTime() + days * 86400000);
+      endInput.value = end.toISOString().slice(0, 10);
+    }
+
+    async function saveTrialGrant(tenantId) {
+      const packageKey = document.getElementById("trialPackage_" + tenantId).value || null;
+      const startValue = document.getElementById("trialGrantStart_" + tenantId).value;
+      const endValue = document.getElementById("trialGrantEnd_" + tenantId).value;
+      const note = document.getElementById("trialGrantNote_" + tenantId).value || null;
+
+      const startAt = startValue ? startValue + "T00:00:00+03:00" : null;
+      const endAt = endValue ? endValue + "T23:59:59+03:00" : null;
+
+      const result = await supabaseClient.rpc("admin_set_ungani_trial_grant", {
+        p_tenant_id: tenantId,
+        p_trial_package_key: packageKey,
+        p_trial_start_at: startAt,
+        p_trial_end_at: endAt,
+        p_note: note
+      });
+
+      if (result.error || (result.data && result.data.ok === false)) {
+        alert("Could not save trial grant: " + (result.error ? result.error.message : result.data.message));
+        return;
+      }
+
+      logAuditEvent("trial_grant_updated", {
+        entityType: "tenants",
+        entityId: String(tenantId),
+        tenantId: String(tenantId),
+        description: "Trial grant set: package=" + (packageKey || "default 1-user") + ", end=" + endValue
+      });
+
+      alert("Trial grant saved.");
+      await loadAll();
+    }
+
+    async function clearTrialGrant(tenantId) {
+      document.getElementById("trialPackage_" + tenantId).value = "";
+      await saveTrialGrant(tenantId);
+    }
+
     function packageOptions(selectedKey) {
       return packages.map(function (pkg) {
         const selected = pkg.package_key === selectedKey ? "selected" : "";
@@ -1306,6 +1429,8 @@
                   <textarea id="notes_${tenantId}" placeholder="Internal subscription note...">${escapeHtml(client.notes)}</textarea>
                 </div>
               </div>
+
+              ${client.subscription_status === "trial" ? trialControlBlock(client, tenantId) : ""}
 
               <div class="row-actions">
                 <button class="ungani-btn green" onclick="quickUpdate('${tenantId}', 'active', 'paid')">Activate / Paid</button>

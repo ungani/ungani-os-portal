@@ -19,6 +19,7 @@ const APP_URL = "https://ungani-os-portal.vercel.app";
 // accounts (against subscription_ends_at) - see gatherCandidates().
 export const WARNING_FAR_DAYS = 7;
 export const WARNING_NEAR_DAYS = 3;
+export const WARNING_FINAL_DAYS = 1;
 export const GRACE_PERIOD_DAYS = 3;
 
 // Dedup windows - each covers its own trigger window with exactly one
@@ -31,6 +32,11 @@ export const GRACE_PERIOD_DAYS = 3;
 // suppressed by the far one's dedup.
 const WARNING_FAR_DEDUP_DAYS = 4;
 const WARNING_NEAR_DEDUP_DAYS = 5;
+// Trial Control (item 1) asked for a 3-day AND a 1-day-before reminder -
+// WARNING_NEAR_DAYS already covers 3, this adds the final 1-day tier.
+// Dedup window stays short (2) since this tier only has a ~1-day window
+// to fire in before "ended" takes over.
+const WARNING_FINAL_DEDUP_DAYS = 2;
 const ENDED_DEDUP_DAYS = 60;
 const SUSPENDED_DEDUP_DAYS = 3650; // effectively once-ever per tenant
 
@@ -133,8 +139,11 @@ export function classify(remaining, track, tenantId) {
   if (remaining > WARNING_NEAR_DAYS && remaining <= WARNING_FAR_DAYS) {
     return { tenantId, track, kind: "warning_far", daysLeft: Math.max(1, Math.ceil(remaining)) };
   }
-  if (remaining > 0 && remaining <= WARNING_NEAR_DAYS) {
+  if (remaining > WARNING_FINAL_DAYS && remaining <= WARNING_NEAR_DAYS) {
     return { tenantId, track, kind: "warning_near", daysLeft: Math.max(1, Math.ceil(remaining)) };
+  }
+  if (remaining > 0 && remaining <= WARNING_FINAL_DAYS) {
+    return { tenantId, track, kind: "warning_final", daysLeft: Math.max(1, Math.ceil(remaining)) };
   }
   if (remaining <= 0 && remaining > -GRACE_PERIOD_DAYS) {
     return { tenantId, track, kind: "ended" };
@@ -149,6 +158,7 @@ export function emailTypeFor(track, kind) {
   const prefix = track === "trial" ? "trial" : "subscription";
   if (kind === "warning_far") return `${prefix}_warning_week`;
   if (kind === "warning_near") return track === "trial" ? "trial_warning" : "subscription_warning";
+  if (kind === "warning_final") return `${prefix}_warning_final`;
   if (kind === "ended") return `${prefix}_ended`;
   return `${prefix}_suspended`;
 }
@@ -156,6 +166,7 @@ export function emailTypeFor(track, kind) {
 export function dedupDaysFor(kind) {
   if (kind === "warning_far") return WARNING_FAR_DEDUP_DAYS;
   if (kind === "warning_near") return WARNING_NEAR_DEDUP_DAYS;
+  if (kind === "warning_final") return WARNING_FINAL_DEDUP_DAYS;
   if (kind === "ended") return ENDED_DEDUP_DAYS;
   return SUSPENDED_DEDUP_DAYS;
 }
@@ -199,7 +210,7 @@ export function buildReminderPlan(candidates, tenantById, lastSentAt, now) {
     }
 
     const content =
-      candidate.kind === "warning_far" || candidate.kind === "warning_near"
+      candidate.kind === "warning_far" || candidate.kind === "warning_near" || candidate.kind === "warning_final"
         ? buildWarningEmail(businessName, candidate.daysLeft, candidate.track)
         : candidate.kind === "ended"
           ? buildEndedEmail(businessName, candidate.track)
