@@ -44,6 +44,8 @@ Walking the owner journey live via Playwright against local uncommitted-safe cod
 | `print-report.html` | PASS | Shows Ksh 45,000 and "Real Estate" business type correctly. |
 | Mobile viewport (dashboard + Leases) | PASS | Clean single-column stacking at 390×844, no overlap, all KPI cards/buttons readable and tappable. |
 
+| **BUILT**: Item 6 — Team page open-tasks + Dashboard Team card | PASS, logic-verified (no staff exist on this trial tenant to screenshot) | `my-team-access.html` member cards now show "Open Tasks: N (X overdue)" per staff member, keyed off `tasks.assigned_to_team_member_id`. Dashboard gets a new owner-only "Team" card (hidden when `currentUserIsOwner` is false) ranking top 5 members by open tasks with overdue + done-this-week counts, inserted at all 28 dashboard call sites alongside Payroll. Confirmed via direct function call with mock data: 2 members ranked correctly, overdue/done-this-week math correct, zero console errors. Real card is invisible on this specific test tenant only because it genuinely has 0 staff (trial-capped) — architecturally correct (`if (!rows.length) return "";`), not a bug. |
+
 ## Deposits — confirmed gap, proposal given separately (not built yet, awaiting go-ahead)
 ## Blocked on the trial-cap fix (see separate report)
 Staff-side repeat of the owner journey is blocked until the 1-user trial cap is fixed, since I can't create a 2nd user on this trial tenant to log in as. Resumes immediately once Trial Control ships.
