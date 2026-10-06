@@ -4511,8 +4511,35 @@
     const pastCommitments = itemCommitments.filter(function (c) { return c.status === "terminated" && c.person_id; });
     let pastTenantNames = {};
 
+    // Current tenants: merge two sources. client_people.linked_item_id is
+    // still the real, live-written link for Hospitality (Room/Table
+    // check-in), but Real Estate was fully cut over to ungani_commitments
+    // (Cluster 4) and never writes that column anymore - a lease is the
+    // only place a Real Estate tenant gets linked to a unit. Reading
+    // tenantsRes alone silently showed zero current tenants for every
+    // Real Estate property with an active lease.
+    const activeLeaseCommitments = itemCommitments.filter(function (c) {
+      const status = String(c.status || "").toLowerCase();
+      return c.commitment_type === "lease" && status !== "terminated" && status !== "cancelled" && c.person_id;
+    });
+    const directTenants = (tenantsRes && tenantsRes.data) || [];
+    const directTenantIds = directTenants.map(function (t) { return String(t.id); });
+    const leasePersonIds = activeLeaseCommitments
+      .map(function (c) { return c.person_id; })
+      .filter(function (id, index, arr) { return directTenantIds.indexOf(String(id)) === -1 && arr.indexOf(id) === index; });
+
+    let mergedTenants = directTenants;
+    if (leasePersonIds.length) {
+      const leaseTenantsRes = await supabaseClient
+        .from("client_people")
+        .select("id, full_name, phone, linked_item_id")
+        .in("id", leasePersonIds);
+
+      mergedTenants = directTenants.concat((leaseTenantsRes && leaseTenantsRes.data) || []);
+    }
+
     if (pastCommitments.length) {
-      const currentIds = (tenantsRes && tenantsRes.data || []).map(function (t) { return String(t.id); });
+      const currentIds = mergedTenants.map(function (t) { return String(t.id); });
       const pastPersonIds = pastCommitments
         .map(function (c) { return c.person_id; })
         .filter(function (id, index, arr) { return currentIds.indexOf(String(id)) === -1 && arr.indexOf(id) === index; });
@@ -4531,7 +4558,7 @@
 
     return {
       units: (unitsRes && unitsRes.data) || [],
-      tenants: (tenantsRes && tenantsRes.data) || [],
+      tenants: mergedTenants,
       commitments: itemCommitments,
       pastTenants: pastCommitments.map(function (c) {
         return {

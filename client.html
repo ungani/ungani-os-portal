@@ -6244,19 +6244,24 @@
       const rentLastMonth = sumRentalIncome(data.transactions, ctx.lastMonthKey);
       const rentDelta = rentThisMonth - rentLastMonth;
 
-      const linkedTenants = (data.people || []).filter(function (person) {
-        return !!getValue(person, ["linked_item_id"], "");
+      // Sourced from lease Commitments, not client_people.linked_item_id —
+      // Real Estate tenants are only ever linked to a unit by creating a
+      // lease (Cluster 4 cutover); that column is write-only for
+      // Hospitality's Room/Table linking now, so reading it here always
+      // returned zero tenants post-cutover.
+      const activeLeases = (data.commitments || []).filter(function (c) {
+        const status = String(c.status || "").toLowerCase();
+        return c.commitment_type === "lease" && status !== "cancelled" && status !== "ended";
       });
 
       const overdueRent = [];
       let outstandingRentTotal = 0;
 
-      linkedTenants.forEach(function (person) {
-        const unit = (data.items || []).find(function (item) {
-          return String(item.id) === String(getValue(person, ["linked_item_id"], ""));
-        });
+      activeLeases.forEach(function (lease) {
+        const person = (data.people || []).find(function (p) { return String(p.id) === String(lease.person_id); });
+        if (!person) return;
 
-        if (!unit) return;
+        const unit = (data.items || []).find(function (item) { return String(item.id) === String(lease.linked_item_id); });
 
         const paidThisMonth = (data.transactions || []).some(function (t) {
           const relatedId = getValue(t, ["related_person_id"], "");
@@ -6266,10 +6271,10 @@
 
         if (paidThisMonth) return;
 
-        const rentAmount = Number(getValue(unit, ["property_price"], 0) || 0);
+        const rentAmount = Number(lease.amount || 0);
         outstandingRentTotal += rentAmount;
 
-        overdueRent.push({ person, unit, amount: rentAmount });
+        overdueRent.push({ person, unit: unit || {}, amount: rentAmount });
       });
 
       const totalUnits = (data.items || []).length;
@@ -6512,9 +6517,13 @@
 
       let health = null;
       if (!isScoped) {
-        const linkedTenants = (data.people || []).filter(function (person) {
-          return !!getValue(person, ["linked_item_id"], "");
+        const leaseCommitmentsForHealthCheck = (data.commitments || []).filter(function (c) {
+          const status = String(c.status || "").toLowerCase();
+          return c.commitment_type === "lease" && status !== "cancelled" && status !== "ended";
         });
+        const linkedTenants = leaseCommitmentsForHealthCheck
+          .map(function (lease) { return (data.people || []).find(function (p) { return String(p.id) === String(lease.person_id); }); })
+          .filter(Boolean);
         const overdueRentForHealth = linkedTenants.filter(function (person) {
           const paidThisMonth = (data.transactions || []).some(function (t) {
             const relatedId = getValue(t, ["related_person_id"], "");
@@ -6702,19 +6711,22 @@
       const rentLastMonth = sumRentalIncome(dashboardData.transactions, lastMonthKey);
       const rentDelta = rentThisMonth - rentLastMonth;
 
-      const linkedTenants = (dashboardData.people || []).filter(function (person) {
-        return !!getValue(person, ["linked_item_id"], "");
+      const activeLeases = (dashboardData.commitments || []).filter(function (c) {
+        const status = String(c.status || "").toLowerCase();
+        return c.commitment_type === "lease" && status !== "cancelled" && status !== "ended";
       });
+      const linkedTenants = activeLeases
+        .map(function (lease) { return (dashboardData.people || []).find(function (p) { return String(p.id) === String(lease.person_id); }); })
+        .filter(Boolean);
 
       const overdueRent = [];
       let outstandingRentTotal = 0;
 
-      linkedTenants.forEach(function (person) {
-        const unit = (dashboardData.items || []).find(function (item) {
-          return String(item.id) === String(getValue(person, ["linked_item_id"], ""));
-        });
+      activeLeases.forEach(function (lease) {
+        const person = (dashboardData.people || []).find(function (p) { return String(p.id) === String(lease.person_id); });
+        if (!person) return;
 
-        if (!unit) return;
+        const unit = (dashboardData.items || []).find(function (item) { return String(item.id) === String(lease.linked_item_id); });
 
         const paidThisMonth = (dashboardData.transactions || []).some(function (t) {
           const relatedId = getValue(t, ["related_person_id"], "");
@@ -6724,10 +6736,10 @@
 
         if (paidThisMonth) return;
 
-        const rentAmount = Number(getValue(unit, ["property_price"], 0) || 0);
+        const rentAmount = Number(lease.amount || 0);
         outstandingRentTotal += rentAmount;
 
-        overdueRent.push({ person, unit, amount: rentAmount });
+        overdueRent.push({ person, unit: unit || {}, amount: rentAmount });
       });
 
       const totalUnits = (dashboardData.items || []).length;
@@ -18501,11 +18513,12 @@
     function calculateOutstandingRentTrend(data, rentalConceptsApply) {
       if (!rentalConceptsApply) return [];
 
-      const linkedTenants = (data.people || []).filter(function (person) {
-        return !!getValue(person, ["linked_item_id"], "");
+      const activeLeases = (data.commitments || []).filter(function (c) {
+        const status = String(c.status || "").toLowerCase();
+        return c.commitment_type === "lease" && status !== "cancelled" && status !== "ended";
       });
 
-      if (!linkedTenants.length) return [0, 0, 0, 0, 0, 0];
+      if (!activeLeases.length) return [0, 0, 0, 0, 0, 0];
 
       const now = new Date();
       const months = [];
@@ -18518,12 +18531,9 @@
       return months.map(function (monthKey) {
         let total = 0;
 
-        linkedTenants.forEach(function (person) {
-          const unit = (data.items || []).find(function (item) {
-            return String(item.id) === String(getValue(person, ["linked_item_id"], ""));
-          });
-
-          if (!unit) return;
+        activeLeases.forEach(function (lease) {
+          const person = (data.people || []).find(function (p) { return String(p.id) === String(lease.person_id); });
+          if (!person) return;
 
           const paidThatMonth = (data.transactions || []).some(function (t) {
             const relatedId = getValue(t, ["related_person_id"], "");
@@ -18533,7 +18543,7 @@
 
           if (paidThatMonth) return;
 
-          total += Number(getValue(unit, ["property_price"], 0) || 0);
+          total += Number(lease.amount || 0);
         });
 
         return total;

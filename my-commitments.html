@@ -14,6 +14,7 @@
   <script src="ungani-connect-panel.js"></script>
   <script src="ungani-context-menu.js"></script>
   <script src="ungani-nav-config.js"></script>
+  <script src="ungani-print-branding.js"></script>
   <script>
     (function () {
       function showUnganiLoadError() {
@@ -57,6 +58,7 @@
     let personOptions = [];
     let linkedItemOptions = [];
     let editingCommitmentId = null;
+    let printCommitmentId = null;
 
     // Cluster 4 type mapping, per the approved plan: which commitment_type
     // this tenant's business type implies, and what to call the whole
@@ -101,6 +103,8 @@
     }
 
     window.addEventListener("load", function () {
+      printCommitmentId = new URLSearchParams(window.location.search).get("print");
+
       UnganiClientShared.initPage({
         pageKey: "commitments",
         pageTitle: "Leases / Memberships / Contracts",
@@ -145,6 +149,12 @@
 
       await Promise.all([loadPersonOptions(), loadLinkedItemOptions()]);
       await loadCommitmentRows();
+
+      if (printCommitmentId) {
+        renderCommitmentPrintView(printCommitmentId);
+        return;
+      }
+
       renderCommitmentsPage();
 
       const applyAction = new URLSearchParams(window.location.search).get("action");
@@ -295,6 +305,87 @@
       `;
     }
 
+    function printCommitmentFromModal(id) {
+      window.open("my-commitments.html?print=" + encodeURIComponent(id), "_blank");
+    }
+
+    // Standalone print document (Lease Agreement / Membership Agreement /
+    // Contract) - same ?print=<id> pattern as my-customer-invoices.html's
+    // invoice/receipt print views, reusing UnganiPrintBranding for the
+    // header/footer so it matches every other printable document.
+    function renderCommitmentPrintView(id) {
+      const row = commitmentRows.find(function (r) { return String(r.id) === String(id); });
+
+      if (!row) {
+        UnganiClientShared.setContent(`<p style="padding:40px;">Could not find this record. It may have been deleted.</p>`);
+        return;
+      }
+
+      const vocab = vocabFor(row.commitment_type);
+      const tenant = currentContext.tenant;
+      const status = UnganiClientShared.computeCommitmentStatus(row, UnganiClientShared.todayISO());
+
+      UnganiClientShared.setContent(`
+        <style>
+          .lease-print-toolbar { display: flex; gap: 10px; margin-bottom: 18px; }
+          .lease-print-shell { background: #FFFFFF; color: #111827; border-radius: 16px; border: 1px solid #E5E7EB; max-width: 760px; margin: 0 auto; padding: 40px 44px; }
+          .lease-print-title { font-size: 26px; font-weight: 900; color: #061C3D; margin: 22px 0 4px; }
+          .lease-print-sub { font-size: 13px; color: #6B7280; margin-bottom: 26px; }
+          .lease-print-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 28px; margin: 22px 0; }
+          .lease-print-field { border-bottom: 1px solid #EEF0F3; padding-bottom: 10px; }
+          .lease-print-field .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #9CA3AF; font-weight: 700; }
+          .lease-print-field .value { font-size: 15px; font-weight: 700; color: #111827; margin-top: 3px; }
+          .lease-print-status { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 800; margin-bottom: 18px; }
+          .lease-print-notes { margin-top: 24px; font-size: 13.5px; color: #374151; white-space: pre-wrap; }
+          .lease-print-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 56px; }
+          .lease-print-sig-line { border-top: 1px solid #111827; padding-top: 8px; font-size: 12.5px; color: #6B7280; }
+
+          @media print {
+            @page { size: A4; margin: 12mm; }
+            body { background: #FFFFFF !important; }
+            .no-print, .ungani-sidebar, .ungani-mobile-bottom, .ungani-mobile-nav, .ungani-topbar, .ungani-toast,
+            .lease-print-toolbar, #niaFabBtn, #niaTagline, #niaHelpBtn, #unganiPushBanner, .nia-fab, .nia-tagline, .ungani-push-banner {
+              display: none !important;
+            }
+            .ungani-app-shell, .ungani-main, .ungani-content { display: block !important; margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: none !important; }
+            .lease-print-shell { box-shadow: none !important; border: none !important; border-radius: 0 !important; }
+          }
+        </style>
+
+        <div class="lease-print-toolbar no-print">
+          <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
+          <a class="ungani-btn light" href="my-commitments.html">Back to ${UnganiClientShared.safe(vocab.pageTitle)}</a>
+        </div>
+
+        <div class="lease-print-shell">
+          ${UnganiPrintBranding.renderHeaderBlock(tenant, { logoSize: 70, contactColor: "#6B7280", nameColor: "#061C3D" })}
+
+          <div class="lease-print-title">${UnganiClientShared.safe(vocab.singular)} Agreement</div>
+          <div class="lease-print-sub">Generated ${UnganiClientShared.formatDate(UnganiClientShared.todayISO())}</div>
+
+          <span class="lease-print-status" style="background:${status.color}22;color:${status.color};">${UnganiClientShared.safe(status.label)}</span>
+
+          <div class="lease-print-grid">
+            <div class="lease-print-field"><div class="label">${UnganiClientShared.safe(vocab.personLabel)}</div><div class="value">${UnganiClientShared.safe(row.person_name || "—")}</div></div>
+            ${vocab.showLinkedItem ? `<div class="lease-print-field"><div class="label">${UnganiClientShared.safe(vocab.itemLabel)}</div><div class="value">${UnganiClientShared.safe(row.linked_item_name || "—")}</div></div>` : ""}
+            <div class="lease-print-field"><div class="label">${UnganiClientShared.safe(vocab.amountLabel)}</div><div class="value">${row.amount != null ? UnganiClientShared.formatKES(row.amount) : "—"} / ${UnganiClientShared.safe(row.billing_frequency || "monthly")}</div></div>
+            <div class="lease-print-field"><div class="label">${UnganiClientShared.safe(vocab.planLabel)}</div><div class="value">${UnganiClientShared.safe(row.plan_name || "—")}</div></div>
+            <div class="lease-print-field"><div class="label">Start Date</div><div class="value">${row.start_date ? UnganiClientShared.formatDate(row.start_date) : "—"}</div></div>
+            <div class="lease-print-field"><div class="label">End / Renewal Date</div><div class="value">${row.end_date ? UnganiClientShared.formatDate(row.end_date) : "No end date set"}</div></div>
+          </div>
+
+          ${row.notes ? `<div class="lease-print-notes"><strong>Notes:</strong><br />${UnganiClientShared.safe(row.notes)}</div>` : ""}
+
+          <div class="lease-print-signatures">
+            <div class="lease-print-sig-line">${UnganiClientShared.safe(UnganiPrintBranding.getDisplayName(tenant))} (Owner)</div>
+            <div class="lease-print-sig-line">${UnganiClientShared.safe(row.person_name || vocab.personLabel)}</div>
+          </div>
+
+          ${UnganiPrintBranding.renderPoweredByFooter()}
+        </div>
+      `);
+    }
+
     async function refreshCommitmentsPage() {
       await loadCommitmentRows();
       renderCommitmentsPage();
@@ -392,8 +483,9 @@
           <textarea id="commitmentNotes" rows="3">${row ? UnganiClientShared.safe(row.notes || "") : ""}</textarea>
 
           <div class="ungani-button-row" style="margin-top:18px;justify-content:space-between;">
-            <div>
+            <div style="display:flex;gap:8px;">
               ${row ? `<button type="button" class="ungani-btn red" onclick="deleteCommitmentRecord('${UnganiClientShared.attr(row.id)}')">Delete</button>` : ""}
+              ${row ? `<button type="button" class="ungani-btn dark" onclick="printCommitmentFromModal('${UnganiClientShared.attr(row.id)}')">Print</button>` : ""}
             </div>
             <div class="ungani-button-row" style="margin:0;">
               <button type="button" class="ungani-btn light" onclick="UnganiClientShared.closeModal()">Close</button>
