@@ -1736,6 +1736,15 @@
           throw new Error("File is too large. Maximum size is 10MB.");
         }
 
+        // Storage Usage enforcement (item 8) - checked right before
+        // upload rather than once on page load, since usage can change
+        // between visits.
+        const usageResponse = await supabaseClient.rpc("get_my_ungani_storage_usage");
+        const usageRow = (!usageResponse.error && usageResponse.data && usageResponse.data[0]) || null;
+        if (usageRow && Number(usageRow.percent_used) >= 100) {
+          throw new Error("Storage limit reached. Contact UNGANI support to free up space before uploading more proof files.");
+        }
+
         showProofMessage("Uploading payment proof. Please wait...", "info");
 
         await withButtonLoading(button, async () => {

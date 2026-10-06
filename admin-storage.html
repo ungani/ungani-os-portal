@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS Admin Storage Usage</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="admin-shared.js"></script>
+  <script src="ungani-admin-nav-config.js"></script>
+
+  <style>
+    .page-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .metric-card {
+      background: var(--ungani-card);
+      border: 1px solid var(--ungani-border);
+      border-left: 6px solid var(--ungani-gold);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 10px 24px var(--ungani-shadow);
+    }
+
+    .metric-card h3 {
+      margin: 0 0 8px;
+      color: var(--ungani-muted);
+      font-size: 14px;
+    }
+
+    .metric-card p {
+      margin: 0;
+      font-size: 28px;
+      font-weight: bold;
+      color: var(--ungani-text);
+    }
+
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--ungani-gold);
+      color: var(--ungani-navy);
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .section-title-row h2 {
+      margin: 0;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      white-space: nowrap;
+      color: #FFFFFF;
+    }
+
+    .badge.green { background: var(--ungani-green); }
+    .badge.orange { background: var(--ungani-orange); }
+    .badge.red { background: var(--ungani-red); }
+
+    .empty {
+      text-align: center;
+      padding: 28px;
+      background: var(--ungani-card);
+      border: 1px dashed var(--ungani-border);
+      border-radius: 18px;
+    }
+
+    .empty h3 { margin: 0 0 8px; color: var(--ungani-text); }
+    .empty p { margin: 0; color: var(--ungani-muted); }
+
+    .small-text {
+      color: var(--ungani-muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .ungani-table-wrap { overflow-x: auto; }
+
+    .ungani-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      min-width: 720px;
+    }
+
+    .ungani-table thead th {
+      text-align: left;
+      padding: 10px 12px;
+      color: var(--ungani-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--ungani-border);
+      white-space: nowrap;
+    }
+
+    .ungani-table td {
+      padding: 12px;
+      border-bottom: 1px solid var(--ungani-border);
+      vertical-align: top;
+    }
+
+    .usage-bar-track {
+      width: 100%;
+      max-width: 160px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--ungani-border);
+      overflow: hidden;
+    }
+
+    .usage-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="adminRoot"></div>
+
+  <script>
+    let supabaseClient = null;
+    let currentAdmin = null;
+    let currentRows = [];
+
+    const pageMainHtml = `
+      <section class="ungani-card ungani-hero-card">
+        <div style="position: relative; z-index: 1;">
+          <h2>Storage Usage</h2>
+          <p>
+            Per-business storage usage, biggest-first. Counts only files UNGANI actually hosts in Supabase Storage
+            (payment proof uploads) - documents linked via external URLs or Google Drive are not UNGANI-hosted bytes
+            and are not counted here.
+          </p>
+          <div style="margin-top: 16px;">
+            <a class="ungani-btn gold" href="admin-home.html">Admin Home</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-grid" id="summaryTiles">
+        <div class="metric-card"><h3>Businesses shown</h3><p id="metricCount">0</p></div>
+        <div class="metric-card"><h3>Total files</h3><p id="metricFiles">0</p></div>
+        <div class="metric-card"><h3>Total storage used</h3><p id="metricBytes">0 MB</p></div>
+        <div class="metric-card"><h3>At or above 80%</h3><p id="metricFlagged">0</p></div>
+      </section>
+
+      <section class="ungani-card">
+        <div class="section-title-row">
+          <h2>Per-Business Usage</h2>
+          <p class="small-text" id="rowsCountText">Loading...</p>
+        </div>
+
+        <div class="ungani-table-wrap">
+          <table class="ungani-table">
+            <thead>
+              <tr>
+                <th>Business</th>
+                <th>Files</th>
+                <th>Storage Used</th>
+                <th>Limit</th>
+                <th>% Used</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="rowsBox">
+              <tr><td colspan="6"><div class="empty"><h3>Loading storage usage...</h3><p>Please wait.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+
+    window.addEventListener("load", function () {
+      UnganiAdminShared.renderShell("adminRoot", {
+        activeKey: "storageUsage",
+        pageTitle: "Storage Usage",
+        pageSubtitle: "Per-business storage usage, sorted biggest-first.",
+        footerTitle: "Storage Usage",
+        footerVersion: "Storage Usage Version: v1",
+        mainHtml: pageMainHtml
+      });
+
+      UnganiAdminShared.requireAdmin({
+        onNoSession: function () {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiLoginShell").classList.remove("hidden");
+        },
+        onBlocked: function (reason) {
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiBlockedShell").classList.remove("hidden");
+          document.getElementById("unganiBlockedReason").innerText = reason;
+        },
+        onReady: async function (admin, client) {
+          currentAdmin = admin;
+          supabaseClient = client;
+
+          UnganiAdminShared.renderSidebar("adminSidebar", {
+            activeKey: "storageUsage",
+            adminName: admin.full_name || "Admin Workspace",
+            footerTitle: "Storage Usage",
+            footerVersion: "Storage Usage Version: v1"
+          });
+
+          document.getElementById("unganiLoadingShell").classList.add("hidden");
+          document.getElementById("unganiAppShell").classList.remove("hidden");
+
+          await loadStorageUsage();
+        }
+      });
+    });
+
+    function safe(value) {
+      return UnganiAdminShared.safe(value);
+    }
+
+    function formatBytes(bytes) {
+      const value = Number(bytes) || 0;
+      if (value >= 1048576) return (value / 1048576).toFixed(1) + " MB";
+      if (value >= 1024) return (value / 1024).toFixed(1) + " KB";
+      return value + " B";
+    }
+
+    function usageBadgeClass(percent) {
+      if (percent >= 100) return "red";
+      if (percent >= 80) return "orange";
+      return "green";
+    }
+
+    async function loadStorageUsage() {
+      const box = document.getElementById("rowsBox");
+
+      try {
+        const response = await supabaseClient.rpc("admin_get_ungani_storage_usage");
+
+        if (response.error) throw response.error;
+
+        currentRows = response.data || [];
+        renderRows();
+      } catch (error) {
+        box.innerHTML = `<tr><td colspan="6"><div class="empty"><h3>Could not load storage usage</h3><p>${safe(error.message)}</p></div></td></tr>`;
+        document.getElementById("rowsCountText").textContent = "Error";
+      }
+    }
+
+    function renderRows() {
+      const box = document.getElementById("rowsBox");
+
+      if (!currentRows.length) {
+        box.innerHTML = `<tr><td colspan="6"><div class="empty"><h3>No storage usage yet</h3><p>No payment proof files have been uploaded by any business.</p></div></td></tr>`;
+        document.getElementById("rowsCountText").textContent = "0 shown";
+      } else {
+        box.innerHTML = currentRows.map(function (row) {
+          const percent = Number(row.percent_used) || 0;
+          const badgeClass = usageBadgeClass(percent);
+          const barWidth = Math.min(100, percent);
+
+          return `
+            <tr>
+              <td><strong>${safe(row.business_name)}</strong></td>
+              <td>${Number(row.proof_file_count) || 0}</td>
+              <td>${formatBytes(row.proof_bytes_used)}</td>
+              <td>${Number(row.storage_limit_mb) || 0} MB</td>
+              <td>
+                <span class="badge ${badgeClass}">${percent}%</span>
+              </td>
+              <td>
+                <div class="usage-bar-track">
+                  <div class="usage-bar-fill" style="width:${barWidth}%;background:${badgeClass === "red" ? "var(--ungani-red)" : badgeClass === "orange" ? "var(--ungani-orange)" : "var(--ungani-green)"};"></div>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join("");
+
+        document.getElementById("rowsCountText").textContent = currentRows.length + " shown";
+      }
+
+      const totalFiles = currentRows.reduce(function (sum, row) { return sum + (Number(row.proof_file_count) || 0); }, 0);
+      const totalBytes = currentRows.reduce(function (sum, row) { return sum + (Number(row.proof_bytes_used) || 0); }, 0);
+      const flaggedCount = currentRows.filter(function (row) { return (Number(row.percent_used) || 0) >= 80; }).length;
+
+      document.getElementById("metricCount").textContent = currentRows.length;
+      document.getElementById("metricFiles").textContent = totalFiles;
+      document.getElementById("metricBytes").textContent = formatBytes(totalBytes);
+      document.getElementById("metricFlagged").textContent = flaggedCount;
+    }
+  </script>
+</body>
+</html>

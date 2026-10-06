@@ -1375,6 +1375,17 @@
         </div>
       </section>
 
+      <section class="panel full" id="storageUsagePanel">
+        <div class="panel-head">
+          <h2>Storage</h2>
+        </div>
+
+        <div class="panel-body">
+          <p id="storageUsageLine" style="margin: 0; color: var(--muted); font-size: 14px;">Loading storage usage...</p>
+          <div id="storageUsageWarning" style="display: none; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: rgba(217, 119, 6, 0.12); border: 1px solid rgba(217, 119, 6, 0.4); color: var(--text); font-size: 13px;"></div>
+        </div>
+      </section>
+
       <section class="panel full">
         <div class="panel-head">
           <h2 data-i18n="user_prefs">User Preferences</h2>
@@ -1824,7 +1835,48 @@
       await loadGoogleDriveIntegrationStatus();
       await loadMpesaPaybillStatus();
       await refreshPushStatus();
+      await loadStorageUsage();
     });
+
+    // Storage Usage (Property Readiness item 8) - counts only what
+    // UNGANI actually hosts (payment proof uploads); my-documents.html
+    // stores external URLs / Drive links, never a file, so it's
+    // deliberately excluded here.
+    async function loadStorageUsage() {
+      const lineEl = document.getElementById("storageUsageLine");
+      const warningEl = document.getElementById("storageUsageWarning");
+      if (!lineEl) return;
+
+      try {
+        const response = await supabaseClient.rpc("get_my_ungani_storage_usage");
+        if (response.error) throw response.error;
+
+        const row = (response.data && response.data[0]) || null;
+        if (!row) {
+          lineEl.textContent = "No storage usage yet.";
+          return;
+        }
+
+        const usedMb = (Number(row.proof_bytes_used) || 0) / 1048576;
+        const limitMb = Number(row.storage_limit_mb) || 0;
+        const percent = Number(row.percent_used) || 0;
+
+        lineEl.textContent = usedMb < 1
+          ? `${Math.round((Number(row.proof_bytes_used) || 0) / 1024)} KB of ${limitMb} MB used`
+          : `${usedMb.toFixed(1)} MB of ${limitMb} MB used`;
+
+        if (percent >= 80) {
+          warningEl.style.display = "block";
+          warningEl.textContent = percent >= 100
+            ? "You've reached your storage limit. New payment proof uploads will be blocked until this is resolved."
+            : "You're approaching your storage limit. Contact UNGANI support if you need more space.";
+        } else {
+          warningEl.style.display = "none";
+        }
+      } catch (error) {
+        lineEl.textContent = "Could not load storage usage.";
+      }
+    }
 
     // push-notifications.js is loaded globally by pwa-register.js on
     // every authenticated page - it may not have finished loading by the
