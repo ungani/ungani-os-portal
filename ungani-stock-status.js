@@ -120,7 +120,16 @@
   // use - the two-argument getStockStatus() above stays exposed only
   // because the parity test calls it directly with raw numbers to diff
   // against the SQL function.
+  //
+  // Car Showroom vehicles are serialized units (quantity always 1 or 0,
+  // never a pool), not restockable inventory - reorder levels/low-stock
+  // alerts make no sense against them. This one guard is the single
+  // point every call site (client.html, my-items.html,
+  // my-stock-tracking.html, admin-items.html, admin-home.html,
+  // reports.html, print-report.html, nia-assistant.js) funnels through,
+  // so it covers all of them without touching any of those 8 files.
   function getItemStockStatus(item, tenant) {
+    if (tenant && tenant.business_type_key === "car_showroom") return null;
     return getStockStatus(getQuantity(item, tenant), getEffectiveReorderLevel(item, tenant));
   }
 

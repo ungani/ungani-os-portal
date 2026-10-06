@@ -3327,6 +3327,7 @@
     let isConstruction = false;
     let isPhotography = false;
     let isFurniture = false;
+    let isCarShowroom = false;
     let currentSection = "";
     let acknowledgedSet = new Set();
 
@@ -3339,7 +3340,8 @@
       documents: [],
       events: [],
       support: [],
-      commitments: []
+      commitments: [],
+      inquiries: []
     };
 
     let notifications = [];
@@ -5042,6 +5044,7 @@
       isConstruction = detectConstruction(currentTenant);
       isPhotography = detectPhotography(currentTenant);
       isFurniture = detectFurniture(currentTenant);
+      isCarShowroom = detectCarShowroom(currentTenant);
 
       businessPreset = window.UnganiPresets && window.UnganiPresets.getPreset
         ? window.UnganiPresets.getPreset(currentTenant || {})
@@ -5224,6 +5227,7 @@
       dashboardData.support = cached.payload.support || [];
       dashboardData.invoices = cached.payload.invoices || [];
       dashboardData.commitments = cached.payload.commitments || [];
+      dashboardData.inquiries = cached.payload.inquiries || [];
 
       rawDashboardData = {
         transactions: dashboardData.transactions,
@@ -5263,7 +5267,8 @@
         safeSelect("business_events", 250),
         safeSelect("support_issues", 250),
         safeInvoicesForHealth(),
-        safeCommitments()
+        safeCommitments(),
+        safeInquiries()
       ]);
 
       if (dashboardHadNetworkFailure && tryRenderDashboardFromCache()) {
@@ -5282,6 +5287,7 @@
       dashboardData.support = responses[7];
       dashboardData.invoices = responses[8];
       dashboardData.commitments = responses[9];
+      dashboardData.inquiries = responses[10];
 
       // Branch UX Phase B - keep an unfiltered snapshot of the 3 tables
       // Phase A actually tags (transactions/tasks/people), then re-apply
@@ -5324,7 +5330,8 @@
         events: dashboardData.events,
         support: dashboardData.support,
         invoices: dashboardData.invoices,
-        commitments: dashboardData.commitments
+        commitments: dashboardData.commitments,
+        inquiries: dashboardData.inquiries
       });
 
       lastDashboardLoadTime = new Date();
@@ -5746,6 +5753,20 @@
       }
     }
 
+    // Same reasoning as safeCommitments() - ungani_inquiries' RLS select
+    // policy is tenant-scoped only (no deleted_at filter), so the RPC
+    // filters deleted_at server-side instead of trusting a direct read.
+    async function safeInquiries() {
+      try {
+        const response = await supabaseClient.rpc("get_my_ungani_inquiries");
+        if (response.error || !response.data || response.data.ok !== true) return [];
+        return response.data.inquiries || [];
+      } catch (error) {
+        console.warn("inquiries", error.message);
+        return [];
+      }
+    }
+
     function renderDashboard() {
       if (isRealEstate) {
         const sections = (businessPreset.selectedSectionLabels || []);
@@ -5882,6 +5903,11 @@
 
       if (isSchool) {
         renderSchoolDashboard();
+        return;
+      }
+
+      if (isCarShowroom) {
+        renderCarShowroomDashboard();
         return;
       }
 
@@ -14833,6 +14859,262 @@
       animateHealthGauges();
     }
 
+    // Car Showroom has no sections (one operational model per tenant,
+    // same shape as Warehouse/School) - vehicles live in business_items
+    // (current_status: available/reserved/sold/in_transit/in_repair,
+    // quantity 1 while anything but sold, 0 when sold - see
+    // owner_set_ungani_vehicle_status()). "Sold this month" reads
+    // updated_at since that's the single moment the status actually
+    // flips to sold.
+    function renderCarShowroomDashboard() {
+      const data = dashboardData;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+
+      const vehicles = data.items || [];
+      const availableVehicles = vehicles.filter(function (v) { return getValue(v, ["current_status"], "") === "available"; });
+      const reservedVehicles = vehicles.filter(function (v) { return getValue(v, ["current_status"], "") === "reserved"; });
+      const soldThisMonth = vehicles.filter(function (v) {
+        if (getValue(v, ["current_status"], "") !== "sold") return false;
+        return String(getValue(v, ["updated_at"], "")).slice(0, 7) === monthKey;
+      });
+
+      const owedToYou = calculateOwedToYou(data.invoices);
+
+      const longestInYard = availableVehicles.slice().sort(function (a, b) {
+        return String(getValue(a, ["created_at"], "")).localeCompare(String(getValue(b, ["created_at"], "")));
+      })[0];
+
+      const revenueThisMonth = sumTransactionsByMatcher(data.transactions, monthKey, isIncome);
+      const revenueLastMonth = sumTransactionsByMatcher(data.transactions, lastMonthKey, isIncome);
+      const revenueDelta = revenueThisMonth - revenueLastMonth;
+      const revenueTrendMonths = calculateTransactionTrendByMatcher(data.transactions, isIncome);
+      const hasAnyRevenueHistory = revenueTrendMonths.some(function (m) { return m.value > 0; });
+
+      const overdueTasks = findOverdueTasksForSection(data, todayStr);
+
+      const inquiries = data.inquiries || [];
+      const openInquiries = inquiries.filter(function (i) { return !["won", "lost"].includes(getValue(i, ["status"], "")); });
+
+      const followUpsDue = openInquiries.filter(function (i) {
+        const due = String(getValue(i, ["follow_up_date"], "")).slice(0, 10);
+        return due && due <= todayStr;
+      }).sort(function (a, b) {
+        return String(getValue(a, ["follow_up_date"], "")).localeCompare(String(getValue(b, ["follow_up_date"], "")));
+      });
+
+      const testDrivesToday = openInquiries.filter(function (i) {
+        return String(getValue(i, ["test_drive_at"], "")).slice(0, 10) === todayStr;
+      });
+
+      const mostRecentRecord = findMostRecentRecord(data);
+      const greetingMessages = [];
+
+      if (overdueTasks.length > 0) {
+        greetingMessages.push({ text: overdueTasks.length === 1 ? "1 task is overdue" : overdueTasks.length + " tasks are overdue", href: "my-tasks.html" });
+      }
+      if (followUpsDue.length > 0) {
+        greetingMessages.push({ text: followUpsDue.length === 1 ? "1 inquiry follow-up is due" : followUpsDue.length + " inquiry follow-ups are due", href: "my-inquiries.html" });
+      }
+      if (testDrivesToday.length > 0) {
+        greetingMessages.push({ text: testDrivesToday.length === 1 ? "1 test drive today" : testDrivesToday.length + " test drives today", href: "my-inquiries.html" });
+      }
+      if (mostRecentRecord) {
+        greetingMessages.push({ text: "Pick up where you left off: " + mostRecentRecord.title, href: mostRecentRecord.href });
+      }
+
+      let health;
+      try {
+        health = computeGenericHealthScore({
+          tasks: calculateTaskSummary(data.tasks),
+          money: calculateMoneySummary(data.transactions),
+          support: calculateSupportSummary(data.support),
+          dashboardData: data
+        });
+      } catch (healthError) {
+        health = { score: 0, summary: "Health score error: " + ((healthError && healthError.message) || healthError) };
+      }
+
+      const attentionGroups = [];
+
+      if (overdueTasks.length > 0) {
+        attentionGroups.push({
+          title: "Overdue Tasks (Oldest First)",
+          rows: overdueTasks.map(function (task) {
+            const title = getValue(task, ["task_title", "title"], "Task");
+            const due = formatDate(getValue(task, ["due_date"], ""));
+            return attentionRow("triangle-alert", title, "Due " + due, "Overdue", "gold", "my-tasks.html?highlight=" + task.id, null, "task:" + task.id);
+          })
+        });
+      }
+
+      if (followUpsDue.length > 0) {
+        attentionGroups.push({
+          title: "Inquiry Follow-ups Due",
+          rows: followUpsDue.map(function (inq) {
+            const title = getValue(inq, ["customer_name"], "Inquiry");
+            const vehicleName = getValue(inq, ["vehicle_name"], "");
+            return attentionRow("car", title, vehicleName || "Follow-up due", "Due", "orange", "my-inquiries.html", null, "inquiry:" + inq.id);
+          })
+        });
+      }
+
+      if (testDrivesToday.length > 0) {
+        attentionGroups.push({
+          title: "Test Drives Today",
+          rows: testDrivesToday.map(function (inq) {
+            const title = getValue(inq, ["customer_name"], "Inquiry");
+            const vehicleName = getValue(inq, ["vehicle_name"], "");
+            return attentionRow("calendar", title, vehicleName || "Test drive today", "Today", "blue", "my-inquiries.html", null, "inquiry:" + inq.id);
+          })
+        });
+      }
+
+      const attentionHtml = renderAttentionGroups(attentionGroups, "#16A34A", "All caught up ✓", "No overdue tasks, inquiry follow-ups, or test drives need attention right now.");
+
+      document.getElementById("content").innerHTML = `
+        <section class="hero">
+          <div class="hero-grid">
+            <div class="hero-greet-enter">
+              <span class="badge gold">${safe(businessPreset.name)}</span>
+              <h3>${safe(getGreeting())}, ${safe(shortPersonName())}</h3>
+              ${buildGreetingRotatorHtml(greetingMessages, health)}
+              <p class="desktop-only">
+                Here's what needs attention today across your showroom. Use it to see overdue tasks, inquiry follow-ups, and today's test drives, then click any card or row to open the right record.
+              </p>
+              <p class="mobile-only">
+                Your showroom summary for today. Tap any card or use ☰ for full sections.
+              </p>
+
+              <div class="top-actions" style="justify-content:flex-start;margin-top:16px;">
+                <a class="ungani-btn gold" href="my-items.html">Add Vehicle</a>
+                <a class="ungani-btn green" href="my-inquiries.html">New Inquiry</a>
+                <a class="ungani-btn dark" href="my-money.html">Log Vehicle Cost</a>
+                <button class="ungani-btn dark" type="button" onclick="toggleNotifications()">Notifications</button>
+              </div>
+            </div>
+
+            <div class="hero-mini">
+              ${renderHealthGaugeHtml(health)}
+              <div class="hero-mini-divider"></div>
+              <h4>Today / Attention</h4>
+              <div class="today-list">
+                ${todayItem("bell", "Notifications", notifications.filter(isNotificationUnread).length, pluralize(notifications.filter(isNotificationUnread).length, "unread update", "unread updates"), "client-notifications.html", "todayNotificationsBadge")}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        ${renderDashboardTopTiles("Needs Attention Today", attentionHtml, calculateMyTodoData(dashboardData.tasks).overdueCount, calculateMyTodoData(dashboardData.tasks).dueTodayCount)}
+
+        <section class="kpi-grid">
+          ${kpiCard("Available", availableVehicles.length, "Vehicles ready to sell", "#16A34A", "my-items.html", countSpan(availableVehicles.length, "plain"), null, "car")}
+          ${kpiCard("Reserved", reservedVehicles.length, "Vehicles held for a customer", reservedVehicles.length > 0 ? "#D4A63A" : "#16A34A", "my-items.html", countSpan(reservedVehicles.length, "plain"), null, "clock")}
+          ${kpiCard("Sold This Month", soldThisMonth.length, "Vehicles sold this month", "#2563EB", "my-items.html", countSpan(soldThisMonth.length, "plain"), null, "badge-check")}
+          ${kpiCard("Owed To You", compactMoney(owedToYou.outstanding || 0), "Outstanding balances on vehicle sales", (owedToYou.outstanding || 0) > 0 ? "#DC2626" : "#16A34A", "my-debtors-payables.html", countSpan(owedToYou.outstanding || 0, "money"), null, "wallet")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Longest In Yard</h3>
+              <p>The available vehicle that has been in stock the longest.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-items.html">All Vehicles</a>
+          </div>
+          ${longestInYard ? attentionRow("car", getValue(longestInYard, ["item_name"], "Vehicle"), "In yard since " + formatDate(getValue(longestInYard, ["created_at"], "")), "Available", "gold", "my-items.html?highlight=" + longestInYard.id, null, null)
+            : emptyStateNudge("car", "No vehicles in stock yet", "Add your first vehicle and it will show up here.", "Add Vehicle", "my-items.html")}
+        </section>
+
+        <div class="dash-grid">
+          ${renderMoneySectionHtml(calculateMoneyTodayAndMonth(dashboardData.transactions))}
+          ${renderOwedToYouSectionHtml(owedToYou)}
+        </div>
+
+        <section class="card money-snapshot">
+          ${renderFinancialSnapshotHtml(data.transactions)}
+        </section>
+
+        <section class="card payroll-snapshot">
+          ${renderPayrollSnapshotHtml(data.transactions)}
+        </section>
+
+        <section class="quick-actions">
+          ${quickAction("car", "Add Vehicle", "Add a new vehicle to your showroom stock", "my-items.html", "#16A34A")}
+          ${quickAction("user", "New Inquiry", "Log a customer inquiry or test drive", "my-inquiries.html", "#2563EB")}
+          ${quickAction("wallet", "Log Vehicle Cost", "Record duty, clearing, transport, or repair costs", "my-money.html", "#D4A63A")}
+          ${quickAction("file-text", "Documents", "Quotations, sale agreements, receipts", "my-documents.html", "#14B8A6")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Showroom Revenue — Last 6 Months</h3>
+              <p>Monthly vehicle sales income from your money records.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-money.html">Money</a>
+          </div>
+
+          ${hasAnyRevenueHistory ? `
+            <div style="position:relative;height:260px;">
+              <canvas id="carShowroomRevenueTrendChart"></canvas>
+            </div>
+          ` : emptyStateNudge("wallet", "Put your numbers here", "Record your first vehicle sale and this chart will start tracking your monthly revenue trend.", "Log Vehicle Cost", "my-money.html")}
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h3>Recent Activity</h3>
+              <p>Latest updates across tasks, records, documents, and support.</p>
+            </div>
+            <a class="ungani-btn small gold" href="my-activity.html">View All</a>
+          </div>
+          ${renderRecentActivity(buildRecentActivity())}
+        </section>
+
+        ${contactSupportCard()}
+
+        <p class="footer">
+          Client Dashboard Version: Car Showroom · ungani.com · info@ungani.com
+        </p>
+      `;
+
+      updateThemeButton();
+      updateNotificationCounts();
+      renderCarShowroomTrendChart(revenueTrendMonths);
+      initCountAnimations();
+      startGreetingRotation(greetingMessages.length || 1);
+      animateHealthGauges();
+    }
+
+    async function renderCarShowroomTrendChart(months) {
+      if (!window.UnganiAnalytics || !UnganiAnalytics.createChart) return;
+
+      try {
+        await UnganiAnalytics.createChart("carShowroomRevenueTrendChart", {
+          type: "bar",
+          data: {
+            labels: months.map(function (m) { return m.label; }),
+            datasets: [
+              {
+                label: "Showroom Revenue",
+                data: months.map(function (m) { return m.value; }),
+                backgroundColor: "#16A34A"
+              }
+            ]
+          }
+        });
+      } catch (chartError) {
+        console.warn("Car Showroom trend chart error:", chartError.message);
+      }
+    }
+
     // Security/Guarding has no sections in the business config (one
     // operational model per tenant, same shape as Warehouse/School) - just
     // one dashboard, always shown with the full greeting/health-gauge hero.
@@ -17088,6 +17370,18 @@
       const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
 
       return businessType.includes("automotive") || businessType.includes("car wash") || businessType.includes("repair shop") || businessTypeKey.includes("automotive");
+    }
+
+    function detectCarShowroom(tenant) {
+      if (window.UnganiBusinessConfig && typeof UnganiBusinessConfig.resolve === "function") {
+        const matched = UnganiBusinessConfig.resolve(tenant);
+        if (matched) return matched.key === "car_showroom";
+      }
+
+      const businessType = String(getValue(tenant, ["business_type", "business_type_key"], "")).toLowerCase();
+      const businessTypeKey = String(getValue(tenant, ["business_type_key"], "")).toLowerCase();
+
+      return businessType.includes("car showroom") || businessType.includes("car dealer") || businessTypeKey.includes("car_showroom");
     }
 
     function detectHealthcare(tenant) {

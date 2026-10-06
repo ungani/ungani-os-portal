@@ -3094,6 +3094,99 @@
     "previewTitle": "Stock Preview",
     "availableText": "in stock",
     "closedText": "delivered"
+  },
+  {
+    "key": "car_showroom",
+    "name": "Car Showroom",
+    "hidden_from_signup": true,
+    "match": [
+      "car showroom",
+      "car dealer",
+      "car dealership",
+      "vehicle dealer",
+      "vehicle dealership",
+      "car yard",
+      "motor dealer",
+      "auto dealer",
+      "auto dealership"
+    ],
+    "dashboardTitle": "Car Showroom Dashboard",
+    "chartsTitle": "Showroom Analytics",
+    "itemsLabel": "Vehicles",
+    "peopleLabel": "Staff / Customers",
+    "tasksLabel": "Follow-up Tasks",
+    "recordsLabel": "Showroom Records",
+    "calendarLabel": "Test Drives / Follow-ups",
+    "documentsLabel": "Sale Documents",
+    "incomeCategories": [
+      "Vehicle Sale",
+      "Other Showroom Income"
+    ],
+    "expenseCategories": [
+      "Vehicle Duty",
+      "Vehicle Clearing",
+      "Vehicle Transport",
+      "Vehicle Repairs",
+      "Staff Wages",
+      "Marketing / Advertising",
+      "Other Showroom Expense"
+    ],
+    "itemTypes": [
+      "Vehicle"
+    ],
+    "peopleTypes": [
+      "Staff",
+      "Customer",
+      "Manager",
+      "Consignment Owner"
+    ],
+    "taskTypes": [
+      "Follow-up Call",
+      "Test Drive",
+      "Logbook Transfer"
+    ],
+    "recordTypes": [
+      "Inquiry",
+      "Sale Record"
+    ],
+    "documentTypes": [
+      "Quotation / Proforma",
+      "Sale Agreement",
+      "Receipt",
+      "Delivery Note",
+      "Customer Statement"
+    ],
+    "calendarTypes": [
+      "Test Drive",
+      "Follow-up",
+      "Logbook Transfer"
+    ],
+    "pageTitle": "Car Showroom Dashboard",
+    "badge": "Car Showroom Workspace",
+    "hero": "Track vehicles, inquiries, sales, staff, money records, and documents in one place.",
+    "itemsTitle": "Vehicles",
+    "itemSingular": "Vehicle",
+    "itemPlural": "Vehicles",
+    "statusTitle": "Vehicle Status",
+    "progressTitle": "Sale Progress",
+    "peopleTitle": "Staff / Customers",
+    "peoplePrimary": "staff",
+    "peopleSecondary": "customers",
+    "peoplePrimaryTypes": [
+      "staff",
+      "manager"
+    ],
+    "peopleSecondaryTypes": [
+      "customer",
+      "consignment owner",
+      "lead"
+    ],
+    "pipelineTitle": "Inquiry / Sale Pipeline",
+    "topPerformerTitle": "Top Sales Staff",
+    "calendarTitle": "Test Drives / Follow-ups",
+    "previewTitle": "Vehicles Preview",
+    "availableText": "available",
+    "closedText": "sold"
   }
 ];
 
