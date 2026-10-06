@@ -60,7 +60,8 @@
       tasks: [],
       documents: [],
       events: [],
-      support: []
+      support: [],
+      commitments: []
     };
 
     window.addEventListener("load", function () {
@@ -106,7 +107,8 @@
         safeSelect("tasks"),
         safeSelect("documents"),
         safeSelect("business_events"),
-        safeSelect("support_issues")
+        safeSelect("support_issues"),
+        safeCommitments()
       ]);
 
       reportData.transactions = responses[0];
@@ -117,8 +119,22 @@
       reportData.documents = responses[5];
       reportData.events = responses[6];
       reportData.support = responses[7];
+      reportData.commitments = responses[8];
 
       renderReportsPage();
+    }
+
+    // Same pattern as client.html's safeCommitments() - only needed for
+    // Profit per Property (Real Estate), which reads active leases to
+    // know which tenant pays which property's rent.
+    async function safeCommitments() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_commitments");
+        return (!response.error && response.data && response.data.ok === true) ? (response.data.commitments || []) : [];
+      } catch (error) {
+        console.warn("commitments", error.message);
+        return [];
+      }
     }
 
     async function safeSelect(tableName) {
@@ -591,6 +607,26 @@
             ${renderCountReport(itemTypes, "No item/asset records yet.")}
           </div>
         </section>
+
+        ${businessPreset.key === "real_estate" ? `
+          <section class="report-section-grid">
+            <div class="ungani-card" style="grid-column: 1 / -1;">
+              <div class="ungani-section-title">
+                <div>
+                  <h3>Profit per Property</h3>
+                  <p class="ungani-small">Rent received, expenses, profit, occupancy, and rent owed - by property, for the date range above.</p>
+                </div>
+                <div class="ungani-button-row" style="margin:0;">
+                  <button type="button" class="ungani-btn small light" onclick="setReportQuickRange('week')">Last Week</button>
+                  <button type="button" class="ungani-btn small light" onclick="setReportQuickRange('month')">Last Month</button>
+                  <button type="button" class="ungani-btn small light" onclick="setReportQuickRange('6months')">Last 6 Months</button>
+                </div>
+              </div>
+
+              ${renderProfitPerPropertyReport()}
+            </div>
+          </section>
+        ` : ""}
 
         ${(vatRegistered || taxSummary.withholdingRecordCount > 0) ? `
           <section class="report-section-grid">
@@ -1169,6 +1205,179 @@
           ${rows.slice(0, 8).map(function (row) {
             return summaryRow(UnganiAnalytics.toTitle(row.label), row.value, "Record count");
           }).join("")}
+        </div>
+      `;
+    }
+
+    // Quick-range buttons write straight into the page's existing From/To
+    // filter (the same one every other report card already respects) -
+    // no separate period control, so this stays consistent with the rest
+    // of the page instead of adding a second date picker.
+    function setReportQuickRange(key) {
+      const today = new Date();
+      const to = today.toISOString().slice(0, 10);
+      let from;
+
+      if (key === "week") {
+        from = new Date(today.getTime() - 7 * 86400000).toISOString().slice(0, 10);
+      } else if (key === "month") {
+        from = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate()).toISOString().slice(0, 10);
+      } else {
+        from = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate()).toISOString().slice(0, 10);
+      }
+
+      document.getElementById("filterFrom").value = from;
+      document.getElementById("filterTo").value = to;
+      saveReportFilters();
+      renderReportsPage();
+    }
+
+    let expandedProfitPropertyId = null;
+
+    function toggleProfitPropertyRow(propertyId) {
+      expandedProfitPropertyId = expandedProfitPropertyId === propertyId ? null : propertyId;
+      renderReportsPage();
+    }
+
+    // Property roster comes from the FULL (unfiltered) item list, not the
+    // date-filtered one - a property added months ago must still show up
+    // when the report period is "last week", only its money figures are
+    // period-bound. Rent is derived the same way the Outstanding Rent fix
+    // derives it (lease -> tenant -> income transactions), not from a
+    // direct related_item_id on the payment, since tenants pay rent
+    // tagged to themselves, not to the property.
+    function computeProfitPerProperty() {
+      const periodTransactions = getFilteredData().transactions;
+      const allItems = reportData.items || [];
+      const allPeople = reportData.people || [];
+      const allTransactions = reportData.transactions || [];
+
+      const activeLeases = (reportData.commitments || []).filter(function (c) {
+        const status = String(c.status || "").toLowerCase();
+        return c.commitment_type === "lease" && status !== "terminated" && status !== "cancelled";
+      });
+
+      const properties = allItems.filter(function (item) {
+        return !UnganiClientShared.getValue(item, ["parent_item_id"], null);
+      });
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const monthKey = todayStr.slice(0, 7);
+
+      return properties.map(function (property) {
+        const units = allItems.filter(function (item) {
+          return String(UnganiClientShared.getValue(item, ["parent_item_id"], "")) === String(property.id);
+        });
+        const unitIds = [property.id].concat(units.map(function (u) { return u.id; }));
+
+        const rentReceived = periodTransactions
+          .filter(function (t) { return isIncomeRow(t); })
+          .filter(function (t) {
+            const personId = UnganiClientShared.getValue(t, ["related_person_id"], "");
+            if (!personId) return false;
+            const leaseForPerson = activeLeases.find(function (c) { return String(c.person_id) === String(personId); });
+            return leaseForPerson && unitIds.indexOf(leaseForPerson.linked_item_id) !== -1;
+          })
+          .reduce(function (sum, t) { return sum + Number(UnganiClientShared.getValue(t, ["amount_kes", "amount"], 0) || 0); }, 0);
+
+        const expenses = periodTransactions
+          .filter(function (t) { return isExpenseRow(t); })
+          .filter(function (t) { return unitIds.indexOf(UnganiClientShared.getValue(t, ["related_item_id"], "")) !== -1; })
+          .reduce(function (sum, t) { return sum + Number(UnganiClientShared.getValue(t, ["amount_kes", "amount"], 0) || 0); }, 0);
+
+        const totalUnits = units.length || 1;
+        const occupiedUnits = units.filter(function (u) {
+          const status = String(UnganiClientShared.getValue(u, ["property_status", "item_status", "status"], "")).toLowerCase();
+          return status.includes("rented") || status.includes("sold");
+        }).length;
+
+        const propertyLeases = activeLeases.filter(function (c) { return unitIds.indexOf(c.linked_item_id) !== -1; });
+        const rentOwed = propertyLeases.reduce(function (sum, lease) {
+          const paidThisMonth = allTransactions.some(function (t) {
+            const relatedId = UnganiClientShared.getValue(t, ["related_person_id"], "");
+            const date = String(UnganiClientShared.getValue(t, ["transaction_date", "created_at"], "")).slice(0, 7);
+            return String(relatedId) === String(lease.person_id) && date === monthKey && isIncomeRow(t);
+          });
+          return paidThisMonth ? sum : sum + Number(lease.amount || 0);
+        }, 0);
+
+        const transactionLines = periodTransactions.filter(function (t) {
+          const relatedItem = UnganiClientShared.getValue(t, ["related_item_id"], "");
+          if (unitIds.indexOf(relatedItem) !== -1) return true;
+          const personId = UnganiClientShared.getValue(t, ["related_person_id"], "");
+          const leaseForPerson = personId ? activeLeases.find(function (c) { return String(c.person_id) === String(personId); }) : null;
+          return leaseForPerson && unitIds.indexOf(leaseForPerson.linked_item_id) !== -1;
+        });
+
+        return {
+          id: property.id,
+          name: UnganiClientShared.getValue(property, ["property_name", "item_name", "name"], "Property"),
+          rentReceived: rentReceived,
+          expenses: expenses,
+          profit: rentReceived - expenses,
+          occupiedUnits: occupiedUnits,
+          totalUnits: totalUnits,
+          rentOwed: rentOwed,
+          transactionLines: transactionLines
+        };
+      });
+    }
+
+    function renderProfitPerPropertyReport() {
+      const rows = computeProfitPerProperty();
+
+      if (!rows.length) {
+        return `
+          <div class="ungani-empty">
+            <h3>No properties yet</h3>
+            <p>Add a property from the Properties page to see its profit breakdown here.</p>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="people-table-wrap">
+          <table class="ungani-table">
+            <thead>
+              <tr><th>Property</th><th>Rent Received</th><th>Expenses</th><th>Profit</th><th>Occupancy</th><th>Rent Owed</th></tr>
+            </thead>
+            <tbody>
+              ${rows.map(function (row) {
+                const expanded = expandedProfitPropertyId === row.id;
+                return `
+                  <tr style="cursor:pointer;" onclick="toggleProfitPropertyRow('${UnganiClientShared.attr(row.id)}')">
+                    <td><strong>${UnganiClientShared.safe(row.name)}</strong></td>
+                    <td>${UnganiClientShared.formatKES(row.rentReceived)}</td>
+                    <td>${UnganiClientShared.formatKES(row.expenses)}</td>
+                    <td style="font-weight:800;color:${row.profit >= 0 ? '#16A34A' : '#DC2626'};">${UnganiClientShared.formatKES(row.profit)}</td>
+                    <td>${row.occupiedUnits} / ${row.totalUnits}</td>
+                    <td style="color:${row.rentOwed > 0 ? '#DC2626' : 'inherit'};">${UnganiClientShared.formatKES(row.rentOwed)}</td>
+                  </tr>
+                  ${expanded ? `
+                    <tr>
+                      <td colspan="6" style="background:var(--ungani-card-bg,rgba(255,255,255,0.03));padding:14px 18px;">
+                        ${row.transactionLines.length ? `
+                          <table class="ungani-table" style="margin:0;">
+                            <thead><tr><th>Date</th><th>Category</th><th>Type</th><th>Amount</th></tr></thead>
+                            <tbody>
+                              ${row.transactionLines.map(function (t) {
+                                return `<tr>
+                                  <td>${UnganiClientShared.formatDate(UnganiClientShared.getValue(t, ["transaction_date", "created_at"], ""))}</td>
+                                  <td>${UnganiClientShared.safe(UnganiClientShared.getValue(t, ["category", "category_name"], "Uncategorized"))}</td>
+                                  <td>${UnganiClientShared.safe(isIncomeRow(t) ? "Income" : "Expense")}</td>
+                                  <td>${UnganiClientShared.formatKES(UnganiClientShared.getValue(t, ["amount_kes", "amount"], 0))}</td>
+                                </tr>`;
+                              }).join("")}
+                            </tbody>
+                          </table>
+                        ` : `<p class="ungani-small" style="margin:0;">No transactions in this period for this property.</p>`}
+                      </td>
+                    </tr>
+                  ` : ""}
+                `;
+              }).join("")}
+            </tbody>
+          </table>
         </div>
       `;
     }
