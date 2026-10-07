@@ -1403,7 +1403,13 @@
 
       // Security deposit (held money, not income - shown separately from
       // the invoice ledger above, never folded into charges/payments).
-      const commitmentsResponse = await currentContext.supabaseClient.rpc("get_my_ungani_commitments").catch(function (error) { return { error: error }; });
+      // .then() before .catch() is required here - Supabase's query
+      // builder is a plain thenable (only implements .then), not a real
+      // Promise, so a bare .catch() on it throws "catch is not a
+      // function" and silently wedges this whole page on "Loading page
+      // content..." forever. Found live while testing the rent-ledger
+      // wiring - pre-existing, not introduced by that work.
+      const commitmentsResponse = await currentContext.supabaseClient.rpc("get_my_ungani_commitments").then(function (res) { return res; }).catch(function (error) { return { error: error }; });
       const allCommitments = (commitmentsResponse && !commitmentsResponse.error && commitmentsResponse.data && commitmentsResponse.data.ok === true)
         ? (commitmentsResponse.data.commitments || [])
         : [];

@@ -99,9 +99,15 @@
     // from before that column existed).
     async function loadDebtors() {
       try {
+        // .then() before .catch() is required - Supabase's query builder
+        // is a plain thenable (only implements .then), not a real
+        // Promise, so a bare .catch() on it throws "catch is not a
+        // function" synchronously, which would abort this whole
+        // Promise.all. Found live while testing this same mistake on
+        // my-customer-invoices.html's statement view.
         const [invoicesResponse, commitmentsResponse] = await Promise.all([
           currentContext.supabaseClient.rpc("get_my_ungani_customer_invoices"),
-          currentContext.supabaseClient.rpc("get_my_ungani_commitments").catch(function (error) { return { error: error }; })
+          currentContext.supabaseClient.rpc("get_my_ungani_commitments").then(function (res) { return res; }).catch(function (error) { return { error: error }; })
         ]);
 
         const invoices = (!invoicesResponse.error && invoicesResponse.data && invoicesResponse.data.ok === true) ? (invoicesResponse.data.invoices || []) : [];
