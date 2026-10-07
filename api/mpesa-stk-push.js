@@ -766,7 +766,7 @@ async function registerC2BUrls(req, res) {
       await supabaseAdmin.rpc("service_mark_ungani_mpesa_registration_failed", {
         p_tenant_id: caller.tenantId,
         p_error: failureMessage
-      }).catch(() => {});
+      }).then((r) => r).catch(() => {});
 
       return json(res, 502, {
         ok: false,
@@ -780,7 +780,7 @@ async function registerC2BUrls(req, res) {
     // ever leaves it 'pending', by design.
     await supabaseAdmin.rpc("service_mark_ungani_mpesa_registration_succeeded", {
       p_tenant_id: caller.tenantId
-    }).catch(() => {});
+    }).then((r) => r).catch(() => {});
 
     return json(res, 200, {
       ok: true,
@@ -804,7 +804,7 @@ async function registerC2BUrls(req, res) {
           await supabaseAdmin.rpc("service_mark_ungani_mpesa_registration_failed", {
             p_tenant_id: caller.tenantId,
             p_error: error.message
-          }).catch(() => {});
+          }).then((r) => r).catch(() => {});
         }
       } catch (markError) {
         // Best-effort only - the loud error response below still reaches
