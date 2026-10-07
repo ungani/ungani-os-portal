@@ -151,7 +151,7 @@
       await loadCommitmentRows();
 
       if (printCommitmentId) {
-        renderCommitmentPrintView(printCommitmentId);
+        await renderCommitmentPrintView(printCommitmentId);
         return;
       }
 
@@ -318,7 +318,7 @@
     // Contract) - same ?print=<id> pattern as my-customer-invoices.html's
     // invoice/receipt print views, reusing UnganiPrintBranding for the
     // header/footer so it matches every other printable document.
-    function renderCommitmentPrintView(id) {
+    async function renderCommitmentPrintView(id) {
       const row = commitmentRows.find(function (r) { return String(r.id) === String(id); });
 
       if (!row) {
@@ -329,6 +329,24 @@
       const vocab = vocabFor(row.commitment_type);
       const tenant = currentContext.tenant;
       const status = UnganiClientShared.computeCommitmentStatus(row, UnganiClientShared.todayISO());
+
+      // account_number lives on business_items, not on the commitment row
+      // itself (get_my_ungani_commitments doesn't return it) - a separate
+      // lookup here, rather than extending that live RPC, avoids touching
+      // a function already relied on everywhere else.
+      let unitAccountNumber = null;
+      if (row.linked_item_id) {
+        try {
+          const unitResponse = await currentContext.supabaseClient
+            .from("business_items")
+            .select("account_number")
+            .eq("id", row.linked_item_id)
+            .maybeSingle();
+          unitAccountNumber = (unitResponse && unitResponse.data && unitResponse.data.account_number) || null;
+        } catch (error) {
+          unitAccountNumber = null;
+        }
+      }
 
       UnganiClientShared.setContent(`
         <style>
@@ -373,6 +391,7 @@
           <div class="lease-print-grid">
             <div class="lease-print-field"><div class="label">${UnganiClientShared.safe(vocab.personLabel)}</div><div class="value">${UnganiClientShared.safe(row.person_name || "—")}</div></div>
             ${vocab.showLinkedItem ? `<div class="lease-print-field"><div class="label">${UnganiClientShared.safe(vocab.itemLabel)}</div><div class="value">${UnganiClientShared.safe(row.linked_item_name || "—")}</div></div>` : ""}
+            ${unitAccountNumber ? `<div class="lease-print-field"><div class="label">M-Pesa Account Number</div><div class="value">${UnganiClientShared.safe(unitAccountNumber)}</div></div>` : ""}
             <div class="lease-print-field"><div class="label">${UnganiClientShared.safe(vocab.amountLabel)}</div><div class="value">${row.amount != null ? UnganiClientShared.formatKES(row.amount) : "—"} / ${UnganiClientShared.safe(row.billing_frequency || "monthly")}</div></div>
             <div class="lease-print-field"><div class="label">${UnganiClientShared.safe(vocab.planLabel)}</div><div class="value">${UnganiClientShared.safe(row.plan_name || "—")}</div></div>
             <div class="lease-print-field"><div class="label">Start Date</div><div class="value">${row.start_date ? UnganiClientShared.formatDate(row.start_date) : "—"}</div></div>

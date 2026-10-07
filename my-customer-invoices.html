@@ -1429,6 +1429,19 @@
       });
       const leaseBalanceOwed = tenantLease ? Math.max(Number(tenantLease.balance_owed || 0), 0) : 0;
 
+      // account_number lives on business_items, not on the commitment row
+      // (get_my_ungani_commitments doesn't return it) - a separate lookup
+      // here avoids touching that live RPC.
+      let leaseAccountNumber = null;
+      if (tenantLease && tenantLease.linked_item_id) {
+        const unitResponse = await currentContext.supabaseClient
+          .from("business_items")
+          .select("account_number")
+          .eq("id", tenantLease.linked_item_id)
+          .maybeSingle();
+        leaseAccountNumber = (unitResponse && unitResponse.data && unitResponse.data.account_number) || null;
+      }
+
       const ledger = [];
       invoices.forEach(function (inv) {
         ledger.push({ date: inv.issue_date, type: "invoice", label: "Invoice " + inv.invoice_number, amount: Number(inv.total_amount) });
@@ -1524,6 +1537,7 @@
                 <div class="invoice-party-box">
                   <div class="invoice-party-label">Rent Balance</div>
                   <div class="invoice-party-body">
+                    ${leaseAccountNumber ? `M-Pesa Account: <strong>${UnganiClientShared.safe(leaseAccountNumber)}</strong><br />` : ""}
                     Monthly rent: ${UnganiClientShared.formatKES(tenantLease.amount || 0)}<br />
                     ${leaseBalanceOwed > 0
                       ? `Owed: ${UnganiClientShared.formatKES(leaseBalanceOwed)}`

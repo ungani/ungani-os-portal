@@ -3350,6 +3350,16 @@
       console.warn("Sidebar badge (admin chat) skipped:", error.message);
     }
 
+    try {
+      const paymentsToMatchResponse = await fetchWithRetry(() =>
+        state.supabaseClient.rpc("owner_get_ungani_payments_to_match_count")
+      );
+
+      if (!paymentsToMatchResponse.error) counts["payments-to-match"] = paymentsToMatchResponse.data || 0;
+    } catch (error) {
+      console.warn("Sidebar badge (payments to match) skipped:", error.message);
+    }
+
     return counts;
   }
 
@@ -4735,6 +4745,27 @@
     const personType = getValue(personRow, ["person_type"], "Contact");
     const status = getValue(personRow, ["status"], "active");
 
+    // account_number lives on business_items, not on the commitment row
+    // itself (get_my_ungani_commitments doesn't return it) - a batched
+    // lookup here avoids touching that live RPC.
+    const leaseUnitIds = (connections.commitments || [])
+      .filter(function (c) { return c.commitment_type === "lease" && c.linked_item_id; })
+      .map(function (c) { return c.linked_item_id; });
+    const unitAccountNumbers = {};
+    if (leaseUnitIds.length) {
+      try {
+        const unitsResponse = await context.supabaseClient
+          .from("business_items")
+          .select("id, account_number")
+          .in("id", leaseUnitIds);
+        (unitsResponse && unitsResponse.data || []).forEach(function (u) {
+          if (u.account_number) unitAccountNumbers[String(u.id)] = u.account_number;
+        });
+      } catch (error) {
+        // best-effort - account number is a display nicety, not load-bearing
+      }
+    }
+
     const paymentRowsHtml = (connections.payments || []).slice(0, 20).map(function (p) {
       const amount = Number(p.amount_kes || p.amount || 0);
       return `
@@ -4770,11 +4801,15 @@
           ? "Rent owed: " + formatKES(balanceOwed)
           : (creditBalance > 0 ? "Credit: " + formatKES(creditBalance) + " (applied to next rent)" : "Rent: fully paid"))
         : "";
+      const accountNumberLine = c.commitment_type === "lease" && unitAccountNumbers[String(c.linked_item_id)]
+        ? "M-Pesa Account: " + unitAccountNumbers[String(c.linked_item_id)]
+        : "";
       return `
         <div class="detail-row">
           <span>${safe(c.plan_name || c.commitment_type || "Commitment")}</span>
           <span class="ungani-small">${safe(range)}</span>
         </div>
+        ${accountNumberLine ? `<div class="detail-row"><span class="ungani-small">${safe(accountNumberLine)}</span></div>` : ""}
         ${balanceLine ? `<div class="detail-row"><span class="ungani-small">${safe(balanceLine)}</span></div>` : ""}
         ${depositLine ? `<div class="detail-row"><span class="ungani-small">${safe(depositLine)}</span></div>` : ""}
       `;

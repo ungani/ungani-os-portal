@@ -98,6 +98,8 @@
       financeItems.push(["approvals", "my-approvals.html", "shield-check", "Approvals"]);
     }
 
+    financeItems.push(["payments-to-match", "my-payments-to-match.html", "hand-coins", "Payments to Match"]);
+
     const salesItems = [
       ["quotations", "my-quotations.html", "file-pen", "Quotations"],
       ["orders", "my-orders.html", "shopping-cart", "Orders"],

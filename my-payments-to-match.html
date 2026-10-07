@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>UNGANI OS - Payments to Match</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="pwa-register.js"></script>
+  <script src="ungani-theme.js"></script>
+  <script src="client-shared.js" onerror="window.__unganiClientSharedFailed = true;"></script>
+  <script src="team-chat-shared.js"></script>
+  <script src="ungani-connect-panel.js"></script>
+  <script src="ungani-nav-config.js"></script>
+  <script>
+    (function () {
+      function showUnganiLoadError() {
+        if (typeof UnganiClientShared !== "undefined") return;
+
+        var banner = document.createElement("div");
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B91C1C;color:#fff;padding:12px 16px;font:14px/1.4 -apple-system,sans-serif;text-align:center;";
+        banner.innerHTML = "Some page resources failed to load. Please check your connection. " +
+          "<button style=\"margin-left:10px;padding:4px 12px;border:none;border-radius:6px;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer;\" onclick=\"window.location.reload()\">Reload</button>";
+
+        if (document.body) {
+          document.body.prepend(banner);
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.prepend(banner);
+          });
+        }
+      }
+
+      if (window.__unganiClientSharedFailed) {
+        showUnganiLoadError();
+      } else {
+        setTimeout(function () {
+          if (typeof UnganiClientShared === "undefined") showUnganiLoadError();
+        }, 4000);
+      }
+    })();
+  </script>
+  <script src="ungani-business-config.js"></script>
+  <script src="ungani-analytics.js"></script>
+  <script src="ungani-presets.js"></script>
+  <script src="ungani-stock-status.js"></script>
+  <script src="nia-assistant.js"></script>
+</head>
+
+<body>
+  <script>
+    let currentContext = null;
+    let paymentsToMatch = [];
+    let activeLeases = [];
+    let connectionStatus = null;
+
+    window.addEventListener("load", function () {
+      UnganiClientShared.initPage({
+        pageKey: "payments-to-match",
+        pageTitle: "Payments to Match",
+        pageSubtitle: "M-Pesa payments that came in but couldn't be auto-matched to a tenant.",
+        onReady: startPaymentsToMatchPage
+      });
+    });
+
+    async function startPaymentsToMatchPage(context) {
+      currentContext = context;
+      await Promise.all([loadConnectionStatus(), loadPaymentsToMatch()]);
+      renderPaymentsToMatchPage();
+    }
+
+    async function loadConnectionStatus() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("owner_get_ungani_mpesa_connection_status");
+        connectionStatus = (!response.error && response.data && response.data.ok === true) ? response.data : null;
+      } catch (error) {
+        connectionStatus = null;
+      }
+    }
+
+    async function loadPaymentsToMatch() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("owner_list_ungani_payments_to_match");
+        if (!response.error && response.data && response.data.ok === true) {
+          paymentsToMatch = response.data.payments || [];
+          activeLeases = response.data.active_leases || [];
+        } else {
+          paymentsToMatch = [];
+          activeLeases = [];
+        }
+      } catch (error) {
+        paymentsToMatch = [];
+        activeLeases = [];
+      }
+    }
+
+    async function refreshPaymentsToMatchPage() {
+      await Promise.all([loadConnectionStatus(), loadPaymentsToMatch()]);
+      renderPaymentsToMatchPage();
+      UnganiClientShared.showToast("Refreshed ✓");
+    }
+
+    function moneyText(value) {
+      return "KSh " + (Number(value) || 0).toLocaleString("en-KE");
+    }
+
+    function leaseOptionsHtml() {
+      if (!activeLeases.length) {
+        return `<option value="">No active leases found</option>`;
+      }
+      return `<option value="">— Choose who this payment is from —</option>` +
+        activeLeases.map(function (lease) {
+          return `<option value="${UnganiClientShared.attr(lease.commitment_id)}" data-person-id="${UnganiClientShared.attr(lease.person_id)}">` +
+            `${UnganiClientShared.safe(lease.person_name)} — ${UnganiClientShared.safe(lease.unit_name || "No unit")}</option>`;
+        }).join("");
+    }
+
+    function renderPaymentsToMatchPage() {
+      if (!connectionStatus || connectionStatus.connected !== true) {
+        UnganiClientShared.setContent(`
+          <section class="ungani-card ungani-hero">
+            <span class="ungani-badge gold">Payments to Match</span>
+            <h2 style="font-size:clamp(24px,3.6vw,36px);line-height:1.1;margin:16px 0 12px;">Connect your M-Pesa Paybill first.</h2>
+            <p>Once your Paybill or Till is connected under Integrations, payments that can't be auto-matched to a tenant will show up here for a quick one-click assign.</p>
+            <div class="ungani-button-row">
+              <a class="ungani-btn gold" href="my-integrations.html">Go to Integrations</a>
+            </div>
+          </section>
+        `);
+        return;
+      }
+
+      UnganiClientShared.setContent(`
+        <style>
+          .ptm-table-wrap { overflow-x: auto; }
+          .ptm-table { width: 100%; border-collapse: collapse; margin-top: 14px; min-width: 640px; }
+          .ptm-table th, .ptm-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--ungani-border, rgba(6,28,61,0.1)); font-size: 14px; }
+          .ptm-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--ungani-muted, #6B7280); }
+          .ptm-assign-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+          .ptm-assign-row select { min-width: 220px; }
+          .ptm-upload-box { border: 1px dashed var(--ungani-border, rgba(6,28,61,0.25)); border-radius: 12px; padding: 18px; margin-top: 14px; }
+        </style>
+
+        <section class="ungani-card ungani-hero">
+          <span class="ungani-badge gold">Payments to Match</span>
+          <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">${paymentsToMatch.length} payment(s) need a match.</h2>
+          <p>These came in via M-Pesa (Paybill ${connectionStatus.shortcode ? UnganiClientShared.safe(connectionStatus.shortcode) : ""}) but didn't carry an account number or phone number we could match automatically. Assign each one to the right tenant below.</p>
+          <div class="ungani-button-row">
+            <button class="ungani-btn light" type="button" onclick="refreshPaymentsToMatchPage()">Refresh</button>
+          </div>
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Unmatched Payments</h3>
+              <p class="ungani-small">${paymentsToMatch.length} waiting to be assigned.</p>
+            </div>
+          </div>
+
+          ${paymentsToMatch.length ? `
+            <div class="ptm-table-wrap">
+              <table class="ptm-table">
+                <thead>
+                  <tr><th>Date</th><th>Amount</th><th>Phone</th><th>Account Ref</th><th>Assign To</th></tr>
+                </thead>
+                <tbody>
+                  ${paymentsToMatch.map(function (p) {
+                    return `
+                      <tr>
+                        <td>${UnganiClientShared.safe(p.trans_time ? UnganiClientShared.formatDate(p.trans_time) : "—")}</td>
+                        <td>${UnganiClientShared.safe(moneyText(p.amount))}</td>
+                        <td>${UnganiClientShared.safe(p.msisdn || "—")}</td>
+                        <td>${UnganiClientShared.safe(p.bill_ref_number || "—")}</td>
+                        <td>
+                          <div class="ptm-assign-row">
+                            <select id="ptmLease_${UnganiClientShared.attr(p.id)}">${leaseOptionsHtml()}</select>
+                            <button class="ungani-btn gold" type="button" onclick="assignPaymentToMatch('${UnganiClientShared.attr(p.id)}')">Assign</button>
+                          </div>
+                        </td>
+                      </tr>
+                    `;
+                  }).join("")}
+                </tbody>
+              </table>
+            </div>
+          ` : `<p class="ungani-small" style="padding:18px 0;">Nothing waiting right now — every M-Pesa payment has been matched.</p>`}
+        </section>
+
+        <section class="ungani-card" style="margin-top:18px;">
+          <div class="ungani-section-title">
+            <div>
+              <h3>Import a Bank/M-Pesa Statement</h3>
+              <p class="ungani-small">Upload a CSV to catch any payment that was missed. Columns: <code>trans_id, amount, trans_time, msisdn, bill_ref_number</code> (bill_ref_number and msisdn optional).</p>
+            </div>
+          </div>
+          <div class="ptm-upload-box">
+            <input type="file" id="ptmCsvFile" accept=".csv" />
+            <button class="ungani-btn gold" type="button" style="margin-left:10px;" onclick="importPaymentsCsv()">Import CSV</button>
+          </div>
+        </section>
+
+        <p class="ungani-small">Payments to Match · ungani.com · info@ungani.com</p>
+      `);
+    }
+
+    async function assignPaymentToMatch(paymentId) {
+      const select = document.getElementById("ptmLease_" + paymentId);
+      const commitmentId = select ? select.value : "";
+      const personId = select && select.selectedOptions[0] ? select.selectedOptions[0].getAttribute("data-person-id") : "";
+
+      if (!commitmentId || !personId) {
+        UnganiClientShared.showToast("Choose who this payment is from first.");
+        return;
+      }
+
+      try {
+        const response = await currentContext.supabaseClient.rpc("owner_resolve_ungani_payment_to_match", {
+          p_payment_id: paymentId,
+          p_person_id: personId,
+          p_commitment_id: commitmentId
+        });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast((response.data && response.data.message) || (response.error && response.error.message) || "Could not assign this payment.");
+          return;
+        }
+
+        UnganiClientShared.showToast("Payment assigned ✓");
+        await refreshPaymentsToMatchPage();
+      } catch (error) {
+        UnganiClientShared.showToast(error.message || "Network error.");
+      }
+    }
+
+    // Minimal CSV parser - handles a simple header row + comma-separated
+    // values, no quoted-field escaping. Good enough for a bank/M-Pesa
+    // export; a field containing a literal comma will misparse, which is
+    // an acceptable limitation for this first version.
+    function parseSimpleCsv(text) {
+      const lines = text.split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean);
+      if (!lines.length) return [];
+
+      const headers = lines[0].split(",").map(function (h) { return h.trim().toLowerCase(); });
+      return lines.slice(1).map(function (line) {
+        const cells = line.split(",").map(function (c) { return c.trim(); });
+        const row = {};
+        headers.forEach(function (header, index) { row[header] = cells[index] || ""; });
+        return row;
+      });
+    }
+
+    async function importPaymentsCsv() {
+      const fileInput = document.getElementById("ptmCsvFile");
+      const file = fileInput && fileInput.files && fileInput.files[0];
+
+      if (!file) {
+        UnganiClientShared.showToast("Choose a CSV file first.");
+        return;
+      }
+
+      try {
+        const text = await file.text();
+        const parsedRows = parseSimpleCsv(text);
+
+        if (!parsedRows.length) {
+          UnganiClientShared.showToast("That file doesn't look like a CSV with a header row.");
+          return;
+        }
+
+        const rows = parsedRows
+          .filter(function (row) { return row.trans_id && row.amount; })
+          .map(function (row) {
+            return {
+              trans_id: row.trans_id,
+              amount: row.amount,
+              trans_time: row.trans_time || new Date().toISOString(),
+              msisdn: row.msisdn || row.phone || null,
+              bill_ref_number: row.bill_ref_number || row.account || null
+            };
+          });
+
+        if (!rows.length) {
+          UnganiClientShared.showToast("No valid rows found - every row needs at least trans_id and amount.");
+          return;
+        }
+
+        const response = await currentContext.supabaseClient.rpc("owner_bulk_import_ungani_mpesa_statement", { p_rows: rows });
+
+        if (response.error || !response.data || response.data.ok !== true) {
+          UnganiClientShared.showToast((response.data && response.data.message) || (response.error && response.error.message) || "Import failed.");
+          return;
+        }
+
+        const result = response.data;
+        UnganiClientShared.showToast(
+          "Imported " + result.imported + ", skipped " + result.skipped_duplicates + " duplicate(s), " + result.queued_unmatched + " queued for matching."
+        );
+        fileInput.value = "";
+        await refreshPaymentsToMatchPage();
+      } catch (error) {
+        UnganiClientShared.showToast(error.message || "Could not read that file.");
+      }
+    }
+  </script>
+</body>
+</html>

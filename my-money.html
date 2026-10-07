@@ -77,6 +77,7 @@
     let bookingEventOptions = [];
     let deploymentEventOptions = [];
     let appointmentEventOptions = [];
+    let leaseCommitmentOptions = [];
     let teamMemberOptions = [];
     let payeeOptions = [];
     let sectionOptions = [];
@@ -415,6 +416,10 @@
         loaders.push(loadPropertyItemOptions());
       }
 
+      if (isRealEstate) {
+        loaders.push(loadLeaseCommitmentOptions());
+      }
+
       if (isLogistics) {
         loaders.push(loadTripEventOptions());
       }
@@ -605,6 +610,25 @@
     // settlement is computed live instead of just reflecting the vehicle's
     // overall Related Vehicle rollup. Only real Trip records (vehicle_item_id
     // set) are offered here, not every calendar entry.
+    // Related Lease picker (M-Pesa Paybill sandbox-proof build) - same
+    // RPC Person 360/the dashboard/statement already read, filtered down
+    // to active leases, so an owner can manually tag a Money record to a
+    // specific tenant's lease the same way the C2B matcher does automatically.
+    async function loadLeaseCommitmentOptions() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_commitments");
+        const allCommitments = (!response.error && response.data && response.data.ok === true)
+          ? (response.data.commitments || [])
+          : [];
+        leaseCommitmentOptions = allCommitments.filter(function (c) {
+          return c.commitment_type === "lease" && String(c.status || "").toLowerCase() === "active";
+        });
+      } catch (error) {
+        console.warn("Lease commitment options skipped:", error.message);
+        leaseCommitmentOptions = [];
+      }
+    }
+
     async function loadTripEventOptions() {
       try {
         const response = await currentContext.supabaseClient
@@ -2590,6 +2614,19 @@
               </div>
             ` : ""}
 
+            ${isRealEstate ? `
+              <div>
+                <label for="moneyRelatedLease">Related Lease</label>
+                <select id="moneyRelatedLease">
+                  <option value="">Not linked</option>
+                  ${leaseCommitmentOptions.map(function (lease) {
+                    const label = (lease.person_name || "Tenant") + (lease.linked_item_name ? " — " + lease.linked_item_name : "");
+                    return `<option value="${UnganiClientShared.attr(lease.id)}">${UnganiClientShared.safe(label)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+            ` : ""}
+
             ${isBookingBusinessType ? `
               <div>
                 <label for="moneyRelatedBooking">Related Booking</label>
@@ -2767,6 +2804,10 @@
 
           if (document.getElementById("moneyRelatedProperty")) {
             document.getElementById("moneyRelatedProperty").value = row ? UnganiClientShared.getValue(row, ["related_item_id"], "") : "";
+          }
+
+          if (document.getElementById("moneyRelatedLease")) {
+            document.getElementById("moneyRelatedLease").value = row ? UnganiClientShared.getValue(row, ["commitment_id"], "") : "";
           }
 
           if (document.getElementById("moneyRelatedJob")) {
@@ -3135,6 +3176,7 @@ const payload = {
         : (isSecurity || isCleaning) ? (UnganiClientShared.value("moneyRelatedDeployment") || null)
         : (isSalon || isHealthcare || isGym) ? (UnganiClientShared.value("moneyRelatedAppointment") || null)
         : null;
+      payload.commitment_id = isRealEstate ? (UnganiClientShared.value("moneyRelatedLease") || null) : null;
 
       if (payload.payment_method === "M-Pesa") {
         payload.reference_no = UnganiClientShared.value("moneyMpesaCode") || null;
