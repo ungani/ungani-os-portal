@@ -21,6 +21,25 @@
 -- would normally undo everything - the SELECT runs BEFORE the ROLLBACK,
 -- so its result is what you paste back) prints one row per scenario:
 -- scenario | expected | actual | status.
+--
+-- FIXED 2026-10-07: two scenarios in the previous version were stale
+-- against the real live schema (confirmed via a real run against the
+-- live DB, not guessed):
+--   S11 inserted a literal 'zzz_nonexistent_package' package_key, which
+--   violates ungani_payments' own check constraint before the
+--   price-lookup logic this scenario means to test ever runs. Fixed by
+--   using 'growth' - a real package_key value the check constraint
+--   accepts and which NO OTHER scenario in this script touches - and
+--   temporarily deleting its own ungani_packages row for the duration of
+--   this one scenario (restored immediately after; the whole
+--   transaction also rolls back regardless). That reproduces "price
+--   unavailable" as the pricing function would actually hit it: a
+--   package_key the payments table accepts but with no matching pricing
+--   row, not a value the table itself refuses to store.
+--   S12 inserted a partners row with only (status, onboarding_rate,
+--   ongoing_rate) - the real partners table (sql/partner-referral-system.sql)
+--   also requires partner_code, full_name, and email as not null. Fixed
+--   by supplying all three with obvious disposable test values.
 -- =====================================================================
 
 begin;
@@ -512,6 +531,23 @@ begin
 
   -------------------------------------------------------------------
   -- S11: price unavailable -> not applied, failure logged.
+  --
+  -- FIXED (round 2): round 1 inserted a payment with a literal invalid
+  -- package_key ('zzz_nonexistent_package'), which violates
+  -- ungani_payments' own package_key check constraint before the
+  -- price-lookup logic this scenario means to test ever runs (confirmed
+  -- live: 23514 check-constraint violation). Round 2's fix (delete the
+  -- 'growth' row, reinsert it afterwards) hit a SECOND real issue on
+  -- the actual live schema: yearly_price_ksh is a GENERATED column
+  -- (confirmed live: "cannot insert a non-DEFAULT value into column
+  -- yearly_price_ksh"), so `insert ... select <whole row>` can never
+  -- restore it. Fixed by never deleting/reinserting at all - instead
+  -- temporarily RENAME growth's package_key to a value nothing else
+  -- matches, then rename it back. An UPDATE never touches generated
+  -- columns, so this sidesteps the issue entirely, while still
+  -- reproducing "price unavailable" exactly as the real pricing
+  -- function would hit it: a package_key the payments table accepts,
+  -- with (temporarily) no matching pricing row.
   -------------------------------------------------------------------
   begin
     update public.ungani_subscriptions set
@@ -521,8 +557,10 @@ begin
       pending_downgrade_requested_at = null, updated_at = now()
     where tenant_id = v_tenant_id;
 
+    update public.ungani_packages set package_key = '__test_disabled_growth__' where package_key = 'growth';
+
     insert into public.ungani_payments (tenant_id, package_key, amount, currency, payment_status, paid_at, payment_reference, created_at, updated_at)
-    values (v_tenant_id, 'zzz_nonexistent_package', 1, 'KES', 'paid', now(), 'TEST-S11-' || gen_random_uuid(), now(), now())
+    values (v_tenant_id, 'growth', 1, 'KES', 'paid', now(), 'TEST-S11-' || gen_random_uuid(), now(), now())
     returning id into v_payment_id;
 
     perform public.set_ungani_subscription_period_from_payment(v_payment_id);
@@ -540,18 +578,29 @@ begin
              and exists(select 1 from public.ungani_payment_processing_failures where payment_id = v_payment_id)
            then 'PASS' else 'FAIL' end
     );
+
+    -- Restore growth immediately - belt-and-suspenders on top of the
+    -- final ROLLBACK, since no later scenario in this script uses it.
+    update public.ungani_packages set package_key = 'growth' where package_key = '__test_disabled_growth__';
   exception when others then
+    update public.ungani_packages set package_key = 'growth' where package_key = '__test_disabled_growth__';
     insert into test_results (scenario, expected, actual, status) values ('S11 price unavailable', 'no error', 'ERROR: ' || sqlerrm, 'FAIL');
   end;
 
   -------------------------------------------------------------------
   -- S12: referred-tenant commissions - onboarding once, then monthly,
   -- then monthly x3 on a prepay.
+  --
+  -- FIXED: the previous version's partner insert only set (status,
+  -- onboarding_rate, ongoing_rate) - the real partners table
+  -- (sql/partner-referral-system.sql) also requires partner_code,
+  -- full_name, and email as not null. Fixed by supplying all three with
+  -- obvious disposable test values.
   -------------------------------------------------------------------
   begin
     begin
-      insert into public.partners (status, onboarding_rate, ongoing_rate)
-      values ('active', 30, 2)
+      insert into public.partners (partner_code, full_name, email, status, onboarding_rate, ongoing_rate)
+      values ('TEST-S12-' || substr(gen_random_uuid()::text, 1, 8), 'TEST PARTNER - DELETE ME', 'test-partner-delete-me+' || gen_random_uuid() || '@example.invalid', 'active', 30, 2)
       returning id into v_partner_id;
     exception when others then
       insert into test_results (scenario, expected, actual, status) values ('S12 setup (insert partner)', 'insert succeeds', 'ERROR: ' || sqlerrm, 'FAIL');
