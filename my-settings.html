@@ -1838,10 +1838,11 @@
       await loadStorageUsage();
     });
 
-    // Storage Usage (Property Readiness item 8) - counts only what
-    // UNGANI actually hosts (payment proof uploads); my-documents.html
-    // stores external URLs / Drive links, never a file, so it's
-    // deliberately excluded here.
+    // Storage Usage (Property Readiness item 8) - counts what UNGANI
+    // actually hosts: payment proof uploads AND real uploaded documents
+    // (my-documents.html's external-link/Drive-link documents are never
+    // a file UNGANI stores, so those stay excluded). Limit comes from
+    // the business's package tier, with an optional admin override.
     async function loadStorageUsage() {
       const lineEl = document.getElementById("storageUsageLine");
       const warningEl = document.getElementById("storageUsageWarning");
@@ -1857,18 +1858,18 @@
           return;
         }
 
-        const usedMb = (Number(row.proof_bytes_used) || 0) / 1048576;
+        const usedMb = (Number(row.bytes_used) || 0) / 1048576;
         const limitMb = Number(row.storage_limit_mb) || 0;
         const percent = Number(row.percent_used) || 0;
 
         lineEl.textContent = usedMb < 1
-          ? `${Math.round((Number(row.proof_bytes_used) || 0) / 1024)} KB of ${limitMb} MB used`
+          ? `${Math.round((Number(row.bytes_used) || 0) / 1024)} KB of ${limitMb} MB used`
           : `${usedMb.toFixed(1)} MB of ${limitMb} MB used`;
 
         if (percent >= 80) {
           warningEl.style.display = "block";
           warningEl.textContent = percent >= 100
-            ? "You've reached your storage limit. New payment proof uploads will be blocked until this is resolved."
+            ? "You've reached your storage limit. New uploads will be blocked until this is resolved."
             : "You're approaching your storage limit. Contact UNGANI support if you need more space.";
         } else {
           warningEl.style.display = "none";

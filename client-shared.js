@@ -5175,6 +5175,7 @@
     const docType = getValue(docRow, ["document_type", "category"], "Document");
     const status = getValue(docRow, ["status"], "active");
     const fileUrl = getValue(docRow, ["file_url", "url", "document_url"], "");
+    const storagePath = getValue(docRow, ["storage_path"], "");
 
     const personName = connections.person ? getValue(connections.person, ["full_name", "name"], "Person") : null;
     const itemName = connections.item ? getValue(connections.item, ["item_name", "property_name", "name"], "Item") : null;
@@ -5219,9 +5220,9 @@
 
     document.getElementById("unganiPanelBody").innerHTML = `
       <div class="ungani-card">
-        <p class="ungani-small">${safe(docType)} · ${safe(status)}${fileUrl ? "" : " · No file attached"}</p>
+        <p class="ungani-small">${safe(docType)} · ${safe(status)}${(fileUrl || storagePath) ? "" : " · No file attached"}</p>
         <div class="ungani-button-row" style="margin-top:14px;">
-          ${fileUrl ? `<a class="ungani-btn small green" href="${attr(fileUrl)}" target="_blank" rel="noopener">Open File</a>` : ""}
+          ${storagePath && o.openUploadedFileFnName ? `<button class="ungani-btn small green" type="button" onclick="${o.openUploadedFileFnName}('${attr(storagePath)}')">Open File</button>` : fileUrl ? `<a class="ungani-btn small green" href="${attr(fileUrl)}" target="_blank" rel="noopener">Open File</a>` : ""}
           ${o.editFnName ? `<button class="ungani-btn gold" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.editFnName}('${attr(docId)}')">Edit</button>` : ""}
           ${o.discussFnName ? `<button class="ungani-btn dark" type="button" onclick="UnganiClientShared.closeSidePanel(); ${o.discussFnName}('${attr(docId)}')"><i data-lucide="message-circle"></i> Discussion</button>` : ""}
           ${o.deleteFnName ? `<button class="ungani-btn red" type="button" onclick="${o.deleteFnName}('${attr(docId)}')">Delete</button>` : ""}

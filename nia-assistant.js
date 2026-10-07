@@ -2974,6 +2974,14 @@
         return runDepositQueryIntent();
       }
 
+      // Storage Usage - works on both client and admin surfaces (admin
+      // asks about a specific business's usage via the same RPC the
+      // admin-storage.html page itself calls, client asks about their
+      // own via get_my_ungani_storage_usage).
+      if (isStorageUsageQueryPhrase(text)) {
+        return runStorageUsageQueryIntent();
+      }
+
       // Live-data POS/Quick Sale question ("today's POS sales", "how much
       // have I sold today") - checked ahead of the static pos-explained
       // HELP_TOPICS answer, same reasoning as stock/debtors above. Uses a
@@ -6119,6 +6127,80 @@
 
     addNiaMessage(html);
 
+    return { spoken: summary + "." };
+  }
+
+  // ---- Storage Usage ----
+  // Client reads their own usage (get_my_ungani_storage_usage - fixed
+  // this session, was 400ing on a bigint/numeric mismatch). Admin has
+  // no tenant of their own, so it summarizes platform-wide via the same
+  // admin_get_ungani_storage_usage() admin-storage.html itself calls.
+  function isStorageUsageQueryPhrase(text) {
+    const lower = text.toLowerCase();
+    if (lower.indexOf("storage") === -1) return false;
+    return lower.indexOf("usage") !== -1 || lower.indexOf("space") !== -1 || lower.indexOf("limit") !== -1 ||
+      lower.indexOf("how much") !== -1 || lower.indexOf("used") !== -1;
+  }
+
+  async function runStorageUsageQueryIntent() {
+    if (!state.supabaseClient) {
+      addNiaMessage("I'm still loading — please try that again in a moment.");
+      return { spoken: "I'm still loading." };
+    }
+
+    if (state.surface === "admin") {
+      let response;
+      try {
+        response = await state.supabaseClient.rpc("admin_get_ungani_storage_usage");
+      } catch (error) {
+        addNiaMessage("I couldn't check that right now — please try again in a moment.");
+        return { spoken: "I couldn't check that right now." };
+      }
+
+      const rows = (!response.error && response.data) || [];
+      const flagged = rows.filter(function (r) { return Number(r.percent_used) >= 80; });
+      const summary = rows.length + " business" + (rows.length === 1 ? "" : "es") + " tracked" +
+        (flagged.length ? ", " + flagged.length + " at or above 80% storage" : ", none near their limit");
+
+      addNiaMessage(
+        `<strong>Storage Usage</strong>` +
+        `<div style="margin-top:8px;"><i data-lucide="hard-drive"></i> ${safe(summary)}</div>` +
+        `<div style="margin-top:8px;">${goldLink("admin-storage.html", "Open Storage Usage →")}</div>`
+      );
+      return { spoken: summary + "." };
+    }
+
+    if (!state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    let response;
+    try {
+      response = await state.supabaseClient.rpc("get_my_ungani_storage_usage");
+    } catch (error) {
+      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const row = (!response.error && response.data && response.data[0]) || null;
+    if (!row) {
+      addNiaMessage("I couldn't load your storage usage right now — please try again in a moment.");
+      return { spoken: "I couldn't load that right now." };
+    }
+
+    const usedMb = Number(row.bytes_used || 0) / 1048576;
+    const limitMb = Number(row.storage_limit_mb) || 0;
+    const percent = Number(row.percent_used) || 0;
+    const summary = (usedMb < 1 ? Math.round(Number(row.bytes_used || 0) / 1024) + " KB" : usedMb.toFixed(1) + " MB") +
+      " of " + limitMb + " MB used (" + percent + "%)";
+
+    addNiaMessage(
+      `<strong>Storage Usage</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="hard-drive"></i> ${safe(summary)}</div>` +
+      (percent >= 80 ? `<div style="margin-top:8px;">You're ${percent >= 100 ? "at" : "approaching"} your storage limit. Contact UNGANI support if you need more space.</div>` : "") +
+      `<div style="margin-top:8px;">${goldLink("my-settings.html", "Open Settings →")}</div>`
+    );
     return { spoken: summary + "." };
   }
 

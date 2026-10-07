@@ -151,9 +151,10 @@
         <div style="position: relative; z-index: 1;">
           <h2>Storage Usage</h2>
           <p>
-            Per-business storage usage, biggest-first. Counts only files UNGANI actually hosts in Supabase Storage
-            (payment proof uploads) - documents linked via external URLs or Google Drive are not UNGANI-hosted bytes
-            and are not counted here.
+            Per-business storage usage, biggest-first. Counts files UNGANI actually hosts in Supabase Storage
+            (payment proof uploads and real uploaded Documents) - documents linked via external URLs or Google Drive
+            are not UNGANI-hosted bytes and are not counted here. The limit comes from each business's package tier
+            (Starter 1GB / Growth 5GB / Business 20GB / Custom 100GB) unless an admin override is set below.
           </p>
           <div style="margin-top: 16px;">
             <a class="ungani-btn gold" href="admin-home.html">Admin Home</a>
@@ -184,10 +185,11 @@
                 <th>Limit</th>
                 <th>% Used</th>
                 <th></th>
+                <th>Override</th>
               </tr>
             </thead>
             <tbody id="rowsBox">
-              <tr><td colspan="6"><div class="empty"><h3>Loading storage usage...</h3><p>Please wait.</p></div></td></tr>
+              <tr><td colspan="7"><div class="empty"><h3>Loading storage usage...</h3><p>Please wait.</p></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -261,7 +263,7 @@
         currentRows = response.data || [];
         renderRows();
       } catch (error) {
-        box.innerHTML = `<tr><td colspan="6"><div class="empty"><h3>Could not load storage usage</h3><p>${safe(error.message)}</p></div></td></tr>`;
+        box.innerHTML = `<tr><td colspan="7"><div class="empty"><h3>Could not load storage usage</h3><p>${safe(error.message)}</p></div></td></tr>`;
         document.getElementById("rowsCountText").textContent = "Error";
       }
     }
@@ -270,7 +272,7 @@
       const box = document.getElementById("rowsBox");
 
       if (!currentRows.length) {
-        box.innerHTML = `<tr><td colspan="6"><div class="empty"><h3>No storage usage yet</h3><p>No payment proof files have been uploaded by any business.</p></div></td></tr>`;
+        box.innerHTML = `<tr><td colspan="7"><div class="empty"><h3>No storage usage yet</h3><p>No files have been uploaded by any business.</p></div></td></tr>`;
         document.getElementById("rowsCountText").textContent = "0 shown";
       } else {
         box.innerHTML = currentRows.map(function (row) {
@@ -281,9 +283,9 @@
           return `
             <tr>
               <td><strong>${safe(row.business_name)}</strong></td>
-              <td>${Number(row.proof_file_count) || 0}</td>
-              <td>${formatBytes(row.proof_bytes_used)}</td>
-              <td>${Number(row.storage_limit_mb) || 0} MB</td>
+              <td>${Number(row.file_count) || 0}</td>
+              <td>${formatBytes(row.bytes_used)}</td>
+              <td>${Number(row.storage_limit_mb) || 0} MB${row.is_override ? ' <span class="small-text">(override)</span>' : ""}</td>
               <td>
                 <span class="badge ${badgeClass}">${percent}%</span>
               </td>
@@ -292,6 +294,10 @@
                   <div class="usage-bar-fill" style="width:${barWidth}%;background:${badgeClass === "red" ? "var(--ungani-red)" : badgeClass === "orange" ? "var(--ungani-orange)" : "var(--ungani-green)"};"></div>
                 </div>
               </td>
+              <td>
+                <button type="button" class="btn" style="padding:6px 10px;font-size:12px;" onclick="setStorageOverride('${safe(row.tenant_id)}', '${safe(row.business_name).replace(/'/g, "\\'")}', ${row.is_override ? Number(row.storage_limit_mb) : "null"})">${row.is_override ? "Edit" : "Set"}</button>
+                ${row.is_override ? `<button type="button" class="btn" style="padding:6px 10px;font-size:12px;background:var(--ungani-border);color:var(--ungani-text);margin-left:6px;" onclick="clearStorageOverride('${safe(row.tenant_id)}')">Clear</button>` : ""}
+              </td>
             </tr>
           `;
         }).join("");
@@ -299,14 +305,49 @@
         document.getElementById("rowsCountText").textContent = currentRows.length + " shown";
       }
 
-      const totalFiles = currentRows.reduce(function (sum, row) { return sum + (Number(row.proof_file_count) || 0); }, 0);
-      const totalBytes = currentRows.reduce(function (sum, row) { return sum + (Number(row.proof_bytes_used) || 0); }, 0);
+      const totalFiles = currentRows.reduce(function (sum, row) { return sum + (Number(row.file_count) || 0); }, 0);
+      const totalBytes = currentRows.reduce(function (sum, row) { return sum + (Number(row.bytes_used) || 0); }, 0);
       const flaggedCount = currentRows.filter(function (row) { return (Number(row.percent_used) || 0) >= 80; }).length;
 
       document.getElementById("metricCount").textContent = currentRows.length;
       document.getElementById("metricFiles").textContent = totalFiles;
       document.getElementById("metricBytes").textContent = formatBytes(totalBytes);
       document.getElementById("metricFlagged").textContent = flaggedCount;
+    }
+
+    async function setStorageOverride(tenantId, businessName, currentMb) {
+      const input = prompt(
+        "Set a storage override for " + businessName + " (in MB). This replaces their package-tier default.\nExample: 10240 for 10GB.",
+        currentMb || ""
+      );
+
+      if (input === null) return;
+
+      const mb = parseInt(input, 10);
+      if (!mb || mb <= 0) {
+        alert("Enter a positive whole number of MB.");
+        return;
+      }
+
+      const response = await supabaseClient.rpc("admin_set_ungani_storage_override", { p_tenant_id: tenantId, p_override_mb: mb });
+      if (response.error || !response.data || response.data.ok !== true) {
+        alert("Could not set override: " + (response.error ? response.error.message : (response.data && response.data.message)));
+        return;
+      }
+
+      await loadStorageUsage();
+    }
+
+    async function clearStorageOverride(tenantId) {
+      if (!confirm("Clear this override? The business will go back to its package-tier default limit.")) return;
+
+      const response = await supabaseClient.rpc("admin_set_ungani_storage_override", { p_tenant_id: tenantId, p_override_mb: null });
+      if (response.error || !response.data || response.data.ok !== true) {
+        alert("Could not clear override: " + (response.error ? response.error.message : (response.data && response.data.message)));
+        return;
+      }
+
+      await loadStorageUsage();
     }
   </script>
 </body>

@@ -67,6 +67,7 @@
     let linkableTeamMembers = [];
     let activeDocumentCategory = "all";
     let urlActionApplied = false;
+    let pendingUpload = null; // { storagePath, fileName, fileType, fileSizeBytes } - set by uploadDocumentFile(), consumed by saveDocument()
 
     // See my-money.html for the full rationale.
     const DOCUMENT_PAGE_SIZE = 50;
@@ -1282,7 +1283,8 @@
         discussFnName: "openDocumentDiscussionPanel",
         deleteFnName: "deleteDocument",
         openPersonFnName: "openDocumentLinkedPersonProfile",
-        openItemFnName: "openDocumentLinkedItemProfile"
+        openItemFnName: "openDocumentLinkedItemProfile",
+        openUploadedFileFnName: "openUploadedDocumentFile"
       });
     }
 
@@ -1330,11 +1332,15 @@
 
       editingDocumentId = row ? row.id : null;
       editingDocumentOriginalStatus = row ? String(UnganiClientShared.getValue(row, ["status"], "active")).toLowerCase() : "";
+      pendingUpload = null;
 
       const fileUrl = row ? UnganiClientShared.getValue(row, ["file_url", "url", "document_url"], "") : "";
+      const storagePath = row ? UnganiClientShared.getValue(row, ["storage_path"], "") : "";
 
       const bodyHtml = `
-        ${fileUrl ? `<div class="ungani-button-row" style="margin-top:0;margin-bottom:14px;"><a class="ungani-btn small green" href="${UnganiClientShared.attr(fileUrl)}" target="_blank" rel="noopener">Open File</a></div>` : ""}
+        ${storagePath
+          ? `<div class="ungani-button-row" style="margin-top:0;margin-bottom:14px;"><button type="button" class="ungani-btn small green" onclick="openUploadedDocumentFile('${UnganiClientShared.attr(storagePath)}')">Open File</button></div>`
+          : fileUrl ? `<div class="ungani-button-row" style="margin-top:0;margin-bottom:14px;"><a class="ungani-btn small green" href="${UnganiClientShared.attr(fileUrl)}" target="_blank" rel="noopener">Open File</a></div>` : ""}
 
         <form onsubmit="saveDocument(event)">
           <div class="document-form-grid">
@@ -1382,8 +1388,14 @@
               <input id="documentFolder" placeholder="Receipts, Agreements, Staff Docs, Client Docs..." value="${row ? UnganiClientShared.attr(UnganiClientShared.getValue(row, ["folder_name", "category"], "")) : ""}" />
             </div>
 
+            <div class="wide">
+              <label for="documentFileUploadInput">Upload a File (PDF or image)</label>
+              <input id="documentFileUploadInput" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onchange="uploadDocumentFile()" />
+              <span id="documentUploadMessage" class="ungani-small" style="display:block;margin-top:4px;">${storagePath ? "Uploaded file on record: " + UnganiClientShared.safe(UnganiClientShared.getValue(row, ["file_name"], "file")) + ". Choose a new file to replace it." : ""}</span>
+            </div>
+
             <div>
-              <label for="documentFileUrl">File / Drive Link</label>
+              <label for="documentFileUrl">File / Drive Link (if not uploading)</label>
               <input id="documentFileUrl" type="url" placeholder="https://..." value="${row ? UnganiClientShared.attr(fileUrl) : ""}" />
               <div class="ungani-button-row" style="margin-top:8px;">
                 <button type="button" class="ungani-btn small dark" onclick="pickFromGoogleDrive()"><i data-lucide="folder"></i> Pick from Google Drive</button>
@@ -1669,6 +1681,91 @@
       }
     }
 
+    function sanitizeDocumentFileName(name) {
+      return String(name || "document")
+        .toLowerCase()
+        .replace(/[^a-z0-9.\-_]+/g, "-")
+        .replace(/-+/g, "-")
+        .slice(0, 120);
+    }
+
+    // Real file upload to the private 'documents' Storage bucket (Chris's
+    // Documents requirement: real PDF/image uploads, private per
+    // business, counted in Storage Usage - keeping the existing link/
+    // Drive-link field untouched for existing-link support). Mirrors
+    // my-billing.html's payment-proof upload pattern: pre-upload quota
+    // check, tenant-folder-prefixed path, result consumed by saveDocument().
+    async function uploadDocumentFile() {
+      const input = document.getElementById("documentFileUploadInput");
+      const msgSpan = document.getElementById("documentUploadMessage");
+      const file = input.files && input.files[0];
+
+      if (!file) return;
+
+      const allowedTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+      if (!allowedTypes.includes(file.type)) {
+        msgSpan.textContent = "Only PDF, JPG, PNG, and WEBP files are accepted.";
+        input.value = "";
+        return;
+      }
+
+      if (file.size > 10485760) {
+        msgSpan.textContent = "File is too large. Maximum size is 10MB.";
+        input.value = "";
+        return;
+      }
+
+      try {
+        const usageResponse = await currentContext.supabaseClient.rpc("get_my_ungani_storage_usage");
+        const usageRow = (!usageResponse.error && usageResponse.data && usageResponse.data[0]) || null;
+        if (usageRow && Number(usageRow.percent_used) >= 100) {
+          msgSpan.textContent = "Storage limit reached. Contact UNGANI support to free up space before uploading more files.";
+          input.value = "";
+          return;
+        }
+
+        msgSpan.textContent = "Uploading...";
+
+        const safeFileName = sanitizeDocumentFileName(file.name);
+        const timestamp = Date.now();
+        const filePath = `${currentContext.tenantId}/${timestamp}-${safeFileName}`;
+
+        const uploadResponse = await currentContext.supabaseClient.storage
+          .from("documents")
+          .upload(filePath, file, { cacheControl: "3600", upsert: false, contentType: file.type });
+
+        if (uploadResponse.error) throw uploadResponse.error;
+
+        pendingUpload = {
+          storagePath: filePath,
+          fileName: file.name,
+          fileType: file.type,
+          fileSizeBytes: file.size
+        };
+
+        document.getElementById("documentFileName").value = file.name;
+        msgSpan.textContent = "Ready to save: " + file.name + " (" + (file.size / 1024).toFixed(0) + " KB).";
+      } catch (error) {
+        msgSpan.textContent = "Could not upload file: " + (error.message || "Network error.");
+        input.value = "";
+      }
+    }
+
+    async function openUploadedDocumentFile(storagePath) {
+      try {
+        const { data, error } = await currentContext.supabaseClient.storage
+          .from("documents")
+          .createSignedUrl(storagePath, 3600); // ~1 hour
+
+        if (error) throw error;
+        if (!data || !data.signedUrl) throw new Error("Unable to create secure file link.");
+
+        window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      } catch (error) {
+        UnganiClientShared.showToast("Could not open file: " + error.message);
+      }
+    }
+
     async function saveDocument(event) {
       event.preventDefault();
 
@@ -1704,6 +1801,15 @@
 
       if (sectionOptions.length > 1) {
         payload.section_label = UnganiClientShared.value("documentSection") || null;
+      }
+
+      if (pendingUpload) {
+        payload.storage_path = pendingUpload.storagePath;
+        payload.file_name = pendingUpload.fileName;
+        payload.file_type = pendingUpload.fileType;
+        payload.file_size_bytes = pendingUpload.fileSizeBytes;
+        payload.document_source = "upload";
+        payload.file_url = null; // uploaded file replaces any link on this save
       }
 
       let response;
@@ -1755,6 +1861,7 @@
         UnganiConnectPanel.notifyAttachment(currentContext, savedDocumentId);
       }
 
+      pendingUpload = null;
       UnganiClientShared.showToast(editingDocumentId ? "Document updated ✓" : "Document added ✓");
       editingDocumentId = null;
       UnganiClientShared.closeModal();
