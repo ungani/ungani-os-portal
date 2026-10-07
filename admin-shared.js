@@ -1261,9 +1261,66 @@
     return data?.session || null;
   }
 
+  // Mirrors admin-access-guard.js's resolveMfaRequirement() exactly (same
+  // mandatory-2FA, no-opt-in sequencing, same admin-settings.html
+  // enrollment escape hatch) - this file's requireAdmin() runs in
+  // parallel with that guard on every admin page (both injected
+  // independently), so BOTH must apply the real ordering themselves
+  // rather than relying on the other one's redirect to win the race.
+  // Real root cause this fixes: is_ungani_admin() alone was called here
+  // with no 2FA awareness at all, so an aal1 admin got "not allowed"
+  // thrown before ever reaching the challenge.
+  async function resolveAdminMfaRequirement(pageName) {
+    try {
+      const client = getSupabaseClient();
+      const aalResponse = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+
+      if (aalResponse.error || !aalResponse.data || aalResponse.data.currentLevel === "aal2") {
+        return { redirect: null, enrollmentPending: false };
+      }
+
+      const factorsResponse = await client.auth.mfa.listFactors();
+      const hasVerifiedTotp = !factorsResponse.error && factorsResponse.data &&
+        (factorsResponse.data.totp || []).some(f => f.status === "verified");
+
+      if (!hasVerifiedTotp) {
+        if (pageName === "admin-settings.html") {
+          return { redirect: null, enrollmentPending: true };
+        }
+        return { redirect: "admin-settings.html?mfaRequired=1", enrollmentPending: false };
+      }
+
+      return {
+        redirect: "mfa-challenge.html?redirect=" + encodeURIComponent(pageName) + "&surface=admin",
+        enrollmentPending: false
+      };
+    } catch (error) {
+      return { redirect: null, enrollmentPending: false };
+    }
+  }
+
   async function isAdminByRpc() {
     try {
       const client = getSupabaseClient();
+
+      const candidateResponse = await client.rpc("is_ungani_admin_candidate");
+      if (candidateResponse.error || candidateResponse.data !== true) return false;
+
+      const pageName = (window.location.pathname.split("/").pop() || "").toLowerCase();
+      const mfaOutcome = await resolveAdminMfaRequirement(pageName);
+
+      if (mfaOutcome.redirect) {
+        window.location.href = mfaOutcome.redirect;
+        return false;
+      }
+
+      if (mfaOutcome.enrollmentPending) {
+        // Let admin-settings.html's own enrollment section render -
+        // every other admin_* RPC still fails server-side until this
+        // account's 2FA is actually enrolled.
+        return true;
+      }
+
       const { data, error } = await client.rpc("is_ungani_admin");
 
       if (error) return false;

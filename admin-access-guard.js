@@ -79,10 +79,15 @@
         return;
       }
 
-      const adminResponse = await supabaseClient.rpc("is_ungani_admin");
+      // Email-candidate only (NOT the strict aal2-gated is_ungani_admin())
+      // - deciding whether to even START the 2FA flow must not itself
+      // require 2FA to already be satisfied. Real-world lockout this
+      // caused: an admin at aal1 was told "not an admin" before ever
+      // reaching the challenge, with no way to climb out.
+      const candidateResponse = await supabaseClient.rpc("is_ungani_admin_candidate");
 
-      if (adminResponse.error) {
-        console.warn("UNGANI admin guard RPC failed:", adminResponse.error);
+      if (candidateResponse.error) {
+        console.warn("UNGANI admin candidate check failed:", candidateResponse.error);
 
         showAdminBlockedScreen({
           title: "Admin Check Failed",
@@ -95,24 +100,48 @@
         return;
       }
 
-      if (adminResponse.data === true) {
-        const mfaRedirect = await checkMfaRequirement(pageName);
-
-        if (mfaRedirect) {
-          window.location.href = mfaRedirect;
-          return;
-        }
+      if (candidateResponse.data !== true) {
+        showAdminBlockedScreen({
+          title: "Admin Access Required",
+          message: "This page is reserved for UNGANI admin users only.",
+          detail: "You are logged in, but this account does not have admin permission.",
+          actionText: "Go to Client Portal",
+          actionUrl: "client.html"
+        });
 
         return;
       }
 
-      showAdminBlockedScreen({
-        title: "Admin Access Required",
-        message: "This page is reserved for UNGANI admin users only.",
-        detail: "You are logged in, but this account does not have admin permission.",
-        actionText: "Go to Client Portal",
-        actionUrl: "client.html"
-      });
+      const mfaOutcome = await resolveMfaRequirement(pageName);
+
+      if (mfaOutcome.redirect) {
+        window.location.href = mfaOutcome.redirect;
+        return;
+      }
+
+      if (mfaOutcome.enrollmentPending) {
+        // Candidate confirmed by email, no verified TOTP factor yet, and
+        // this IS admin-settings.html - let the page render so its
+        // enrollment section is reachable (there's nothing to challenge
+        // against yet). Every admin_* RPC this page calls still fails
+        // server-side via the strict is_ungani_admin() until enrollment
+        // finishes, so nothing real is exposed in the meantime.
+        return;
+      }
+
+      // aal2 satisfied (or never required for this account) - final real
+      // confirmation via the strict, mandatory-2FA gate.
+      const adminResponse = await supabaseClient.rpc("is_ungani_admin");
+
+      if (adminResponse.error || adminResponse.data !== true) {
+        showAdminBlockedScreen({
+          title: "Admin Check Failed",
+          message: "UNGANI OS could not confirm your admin access.",
+          detail: "Please refresh the page, or complete two-factor enrollment in Settings. If this continues, contact UNGANI support.",
+          actionText: "Back to Login",
+          actionUrl: "login.html"
+        });
+      }
     } catch (error) {
       console.warn("UNGANI admin guard failed:", error);
 
@@ -126,38 +155,53 @@
     }
   }
 
-  // Opt-in TOTP MFA (supabase.auth.mfa). getAuthenticatorAssuranceLevel()'s
-  // nextLevel only ever comes back "aal2" for an account that has a
-  // verified TOTP factor enrolled - an admin who never turned 2FA on
-  // always gets nextLevel === currentLevel here, so this never blocks
-  // anyone who hasn't opted in. Checked here rather than in login.html's
+  // MANDATORY TOTP for every ungani_admins account - no opt-in exception.
+  // Distinguishes "never enrolled a factor" (send to admin-settings.html
+  // to enroll - the only admin page a not-yet-aal2 candidate may reach,
+  // since there's nothing to challenge against yet) from "a verified
+  // factor exists but this session hasn't completed the challenge yet"
+  // (send to mfa-challenge.html). Checked here rather than in login.html's
   // submit handler because this guard is the one thing every admin page
   // already loads (confirmed via admin-settings.html, which has its own
   // separate legacy sign-in form that bypasses login.html entirely) - a
-  // login-page-only check would miss that second entry point.
-  async function checkMfaRequirement(pageName) {
+  // login-page-only check would miss that second entry point. The real
+  // security boundary stays server-side (is_ungani_admin() requires
+  // aal2 unconditionally) - this only decides where to route the browser.
+  async function resolveMfaRequirement(pageName) {
     try {
       const aalResponse = await supabaseClient.auth.mfa.getAuthenticatorAssuranceLevel();
 
       if (aalResponse.error || !aalResponse.data) {
-        // Fail OPEN, not closed: this is an enhancement layered on top of
-        // an already-confirmed admin session, not the security boundary
-        // itself - a transient MFA-API hiccup should not lock every admin
-        // out of the console.
-        return null;
+        // Fail OPEN on this routing decision only: the final strict
+        // is_ungani_admin() call right after this still enforces aal2 -
+        // a transient MFA-API hiccup here just means the browser lands
+        // on the real blocked screen instead of a redirect loop.
+        return { redirect: null, enrollmentPending: false };
       }
 
-      const currentLevel = aalResponse.data.currentLevel;
-      const nextLevel = aalResponse.data.nextLevel;
-
-      if (nextLevel === "aal2" && currentLevel !== "aal2") {
-        return "mfa-challenge.html?redirect=" + encodeURIComponent(pageName) + "&surface=admin";
+      if (aalResponse.data.currentLevel === "aal2") {
+        return { redirect: null, enrollmentPending: false };
       }
 
-      return null;
+      const factorsResponse = await supabaseClient.auth.mfa.listFactors();
+      const hasVerifiedTotp = !factorsResponse.error && factorsResponse.data &&
+        (factorsResponse.data.totp || []).some(function (f) { return f.status === "verified"; });
+
+      if (!hasVerifiedTotp) {
+        if (pageName === "admin-settings.html") {
+          return { redirect: null, enrollmentPending: true };
+        }
+
+        return { redirect: "admin-settings.html?mfaRequired=1", enrollmentPending: false };
+      }
+
+      return {
+        redirect: "mfa-challenge.html?redirect=" + encodeURIComponent(pageName) + "&surface=admin",
+        enrollmentPending: false
+      };
     } catch (error) {
-      console.warn("UNGANI MFA check failed:", error);
-      return null;
+      console.warn("UNGANI MFA requirement check failed:", error);
+      return { redirect: null, enrollmentPending: false };
     }
   }
 
