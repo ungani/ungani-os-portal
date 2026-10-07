@@ -4687,6 +4687,20 @@
       badges.push(invoices.length + " invoice" + (invoices.length === 1 ? "" : "s") + (balance > 0 ? ", " + formatKES(balance) + " balance due" : ", fully paid"));
     }
 
+    // Rule 3 (one source of truth): the SAME combined figure (lease
+    // balance_owed + this person's open invoices) shown on the dashboard
+    // Outstanding Rent tile, the tenant statement, Debtors & Payables,
+    // and Profit per Property - not a separate invoice-only number.
+    const activeLeaseCommitments = (connections.commitments || []).filter(function (c) {
+      const status = String(c.status || "").toLowerCase();
+      return c.commitment_type === "lease" && status !== "cancelled" && status !== "terminated";
+    });
+    if (activeLeaseCommitments.length) {
+      const leaseOwed = activeLeaseCommitments.reduce(function (sum, c) { return sum + Math.max(Number(c.balance_owed || 0), 0); }, 0);
+      const totalOwed = leaseOwed + computeCustomerInvoiceBalance(connections.invoices);
+      badges.push(totalOwed > 0 ? "Total owed: " + formatKES(totalOwed) : "Fully paid, no balance owed");
+    }
+
     return badges;
   }
 
@@ -4749,11 +4763,19 @@
           ? "Deposit settled: " + formatKES(c.deposit_refunded_kes || 0) + " refunded" + (c.deposit_refund_method ? " via " + c.deposit_refund_method : "") + ", " + formatKES(c.deposit_deducted_kes || 0) + " deducted"
           : "Deposit held: " + formatKES(c.deposit_amount_kes) + " (not income)")
         : "";
+      const balanceOwed = Number(c.balance_owed || 0);
+      const creditBalance = Number(c.credit_balance || 0);
+      const balanceLine = c.commitment_type === "lease"
+        ? (balanceOwed > 0
+          ? "Rent owed: " + formatKES(balanceOwed)
+          : (creditBalance > 0 ? "Credit: " + formatKES(creditBalance) + " (applied to next rent)" : "Rent: fully paid"))
+        : "";
       return `
         <div class="detail-row">
           <span>${safe(c.plan_name || c.commitment_type || "Commitment")}</span>
           <span class="ungani-small">${safe(range)}</span>
         </div>
+        ${balanceLine ? `<div class="detail-row"><span class="ungani-small">${safe(balanceLine)}</span></div>` : ""}
         ${depositLine ? `<div class="detail-row"><span class="ungani-small">${safe(depositLine)}</span></div>` : ""}
       `;
     }).join("");

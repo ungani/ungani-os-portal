@@ -108,7 +108,8 @@
         safeSelect("documents"),
         safeSelect("business_events"),
         safeSelect("support_issues"),
-        safeCommitments()
+        safeCommitments(),
+        safeInvoices()
       ]);
 
       reportData.transactions = responses[0];
@@ -120,6 +121,7 @@
       reportData.events = responses[6];
       reportData.support = responses[7];
       reportData.commitments = responses[8];
+      reportData.invoices = responses[9];
 
       renderReportsPage();
     }
@@ -133,6 +135,20 @@
         return (!response.error && response.data && response.data.ok === true) ? (response.data.commitments || []) : [];
       } catch (error) {
         console.warn("commitments", error.message);
+        return [];
+      }
+    }
+
+    // Needed so Profit per Property's Rent Owed column can fold in a
+    // tenant's open extras invoices (e.g. a water bill), matching the
+    // same combined figure used everywhere else (Outstanding Rent tile,
+    // tenant statement, Person 360, Debtors & Payables).
+    async function safeInvoices() {
+      try {
+        const response = await currentContext.supabaseClient.rpc("get_my_ungani_customer_invoices");
+        return (!response.error && response.data && response.data.ok === true) ? (response.data.invoices || []) : [];
+      } catch (error) {
+        console.warn("invoices", error.message);
         return [];
       }
     }
@@ -1242,15 +1258,14 @@
     // Property roster comes from the FULL (unfiltered) item list, not the
     // date-filtered one - a property added months ago must still show up
     // when the report period is "last week", only its money figures are
-    // period-bound. Rent is derived the same way the Outstanding Rent fix
-    // derives it (lease -> tenant -> income transactions), not from a
-    // direct related_item_id on the payment, since tenants pay rent
-    // tagged to themselves, not to the property.
+    // period-bound. Rent owed is each lease's own balance_owed ledger
+    // (not derived from income transactions), not from a direct
+    // related_item_id on the payment, since tenants pay rent tagged to
+    // themselves, not to the property.
     function computeProfitPerProperty() {
       const periodTransactions = getFilteredData().transactions;
       const allItems = reportData.items || [];
       const allPeople = reportData.people || [];
-      const allTransactions = reportData.transactions || [];
 
       const activeLeases = (reportData.commitments || []).filter(function (c) {
         const status = String(c.status || "").toLowerCase();
@@ -1260,9 +1275,6 @@
       const properties = allItems.filter(function (item) {
         return !UnganiClientShared.getValue(item, ["parent_item_id"], null);
       });
-
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const monthKey = todayStr.slice(0, 7);
 
       return properties.map(function (property) {
         const units = allItems.filter(function (item) {
@@ -1291,14 +1303,22 @@
           return status.includes("rented") || status.includes("sold");
         }).length;
 
+        // Rule 3 (one source of truth): each lease's own balance_owed
+        // ledger plus that tenant's open extras invoices - the SAME
+        // combined figure as the dashboard Outstanding Rent tile, the
+        // tenant statement, Person 360, and Debtors & Payables, not a
+        // separate per-month "did they pay" guess.
         const propertyLeases = activeLeases.filter(function (c) { return unitIds.indexOf(c.linked_item_id) !== -1; });
+        const allInvoices = reportData.invoices || [];
         const rentOwed = propertyLeases.reduce(function (sum, lease) {
-          const paidThisMonth = allTransactions.some(function (t) {
-            const relatedId = UnganiClientShared.getValue(t, ["related_person_id"], "");
-            const date = String(UnganiClientShared.getValue(t, ["transaction_date", "created_at"], "")).slice(0, 7);
-            return String(relatedId) === String(lease.person_id) && date === monthKey && isIncomeRow(t);
-          });
-          return paidThisMonth ? sum : sum + Number(lease.amount || 0);
+          const leaseOwed = Math.max(Number(lease.balance_owed || 0), 0);
+          const invoiceOwed = allInvoices.reduce(function (invSum, inv) {
+            if (String(inv.customer_person_id) !== String(lease.person_id)) return invSum;
+            if (inv.status === "cancelled" || inv.status === "draft") return invSum;
+            const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
+            return balance > 0 ? invSum + balance : invSum;
+          }, 0);
+          return sum + leaseOwed + invoiceOwed;
         }, 0);
 
         const transactionLines = periodTransactions.filter(function (t) {

@@ -88,35 +88,63 @@
       return "KSh " + (Number(value) || 0).toLocaleString("en-KE");
     }
 
-    // Debtors: built entirely from Customer Invoices (Task 2) - no new
-    // schema. get_my_ungani_customer_invoices() already computes
-    // effective_status (auto-flags a sent/partially_paid invoice as
-    // "overdue" once its due_date has passed), so overdue detection
-    // doesn't need to be reimplemented here. Grouped by customer_name -
-    // the RPC doesn't surface customer_person_id, so name is the only
-    // reliable grouping key available from this data.
+    // Debtors: Customer Invoices (Task 2) PLUS each tenant's own lease
+    // balance (Rule 3, one source of truth) - the same combined figure
+    // as the dashboard Outstanding Rent tile, the tenant statement,
+    // Person 360, and Profit per Property. get_my_ungani_customer_
+    // invoices() now surfaces customer_person_id, so rows are keyed by
+    // person where possible (an invoice debt and that same tenant's
+    // lease debt merge into ONE row) - falls back to customer_name only
+    // for invoices with no linked person (walk-in customers, or data
+    // from before that column existed).
     async function loadDebtors() {
       try {
-        const response = await currentContext.supabaseClient.rpc("get_my_ungani_customer_invoices");
-        const invoices = (!response.error && response.data && response.data.ok === true) ? (response.data.invoices || []) : [];
+        const [invoicesResponse, commitmentsResponse] = await Promise.all([
+          currentContext.supabaseClient.rpc("get_my_ungani_customer_invoices"),
+          currentContext.supabaseClient.rpc("get_my_ungani_commitments").catch(function (error) { return { error: error }; })
+        ]);
+
+        const invoices = (!invoicesResponse.error && invoicesResponse.data && invoicesResponse.data.ok === true) ? (invoicesResponse.data.invoices || []) : [];
+        const allCommitments = (!commitmentsResponse.error && commitmentsResponse.data && commitmentsResponse.data.ok === true) ? (commitmentsResponse.data.commitments || []) : [];
+        const activeLeases = allCommitments.filter(function (c) {
+          const status = String(c.status || "").toLowerCase();
+          return c.commitment_type === "lease" && status !== "cancelled" && status !== "terminated";
+        });
 
         const outstanding = invoices.filter(function (inv) {
           const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
           return balance > 0 && inv.status !== "cancelled" && inv.status !== "draft";
         });
 
+        function rowKey(personId, name) {
+          return personId ? "p:" + personId : "n:" + (name || "Unknown customer");
+        }
+
         const byCustomer = {};
         outstanding.forEach(function (inv) {
-          const name = inv.customer_name || "Unknown customer";
+          const key = rowKey(inv.customer_person_id, inv.customer_name);
           const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
 
-          if (!byCustomer[name]) {
-            byCustomer[name] = { customerName: name, outstanding: 0, invoiceCount: 0, isOverdue: false };
+          if (!byCustomer[key]) {
+            byCustomer[key] = { customerName: inv.customer_name || "Unknown customer", outstanding: 0, invoiceCount: 0, isOverdue: false, isRent: false };
           }
 
-          byCustomer[name].outstanding += balance;
-          byCustomer[name].invoiceCount += 1;
-          if (inv.effective_status === "overdue") byCustomer[name].isOverdue = true;
+          byCustomer[key].outstanding += balance;
+          byCustomer[key].invoiceCount += 1;
+          if (inv.effective_status === "overdue") byCustomer[key].isOverdue = true;
+        });
+
+        activeLeases.forEach(function (lease) {
+          const balanceOwed = Math.max(Number(lease.balance_owed || 0), 0);
+          if (balanceOwed <= 0) return;
+
+          const key = rowKey(lease.person_id, lease.person_name);
+          if (!byCustomer[key]) {
+            byCustomer[key] = { customerName: lease.person_name || "Unknown tenant", outstanding: 0, invoiceCount: 0, isOverdue: false, isRent: false };
+          }
+
+          byCustomer[key].outstanding += balanceOwed;
+          byCustomer[key].isRent = true;
         });
 
         debtorRows = Object.keys(byCustomer).map(function (key) { return byCustomer[key]; })
@@ -204,7 +232,7 @@
         <section class="ungani-card ungani-hero">
           <span class="ungani-badge gold">Debtors &amp; Payables</span>
           <h2 style="font-size:clamp(28px,4vw,44px);line-height:1.05;margin:16px 0 12px;">Who owes you, and who you owe.</h2>
-          <p>Debtors come from your Customer Invoices. Payables come from pending expenses linked to a supplier or contact under Money.</p>
+          <p>Debtors come from your Customer Invoices and lease rent balances. Payables come from pending expenses linked to a supplier or contact under Money.</p>
         </section>
 
         <section class="money-kpi-grid" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
@@ -217,7 +245,7 @@
           <div class="ungani-section-title">
             <div>
               <h3>Who Owes Me</h3>
-              <p class="ungani-small">${debtorRows.length} customer(s) with money outstanding on Customer Invoices.</p>
+              <p class="ungani-small">${debtorRows.length} customer(s)/tenant(s) with money outstanding.</p>
             </div>
             <a class="ungani-btn light" href="my-customer-invoices.html">Open Customer Invoices</a>
           </div>
@@ -264,11 +292,12 @@
             </thead>
             <tbody>
               ${debtorRows.map(function (row) {
+                const invoiceLabel = row.invoiceCount + (row.isRent ? (row.invoiceCount ? " + rent" : "Rent") : "");
                 return `
                   <tr>
                     <td><strong>${UnganiClientShared.safe(row.customerName)}</strong></td>
                     <td>${UnganiClientShared.safe(moneyText(row.outstanding))}</td>
-                    <td>${row.invoiceCount}</td>
+                    <td>${UnganiClientShared.safe(invoiceLabel)}</td>
                     <td><span class="dp-status-badge ${row.isOverdue ? "dp-status-overdue" : "dp-status-open"}">${row.isOverdue ? "Overdue" : "Open"}</span></td>
                   </tr>
                 `;

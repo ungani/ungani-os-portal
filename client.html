@@ -6271,6 +6271,44 @@
       };
     }
 
+    // Rule 3 (one source of truth): outstanding rent is now each lease's
+    // own balance_owed ledger plus that same tenant's other open (extras)
+    // invoices - not a per-month "did they pay" guess. Matches the SQL
+    // RPCs get_my_ungani_tenant_total_owed()/get_my_ungani_total_
+    // outstanding_rent() exactly, so this dashboard, the tenant
+    // statement, Person 360, Debtors & Payables, and Profit per Property
+    // all show the same number for the same tenant.
+    function computeLeaseOutstandingRent(activeLeases, people, items, invoices) {
+      const peopleList = people || [];
+      const itemsList = items || [];
+      const invoiceList = invoices || [];
+      const overdueRent = [];
+      let outstandingRentTotal = 0;
+
+      activeLeases.forEach(function (lease) {
+        const person = peopleList.find(function (p) { return String(p.id) === String(lease.person_id); });
+        if (!person) return;
+
+        const unit = itemsList.find(function (item) { return String(item.id) === String(lease.linked_item_id); });
+
+        const leaseOwed = Math.max(Number(lease.balance_owed || 0), 0);
+        const invoiceOwed = invoiceList.reduce(function (sum, inv) {
+          if (String(inv.customer_person_id) !== String(person.id)) return sum;
+          if (inv.status === "cancelled" || inv.status === "draft") return sum;
+          const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
+          return balance > 0 ? sum + balance : sum;
+        }, 0);
+
+        const totalOwed = leaseOwed + invoiceOwed;
+        if (totalOwed <= 0) return;
+
+        outstandingRentTotal += totalOwed;
+        overdueRent.push({ person, unit: unit || {}, amount: totalOwed });
+      });
+
+      return { overdueRent: overdueRent, outstandingRentTotal: outstandingRentTotal };
+    }
+
     // Rentals and Sales are fundamentally different businesses under one
     // roof (recurring rent collection + tenant management vs. one-off
     // sales closings + buyer pipeline), so - same pattern as Logistics -
@@ -6291,28 +6329,9 @@
         return c.commitment_type === "lease" && status !== "cancelled" && status !== "ended";
       });
 
-      const overdueRent = [];
-      let outstandingRentTotal = 0;
-
-      activeLeases.forEach(function (lease) {
-        const person = (data.people || []).find(function (p) { return String(p.id) === String(lease.person_id); });
-        if (!person) return;
-
-        const unit = (data.items || []).find(function (item) { return String(item.id) === String(lease.linked_item_id); });
-
-        const paidThisMonth = (data.transactions || []).some(function (t) {
-          const relatedId = getValue(t, ["related_person_id"], "");
-          const date = String(getValue(t, ["transaction_date", "created_at"], "")).slice(0, 7);
-          return String(relatedId) === String(person.id) && date === ctx.monthKey && isRentalIncome(t);
-        });
-
-        if (paidThisMonth) return;
-
-        const rentAmount = Number(lease.amount || 0);
-        outstandingRentTotal += rentAmount;
-
-        overdueRent.push({ person, unit: unit || {}, amount: rentAmount });
-      });
+      const leaseOutstanding = computeLeaseOutstandingRent(activeLeases, data.people, data.items, data.invoices);
+      const overdueRent = leaseOutstanding.overdueRent;
+      const outstandingRentTotal = leaseOutstanding.outstandingRentTotal;
 
       const totalUnits = (data.items || []).length;
       const occupiedUnits = (data.items || []).filter(function (item) {
@@ -6356,7 +6375,7 @@
       });
 
       const greetingMessages = [];
-      if (overdueRent.length > 0) greetingMessages.push({ text: overdueRent.length === 1 ? "1 tenant has unpaid rent this month" : overdueRent.length + " tenants have unpaid rent this month", href: ctx.peopleHref });
+      if (overdueRent.length > 0) greetingMessages.push({ text: overdueRent.length === 1 ? "1 tenant has a rent balance owed" : overdueRent.length + " tenants have a rent balance owed", href: ctx.peopleHref });
       if (todaysViewings.length > 0) greetingMessages.push({ text: todaysViewings.length === 1 ? "1 viewing scheduled today" : todaysViewings.length + " viewings scheduled today", href: ctx.calendarHref });
       if (leasesExpiring.length > 0) greetingMessages.push({ text: leasesExpiring.length === 1 ? "1 lease expiring within 7 days" : leasesExpiring.length + " leases expiring within 7 days", href: "my-commitments.html" });
 
@@ -6364,7 +6383,7 @@
         subtitle: "Overdue rent, today's viewings, open maintenance, and leases expiring soon for Rentals.",
         kpisHtml: [
           kpiCard("Rent Collected", compactMoney(rentThisMonth), rentTrendSubtitle(rentDelta, rentLastMonth), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626", ctx.moneyHref, countSpan(rentThisMonth, "money"), sparklineSvg(trendMonths.map(function (m) { return m.value; }), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626"), "wallet"),
-          kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " " + pluralize(overdueRent.length, "tenant", "tenants") + " unpaid this month", overdueRent.length > 0 ? "#DC2626" : "#16A34A", ctx.peopleHref, countSpan(outstandingRentTotal, "money"), sparklineSvg(outstandingRentTrend, "#DC2626"), "banknote"),
+          kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " " + pluralize(overdueRent.length, "tenant", "tenants") + " with a balance owed", overdueRent.length > 0 ? "#DC2626" : "#16A34A", ctx.peopleHref, countSpan(outstandingRentTotal, "money"), sparklineSvg(outstandingRentTrend, "#DC2626"), "banknote"),
           kpiCard("Occupied / Total Units", occupiedUnits + " / " + totalUnits, "Units currently occupied or sold", "#2563EB", ctx.itemsHref, countSpan(occupiedUnits, "ratio", " / " + totalUnits), staticProportionBar(totalUnits > 0 ? occupiedUnits / totalUnits : 0, "#2563EB", (totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0) + "% occupied"), "building-2"),
           kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", ctx.tasksHref, countSpan(maintenanceOpen.length, "plain"), sparklineSvg(maintenanceTrend, maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A"), "wrench")
         ].join(""),
@@ -6755,28 +6774,9 @@
         .map(function (lease) { return (dashboardData.people || []).find(function (p) { return String(p.id) === String(lease.person_id); }); })
         .filter(Boolean);
 
-      const overdueRent = [];
-      let outstandingRentTotal = 0;
-
-      activeLeases.forEach(function (lease) {
-        const person = (dashboardData.people || []).find(function (p) { return String(p.id) === String(lease.person_id); });
-        if (!person) return;
-
-        const unit = (dashboardData.items || []).find(function (item) { return String(item.id) === String(lease.linked_item_id); });
-
-        const paidThisMonth = (dashboardData.transactions || []).some(function (t) {
-          const relatedId = getValue(t, ["related_person_id"], "");
-          const date = String(getValue(t, ["transaction_date", "created_at"], "")).slice(0, 7);
-          return String(relatedId) === String(person.id) && date === monthKey && isRentalIncome(t);
-        });
-
-        if (paidThisMonth) return;
-
-        const rentAmount = Number(lease.amount || 0);
-        outstandingRentTotal += rentAmount;
-
-        overdueRent.push({ person, unit: unit || {}, amount: rentAmount });
-      });
+      const leaseOutstandingFull = computeLeaseOutstandingRent(activeLeases, dashboardData.people, dashboardData.items, dashboardData.invoices);
+      const overdueRent = leaseOutstandingFull.overdueRent;
+      const outstandingRentTotal = leaseOutstandingFull.outstandingRentTotal;
 
       const totalUnits = (dashboardData.items || []).length;
       const occupiedUnits = (dashboardData.items || []).filter(function (item) {
@@ -6822,7 +6822,7 @@
       const greetingMessages = [];
 
       if (overdueRent.length > 0) {
-        greetingMessages.push({ text: overdueRent.length === 1 ? "1 tenant has unpaid rent this month" : overdueRent.length + " tenants have unpaid rent this month", href: "my-people.html" });
+        greetingMessages.push({ text: overdueRent.length === 1 ? "1 tenant has a rent balance owed" : overdueRent.length + " tenants have a rent balance owed", href: "my-people.html" });
       }
       if (todaysViewings.length > 0) {
         greetingMessages.push({ text: todaysViewings.length === 1 ? "1 viewing scheduled today" : todaysViewings.length + " viewings scheduled today", href: "my-calendar.html" });
@@ -6886,7 +6886,7 @@
 
         <section class="kpi-grid">
           ${kpiCard("Rent Collected", compactMoney(rentThisMonth), rentTrendSubtitle(rentDelta, rentLastMonth), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626", "my-money.html", countSpan(rentThisMonth, "money"), sparklineSvg(trendMonths.map(function (m) { return m.value; }), rentThisMonth >= rentLastMonth ? "#16A34A" : "#DC2626"), "wallet")}
-          ${kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " " + pluralize(overdueRent.length, "tenant", "tenants") + " unpaid this month", overdueRent.length > 0 ? "#DC2626" : "#16A34A", "my-people.html", countSpan(outstandingRentTotal, "money"), sparklineSvg(outstandingRentTrend, "#DC2626"), "banknote")}
+          ${kpiCard("Outstanding Rent", compactMoney(outstandingRentTotal), overdueRent.length + " " + pluralize(overdueRent.length, "tenant", "tenants") + " with a balance owed", overdueRent.length > 0 ? "#DC2626" : "#16A34A", "my-people.html", countSpan(outstandingRentTotal, "money"), sparklineSvg(outstandingRentTrend, "#DC2626"), "banknote")}
           ${kpiCard("Occupied / Total Units", occupiedUnits + " / " + totalUnits, "Units currently occupied or sold", "#2563EB", "my-items.html", countSpan(occupiedUnits, "ratio", " / " + totalUnits), staticProportionBar(totalUnits > 0 ? occupiedUnits / totalUnits : 0, "#2563EB", (totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0) + "% occupied"), "building-2")}
           ${kpiCard("Open Maintenance", maintenanceOpen.length, "Requests needing action", maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A", "my-tasks.html", countSpan(maintenanceOpen.length, "plain"), sparklineSvg(maintenanceTrend, maintenanceOpen.length > 0 ? "#DC2626" : "#16A34A"), "wrench")}
         </section>
@@ -18225,7 +18225,7 @@
       const entries = [
         {
           key: "rent", label: "unpaid rent", weight: 40, score: rentScore, applicable: linkedCount > 0,
-          text: input.overdueRent.length === 1 ? "1 tenant has unpaid rent this month." : input.overdueRent.length + " tenants have unpaid rent this month.",
+          text: input.overdueRent.length === 1 ? "1 tenant has a rent balance owed." : input.overdueRent.length + " tenants have a rent balance owed.",
           actionLabel: "Follow up on unpaid rent", href: "my-people.html"
         },
         {

@@ -1411,6 +1411,18 @@
         return statementPersonIds.map(String).indexOf(String(c.person_id)) !== -1 && c.deposit_amount_kes;
       });
 
+      // Rule 3 (one source of truth): the lease's own running balance_owed
+      // folds into this statement's bottom-line total exactly as it does
+      // on the dashboard Outstanding Rent tile, Person 360, Debtors &
+      // Payables, and Profit per Property - a tenant who owes rent AND
+      // has an open extras invoice sees one number, not two.
+      const tenantLease = allCommitments.find(function (c) {
+        const status = String(c.status || "").toLowerCase();
+        return statementPersonIds.map(String).indexOf(String(c.person_id)) !== -1
+          && c.commitment_type === "lease" && status !== "cancelled" && status !== "terminated";
+      });
+      const leaseBalanceOwed = tenantLease ? Math.max(Number(tenantLease.balance_owed || 0), 0) : 0;
+
       const ledger = [];
       invoices.forEach(function (inv) {
         ledger.push({ date: inv.issue_date, type: "invoice", label: "Invoice " + inv.invoice_number, amount: Number(inv.total_amount) });
@@ -1502,6 +1514,19 @@
                   ${person.phone || person.email ? UnganiClientShared.safe([person.phone, person.email].filter(Boolean).join(" / ")) : ""}
                 </div>
               </div>
+              ${tenantLease ? `
+                <div class="invoice-party-box">
+                  <div class="invoice-party-label">Rent Balance</div>
+                  <div class="invoice-party-body">
+                    Monthly rent: ${UnganiClientShared.formatKES(tenantLease.amount || 0)}<br />
+                    ${leaseBalanceOwed > 0
+                      ? `Owed: ${UnganiClientShared.formatKES(leaseBalanceOwed)}`
+                      : (Number(tenantLease.credit_balance || 0) > 0
+                        ? `Credit: ${UnganiClientShared.formatKES(tenantLease.credit_balance)} (applied to next rent)`
+                        : `Fully paid`)}
+                  </div>
+                </div>
+              ` : ""}
               ${depositLease ? `
                 <div class="invoice-party-box">
                   <div class="invoice-party-label">Security Deposit (held, not income)</div>
@@ -1530,7 +1555,11 @@
 
             <div class="invoice-print-totals" style="margin-top:18px;">
               <table>
-                <tr class="invoice-total-due"><td>Balance Due</td><td style="text-align:right;">${UnganiClientShared.formatKES(closingBalance)}</td></tr>
+                ${tenantLease ? `
+                  <tr><td>Invoices balance</td><td style="text-align:right;">${UnganiClientShared.formatKES(closingBalance)}</td></tr>
+                  <tr><td>Rent balance</td><td style="text-align:right;">${UnganiClientShared.formatKES(leaseBalanceOwed)}</td></tr>
+                ` : ""}
+                <tr class="invoice-total-due"><td>Total Balance Due</td><td style="text-align:right;">${UnganiClientShared.formatKES(closingBalance + leaseBalanceOwed)}</td></tr>
               </table>
             </div>
 
