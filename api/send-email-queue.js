@@ -15,6 +15,8 @@ const INFO_PASSWORD = process.env.UNGANI_INFO_EMAIL_PASSWORD;
 const SUPPORT_EMAIL = process.env.UNGANI_SUPPORT_EMAIL;
 const SUPPORT_PASSWORD = process.env.UNGANI_SUPPORT_EMAIL_PASSWORD;
 
+const APP_URL = process.env.APP_URL || "https://ungani-os-portal.vercel.app";
+
 // Presence of this key alone is the "swap to Resend" switch - set it in
 // Vercel once the ungani.com domain shows Verified in the Resend
 // dashboard, redeploy, and every automated send from here on goes
@@ -340,11 +342,27 @@ async function getRegistrationAlertRow(supabase, relatedId) {
   return { ok: true, rows: data || [] };
 }
 
+// Retry window for genuinely-failed rows - capped attempts and age so a
+// permanently-broken address doesn't retry forever. Separate from
+// PENDING_STATUSES (which still drives registration_alert/tenant_self
+// paths unchanged) - only this general pending-sweep picks failed rows
+// back up. Real root cause this fixes: 'failed' was never in
+// PENDING_STATUSES at all, so the daily cron silently never retried
+// anything - 166 pre-Resend-switch failures sat unnoticed for days
+// until a manual investigation found them.
+const FAILED_RETRY_MAX_ATTEMPTS = 3;
+const FAILED_RETRY_MAX_AGE_HOURS = 48;
+
 async function getPendingEmails(supabase, limit, tenantId) {
+  const retryCutoff = new Date(Date.now() - FAILED_RETRY_MAX_AGE_HOURS * 60 * 60 * 1000).toISOString();
+
   let query = supabase
     .from(QUEUE_TABLE)
     .select("*")
-    .in(STATUS_COLUMN, PENDING_STATUSES);
+    .or(
+      `${STATUS_COLUMN}.in.(${PENDING_STATUSES.join(",")}),` +
+      `and(${STATUS_COLUMN}.eq.failed,${ATTEMPTS_COLUMN}.lt.${FAILED_RETRY_MAX_ATTEMPTS},resolved_at.is.null,created_at.gte.${retryCutoff})`
+    );
 
   if (tenantId) {
     query = query.eq("tenant_id", tenantId);
@@ -359,6 +377,45 @@ async function getPendingEmails(supabase, limit, tenantId) {
   }
 
   return { ok: true, rows: data || [] };
+}
+
+// Instant admin alert when a send ends this run still failed (not a
+// suppressed fake/bounce) - the only prior visibility was the Failed
+// badge on admin-email-queue.html, which nobody is paged to go look at.
+// Sent directly (not queued) so it doesn't wait for the next cron run;
+// best-effort only, never throws into the main response.
+async function alertAdminOfFailures(failures) {
+  if (!failures.length || !INFO_EMAIL) return;
+
+  const body =
+    `${failures.length} email(s) failed to send on this run:\n\n` +
+    failures.map((f) => `- ${f.to || "(unknown)"}: ${f.message}`).join("\n") +
+    `\n\nReview: ${APP_URL}/admin-email-queue.html`;
+
+  const email = {
+    to: INFO_EMAIL,
+    subject: `UNGANI OS: ${failures.length} email send failure(s)`,
+    text: body,
+    html: buildHtmlFromText(body)
+  };
+
+  const sender = { email: INFO_EMAIL, password: INFO_PASSWORD, label: "UNGANI" };
+
+  try {
+    if (RESEND_API_KEY) {
+      await sendViaResend(email, sender);
+    } else if (sender.password) {
+      await nodemailer.createTransport({
+        host: SMTP_HOST, port: SMTP_PORT, secure: SMTP_SECURE,
+        auth: { user: sender.email, pass: sender.password }
+      }).sendMail({
+        from: `"${sender.label}" <${sender.email}>`, replyTo: sender.email,
+        to: email.to, subject: email.subject, text: email.text, html: email.html
+      });
+    }
+  } catch (alertError) {
+    console.warn("Could not send failure alert to admin:", alertError.message);
+  }
 }
 
 export default async function handler(req, res) {
@@ -574,6 +631,9 @@ export default async function handler(req, res) {
         results.push({ id: record.id, ok: false, to: email.to, message: sendError.message });
       }
     }
+
+    const realFailures = results.filter((r) => !r.ok && !r.suppressed);
+    await alertAdminOfFailures(realFailures);
 
     return json(res, 200, {
       ok: true,

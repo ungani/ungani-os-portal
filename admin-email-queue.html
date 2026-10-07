@@ -577,7 +577,7 @@
 
       <div class="summary-grid">
         <div class="summary-card">
-          <label>Total</label>
+          <label>Loaded (use Load More for the rest)</label>
           <strong id="totalCount">0</strong>
         </div>
         <div class="summary-card">
@@ -667,6 +667,10 @@
           </thead>
           <tbody id="emailsBody"></tbody>
         </table>
+
+        <div style="display:flex; justify-content:center; margin-top:14px;" id="emailLoadMoreWrap">
+          <button type="button" class="ungani-btn dark" id="emailLoadMoreBtn" onclick="loadMoreEmails()">Load More</button>
+        </div>
       </div>
     </section>
 
@@ -678,6 +682,18 @@
     let supabaseClient = null;
     let currentAdmin = null;
     let allEmails = [];
+
+    // The RPC now paginates (it was previously unbounded - returning
+    // every row's full email_body with no limit, confirmed live). Loaded
+    // pages accumulate into allEmails so the existing client-side
+    // search/status/type filters keep working across everything loaded
+    // so far, same tradeoff already accepted on the other paginated
+    // pages in this app (my-documents.html etc.) - search only reaches
+    // what's been loaded, not the full backlog.
+    const EMAIL_PAGE_SIZE = 100;
+    let emailPageOffset = 0;
+    let emailHasMore = true;
+    let emailIsLoadingMore = false;
 
     window.addEventListener("load", function () {
       UnganiAdminShared.renderShell("adminRoot", {
@@ -802,16 +818,27 @@
       emptyBox.style.display = "none";
       tableWrap.style.display = "none";
 
+      emailPageOffset = 0;
+      emailHasMore = true;
+      allEmails = [];
+
       try {
-        const { data, error } = await supabaseClient.rpc("admin_get_ungani_email_queue");
+        const { data, error } = await supabaseClient.rpc("admin_get_ungani_email_queue", {
+          p_limit: EMAIL_PAGE_SIZE,
+          p_offset: 0
+        });
 
         if (error) throw error;
 
-        allEmails = Array.isArray(data) ? data : [];
+        const rows = Array.isArray(data) ? data : [];
+        allEmails = rows;
+        emailPageOffset = rows.length;
+        emailHasMore = rows.length === EMAIL_PAGE_SIZE;
 
         updateSummaryCounts();
         populateTypeFilter();
         renderEmails();
+        updateLoadMoreVisibility();
 
         loadingBox.style.display = "none";
 
@@ -825,6 +852,43 @@
         errorBox.style.display = "block";
         errorBox.textContent = "Unable to load email queue. " + getErrorMessage(error);
       }
+    }
+
+    async function loadMoreEmails() {
+      if (emailIsLoadingMore || !emailHasMore) return;
+      emailIsLoadingMore = true;
+
+      const btn = document.getElementById("emailLoadMoreBtn");
+      if (btn) { btn.disabled = true; btn.textContent = "Loading..."; }
+
+      try {
+        const { data, error } = await supabaseClient.rpc("admin_get_ungani_email_queue", {
+          p_limit: EMAIL_PAGE_SIZE,
+          p_offset: emailPageOffset
+        });
+
+        if (error) throw error;
+
+        const rows = Array.isArray(data) ? data : [];
+        allEmails = allEmails.concat(rows);
+        emailPageOffset += rows.length;
+        emailHasMore = rows.length === EMAIL_PAGE_SIZE;
+
+        updateSummaryCounts();
+        populateTypeFilter();
+        renderEmails();
+      } catch (error) {
+        alert("Could not load more emails: " + getErrorMessage(error));
+      } finally {
+        emailIsLoadingMore = false;
+        if (btn) { btn.disabled = false; btn.textContent = "Load More"; }
+        updateLoadMoreVisibility();
+      }
+    }
+
+    function updateLoadMoreVisibility() {
+      const wrap = document.getElementById("emailLoadMoreWrap");
+      if (wrap) wrap.style.display = emailHasMore ? "flex" : "none";
     }
 
     function updateSummaryCounts() {
