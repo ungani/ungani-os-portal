@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ctmtjwklltnsmfdtvqhl.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_jkZaWWep-cObTEv_F_kN6g_Ic85BxD9";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const CRON_SECRET = process.env.CRON_SECRET;
 
 // Daraja Sandbox by default - swapping to production is purely a Vercel
 // env-var change (MPESA_ENV=production + real Consumer Key/Secret/
@@ -20,6 +21,33 @@ const MPESA_PASSKEY = process.env.MPESA_PASSKEY || "bfb279f9aa9bdbcf158e97dd71a4
 const MPESA_SHORTCODE = process.env.MPESA_SHORTCODE || "174379";
 
 const APP_URL = process.env.APP_URL || "https://ungani-os-portal.vercel.app";
+
+// Community-documented Safaricom Daraja source IPs (not an officially
+// published, versioned list from Safaricom - compiled from real
+// production callback traffic across multiple independent Daraja
+// integrations). Deliberately LOG-ONLY, not a hard reject: the secret
+// token below is the real, verifiable gate on every C2B confirmation;
+// treating a possibly-stale third-party IP list as a hard block risks
+// silently dropping genuine Safaricom payments if their ranges change
+// before this list is updated. Set MPESA_IP_ALLOWLIST_ENFORCE=true to
+// upgrade this to a hard reject once you've confirmed (from your own
+// ungani_mpesa_c2b_callback_log rows) which IPs your real sandbox/
+// production traffic actually arrives from.
+const DEFAULT_SAFARICOM_IPS = [
+  "196.201.214.200", "196.201.214.206", "196.201.213.114", "196.201.214.207",
+  "196.201.214.208", "196.201.213.44", "196.201.212.127", "196.201.212.138",
+  "196.201.212.129", "196.201.212.136", "196.201.212.74", "196.201.212.69"
+];
+const SAFARICOM_CALLBACK_IPS = (process.env.SAFARICOM_CALLBACK_IPS || "")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+const EFFECTIVE_SAFARICOM_IPS = SAFARICOM_CALLBACK_IPS.length ? SAFARICOM_CALLBACK_IPS : DEFAULT_SAFARICOM_IPS;
+const MPESA_IP_ALLOWLIST_ENFORCE = process.env.MPESA_IP_ALLOWLIST_ENFORCE === "true";
+
+function getClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) return String(forwarded).split(",")[0].trim();
+  return (req.socket && req.socket.remoteAddress) || null;
+}
 
 function json(res, status, body) {
   res.status(status).json(body);
@@ -300,7 +328,7 @@ async function initiateStkPush(req, res) {
         PartyA: phoneNumber,
         PartyB: MPESA_SHORTCODE,
         PhoneNumber: phoneNumber,
-        CallBackURL: APP_URL + "/api/mpesa-stk-push",
+        CallBackURL: APP_URL + "/api/payments-callback",
         AccountReference: accountReference,
         TransactionDesc: transactionDesc
       })
@@ -682,14 +710,26 @@ async function registerC2BUrls(req, res) {
     const baseUrl = resolveMpesaBaseUrlFor(credResponse.environment);
     const accessToken = await getDarajaAccessTokenFor(baseUrl, credResponse.consumer_key, credResponse.consumer_secret);
 
+    const { data: connectionRow } = await supabaseAdmin
+      .from("ungani_tenant_mpesa_connections")
+      .select("callback_secret_token")
+      .eq("tenant_id", caller.tenantId)
+      .maybeSingle();
+
+    if (!connectionRow || !connectionRow.callback_secret_token) {
+      return json(res, 500, { ok: false, message: "No callback secret found for this connection - save your Paybill credentials again." });
+    }
+
     // Daraja's RegisterURL rejects any Confirmation/ValidationURL containing
     // the word "mpesa" (confirmed live: "Bad Request - Invalid ValidationURL
     // - URL has the word MPESA") - a restriction specific to this one-time
-    // whitelist registration, not to per-request callback URLs (the STK
-    // Push CallBackURL below still uses /api/mpesa-stk-push directly and
-    // has always worked). Routed via a vercel.json rewrite to the SAME
-    // function/file - no new serverless function, still 12 total.
-    const callbackUrl = APP_URL + "/api/payments-callback";
+    // whitelist registration, not to per-request callback URLs. Routed via
+    // a vercel.json rewrite to the SAME function/file - no new serverless
+    // function, still 12 total. Each tenant registers their OWN callback
+    // URL (same shared file, different query string) carrying their own
+    // secret token - handleC2BConfirmation below rejects+logs any request
+    // whose token doesn't match the connection matched by BusinessShortCode.
+    const callbackUrl = APP_URL + "/api/payments-callback?t=" + encodeURIComponent(connectionRow.callback_secret_token);
 
     const registerResponse = await fetch(baseUrl + "/mpesa/c2b/v2/registerurl", {
       method: "POST",
@@ -782,10 +822,15 @@ async function registerC2BUrls(req, res) {
 // Distinguished from the STK callback (nested Body.stkCallback) and
 // from our own outbound calls (always carry an Authorization bearer
 // header) purely by shape, same convention as the rest of this file.
-// Security model matches handleStkCallback above: this endpoint is
-// necessarily public, so integrity comes from the Shortcode matching a
-// real connected tenant, not from a bearer token - an unrecognized
-// Shortcode is silently acknowledged and ignored.
+//
+// Security model: a ?t=<secret> query param, unique per tenant and
+// embedded in the ConfirmationURL/ValidationURL that tenant registered
+// (see registerC2BUrls above) - checked against the SAME connection
+// row matched by BusinessShortCode, so a request can't just borrow
+// someone else's token. Missing or mismatched token is rejected (not
+// ACKed) and logged. Source IP is also checked against Safaricom's
+// known ranges but is LOG-ONLY by default (see MPESA_IP_ALLOWLIST_ENFORCE
+// above) - the token is the real gate.
 async function handleC2BConfirmation(req, res) {
   const ack = { ResultCode: 0, ResultDesc: "Success" };
   const nack = { ResultCode: 1, ResultDesc: "Failed" };
@@ -801,11 +846,16 @@ async function handleC2BConfirmation(req, res) {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
+  const clientIp = getClientIp(req);
+  const ipAllowed = clientIp ? EFFECTIVE_SAFARICOM_IPS.includes(clientIp) : false;
+  const suppliedToken = (req.query && req.query.t) || null;
+
   // Every C2B confirmation is logged here FIRST, before any tenant
   // lookup or processing - this is the one write that must succeed for
   // the payment to ever be ACKed. A shortcode collision, a matching
-  // bug, or any other processing failure below still leaves the full
-  // raw payload sitting here for admin review, instead of vanishing.
+  // bug, a rejected token, or any other processing failure below still
+  // leaves the full raw payload sitting here for admin review, instead
+  // of vanishing.
   let rawRowId = null;
   try {
     const { data: rawRow, error: rawInsertError } = await supabaseAdmin
@@ -814,7 +864,9 @@ async function handleC2BConfirmation(req, res) {
         raw_payload: req.body || {},
         shortcode: (req.body && req.body.BusinessShortCode) || null,
         trans_id: (req.body && req.body.TransID) || null,
-        status: "received"
+        status: "received",
+        source_ip: clientIp,
+        ip_allowlisted: ipAllowed
       })
       .select("id")
       .single();
@@ -830,7 +882,9 @@ async function handleC2BConfirmation(req, res) {
   // From here on the payment is safely captured regardless of outcome,
   // so every remaining path ACKs 200 - Safaricom doesn't need to retry,
   // and nothing is lost even on failure because it's sitting in the raw
-  // log above, marked for admin follow-up.
+  // log above, marked for admin follow-up. A rejected request (bad
+  // token, blocked IP) is the one exception - it gets a real non-200
+  // nack, since that's not a payment we're choosing to accept at all.
   async function markRaw(status, reason, tenantId, transactionId) {
     const patch = {
       status: status,
@@ -857,7 +911,7 @@ async function handleC2BConfirmation(req, res) {
 
     const { data: connection } = await supabaseAdmin
       .from("ungani_tenant_mpesa_connections")
-      .select("tenant_id")
+      .select("tenant_id, callback_secret_token")
       .eq("shortcode", shortcode)
       .eq("status", "active")
       .maybeSingle();
@@ -869,87 +923,42 @@ async function handleC2BConfirmation(req, res) {
 
     const tenantId = connection.tenant_id;
 
-    // Idempotency - Safaricom can call the confirmation more than once
-    // for the same transaction. A plain select-then-insert, matching
-    // this file's existing style rather than relying solely on a DB
-    // constraint.
-    const { data: existing } = await supabaseAdmin
-      .from("transactions")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("reference_no", transId)
-      .eq("payment_method", "M-Pesa")
-      .maybeSingle();
-
-    if (existing) {
-      await markRaw("matched", "Duplicate delivery of an already-recorded transaction.", tenantId, existing.id);
-      return json(res, 200, ack);
+    if (!suppliedToken || suppliedToken !== connection.callback_secret_token) {
+      await markRaw("rejected", "Missing or invalid callback token.", tenantId);
+      return json(res, 401, nack);
     }
 
-    const normalizedPhone = normalizePhoneNumber(req.body.MSISDN);
-    let relatedPersonId = null;
-
-    // Same matching rule as my-money.html's handlePayerPhoneChange() /
-    // normalizeMoneyPhone() - exact single match auto-links, zero or
-    // multiple matches leave it unassigned rather than guess. The two
-    // copies can't literally share code (one runs in the browser, this
-    // one runs here in a serverless function), but the RULE must stay
-    // identical - keep them in sync if either ever changes.
-    if (normalizedPhone) {
-      const { data: people } = await supabaseAdmin
-        .from("client_people")
-        .select("id, phone")
-        .eq("tenant_id", tenantId)
-        .is("deleted_at", null);
-
-      const matches = (people || []).filter(function (person) {
-        return normalizePhoneNumber(person.phone) === normalizedPhone;
-      });
-
-      if (matches.length === 1) {
-        relatedPersonId = matches[0].id;
-      }
+    if (MPESA_IP_ALLOWLIST_ENFORCE && !ipAllowed) {
+      await markRaw("rejected", "Source IP " + clientIp + " is not an allowlisted Safaricom IP.", tenantId);
+      return json(res, 403, nack);
     }
 
     const transAmount = Number(req.body.TransAmount) || 0;
     const parsedDate = parseDarajaTimestamp(req.body.TransTime);
-    const transactionDate = (parsedDate || new Date().toISOString()).slice(0, 10);
+    const transTime = parsedDate ? new Date(parsedDate).toISOString() : new Date().toISOString();
 
-    // category is deliberately "Uncategorized", not guessed from
-    // BillRefNumber - a bare Paybill payment carries no reliable signal
-    // for what it's for (rent vs. deposit vs. something else), so the
-    // owner reclassifies it from Money, same "Not assigned" philosophy
-    // already used for an unmatched payer phone.
-    const { data: inserted, error: insertError } = await supabaseAdmin
-      .from("transactions")
-      .insert({
-        tenant_id: tenantId,
-        type: "income",
-        transaction_type: "income",
-        category: "Uncategorized",
-        amount: transAmount,
-        currency: "KES",
-        exchange_rate: 1,
-        amount_kes: transAmount,
-        transaction_date: transactionDate,
-        payment_method: "M-Pesa",
-        status: "completed",
-        description: "Received via M-Pesa Paybill (auto-captured) - reclassify the category if needed.",
-        related_person_id: relatedPersonId,
-        payer_phone: normalizedPhone || req.body.MSISDN || null,
-        reference_no: transId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select("id")
-      .single();
+    const { data: applyResult, error: applyError } = await supabaseAdmin.rpc("apply_ungani_mpesa_rent_payment", {
+      p_tenant_id: tenantId,
+      p_trans_id: transId,
+      p_bill_ref_number: req.body.BillRefNumber || null,
+      p_msisdn: req.body.MSISDN || null,
+      p_amount: transAmount,
+      p_trans_time: transTime,
+      p_source: "c2b",
+      p_raw_callback_log_id: rawRowId
+    });
 
-    if (insertError || !inserted) {
-      await markRaw("error", (insertError && insertError.message) || "Transaction insert failed.", tenantId);
+    if (applyError || !applyResult || applyResult.ok !== true) {
+      await markRaw("error", (applyError && applyError.message) || "apply_ungani_mpesa_rent_payment failed.", tenantId);
       return json(res, 200, ack);
     }
 
-    await markRaw("matched", null, tenantId, inserted.id);
+    await markRaw(
+      applyResult.status === "unmatched" ? "unmatched" : "matched",
+      null,
+      tenantId,
+      applyResult.transaction_id || null
+    );
     return json(res, 200, ack);
   } catch (error) {
     await markRaw("error", error.message);
@@ -975,6 +984,25 @@ export default async function handler(req, res) {
   // Vercel Hobby's 12-function cap (see the comment above this handler -
   // that cap has already broken a deploy once this project). Nothing
   // secret in the response - sandbox vs. production is not sensitive.
+  if (req.method === "GET" && req.query && req.query.cron === "accrue_rent") {
+    // Vercel's own cron trigger (see vercel.json) - not a 13th serverless
+    // function, same file, same CRON_SECRET bearer-auth convention as
+    // api/check-overdue-tasks.js.
+    const bearerToken = getBearerToken(req);
+    if (!bearerToken || !CRON_SECRET || bearerToken !== CRON_SECRET) {
+      return json(res, 401, { ok: false, message: "Unauthorized." });
+    }
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      return json(res, 500, { ok: false, message: "Missing SUPABASE_SERVICE_ROLE_KEY." });
+    }
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+    const { data, error } = await supabaseAdmin.rpc("service_accrue_ungani_monthly_rent");
+    if (error) return json(res, 500, { ok: false, message: error.message });
+    return json(res, 200, data);
+  }
+
   if (req.method === "GET") {
     res.setHeader("Cache-Control", "no-store");
     return json(res, 200, { ok: true, production: MPESA_ENV === "production" });
