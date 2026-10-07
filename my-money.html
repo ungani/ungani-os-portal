@@ -84,6 +84,12 @@
     let activeMoneyCategory = "all";
     let currentExchangeRate = null;
     let urlActionApplied = false;
+    // Dashboard Payroll card deep-link (?filter=staff_payments) - client-
+    // side only, same tradeoff as every other filter on this page: applies
+    // to whatever page of moneyRows is currently loaded, not a separate
+    // server query. isStaffPayment mirrors client.html's own definition
+    // (related_team_member_id presence), not a text/category match.
+    let urlStaffPaymentFilter = false;
 
     // Pagination: moneySummaryRows holds every row matching the current
     // tenant/section/status/search scope, but only narrow columns (not
@@ -1327,6 +1333,13 @@
           </div>
         </section>
 
+        ${urlStaffPaymentFilter ? `
+          <div class="money-chip" style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;">
+            Showing staff payments only
+            <button type="button" onclick="clearStaffPaymentFilter()" style="border:none;background:transparent;cursor:pointer;color:inherit;font-weight:700;">✕</button>
+          </div>
+        ` : ""}
+
         ${renderCategoryTiles()}
 
         <section class="money-kpi-grid">
@@ -1429,6 +1442,14 @@
     }
 
     async function applyUrlActions() {
+      // Independent of urlActionApplied (that flag only guards the
+      // highlight/add one-shot actions below) - the Payroll dashboard
+      // card deep-links here with ?filter=staff_payments.
+      if (new URLSearchParams(window.location.search).get("filter") === "staff_payments") {
+        urlStaffPaymentFilter = true;
+        renderMoneyPage();
+      }
+
       if (urlActionApplied) return;
 
       const params = new URLSearchParams(window.location.search);
@@ -2319,7 +2340,15 @@
     // loadMoneySummaryRows/loadMoneyPage), so moneySummaryRows and moneyRows
     // only need the category slice applied here for tile counts/rendering.
     function getFilteredRows() {
-      return moneyRows;
+      if (!urlStaffPaymentFilter) return moneyRows;
+      return moneyRows.filter(function (row) {
+        return !!UnganiClientShared.getValue(row, ["related_team_member_id"], "");
+      });
+    }
+
+    function clearStaffPaymentFilter() {
+      urlStaffPaymentFilter = false;
+      renderMoneyPage();
     }
 
     async function selectMoneyCategory(key) {

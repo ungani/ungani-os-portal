@@ -145,6 +145,7 @@
         collapsible: false,
         items: [
           ["dashboard", "client.html", "house", "Dashboard"],
+          ["team-access", "my-team-access.html", "user-cog", "Team"],
           ["team-chat", "my-team-chat.html", "users-round", "Team Chat"],
           ["favorites", "my-favorites.html", "star", "Favorites"],
           ["tasks", "my-tasks.html", "square-check-big", "Tasks / Follow-ups"],
@@ -201,7 +202,6 @@
         defaultExpanded: false,
         items: [
           ["security", "my-security.html", "shield-check", "Security & Data"],
-          ["team-access", "my-team-access.html", "user-cog", "Team Access"],
           ["recently-deleted", "my-recently-deleted.html", "trash", "Recently Deleted"]
         ]
       },

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>UNGANI OS - Team Access</title>
+  <title>UNGANI OS - Team</title>
 
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/ungani-icon-180.png" />
@@ -578,7 +578,7 @@
       <div id="teamNavGroups"></div>
 
       <div class="sidebar-footer">
-        <strong>Team Access</strong><br />
+        <strong>Team</strong><br />
         ungani.com
       </div>
     </aside>
@@ -588,7 +588,7 @@
     <header class="topbar">
       <div>
         <button class="mobile-menu ungani-btn dark" type="button" onclick="toggleSidebar()" style="margin-bottom:12px;">☰ Menu</button>
-        <h1>Team Access</h1>
+        <h1>Team</h1>
         <p>Owner control center for staff access. Add coworkers and choose what each person can view, create, edit, or delete.</p>
       </div>
 
@@ -628,7 +628,9 @@
               <option value="staff" selected>Staff</option>
               <option value="viewer">Viewer</option>
               <option value="accountant">Accountant</option>
-              <option value="frontdesk">Front Desk</option>
+              <option value="frontdesk">Front Desk / Receptionist</option>
+              <option value="agent">Agent</option>
+              <option value="sales">Sales</option>
               <option value="teacher">Teacher / Lecturer</option>
               <option value="administration">Administration</option>
             </select>
@@ -712,7 +714,7 @@
       </div>
     </section>
 
-    <p class="footer">UNGANI OS Team Access · ungani.com · info@ungani.com</p>
+    <p class="footer">UNGANI OS Team · ungani.com · info@ungani.com</p>
   </div>
     </main>
   </div>
@@ -1071,7 +1073,7 @@
 
         <div class="statement-toolbar no-print">
           <button class="ungani-btn gold" onclick="window.print()">Print / Save PDF</button>
-          <a class="ungani-btn light" href="my-team-access.html">Back to Team Access</a>
+          <a class="ungani-btn light" href="my-team-access.html">Back to Team</a>
         </div>
 
         <div class="statement-shell">
@@ -1293,7 +1295,7 @@
                   Open Tasks: ${taskCounts.open}${taskCounts.overdue > 0 ? ` <span style="color:#d64545;font-weight:600;">(${taskCounts.overdue} overdue)</span>` : ""}
                 </small>
               </div>
-              <span class="badge">${safe(member.role_key || "staff")} · ${safe(member.status || "active")}</span>
+              <span class="badge">${safe(roleDisplayLabel(member.role_key))} · ${safe(member.status || "active")}</span>
             </div>
 
             <div class="perm-grid">
@@ -1332,7 +1334,7 @@
 
             <div class="actions" style="justify-content:flex-start;">
               ${isOwnerViewer ? `<button class="ungani-btn small dark" type="button" onclick="openMemberDiscussionPanel('${attr(member.id)}')"><i data-lucide="message-circle"></i> Discuss</button>` : ""}
-              <button class="ungani-btn small light" type="button" onclick="resetMemberToRoleDefaults('${attr(member.id)}', '${attr(member.role_key || "staff")}', this)">Reset to ${safe(toTitleMember(member.role_key || "staff"))} Defaults</button>
+              <button class="ungani-btn small light" type="button" onclick="resetMemberToRoleDefaults('${attr(member.id)}', '${attr(member.role_key || "staff")}', this)">Reset to ${safe(roleDisplayLabel(member.role_key))} Defaults</button>
               <button class="ungani-btn small red" type="button" onclick="disableMember('${attr(member.id)}', this)">Disable Staff</button>
             </div>
           </div>
@@ -1504,8 +1506,36 @@
     }
 
     async function disableMember(memberId, buttonEl) {
-      if (!confirm("Disable this staff member?")) return;
+      const member = members.find(m => String(m.id) === String(memberId));
+      if (!member) return;
 
+      let openTasks = [];
+      try {
+        const response = await supabaseClient
+          .from("tasks")
+          .select("id, title, status, due_date")
+          .eq("tenant_id", currentTenantId)
+          .is("deleted_at", null)
+          .eq("assigned_to_team_member_id", memberId);
+
+        openTasks = (response.data || []).filter(function (t) {
+          const status = String(t.status || "pending").toLowerCase();
+          return status !== "completed" && status !== "cancelled";
+        });
+      } catch (error) {
+        console.warn("Could not check open tasks before disabling:", error.message);
+      }
+
+      if (openTasks.length > 0) {
+        openReassignTasksDialog(member, openTasks, buttonEl);
+        return;
+      }
+
+      if (!confirm("Disable this staff member?")) return;
+      await runDisableMember(memberId, buttonEl);
+    }
+
+    async function runDisableMember(memberId, buttonEl) {
       await withButtonLoading(buttonEl, async () => {
         const response = await supabaseClient.rpc("owner_disable_ungani_team_member", {
           p_team_member_id: memberId
@@ -1525,6 +1555,115 @@
         logMemberActivity(memberId, "status_changed", "Marked as Disabled.");
 
         await loadTeamMembers();
+      });
+    }
+
+    // Disabling a staff member who still has open tasks assigned - Chris
+    // asked to see the count and choose: move them to another active
+    // member, or leave unassigned. Reuses the .mp-backdrop overlay styles
+    // (injectMemberPanelStylesOnce()) with a centered dialog box instead
+    // of the right-side discussion panel.
+    function injectReassignDialogStylesOnce() {
+      if (document.getElementById("unganiReassignDialogStyles")) return;
+
+      const style = document.createElement("style");
+      style.id = "unganiReassignDialogStyles";
+      style.textContent = `
+        .rt-dialog {
+          width: min(440px, 92vw);
+          max-height: 85vh;
+          overflow-y: auto;
+          background: var(--card-solid, #FFFFFF);
+          color: var(--text, #061C3D);
+          border-radius: 16px;
+          box-shadow: 0 24px 60px rgba(6,28,61,0.32);
+          padding: 20px;
+          margin: auto;
+        }
+        .rt-dialog h3 { margin: 0 0 6px; }
+        .rt-dialog p.rt-small { color: var(--text-soft, #64748B); font-size: 12.5px; margin: 0 0 14px; }
+        .rt-task-list { max-height: 180px; overflow-y: auto; border: 1px solid var(--border, rgba(6,28,61,0.12)); border-radius: 10px; padding: 8px 10px; margin-bottom: 14px; background: var(--soft, #F8FAFC); }
+        .rt-task-list div { font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--border, rgba(6,28,61,0.08)); }
+        .rt-task-list div:last-child { border-bottom: none; }
+        .rt-dialog select { width: 100%; margin-bottom: 14px; }
+        .rt-dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    function openReassignTasksDialog(member, openTasks, buttonEl) {
+      injectMemberPanelStylesOnce();
+      injectReassignDialogStylesOnce();
+
+      const existing = document.getElementById("unganiReassignBackdrop");
+      if (existing) existing.remove();
+
+      const otherActiveMembers = members.filter(function (m) {
+        return String(m.id) !== String(member.id) && String(m.status || "active").toLowerCase() !== "disabled";
+      });
+
+      const backdrop = document.createElement("div");
+      backdrop.id = "unganiReassignBackdrop";
+      backdrop.className = "mp-backdrop";
+      backdrop.style.justifyContent = "center";
+      backdrop.style.alignItems = "center";
+      backdrop.onclick = function (event) {
+        if (event.target === backdrop) backdrop.remove();
+      };
+
+      backdrop.innerHTML = `
+        <div class="rt-dialog" onclick="event.stopPropagation();">
+          <h3>${openTasks.length} open task${openTasks.length === 1 ? "" : "s"} assigned to ${safe(member.full_name || "this staff member")}</h3>
+          <p class="rt-small">Choose what happens to these tasks before disabling this staff member.</p>
+          <div class="rt-task-list">
+            ${openTasks.map(function (t) {
+              return `<div>${safe(t.title || "Untitled task")}${t.due_date ? ` · due ${safe(t.due_date)}` : ""}</div>`;
+            }).join("")}
+          </div>
+          <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:6px;">Move these tasks to</label>
+          <select id="reassignTargetSelect">
+            <option value="">Leave unassigned</option>
+            ${otherActiveMembers.map(function (m) {
+              return `<option value="${attr(m.id)}">${safe(m.full_name || "Unnamed Staff")} (${safe(roleDisplayLabel(m.role_key))})</option>`;
+            }).join("")}
+          </select>
+          <div class="rt-dialog-actions">
+            <button class="ungani-btn light" type="button" onclick="document.getElementById('unganiReassignBackdrop').remove();">Cancel</button>
+            <button class="ungani-btn red" type="button" id="confirmReassignBtn" onclick="confirmReassignAndDisable('${attr(member.id)}')">Reassign &amp; Disable</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(backdrop);
+    }
+
+    async function confirmReassignAndDisable(memberId) {
+      const btn = document.getElementById("confirmReassignBtn");
+      const select = document.getElementById("reassignTargetSelect");
+      const targetId = select ? select.value : "";
+
+      await withButtonLoading(btn, async () => {
+        const updatePayload = targetId
+          ? { assigned_to_team_member_id: targetId, assigned_to_is_owner: false }
+          : { assigned_to_team_member_id: null, assigned_to_is_owner: false };
+
+        const updateResponse = await supabaseClient
+          .from("tasks")
+          .update(updatePayload)
+          .eq("tenant_id", currentTenantId)
+          .eq("assigned_to_team_member_id", memberId)
+          .is("deleted_at", null)
+          .not("status", "in", "(completed,cancelled)");
+
+        if (updateResponse.error) {
+          alert("Could not reassign tasks: " + updateResponse.error.message);
+          return;
+        }
+
+        const backdrop = document.getElementById("unganiReassignBackdrop");
+        if (backdrop) backdrop.remove();
+
+        await runDisableMember(memberId, null);
       });
     }
 
@@ -1579,6 +1718,17 @@
 
     function toTitleMember(value) {
       return String(value || "").replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    const ROLE_DISPLAY_LABELS = {
+      frontdesk: "Front Desk / Receptionist",
+      administration: "Administration",
+      teacher: "Teacher / Lecturer"
+    };
+
+    function roleDisplayLabel(roleKey) {
+      const key = String(roleKey || "staff").toLowerCase();
+      return ROLE_DISPLAY_LABELS[key] || toTitleMember(key);
     }
 
     function formatMemberDateTime(value) {
@@ -1822,7 +1972,7 @@
 
       body.innerHTML = `
         <div class="mp-section">
-          <p class="mp-small">${safe(member.role_key || "staff")} · ${safe(member.status || "active")}</p>
+          <p class="mp-small">${safe(roleDisplayLabel(member.role_key))} · ${safe(member.status || "active")}</p>
         </div>
 
         <div class="mp-section">

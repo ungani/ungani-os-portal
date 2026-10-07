@@ -1133,6 +1133,16 @@
         cursor: pointer;
       }
 
+      /* Dashboard polish: the tagline bubble used to sit there
+         permanently, which could overlap dashboard content on narrower
+         desktop widths. It now shows briefly on load, then shrinks away
+         to just the avatar - see the setTimeout in renderFab(). */
+      .nia-tagline.nia-tagline-shrink {
+        opacity: 0;
+        pointer-events: none;
+        transform: scale(0.85);
+      }
+
       .nia-tagline::after {
         content: "";
         position: absolute;
@@ -1536,8 +1546,17 @@
     tagline.className = "nia-tagline";
     tagline.type = "button";
     tagline.textContent = pickNiaTaglineText();
-    tagline.addEventListener("click", toggleNia);
+    tagline.addEventListener("click", function () {
+      tagline.classList.add("nia-tagline-shrink");
+      toggleNia();
+    });
     document.body.appendChild(tagline);
+
+    // Show briefly, then shrink to just the avatar - never sits over
+    // content indefinitely. One-shot per page load, not re-shown later.
+    setTimeout(function () {
+      tagline.classList.add("nia-tagline-shrink");
+    }, 5000);
 
     // Permanent, always-visible re-trigger for the guided walkthrough -
     // unlike nia-fab-dot (one-shot, gone forever after the first ever
