@@ -1328,6 +1328,69 @@
       line-height: 1.45;
     }
 
+    .alert-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .alert-card {
+      position: relative;
+      overflow: hidden;
+      display: block;
+      text-decoration: none;
+      border-radius: 20px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      min-height: 110px;
+      transition: 0.2s ease;
+    }
+
+    .alert-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.18);
+    }
+
+    .alert-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 14px;
+      bottom: 14px;
+      width: 5px;
+      border-radius: 0 999px 999px 0;
+      background: var(--alert-accent, var(--border));
+    }
+
+    .alert-card.has-count::before {
+      background: var(--red, #DC2626);
+    }
+
+    .alert-card span.alert-label {
+      display: block;
+      color: var(--text-soft);
+      font-size: 11.5px;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      line-height: 1.3;
+    }
+
+    .alert-card h4 {
+      margin: 10px 0 0;
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+
+    .alert-card.has-count h4 {
+      color: var(--red, #DC2626);
+    }
+
     .grid-2 {
       display: grid;
       grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
@@ -2365,6 +2428,40 @@
           </a>
         </div>
 
+        <!-- ATTENTION-NEEDED ALERT CARDS - each clickable straight to its
+             real page, each count excludes is_test tenants (see
+             sql/admin-dashboard-alert-cards.sql). -->
+        <div class="alert-grid" id="dashboardAlertGrid">
+          <a href="admin.html" class="alert-card" id="alertRegistrations">
+            <span class="alert-label">New Registrations</span>
+            <h4>—</h4>
+          </a>
+          <a href="admin-subscriptions.html" class="alert-card" id="alertTrials">
+            <span class="alert-label">Trials Ending This Week</span>
+            <h4>—</h4>
+          </a>
+          <a href="admin-payment-proofs.html" class="alert-card" id="alertPayments">
+            <span class="alert-label">Payments To Confirm</span>
+            <h4>—</h4>
+          </a>
+          <a href="admin-subscriptions.html" class="alert-card" id="alertOverdue">
+            <span class="alert-label">Subscriptions Overdue</span>
+            <h4>—</h4>
+          </a>
+          <a href="admin-storage.html" class="alert-card" id="alertStorage">
+            <span class="alert-label">Storage ≥ 80%</span>
+            <h4>—</h4>
+          </a>
+          <a href="admin-email-queue.html" class="alert-card" id="alertEmails">
+            <span class="alert-label">Failed Emails</span>
+            <h4>—</h4>
+          </a>
+          <a href="admin-partners.html" class="alert-card" id="alertPartnerPayouts">
+            <span class="alert-label">Partner Payouts Due</span>
+            <h4>—</h4>
+          </a>
+        </div>
+
         <!-- CORE DATA KPI METRICS -->
         <div class="kpi-grid" id="kpiGridWrap">
           <div class="kpi-card" style="--accent: var(--gold);">
@@ -3001,12 +3098,44 @@
       loadPlatformHealth();
       loadBusinessHealthExpansion();
       loadKPIs();
+      loadDashboardAlerts();
       loadNeedsAttention();
       loadPerformanceChart();
       loadActivityTimeline();
       loadNotifications();
       loadChatPreview();
       loadBackgroundJobsHealth();
+    }
+
+    // Clickable attention-needed alert cards (sql/admin-dashboard-alert-cards.sql)
+    // - one combined RPC, 7 counts, every count already excludes is_test
+    // tenants server-side. A card with count 0 still renders (muted),
+    // never hidden - absence of a problem is itself a useful signal.
+    function loadDashboardAlerts() {
+      safeDataFetch(async function () {
+        var result = await supabaseClient.rpc('admin_get_ungani_dashboard_alerts');
+        if (result.error) throw result.error;
+
+        var row = (result.data && result.data[0]) || {};
+
+        var cards = [
+          { id: 'alertRegistrations', value: row.registrations_waiting },
+          { id: 'alertTrials', value: row.trials_ending_this_week },
+          { id: 'alertPayments', value: row.payments_to_confirm },
+          { id: 'alertOverdue', value: row.subscriptions_overdue },
+          { id: 'alertStorage', value: row.storage_over_80pct },
+          { id: 'alertEmails', value: row.failed_emails_unresolved },
+          { id: 'alertPartnerPayouts', value: row.partner_payouts_due }
+        ];
+
+        cards.forEach(function (card) {
+          var el = document.getElementById(card.id);
+          if (!el) return;
+          var count = Number(card.value || 0);
+          el.querySelector('h4').textContent = count;
+          el.classList.toggle('has-count', count > 0);
+        });
+      });
     }
 
     // loadKPIs() and loadPerformanceChart() both run concurrently off

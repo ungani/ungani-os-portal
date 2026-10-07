@@ -48,7 +48,12 @@
           { key: "sections", href: "sections.html", icon: "puzzle", label: "Business Types & Sections", activeKey: "admin-sections" },
           { key: "users", href: "users.html", icon: "shield-check", label: "Users & Permissions", activeKey: "admin-users" },
           { key: "tasks", href: "admin-tasks.html", icon: "square-check-big", label: "Tasks", activeKey: "admin-tasks" },
-          { key: "calendar", href: "admin-calendar.html", icon: "calendar", label: "Calendar", activeKey: "admin-calendar" }
+          { key: "calendar", href: "admin-calendar.html", icon: "calendar", label: "Calendar", activeKey: "admin-calendar" },
+          // Moved out of the collapsed Account/System groups (both default
+          // to collapsed) into this always-expanded group - previously
+          // reachable only by typing the URL directly, confirmed live.
+          { key: "packages", href: "admin-subscriptions.html", icon: "layers", label: "Subscriptions & Trial Control", activeKey: "admin-subscriptions" },
+          { key: "storageUsage", href: "admin-storage.html", icon: "hard-drive", label: "Storage Usage", activeKey: "admin-storage" }
         ]
       },
       {
@@ -91,7 +96,6 @@
         defaultExpanded: false,
         items: [
           { key: "billing", href: "admin-billing.html", icon: "credit-card", label: "Billing", activeKey: "admin-billing" },
-          { key: "packages", href: "admin-subscriptions.html", icon: "layers", label: "Packages", activeKey: "admin-subscriptions" },
           { key: "paymentProofs", href: "admin-payment-proofs.html", icon: "banknote", label: "Payment Proofs", activeKey: "admin-payment-proofs" },
           { key: "upgradeRequests", href: "admin-upgrade-requests.html", icon: "arrow-up", label: "Upgrade Requests", activeKey: "admin-upgrade-requests" },
           { key: "billingAutomation", href: "admin-billing-automation.html", icon: "zap", label: "Billing Automation", activeKey: "admin-billing-automation" },
@@ -109,7 +113,6 @@
         items: [
           { key: "healthCheck", href: "admin-health.html", icon: "heart-pulse", label: "System Health", activeKey: "admin-health" },
           { key: "auditLogs", href: "admin-audit-logs.html", icon: "scroll-text", label: "Audit Logs", activeKey: "admin-audit-logs" },
-          { key: "storageUsage", href: "admin-storage.html", icon: "hard-drive", label: "Storage Usage", activeKey: "admin-storage" },
           { key: "errorLog", href: "admin-error-log.html", icon: "bug", label: "Error Log", activeKey: "admin-error-log" },
           { key: "mpesaCallbacks", href: "admin-mpesa-callbacks.html", icon: "banknote", label: "M-Pesa Callbacks", activeKey: "admin-mpesa-callbacks" },
           { key: "emailQueue", href: "admin-email-queue.html", icon: "mail", label: "Email Queue", activeKey: "admin-email-queue" },
