@@ -1335,7 +1335,9 @@
             <div class="actions" style="justify-content:flex-start;">
               ${isOwnerViewer ? `<button class="ungani-btn small dark" type="button" onclick="openMemberDiscussionPanel('${attr(member.id)}')"><i data-lucide="message-circle"></i> Discuss</button>` : ""}
               <button class="ungani-btn small light" type="button" onclick="resetMemberToRoleDefaults('${attr(member.id)}', '${attr(member.role_key || "staff")}', this)">Reset to ${safe(roleDisplayLabel(member.role_key))} Defaults</button>
-              <button class="ungani-btn small red" type="button" onclick="disableMember('${attr(member.id)}', this)">Disable Staff</button>
+              ${String(member.status || "active").toLowerCase() === "disabled"
+                ? `<button class="ungani-btn small" type="button" onclick="enableMember('${attr(member.id)}', this)">Enable Staff</button>`
+                : `<button class="ungani-btn small red" type="button" onclick="disableMember('${attr(member.id)}', this)">Disable Staff</button>`}
             </div>
           </div>
         `;
@@ -1553,6 +1555,38 @@
         });
 
         logMemberActivity(memberId, "status_changed", "Marked as Disabled.");
+
+        await loadTeamMembers();
+      });
+    }
+
+    async function enableMember(memberId, buttonEl) {
+      const member = members.find(m => String(m.id) === String(memberId));
+      if (!member) return;
+      if (!confirm(`Re-enable ${member.full_name || "this staff member"}? Their role and permissions will be restored as-is.`)) return;
+
+      await withButtonLoading(buttonEl, async () => {
+        const response = await supabaseClient.rpc("owner_enable_ungani_team_member", {
+          p_team_member_id: memberId
+        });
+
+        if (response.error) {
+          alert("Could not enable staff: " + response.error.message);
+          return;
+        }
+
+        if (response.data && response.data.ok === false) {
+          alert(response.data.message || "Could not enable staff.");
+          return;
+        }
+
+        logAuditEvent("staff_enabled", {
+          entityType: "team_member",
+          entityId: String(memberId),
+          description: "Re-enabled staff member"
+        });
+
+        logMemberActivity(memberId, "status_changed", "Marked as Active.");
 
         await loadTeamMembers();
       });
