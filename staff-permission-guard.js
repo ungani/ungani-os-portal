@@ -97,6 +97,22 @@
 
       if (access.is_owner === true) return;
 
+      // A staff account that was disabled while this session is still
+      // open (valid JWT, stale client-side state) previously fell through
+      // to the same "guest" bucket as a genuine owner who's never touched
+      // Team Access, and the isConfirmedStaffRecord check below exists
+      // specifically to let that owner case through - so a disabled
+      // staff member rode along and kept full access. The server now
+      // returns a distinct account_type for this case; catch it before
+      // that owner-skip logic and force a real sign-out, not just a
+      // blocked page (their JWT is still otherwise valid, so leaving
+      // them "logged in" would just let them retry another section).
+      if (access.disabled === true || access.account_type === "disabled_staff") {
+        await supabaseClient.auth.signOut();
+        blockPage("account", "Your staff account has been disabled. Please contact the business owner, or sign in again if your access has been restored.");
+        return;
+      }
+
       // get_my_ungani_staff_access was originally only ever called from
       // staff-login.html, where every caller already has a team_members
       // row. Now that this guard runs unconditionally for every client
@@ -130,7 +146,8 @@
     return page.toLowerCase();
   }
 
-  function blockPage(sectionKey) {
+  function blockPage(sectionKey, customMessage) {
+    const isAccountBlock = sectionKey === "account";
     document.body.innerHTML = `
       <div style="
         min-height:100vh;
@@ -164,18 +181,21 @@
             margin-bottom:16px;
           "><i data-lucide="lock" width="30" height="30" stroke-width="2"></i></div>
 
-          <h1 style="margin:0;font-size:34px;letter-spacing:-0.05em;">Staff Access Restricted</h1>
+          <h1 style="margin:0;font-size:34px;letter-spacing:-0.05em;">${isAccountBlock ? "Account Disabled" : "Staff Access Restricted"}</h1>
 
           <p style="color:rgba(255,255,255,0.72);line-height:1.55;margin:12px 0 0;">
-            This section is not assigned to your staff account.
-            Please ask the business owner to update your access if you need this section.
+            ${customMessage
+              ? escapeHtml(customMessage)
+              : "This section is not assigned to your staff account. Please ask the business owner to update your access if you need this section."}
           </p>
 
+          ${isAccountBlock ? "" : `
           <p style="color:#FFE8A3;font-weight:900;margin:16px 0 0;">
             Restricted section: ${escapeHtml(sectionKey)}
-          </p>
+          </p>`}
 
           <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:22px;">
+            ${isAccountBlock ? "" : `
             <a href="client.html?mode=staff" style="
               display:inline-flex;
               align-items:center;
@@ -186,7 +206,7 @@
               color:#061C3D;
               text-decoration:none;
               font-weight:950;
-            ">Back to Staff Dashboard</a>
+            ">Back to Staff Dashboard</a>`}
 
             <a href="staff-login.html" style="
               display:inline-flex;
@@ -194,8 +214,8 @@
               justify-content:center;
               border-radius:999px;
               padding:12px 16px;
-              background:rgba(255,255,255,0.12);
-              color:white;
+              background:${isAccountBlock ? "#D4A63A" : "rgba(255,255,255,0.12)"};
+              color:${isAccountBlock ? "#061C3D" : "white"};
               border:1px solid rgba(255,255,255,0.16);
               text-decoration:none;
               font-weight:950;
