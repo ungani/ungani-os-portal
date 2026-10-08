@@ -405,8 +405,11 @@ begin
       case when v_payment.applied_to_subscription_at is null and v_flag_id is not null then 'PASS' else 'FAIL' end
     );
 
-    -- Resolve as admin.
-    perform set_config('request.jwt.claims', json_build_object('sub', v_admin_id::text, 'role', 'authenticated')::text, true);
+    -- Resolve as admin. aal:'aal2' required since commit 9135ca4
+    -- ("Fix admin 2FA lockout") made is_ungani_admin() mandatory-check
+    -- the JWT's MFA assurance level - no real TOTP challenge exists in
+    -- this synthetic session, so the claim has to be supplied directly.
+    perform set_config('request.jwt.claims', json_build_object('sub', v_admin_id::text, 'role', 'authenticated', 'aal', 'aal2')::text, true);
     v_result := public.admin_resolve_ungani_payment_duplicate(v_flag_id, 'applied_as_extra_period', 'test');
     perform set_config('request.jwt.claims', '', true);
 

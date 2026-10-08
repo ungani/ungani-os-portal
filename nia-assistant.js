@@ -2791,16 +2791,35 @@
         return runFavoritesQueryIntent();
       }
 
+      // Named-tenant debt drill-down ("what does Henry owe?") - checked
+      // ahead of the aggregate debtors question below for the same
+      // specific-before-generic reason as every other named lookup in
+      // this file.
+      if (isNamedDebtPhrase(text)) {
+        const debtTarget = extractNamedDebtTarget(text);
+        if (debtTarget) {
+          return runDebtorsQueryIntent(debtTarget);
+        }
+      }
+
       // Live-data debtors/payables question ("debtors", "payables", "who
       // owes me") - same reasoning as invoices above, checked right after
       // it since both are financial live-data questions.
       if (isDebtorsQueryPhrase(text)) {
-        if (state.surface === "admin") {
-          addNiaMessage("Debtors & Payables isn't available on the admin side.");
-          return { spoken: "That's not available on the admin side." };
-        }
-
         return runDebtorsQueryIntent();
+      }
+
+      // Live-data "received this month" question - checked alongside the
+      // other financial live-data checks.
+      if (isMoneyReceivedThisMonthPhrase(text)) {
+        return runMoneyReceivedThisMonthIntent();
+      }
+
+      // Live-data overdue-tasks question ("who has overdue tasks") -
+      // checked alongside the other financial/operational live-data
+      // checks.
+      if (isOverdueTasksPhrase(text)) {
+        return runOverdueTasksIntent();
       }
 
       // Live-data Cluster 1 booking deposit/balance question ("deposit
@@ -4867,11 +4886,50 @@
   function isDebtorsQueryPhrase(text) {
     const lower = text.toLowerCase();
     return ["debtor", "debtors", "payable", "payables", "who owes me", "who do i owe", "who i owe",
-      "who hasn't paid", "who hasnt paid", "who has not paid", "unpaid customers", "unpaid clients"]
+      "who hasn't paid", "who hasnt paid", "who has not paid", "unpaid customers", "unpaid clients",
+      "rent owed", "owed to me", "amount owed", "total owed", "how much is owed", "outstanding rent",
+      "outstanding balance", "outstanding invoices", "how much do i owe"]
       .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
   }
 
-  async function runDebtorsQueryIntent() {
+  // "What does Henry owe?" / "Does Henry owe anything?" / "Henry's
+  // balance" - named-tenant drill-down on the SAME merged debtors data
+  // as the aggregate question above, checked ahead of it (specific
+  // before generic, same convention as every other named-lookup in this
+  // file).
+  function isNamedDebtPhrase(text) {
+    const lower = text.toLowerCase();
+    return /\bdoes\s+.+\bowe\b/.test(lower) || /\bowes\s+me\b/.test(lower) ||
+      /\bbalance\s+(?:for|of)\s+/.test(lower) || /\boutstanding\s+(?:for|balance of)\s+/.test(lower);
+  }
+
+  function extractNamedDebtTarget(text) {
+    const lower = text.toLowerCase();
+    var match = lower.match(/does\s+(.+?)\s+owe\b/);
+    if (match) return match[1].trim();
+    match = lower.match(/^(.+?)\s+owes\s+me\b/);
+    if (match) return match[1].trim();
+    match = lower.match(/balance\s+(?:for|of)\s+(.+?)[\?.]?$/);
+    if (match) return match[1].trim();
+    match = lower.match(/outstanding\s+(?:for|balance of)\s+(.+?)[\?.]?$/);
+    if (match) return match[1].trim();
+    return null;
+  }
+
+  // Shared by both the aggregate ("who owes me") and named-tenant
+  // ("what does Henry owe") questions - pulls the SAME two sources and
+  // does the SAME per-person merge as my-debtors-payables.html itself
+  // (invoices via get_my_ungani_customer_invoices, lease balances via
+  // get_my_ungani_commitments), so Nia's total can never drift from the
+  // real page's "Owed To Me" KPI. p_nameFilter, if given, narrows the
+  // merged rows to a case-insensitive substring match on the customer/
+  // tenant name - no separate lookup path, no new calculation.
+  async function runDebtorsQueryIntent(nameFilter) {
+    if (state.surface === "admin") {
+      addNiaMessage("Debtors & Payables isn't available on the admin side.");
+      return { spoken: "That's not available on the admin side." };
+    }
+
     if (!state.supabaseClient || !state.tenantId) {
       addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
       return { spoken: "I'm still loading your workspace." };
@@ -4884,16 +4942,16 @@
       return { spoken: "Debtors and Payables isn't turned on yet." };
     }
 
-    addNiaMessage("Checking who owes you and who you owe...");
+    addNiaMessage(nameFilter ? `Checking ${safe(nameFilter)}'s balance...` : "Checking who owes you and who you owe...");
 
     let invoices = [];
+    let commitments = [];
     let transactions = [];
-    let people = [];
 
     try {
-      const [invoiceResponse, peopleResponse, txResponse] = await Promise.all([
+      const [invoiceResponse, commitmentsResponse, txResponse] = await Promise.all([
         state.supabaseClient.rpc("get_my_ungani_customer_invoices"),
-        state.supabaseClient.from("client_people").select("id, full_name, person_type").eq("tenant_id", state.tenantId).is("deleted_at", null),
+        state.supabaseClient.rpc("get_my_ungani_commitments").then(function (res) { return res; }).catch(function (error) { return { error: error }; }),
         state.supabaseClient.from("transactions")
           .select("id, amount, amount_kes, status, transaction_type, type, related_person_id")
           .eq("tenant_id", state.tenantId).is("deleted_at", null).eq("status", "pending").not("related_person_id", "is", null).limit(1000)
@@ -4901,38 +4959,49 @@
 
       invoices = (invoiceResponse && !invoiceResponse.error && invoiceResponse.data && invoiceResponse.data.ok === true)
         ? (invoiceResponse.data.invoices || []) : [];
-      people = (!peopleResponse.error && peopleResponse.data) ? peopleResponse.data : [];
+      commitments = (commitmentsResponse && !commitmentsResponse.error && commitmentsResponse.data && commitmentsResponse.data.ok === true)
+        ? (commitmentsResponse.data.commitments || []) : [];
       transactions = (!txResponse.error && txResponse.data) ? txResponse.data : [];
     } catch (error) {
-      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      addNiaMessage(`I couldn't check that right now — you can see it directly on ${goldLink("my-debtors-payables.html", "Debtors & Payables")}.`);
       return { spoken: "I couldn't check that right now." };
     }
 
-    // Named per invoice, not aggregated per customer - the old copy said
-    // "across N customers" while debtorCount was actually counting
-    // invoices (a customer with 2 unpaid invoices was miscounted as 2
-    // customers). Naming the actual invoices fixes that inaccuracy for
-    // free, since it's now built from the same per-invoice list.
+    const activeLeases = commitments.filter(function (c) {
+      const status = String(c.status || "").toLowerCase();
+      return c.commitment_type === "lease" && status !== "cancelled" && status !== "terminated";
+    });
+
     const outstandingInvoices = invoices.filter(function (inv) {
       const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
       return balance > 0 && inv.status !== "cancelled" && inv.status !== "draft";
-    }).map(function (inv) {
-      return {
-        invoice_number: inv.invoice_number,
-        customer_name: inv.customer_name,
-        balance: (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0),
-        overdue: inv.effective_status === "overdue"
-      };
-    }).sort(function (a, b) {
-      if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
-      return b.balance - a.balance;
     });
 
-    const owedToMe = outstandingInvoices.reduce(function (sum, inv) { return sum + inv.balance; }, 0);
-    const debtorCount = outstandingInvoices.length;
+    function rowKey(personId, name) {
+      return personId ? "p:" + personId : "n:" + (name || "Unknown customer");
+    }
 
-    const peopleById = {};
-    people.forEach(function (p) { peopleById[p.id] = p; });
+    // Same merge as my-debtors-payables.html's loadDebtors(): an
+    // invoice debt and that same tenant's lease debt combine into ONE
+    // row per person, not counted twice.
+    const byCustomer = {};
+    outstandingInvoices.forEach(function (inv) {
+      const key = rowKey(inv.customer_person_id, inv.customer_name);
+      const balance = (Number(inv.total_amount) || 0) - (Number(inv.amount_paid) || 0);
+      if (!byCustomer[key]) byCustomer[key] = { name: inv.customer_name || "Unknown customer", outstanding: 0, overdue: false };
+      byCustomer[key].outstanding += balance;
+      if (inv.effective_status === "overdue") byCustomer[key].overdue = true;
+    });
+    activeLeases.forEach(function (lease) {
+      const balanceOwed = Math.max(Number(lease.balance_owed || 0), 0);
+      if (balanceOwed <= 0) return;
+      const key = rowKey(lease.person_id, lease.person_name);
+      if (!byCustomer[key]) byCustomer[key] = { name: lease.person_name || "Unknown tenant", outstanding: 0, overdue: false };
+      byCustomer[key].outstanding += balanceOwed;
+    });
+
+    const debtorRows = Object.keys(byCustomer).map(function (key) { return byCustomer[key]; })
+      .sort(function (a, b) { return b.outstanding - a.outstanding; });
 
     const expenseRows = transactions.filter(function (row) {
       const broadType = pickField(row, ["transaction_type", "type"], "income");
@@ -4941,25 +5010,179 @@
     const iOwe = expenseRows.reduce(function (sum, row) { return sum + (Number(row.amount_kes) || Number(row.amount) || 0); }, 0);
     const payeeIds = new Set(expenseRows.map(function (row) { return row.related_person_id; }));
 
-    const shownInvoices = outstandingInvoices.slice(0, 5);
-    const remainingInvoices = outstandingInvoices.length - shownInvoices.length;
-    const invoiceListHtml = shownInvoices.map(function (inv) {
-      return `<div style="margin-top:6px;">${severityDotHtml(inv.overdue ? "red" : "gold")}${safe(inv.invoice_number)} — ${safe(inv.customer_name)}: ${safe(formatNiaKES(inv.balance))}${inv.overdue ? " (overdue)" : ""}</div>`;
+    if (nameFilter) {
+      const needle = nameFilter.toLowerCase();
+      const match = debtorRows.find(function (row) { return row.name.toLowerCase().indexOf(needle) !== -1; });
+
+      if (!match) {
+        addNiaMessage(
+          `I don't see an outstanding balance for ${safe(nameFilter)} right now. ${goldLink("my-debtors-payables.html", "Check Debtors & Payables")} for the full list.`
+        );
+        return { spoken: "No outstanding balance found for " + nameFilter + "." };
+      }
+
+      addNiaMessage(
+        `<strong>${safe(match.name)}</strong>` +
+        `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Owes: ${safe(formatNiaKES(match.outstanding))}${match.overdue ? " (overdue)" : ""}</div>` +
+        `<div style="margin-top:8px;">${goldLink("my-debtors-payables.html", "Open Debtors & Payables →")}</div>`
+      );
+      return { spoken: match.name + " owes " + formatNiaKES(match.outstanding) + "." };
+    }
+
+    const owedToMe = debtorRows.reduce(function (sum, row) { return sum + row.outstanding; }, 0);
+    const shownRows = debtorRows.slice(0, 5);
+    const remainingRows = debtorRows.length - shownRows.length;
+    const rowsHtml = shownRows.map(function (row) {
+      return `<div style="margin-top:6px;">${severityDotHtml(row.overdue ? "red" : "gold")}${safe(row.name)}: ${safe(formatNiaKES(row.outstanding))}${row.overdue ? " (overdue)" : ""}</div>`;
     }).join("");
 
     const html =
       `<strong>Debtors &amp; Payables</strong>` +
-      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Owed to you: ${safe(formatNiaKES(owedToMe))} across ${debtorCount} invoice${debtorCount === 1 ? "" : "s"}</div>` +
-      invoiceListHtml +
-      (remainingInvoices > 0 ? `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="my-debtors-payables.html">See ${remainingInvoices} more →</a></div>` : "") +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Owed to you: ${safe(formatNiaKES(owedToMe))} across ${debtorRows.length} customer${debtorRows.length === 1 ? "" : "s"}</div>` +
+      rowsHtml +
+      (remainingRows > 0 ? `<div style="margin-top:6px;"><a class="nia-link-btn" style="margin-top:0;" href="my-debtors-payables.html">See ${remainingRows} more →</a></div>` : "") +
       `<div style="margin-top:8px;"><i data-lucide="wallet"></i> You owe: ${safe(formatNiaKES(iOwe))} across ${payeeIds.size} supplier/contact${payeeIds.size === 1 ? "" : "s"}</div>` +
       `<div style="margin-top:8px;">${goldLink("my-debtors-payables.html", "See full breakdown →")}</div>`;
 
     addNiaMessage(html);
 
     return {
-      spoken: "Owed to you: " + formatNiaKES(owedToMe) + " across " + debtorCount + " invoice" + (debtorCount === 1 ? "" : "s") + ". You owe: " + formatNiaKES(iOwe) + "."
+      spoken: "Owed to you: " + formatNiaKES(owedToMe) + " across " + debtorRows.length + " customer" + (debtorRows.length === 1 ? "" : "s") + ". You owe: " + formatNiaKES(iOwe) + "."
     };
+  }
+
+  function isMoneyReceivedThisMonthPhrase(text) {
+    const lower = text.toLowerCase();
+    const mentionsReceived = lower.indexOf("received") !== -1 || lower.indexOf("collected") !== -1;
+    const mentionsMonth = lower.indexOf("this month") !== -1;
+    return mentionsReceived && mentionsMonth;
+  }
+
+  // Same income-determination fields client.html's own calculateMoneySummary
+  // uses (amount_kes preferred, transaction_type/type), just scoped to the
+  // current calendar month and broken out by M-Pesa vs total - no new
+  // revenue logic invented.
+  async function runMoneyReceivedThisMonthIntent() {
+    if (state.surface === "admin") {
+      addNiaMessage("Money totals aren't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking what's come in this month...");
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    const monthStartStr = monthStart.toISOString().slice(0, 10);
+
+    let rows = [];
+    try {
+      const response = await state.supabaseClient
+        .from("transactions")
+        .select("amount, amount_kes, payment_method, transaction_type, type, transaction_date")
+        .eq("tenant_id", state.tenantId)
+        .gte("transaction_date", monthStartStr)
+        .is("deleted_at", null)
+        .limit(2000);
+      if (response.error) throw new Error(response.error.message);
+      rows = response.data || [];
+    } catch (error) {
+      addNiaMessage(`I couldn't check that right now — you can see it directly on ${goldLink("my-money.html", "Money")}.`);
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const incomeRows = rows.filter(function (row) {
+      const broadType = pickField(row, ["transaction_type", "type"], "income");
+      return String(broadType).toLowerCase() === "income";
+    });
+
+    const total = incomeRows.reduce(function (sum, row) { return sum + (Number(pickField(row, ["amount_kes", "amount"], 0)) || 0); }, 0);
+    const mpesaRows = incomeRows.filter(function (row) {
+      const method = String(row.payment_method || "").toLowerCase();
+      return method.indexOf("mpesa") !== -1 || method.indexOf("m-pesa") !== -1;
+    });
+    const mpesaTotal = mpesaRows.reduce(function (sum, row) { return sum + (Number(pickField(row, ["amount_kes", "amount"], 0)) || 0); }, 0);
+
+    const html =
+      `<strong>Received this month</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="wallet"></i> Total received: ${safe(formatNiaKES(total))}</div>` +
+      `<div style="margin-top:6px;">Via M-Pesa: ${safe(formatNiaKES(mpesaTotal))} (${mpesaRows.length} payment${mpesaRows.length === 1 ? "" : "s"})</div>` +
+      `<div style="margin-top:8px;">${goldLink("my-money.html", "Open Money →")}</div>`;
+
+    addNiaMessage(html);
+    return { spoken: "Received this month: " + formatNiaKES(total) + ", of which " + formatNiaKES(mpesaTotal) + " via M-Pesa." };
+  }
+
+  function isOverdueTasksPhrase(text) {
+    const lower = text.toLowerCase();
+    return lower.indexOf("overdue") !== -1 && (lower.indexOf("task") !== -1 || lower.indexOf("who has") !== -1 || lower.indexOf("who's") !== -1);
+  }
+
+  // Same fields/overdue rule my-tasks.html's own calculateTaskSummary()
+  // uses (due_date < today, status not completed/cancelled) - just
+  // grouped by assigned_to instead of counted, no new logic.
+  async function runOverdueTasksIntent() {
+    if (state.surface === "admin") {
+      addNiaMessage("Task tracking isn't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking overdue tasks...");
+
+    const today = new Date().toISOString().slice(0, 10);
+    let rows = [];
+    try {
+      const response = await state.supabaseClient
+        .from("tasks")
+        .select("task_title, assigned_to, status, due_date")
+        .eq("tenant_id", state.tenantId)
+        .is("deleted_at", null)
+        .limit(1000);
+      if (response.error) throw new Error(response.error.message);
+      rows = response.data || [];
+    } catch (error) {
+      addNiaMessage(`I couldn't check that right now — you can see it directly on ${goldLink("my-tasks.html", "Tasks")}.`);
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const overdue = rows.filter(function (row) {
+      const status = String(row.status || "pending").toLowerCase();
+      const due = String(row.due_date || "").slice(0, 10);
+      return due && due < today && status.indexOf("completed") === -1 && status.indexOf("cancelled") === -1;
+    });
+
+    if (!overdue.length) {
+      addNiaMessage(`Nothing overdue right now — every task is on track. ${goldLink("my-tasks.html", "Open Tasks →")}`);
+      return { spoken: "Nothing overdue right now." };
+    }
+
+    const byPerson = {};
+    overdue.forEach(function (row) {
+      const name = row.assigned_to || "Unassigned";
+      byPerson[name] = (byPerson[name] || 0) + 1;
+    });
+
+    const breakdown = Object.keys(byPerson).map(function (name) {
+      return `<div style="margin-top:6px;">${safe(name)}: ${byPerson[name]} overdue</div>`;
+    }).join("");
+
+    const html =
+      `<strong>Overdue tasks</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="alert-triangle"></i> ${overdue.length} overdue task${overdue.length === 1 ? "" : "s"}</div>` +
+      breakdown +
+      `<div style="margin-top:8px;">${goldLink("my-tasks.html", "Open Tasks →")}</div>`;
+
+    addNiaMessage(html);
+    return { spoken: overdue.length + " overdue task" + (overdue.length === 1 ? "" : "s") + "." };
   }
 
   // ---- Cluster 1 (Booking/deposit-balance) query ----
@@ -5495,12 +5718,23 @@
   // named-lookup group above.
   function isUnassignedMpesaPhrase(text) {
     const lower = text.toLowerCase();
-    const mentionsMpesa = lower.indexOf("m-pesa") !== -1 || lower.indexOf("mpesa") !== -1;
+    const mentionsMpesa = lower.indexOf("m-pesa") !== -1 || lower.indexOf("mpesa") !== -1 || lower.indexOf("payment") !== -1;
     const mentionsUnassigned = lower.indexOf("unassigned") !== -1 || lower.indexOf("not assigned") !== -1 || lower.indexOf("unmatched") !== -1 ||
-      lower.indexOf("unidentified") !== -1 || lower.indexOf("unlinked") !== -1;
+      lower.indexOf("unidentified") !== -1 || lower.indexOf("unlinked") !== -1 || lower.indexOf("to match") !== -1 ||
+      lower.indexOf("waiting to match") !== -1 || lower.indexOf("need matching") !== -1 || lower.indexOf("need to be matched") !== -1;
     return mentionsMpesa && mentionsUnassigned;
   }
 
+  // Reuses the EXACT same RPC my-payments-to-match.html itself calls
+  // (owner_list_ungani_payments_to_match) - the previous version of
+  // this intent queried public.transactions directly for a payment_
+  // method='M-Pesa' row with related_person_id null, which can never
+  // exist: apply_ungani_mpesa_rent_payment() only ever writes a
+  // transactions row once a payment IS matched. An unmatched payment
+  // lives in ungani_payments_to_match with status='unmatched' instead -
+  // the old query structurally could never find anything, which is why
+  // it always answered "nothing unassigned" regardless of the real
+  // queue shown on the page.
   async function runUnassignedMpesaIntent() {
     if (state.surface === "admin") {
       addNiaMessage("M-Pesa matching isn't available on the admin side yet.");
@@ -5512,50 +5746,49 @@
       return { spoken: "I'm still loading your workspace." };
     }
 
-    addNiaMessage("Checking for M-Pesa payments that haven't been matched to anyone...");
+    addNiaMessage("Checking for payments that haven't been matched to anyone...");
 
-    let rows;
+    let result;
     try {
-      const response = await state.supabaseClient
-        .from("transactions")
-        .select("id, amount, amount_kes, payer_phone, reference_no, transaction_date")
-        .eq("tenant_id", state.tenantId)
-        .eq("payment_method", "M-Pesa")
-        .not("payer_phone", "is", null)
-        .is("related_person_id", null)
-        .is("deleted_at", null)
-        .order("transaction_date", { ascending: false })
-        .limit(200);
+      const response = await state.supabaseClient.rpc("owner_list_ungani_payments_to_match");
       if (response.error) throw new Error(response.error.message);
-      rows = response.data || [];
+      result = response.data;
     } catch (error) {
-      addNiaMessage("I couldn't check that right now — please try again in a moment.");
+      addNiaMessage(`I couldn't check that right now — you can see it directly on ${goldLink("my-payments-to-match.html", "Payments to Match")}.`);
       return { spoken: "I couldn't check that right now." };
     }
 
-    if (!rows.length) {
-      addNiaMessage("Every M-Pesa payment is matched to someone right now — nothing unassigned.");
-      return { spoken: "No unassigned M-Pesa payments." };
+    if (!result || result.ok !== true) {
+      addNiaMessage(
+        (result && result.message) ? safe(result.message) + ` ${goldLink("my-payments-to-match.html", "Open Payments to Match")}.` : `I couldn't check that — ${goldLink("my-payments-to-match.html", "open Payments to Match")} directly.`
+      );
+      return { spoken: (result && result.message) || "I couldn't check that right now." };
     }
 
-    const total = rows.reduce(function (sum, row) { return sum + (Number(pickField(row, ["amount_kes", "amount"], 0)) || 0); }, 0);
+    const rows = result.payments || [];
+
+    if (!rows.length) {
+      addNiaMessage(`Every payment is matched right now — nothing waiting. ${goldLink("my-payments-to-match.html", "Open Payments to Match →")}`);
+      return { spoken: "No payments waiting to match." };
+    }
+
+    const total = rows.reduce(function (sum, row) { return sum + (Number(row.amount) || 0); }, 0);
     const shown = rows.slice(0, 5);
     const listHtml = shown.map(function (row) {
-      const amount = Number(pickField(row, ["amount_kes", "amount"], 0) || 0);
-      return "<div style=\"margin-top:6px;\">" + safe(row.payer_phone) + " — " + safe(formatNiaKES(amount)) + (row.reference_no ? " (" + safe(row.reference_no) + ")" : "") + "</div>";
+      return `<div style="margin-top:6px;">${safe(row.msisdn || "Unknown number")} — ${safe(formatNiaKES(Number(row.amount) || 0))}${row.bill_ref_number ? " (" + safe(row.bill_ref_number) + ")" : ""}</div>`;
     }).join("");
     const remaining = rows.length - shown.length;
 
     const html =
-      "<strong>Unassigned M-Pesa payments</strong>" +
-      "<div style=\"margin-top:8px;\">" + rows.length + " payment" + (rows.length === 1 ? "" : "s") + " totalling " + safe(formatNiaKES(total)) + " with no matching person</div>" +
+      `<strong>Payments waiting to match</strong>` +
+      `<div style="margin-top:8px;">${rows.length} payment${rows.length === 1 ? "" : "s"} totalling ${safe(formatNiaKES(total))} with no matching tenant</div>` +
       listHtml +
-      (remaining > 0 ? "<div style=\"margin-top:6px;\">+ " + remaining + " more</div>" : "") +
-      "<div style=\"margin-top:8px;\">" + goldLink("my-money.html", "Open Money to assign them →") + "</div>";
+      (remaining > 0 ? `<div style="margin-top:6px;">+ ${remaining} more</div>` : "") +
+      `<div style="margin-top:8px;">${goldLink("my-payments-to-match.html", "Open Payments to Match →")}</div>`;
 
     addNiaMessage(html);
 
-    return { spoken: rows.length + " unassigned M-Pesa payment" + (rows.length === 1 ? "" : "s") + " totalling " + formatNiaKES(total) + "." };
+    return { spoken: rows.length + " payment" + (rows.length === 1 ? "" : "s") + " waiting to match, totalling " + formatNiaKES(total) + "." };
   }
 
   // ---- Approvals (internal controls v1, sql/approvals-internal-controls-v1.sql) ----
