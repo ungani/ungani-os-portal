@@ -2676,6 +2676,14 @@
         return runAssetCountIntent(text);
       }
 
+      // Task count ("how many open tasks", "my tasks", "tasks today") -
+      // checked ahead of the named-item stock lookup right below, since
+      // that matcher's broad "how many X do I have" pattern was reading
+      // "tasks" as an item name and searching Items for it instead.
+      if (isTaskCountPhrase(text)) {
+        return runTaskCountIntent();
+      }
+
       // Phase 2 conversational retrieval: named-item stock lookup ("stock
       // of X") - checked ahead of the aggregate isStockQueryPhrase below
       // since a bare mention of "stock" would otherwise always win first
@@ -3752,10 +3760,89 @@
       .some(function (word) { return lower.indexOf(word) !== -1; });
   }
 
-  async function runStockQueryIntent() {
+  // Business types where "stock" has no real meaning - a rental unit,
+  // a gym membership slot, or a salon chair was showing up in the
+  // generic low/out-of-stock list because business_items.quantity
+  // defaults to 0 for them, not because anything is actually low.
+  // Real Estate gets its own occupancy answer below instead; these get
+  // a plain "stock tracking isn't a thing here" redirect.
+  const NON_STOCK_BUSINESS_TYPE_KEYS = ["gym", "salon", "healthcare", "security", "cleaning", "tourism", "events", "hospitality", "school"];
+
+  function resolvedBusinessTypeKey() {
+    if (!window.UnganiBusinessConfig || typeof UnganiBusinessConfig.resolve !== "function") return null;
+    try {
+      const resolved = UnganiBusinessConfig.resolve(state.tenant);
+      return resolved ? resolved.key : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // Real Estate's "stock" question is occupancy, not goods on a shelf -
+  // same rented/sold-status rule client.html's own dashboard KPI uses
+  // (property_status/item_status/status containing "rented" or "sold"
+  // counts as occupied), just phrased as an answer instead of a KPI card.
+  async function runOccupancyIntent() {
     if (!state.supabaseClient || !state.tenantId) {
       addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
       return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking occupancy...");
+
+    let rows;
+    try {
+      rows = await fetchAssetRowsForTenant();
+    } catch (error) {
+      addNiaMessage(`I couldn't check that right now — you can see it directly on ${goldLink("my-items.html", "Items")}.`);
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const totalUnits = rows.length;
+    const occupied = rows.filter(function (item) {
+      const status = String(pickField(item, ["property_status", "item_status", "status"], "")).toLowerCase();
+      return status.indexOf("rented") !== -1 || status.indexOf("sold") !== -1;
+    });
+    const vacant = rows.filter(function (item) { return occupied.indexOf(item) === -1; });
+
+    if (!totalUnits) {
+      addNiaMessage(`No units on file yet. ${goldLink("my-items.html", "Open Items")}.`);
+      return { spoken: "No units on file yet." };
+    }
+
+    const vacantList = vacant.slice(0, 8).map(function (item) {
+      return `<div style="margin-top:6px;">${safe(pickField(item, ["item_name", "name", "title"], "Unit"))}</div>`;
+    }).join("");
+    const remainingVacant = vacant.length - Math.min(vacant.length, 8);
+
+    const html =
+      `<strong>Occupancy</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="building-2"></i> ${occupied.length} of ${totalUnits} units occupied</div>` +
+      (vacant.length ? `<div style="margin-top:8px;">Vacant:</div>${vacantList}${remainingVacant > 0 ? `<div style="margin-top:6px;">+ ${remainingVacant} more</div>` : ""}` : `<div style="margin-top:8px;">Nothing vacant right now.</div>`) +
+      `<div style="margin-top:8px;">${goldLink("my-items.html", "Open Items →")}</div>`;
+
+    addNiaMessage(html);
+    return { spoken: occupied.length + " of " + totalUnits + " units occupied, " + vacant.length + " vacant." };
+  }
+
+  async function runStockQueryIntent() {
+    if (isRealEstateBusiness()) {
+      return runOccupancyIntent();
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    const businessTypeKey = resolvedBusinessTypeKey();
+    const stockTrackingEnabled = !!(state.tenant && state.tenant.stock_tracking_enabled === true);
+
+    if (!stockTrackingEnabled && businessTypeKey && NON_STOCK_BUSINESS_TYPE_KEYS.indexOf(businessTypeKey) !== -1) {
+      addNiaMessage(
+        `Stock tracking is off for this business type — it's not usually relevant here. I can tell you about tasks, Money, or People instead, or open ${goldLink("my-items.html", "Items")} directly.`
+      );
+      return { spoken: "Stock tracking isn't relevant for this business type." };
     }
 
     addNiaMessage("Checking your stock levels...");
@@ -3769,7 +3856,6 @@
     }
 
     const stockEntries = computeAssetAttentionEntries(rows).filter(function (e) { return e.kind === "stock"; });
-    const stockTrackingEnabled = !!(state.tenant && state.tenant.stock_tracking_enabled === true);
 
     if (!stockEntries.length) {
       addNiaMessage(
@@ -5185,6 +5271,90 @@
     return { spoken: overdue.length + " overdue task" + (overdue.length === 1 ? "" : "s") + "." };
   }
 
+  // "How many open tasks do I have" / "my tasks" / "tasks today" -
+  // checked ahead of the generic item/stock lookups (a bare "tasks" was
+  // previously being swallowed by the named-item stock-detail matcher,
+  // which read "open tasks" as an item name search). Narrow, specific
+  // phrases only, so this can't collide with a real item question.
+  function isTaskCountPhrase(text) {
+    const lower = text.toLowerCase();
+    return ["open tasks", "my tasks", "tasks today", "how many tasks", "task count", "tasks do i have"]
+      .some(function (phrase) { return lower.indexOf(phrase) !== -1; });
+  }
+
+  // Same fields/overdue rule as runOverdueTasksIntent above, plus a
+  // due-today count - no new logic, just a different grouping of the
+  // same rows. Per-person breakdown only for the owner (every staff
+  // member already gets "My Tasks" filtering elsewhere in the app -
+  // Nia showing a staff member everyone else's task counts would be a
+  // visibility leak those pages deliberately don't have).
+  async function runTaskCountIntent() {
+    if (state.surface === "admin") {
+      addNiaMessage("Task tracking isn't available on the admin side yet.");
+      return { spoken: "That's not available on the admin side yet." };
+    }
+
+    if (!state.supabaseClient || !state.tenantId) {
+      addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
+      return { spoken: "I'm still loading your workspace." };
+    }
+
+    addNiaMessage("Checking your tasks...");
+
+    const today = new Date().toISOString().slice(0, 10);
+    let rows = [];
+    let isOwner = true;
+    try {
+      const [tasksResponse, accessResponse] = await Promise.all([
+        state.supabaseClient.from("tasks").select("task_title, assigned_to, status, due_date").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
+        state.supabaseClient.rpc("get_my_ungani_staff_access").then(function (res) { return res; }).catch(function (error) { return { error: error }; })
+      ]);
+      if (tasksResponse.error) throw new Error(tasksResponse.error.message);
+      rows = tasksResponse.data || [];
+      if (!accessResponse.error && accessResponse.data) {
+        const roleKey = String(accessResponse.data.role_key || "").toLowerCase();
+        isOwner = accessResponse.data.is_owner === true || roleKey === "" || roleKey === "guest";
+      }
+    } catch (error) {
+      addNiaMessage(`I couldn't check that right now — you can see it directly on ${goldLink("my-tasks.html", "Tasks")}.`);
+      return { spoken: "I couldn't check that right now." };
+    }
+
+    const open = rows.filter(function (row) {
+      const status = String(row.status || "pending").toLowerCase();
+      return status.indexOf("completed") === -1 && status.indexOf("cancelled") === -1;
+    });
+    const overdue = open.filter(function (row) {
+      const due = String(row.due_date || "").slice(0, 10);
+      return due && due < today;
+    });
+    const dueToday = open.filter(function (row) {
+      const due = String(row.due_date || "").slice(0, 10);
+      return due === today;
+    });
+
+    let breakdownHtml = "";
+    if (isOwner) {
+      const byPerson = {};
+      open.forEach(function (row) {
+        const name = row.assigned_to || "Unassigned";
+        byPerson[name] = (byPerson[name] || 0) + 1;
+      });
+      breakdownHtml = Object.keys(byPerson).map(function (name) {
+        return `<div style="margin-top:6px;">${safe(name)}: ${byPerson[name]} open</div>`;
+      }).join("");
+    }
+
+    const html =
+      `<strong>Tasks</strong>` +
+      `<div style="margin-top:8px;"><i data-lucide="square-check-big"></i> ${open.length} open, ${overdue.length} overdue, ${dueToday.length} due today</div>` +
+      breakdownHtml +
+      `<div style="margin-top:8px;">${goldLink("my-tasks.html", "Open Tasks →")}</div>`;
+
+    addNiaMessage(html);
+    return { spoken: open.length + " open tasks, " + overdue.length + " overdue, " + dueToday.length + " due today." };
+  }
+
   // ---- Cluster 1 (Booking/deposit-balance) query ----
   // Tourism/Events/Catering/Photography/Hospitality only - mirrors the
   // Debtors & Payables intent above (direct supabase query, same HTML/spoken
@@ -6361,8 +6531,12 @@
     const settled = withDeposits.filter(function (c) { return c.deposit_status === "settled"; });
     const heldTotal = held.reduce(function (sum, c) { return sum + Number(c.deposit_amount_kes || 0); }, 0);
 
-    const summary = held.length + " deposit" + (held.length === 1 ? "" : "s") + " held (Ksh " + heldTotal.toLocaleString() + " total)" +
-      (settled.length ? ", " + settled.length + " settled" : "");
+    // "Holding" means unsettled only - held.length/heldTotal already
+    // excluded settled deposits above, this just says so explicitly
+    // instead of leaving "held" to be read as "on file at all".
+    const summary = "You are holding " + held.length + " deposit" + (held.length === 1 ? "" : "s") +
+      " totalling KSh " + heldTotal.toLocaleString() + "." +
+      (settled.length ? " " + settled.length + " deposit" + (settled.length === 1 ? "" : "s") + " " + (settled.length === 1 ? "has" : "have") + " been settled." : "");
 
     const heldHtml = held.length
       ? `<div style="margin-top:8px;">${held.slice(0, 5).map(function (c) {
