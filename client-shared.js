@@ -4570,6 +4570,13 @@
       units: (unitsRes && unitsRes.data) || [],
       tenants: mergedTenants,
       commitments: itemCommitments,
+      // Occupancy fix: the Units sub-table needs each CHILD unit's own
+      // lease, not just this (possibly parent) item's - itemCommitments
+      // above is filtered to linked_item_id === itemId only, so it's
+      // useless for "does unit X under this property have an active
+      // lease." Exposing the unfiltered set lets the caller re-filter
+      // per unit id itself.
+      allCommitments: allCommitments,
       pastTenants: pastCommitments.map(function (c) {
         return {
           personId: c.person_id,

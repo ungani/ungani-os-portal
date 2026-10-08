@@ -3778,10 +3778,15 @@
     }
   }
 
-  // Real Estate's "stock" question is occupancy, not goods on a shelf -
-  // same rented/sold-status rule client.html's own dashboard KPI uses
-  // (property_status/item_status/status containing "rented" or "sold"
-  // counts as occupied), just phrased as an answer instead of a KPI card.
+  // Real Estate's "stock" question is occupancy, not goods on a shelf - a
+  // unit counts as occupied when it has a real active lease (status ===
+  // "active" is the only value my-commitments.html's modal ever manually
+  // stores besides terminated/frozen), same rule as client.html's own
+  // Rentals KPI and health score. Falls back to item status text
+  // (occupied/rented/sold) only when there's no lease on record at all,
+  // since the stored status field drifts independently of the lease
+  // system of record and can say "vacant" on a leased unit or "occupied"
+  // on one with no lease (e.g. a parent property row).
   async function runOccupancyIntent() {
     if (!state.supabaseClient || !state.tenantId) {
       addNiaMessage("I'm still loading your workspace — please try that again in a moment.");
@@ -3791,8 +3796,17 @@
     addNiaMessage("Checking occupancy...");
 
     let rows;
+    let activeLeaseUnitIds = {};
     try {
       rows = await fetchAssetRowsForTenant();
+      const commitmentsResponse = await state.supabaseClient.rpc("get_my_ungani_commitments");
+      if (!commitmentsResponse.error && commitmentsResponse.data && commitmentsResponse.data.ok === true) {
+        (commitmentsResponse.data.commitments || []).forEach(function (c) {
+          if (c.commitment_type === "lease" && String(c.status || "").toLowerCase() === "active" && c.linked_item_id) {
+            activeLeaseUnitIds[String(c.linked_item_id)] = true;
+          }
+        });
+      }
     } catch (error) {
       addNiaMessage(`I couldn't check that right now — you can see it directly on ${goldLink("my-items.html", "Items")}.`);
       return { spoken: "I couldn't check that right now." };
@@ -3800,8 +3814,9 @@
 
     const totalUnits = rows.length;
     const occupied = rows.filter(function (item) {
+      if (activeLeaseUnitIds[String(item.id)]) return true;
       const status = String(pickField(item, ["property_status", "item_status", "status"], "")).toLowerCase();
-      return status.indexOf("rented") !== -1 || status.indexOf("sold") !== -1;
+      return status.indexOf("occupied") !== -1 || status.indexOf("rented") !== -1 || status.indexOf("sold") !== -1;
     });
     const vacant = rows.filter(function (item) { return occupied.indexOf(item) === -1; });
 
@@ -7207,10 +7222,23 @@
       return !paidThisMonth;
     });
 
+    // Occupancy fix: a unit is occupied when it has a real active lease
+    // (status === "active" is the only value my-commitments.html's modal
+    // ever manually stores besides terminated/frozen) - falls back to the
+    // item's own status text only when no lease exists for it at all,
+    // matching client.html's own Rentals KPI and health score calc.
+    const activeLeaseUnitIds = {};
+    (data.commitments || []).forEach(function (c) {
+      if (c.commitment_type === "lease" && String(c.status || "").toLowerCase() === "active" && c.linked_item_id) {
+        activeLeaseUnitIds[String(c.linked_item_id)] = true;
+      }
+    });
+
     const totalUnits = (data.items || []).length;
     const occupiedUnits = (data.items || []).filter(function (item) {
+      if (activeLeaseUnitIds[String(item.id)]) return true;
       const status = String(pickField(item, ["property_status", "item_status", "status"], "")).toLowerCase();
-      return status.indexOf("rented") !== -1 || status.indexOf("sold") !== -1;
+      return status.indexOf("occupied") !== -1 || status.indexOf("rented") !== -1 || status.indexOf("sold") !== -1;
     }).length;
 
     const maintenanceOpen = (data.tasks || []).filter(function (task) {

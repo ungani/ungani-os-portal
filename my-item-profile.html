@@ -408,12 +408,35 @@
       const commitments = connections.commitments || [];
       const parent = parentResponse ? parentResponse.data : null;
 
+      // Occupancy fix: a unit is "Occupied" when it has a real active
+      // lease (status === "active"), not whatever its own property_status
+      // text happens to say - that field drifts independently of the
+      // lease system of record. Built from the unfiltered commitments
+      // set so it covers every child unit, not just this page's own item.
+      const activeLeaseUnitIds = {};
+      (connections.allCommitments || []).forEach(function (c) {
+        if (c.commitment_type === "lease" && String(c.status || "").toLowerCase() === "active" && c.linked_item_id) {
+          activeLeaseUnitIds[String(c.linked_item_id)] = true;
+        }
+      });
+
       renderPropertyParentLink(parent);
       renderCurrentTenantCard(tenants, commitments);
 
       if (units.length > 0) {
-        renderUnitsCard(units);
+        renderUnitsCard(units, activeLeaseUnitIds);
         await loadPropertyRollup(itemId, units.map(function (u) { return u.id; }));
+      }
+
+      // The hero status badge was already rendered before this lease data
+      // was available (loadPropertyHierarchy runs after renderItemProfile)
+      // - refresh just that one badge in place now that it is, rather than
+      // re-running renderItemProfile() and wiping out the
+      // propertyUnitsCard/currentTenantCard container divs it would
+      // recreate empty.
+      if (activeLeaseUnitIds[String(itemId)]) {
+        const heroBadgeEl = document.getElementById("itemHeroStatusBadge");
+        if (heroBadgeEl) heroBadgeEl.outerHTML = statusBadge("Occupied");
       }
     }
 
@@ -462,13 +485,13 @@
       `;
     }
 
-    function renderUnitsCard(units) {
+    function renderUnitsCard(units, activeLeaseUnitIds) {
       const el = document.getElementById("propertyUnitsCard");
       if (!el) return;
 
       const rowsHtml = units.map(function (unit) {
         const name = getItemName(unit);
-        const status = getStatus(unit);
+        const status = (activeLeaseUnitIds && activeLeaseUnitIds[String(unit.id)]) ? "Occupied" : getStatus(unit);
         const floor = UnganiClientShared.getValue(unit.custom_fields || {}, ["floor_number"], "");
         const bedrooms = UnganiClientShared.getValue(unit, ["bedrooms"], "");
         const price = Number(UnganiClientShared.getValue(unit, ["property_price"], 0) || 0);
@@ -664,7 +687,7 @@
             </div>
 
             <div class="profile-actions">
-              ${statusBadge(status)}
+              ${statusBadge(status, "itemHeroStatusBadge")}
               <a class="ungani-btn gold" href="${UnganiClientShared.attr(editHref)}">Edit Details</a>
               <a class="ungani-btn dark" href="${UnganiClientShared.attr("my-item-label.html?id=" + encodeURIComponent(row.id))}">Print Label</a>
             </div>
@@ -1002,15 +1025,15 @@
       return UnganiClientShared.getValue(row, ["property_status", "item_status", "status"], "available");
     }
 
-    function statusBadge(status) {
+    function statusBadge(status, id) {
       const color = statusColor(status);
-      return `<span class="ungani-badge ${UnganiClientShared.attr(color)}">${UnganiClientShared.safe(toTitle(status))}</span>`;
+      return `<span${id ? ` id="${UnganiClientShared.attr(id)}"` : ""} class="ungani-badge ${UnganiClientShared.attr(color)}">${UnganiClientShared.safe(toTitle(status))}</span>`;
     }
 
     function statusColor(status) {
       const lower = String(status || "").toLowerCase();
 
-      if (lower.includes("available") || lower.includes("sold") || lower.includes("rented") || lower.includes("completed")) return "green";
+      if (lower.includes("available") || lower.includes("occupied") || lower.includes("sold") || lower.includes("rented") || lower.includes("completed")) return "green";
       if (lower.includes("reserved") || lower.includes("negotiation") || lower.includes("pending") || lower.includes("review")) return "gold";
       if (lower.includes("maintenance") || lower.includes("inactive") || lower.includes("cancelled") || lower.includes("lost")) return "red";
 

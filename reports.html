@@ -1297,10 +1297,22 @@
           .filter(function (t) { return unitIds.indexOf(UnganiClientShared.getValue(t, ["related_item_id"], "")) !== -1; })
           .reduce(function (sum, t) { return sum + Number(UnganiClientShared.getValue(t, ["amount_kes", "amount"], 0) || 0); }, 0);
 
+        // Occupancy fix: a unit is occupied when it has a real active
+        // lease (status === "active", the only value my-commitments.html's
+        // modal ever manually stores besides terminated/cancelled) -
+        // falls back to the unit's own status text only when no lease
+        // exists for it at all, since that text drifts independently of
+        // the lease system of record.
+        const activeLeaseUnitIdsForProperty = new Set(
+          activeLeases
+            .filter(function (c) { return String(c.status || "").toLowerCase() === "active" && c.linked_item_id; })
+            .map(function (c) { return String(c.linked_item_id); })
+        );
         const totalUnits = units.length || 1;
         const occupiedUnits = units.filter(function (u) {
+          if (activeLeaseUnitIdsForProperty.has(String(u.id))) return true;
           const status = String(UnganiClientShared.getValue(u, ["property_status", "item_status", "status"], "")).toLowerCase();
-          return status.includes("rented") || status.includes("sold");
+          return status.includes("occupied") || status.includes("rented") || status.includes("sold");
         }).length;
 
         // Rule 3 (one source of truth): each lease's own balance_owed

@@ -6333,10 +6333,23 @@
       const overdueRent = leaseOutstanding.overdueRent;
       const outstandingRentTotal = leaseOutstanding.outstandingRentTotal;
 
+      // Occupancy fix: a unit is occupied when it has a real active lease
+      // (status === "active" is the only value my-commitments.html's modal
+      // ever manually stores besides terminated/frozen) - the item's own
+      // property_status text drifts independently of the lease system of
+      // record and can say "vacant" on a leased unit or "occupied" on one
+      // with no lease at all. Falls back to item status only when there's
+      // no lease on record for that unit.
+      const activeLeaseUnitIds = new Set(
+        activeLeases
+          .filter(function (c) { return String(c.status || "").toLowerCase() === "active" && c.linked_item_id; })
+          .map(function (c) { return String(c.linked_item_id); })
+      );
       const totalUnits = (data.items || []).length;
       const occupiedUnits = (data.items || []).filter(function (item) {
+        if (activeLeaseUnitIds.has(String(item.id))) return true;
         const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
-        return status.includes("rented") || status.includes("sold");
+        return status.includes("occupied") || status.includes("rented") || status.includes("sold");
       }).length;
 
       const maintenanceOpen = (data.tasks || []).filter(function (task) {
@@ -6588,10 +6601,16 @@
           });
           return !paidThisMonth;
         });
+        const activeLeaseUnitIdsForHealth = new Set(
+          leaseCommitmentsForHealthCheck
+            .filter(function (c) { return String(c.status || "").toLowerCase() === "active" && c.linked_item_id; })
+            .map(function (c) { return String(c.linked_item_id); })
+        );
         const totalUnitsForHealth = (data.items || []).length;
         const occupiedUnitsForHealth = (data.items || []).filter(function (item) {
+          if (activeLeaseUnitIdsForHealth.has(String(item.id))) return true;
           const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
-          return status.includes("rented") || status.includes("sold");
+          return status.includes("occupied") || status.includes("rented") || status.includes("sold");
         }).length;
         const maintenanceOpenForHealth = (data.tasks || []).filter(function (task) {
           const type = String(getValue(task, ["task_type", "type"], "")).toLowerCase();
@@ -6778,10 +6797,16 @@
       const overdueRent = leaseOutstandingFull.overdueRent;
       const outstandingRentTotal = leaseOutstandingFull.outstandingRentTotal;
 
+      const activeLeaseUnitIds = new Set(
+        activeLeases
+          .filter(function (c) { return String(c.status || "").toLowerCase() === "active" && c.linked_item_id; })
+          .map(function (c) { return String(c.linked_item_id); })
+      );
       const totalUnits = (dashboardData.items || []).length;
       const occupiedUnits = (dashboardData.items || []).filter(function (item) {
+        if (activeLeaseUnitIds.has(String(item.id))) return true;
         const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
-        return status.includes("rented") || status.includes("sold");
+        return status.includes("occupied") || status.includes("rented") || status.includes("sold");
       }).length;
 
       const maintenanceOpen = (dashboardData.tasks || []).filter(function (task) {
