@@ -6278,6 +6278,23 @@
     // outstanding_rent() exactly, so this dashboard, the tenant
     // statement, Person 360, Debtors & Payables, and Profit per Property
     // all show the same number for the same tenant.
+    // A property that has units under it (parent_item_id points at it from
+    // at least one other row) is a container record, not a rentable unit -
+    // it must never be counted in an occupancy ratio, same rule as Profit
+    // per Property already applies via its own parent_item_id scoping.
+    // "Is this a building" is derived here the same way reports.html does:
+    // by checking whether anything points at it, not a stored flag.
+    function excludeParentPropertyRows(items) {
+      const list = items || [];
+      const parentIds = new Set(
+        list
+          .map(function (item) { return getValue(item, ["parent_item_id"], ""); })
+          .filter(Boolean)
+          .map(String)
+      );
+      return list.filter(function (item) { return !parentIds.has(String(item.id)); });
+    }
+
     function computeLeaseOutstandingRent(activeLeases, people, items, invoices) {
       const peopleList = people || [];
       const itemsList = items || [];
@@ -6345,8 +6362,9 @@
           .filter(function (c) { return String(c.status || "").toLowerCase() === "active" && c.linked_item_id; })
           .map(function (c) { return String(c.linked_item_id); })
       );
-      const totalUnits = (data.items || []).length;
-      const occupiedUnits = (data.items || []).filter(function (item) {
+      const unitsOnly = excludeParentPropertyRows(data.items);
+      const totalUnits = unitsOnly.length;
+      const occupiedUnits = unitsOnly.filter(function (item) {
         if (activeLeaseUnitIds.has(String(item.id))) return true;
         const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
         return status.includes("occupied") || status.includes("rented") || status.includes("sold");
@@ -6606,8 +6624,9 @@
             .filter(function (c) { return String(c.status || "").toLowerCase() === "active" && c.linked_item_id; })
             .map(function (c) { return String(c.linked_item_id); })
         );
-        const totalUnitsForHealth = (data.items || []).length;
-        const occupiedUnitsForHealth = (data.items || []).filter(function (item) {
+        const unitsOnlyForHealth = excludeParentPropertyRows(data.items);
+        const totalUnitsForHealth = unitsOnlyForHealth.length;
+        const occupiedUnitsForHealth = unitsOnlyForHealth.filter(function (item) {
           if (activeLeaseUnitIdsForHealth.has(String(item.id))) return true;
           const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
           return status.includes("occupied") || status.includes("rented") || status.includes("sold");
@@ -6802,8 +6821,9 @@
           .filter(function (c) { return String(c.status || "").toLowerCase() === "active" && c.linked_item_id; })
           .map(function (c) { return String(c.linked_item_id); })
       );
-      const totalUnits = (dashboardData.items || []).length;
-      const occupiedUnits = (dashboardData.items || []).filter(function (item) {
+      const unitsOnly = excludeParentPropertyRows(dashboardData.items);
+      const totalUnits = unitsOnly.length;
+      const occupiedUnits = unitsOnly.filter(function (item) {
         if (activeLeaseUnitIds.has(String(item.id))) return true;
         const status = String(getValue(item, ["property_status", "item_status", "status"], "")).toLowerCase();
         return status.includes("occupied") || status.includes("rented") || status.includes("sold");

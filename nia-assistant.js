@@ -3473,7 +3473,23 @@
     return fallback;
   }
 
-  const ASSET_SUMMARY_COLUMNS = "id, status, item_status, property_status, item_name, name, title, property_name, quantity, reorder_level, custom_fields, units_available";
+  const ASSET_SUMMARY_COLUMNS = "id, status, item_status, property_status, item_name, name, title, property_name, quantity, reorder_level, custom_fields, units_available, parent_item_id";
+
+  // A property that has units under it (parent_item_id points at it from
+  // at least one other row) is a container record, not a rentable unit -
+  // it must never be counted in an occupancy ratio, same rule client.html
+  // and reports.html's Profit per Property already apply. "Is this a
+  // building" is derived by checking whether anything points at it, not
+  // a stored flag.
+  function excludeParentPropertyRows(items) {
+    const list = items || [];
+    const parentIds = {};
+    list.forEach(function (item) {
+      const parentId = pickField(item, ["parent_item_id"], "");
+      if (parentId) parentIds[String(parentId)] = true;
+    });
+    return list.filter(function (item) { return !parentIds[String(item.id)]; });
+  }
 
   // Thin wrappers over the shared ungani-stock-status.js module (also used
   // by client.html, my-items.html, my-stock-tracking.html, admin-items.html,
@@ -3812,13 +3828,14 @@
       return { spoken: "I couldn't check that right now." };
     }
 
-    const totalUnits = rows.length;
-    const occupied = rows.filter(function (item) {
+    const unitsOnly = excludeParentPropertyRows(rows);
+    const totalUnits = unitsOnly.length;
+    const occupied = unitsOnly.filter(function (item) {
       if (activeLeaseUnitIds[String(item.id)]) return true;
       const status = String(pickField(item, ["property_status", "item_status", "status"], "")).toLowerCase();
       return status.indexOf("occupied") !== -1 || status.indexOf("rented") !== -1 || status.indexOf("sold") !== -1;
     });
-    const vacant = rows.filter(function (item) { return occupied.indexOf(item) === -1; });
+    const vacant = unitsOnly.filter(function (item) { return occupied.indexOf(item) === -1; });
 
     if (!totalUnits) {
       addNiaMessage(`No units on file yet. ${goldLink("my-items.html", "Open Items")}.`);
@@ -7090,7 +7107,7 @@
   async function fetchNiaHealthScoreData() {
     const results = await Promise.all([
       state.supabaseClient.from("transactions").select("id, amount, amount_kes, category, category_name, transaction_type, type, status, related_person_id, transaction_date, created_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
-      state.supabaseClient.from("business_items").select("id, item_status, property_status, status, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
+      state.supabaseClient.from("business_items").select("id, item_status, property_status, status, parent_item_id, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
       state.supabaseClient.from("client_people").select("id, linked_item_id, lease_end_date, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
       state.supabaseClient.from("business_records").select("id, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
       state.supabaseClient.from("tasks").select("id, status, due_date, task_type, created_at, updated_at").eq("tenant_id", state.tenantId).is("deleted_at", null).limit(1000),
@@ -7234,8 +7251,9 @@
       }
     });
 
-    const totalUnits = (data.items || []).length;
-    const occupiedUnits = (data.items || []).filter(function (item) {
+    const unitsOnly = excludeParentPropertyRows(data.items);
+    const totalUnits = unitsOnly.length;
+    const occupiedUnits = unitsOnly.filter(function (item) {
       if (activeLeaseUnitIds[String(item.id)]) return true;
       const status = String(pickField(item, ["property_status", "item_status", "status"], "")).toLowerCase();
       return status.indexOf("occupied") !== -1 || status.indexOf("rented") !== -1 || status.indexOf("sold") !== -1;
